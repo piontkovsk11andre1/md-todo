@@ -86,6 +86,8 @@ It treats Markdown as an executable workflow surface:
 - correction retries when needed,
 - and the checkbox changes only after success.
 
+The worker should not edit the Markdown task file to mark the task complete. `md-todo` owns checkbox updates and only applies them after validation succeeds.
+
 ---
 
 ## The idea in 30 seconds
@@ -124,6 +126,8 @@ md-todo run docs/ -- opencode run
 6. optionally correct and retry,
 7. then check the box only if validation passes.
 
+That means the worker should complete the underlying work, not manually flip `[ ]` to `[x]` in the task file.
+
 ---
 
 ## What makes it different
@@ -147,6 +151,8 @@ Tasks can be handled by an external worker such as `opencode`, or executed direc
 ### Safe completion model
 
 A task is not considered done just because a command ran. It must validate.
+
+The worker does not own checkbox updates. `md-todo` marks the task complete only after validation returns `OK`.
 
 ---
 

@@ -25,7 +25,12 @@ The following is the content of the Markdown file up to the point of this task:
 
 ---
 
-Complete the task described above. Make the necessary changes to the project.
+Complete the task described above. Make the necessary changes to the project, but do not edit the source Markdown task file as part of completion tracking.
+
+- Do not change the checkbox in the source Markdown file.
+- Do not rewrite the task item to make it look completed.
+- Do not treat editing the TODO file itself as evidence that the task is done unless the task explicitly requires documentation changes in that file.
+- md-todo is responsible for marking the task complete after validation succeeds.
 `;
 
 export const DEFAULT_VALIDATE_TEMPLATE = `\
@@ -52,6 +57,8 @@ Write your result to a file named \`{{file}}.{{taskIndex}}.validation\` next to 
 - If the task is complete, write exactly: OK
 - If the task is not complete, write a short explanation of what is still missing.
 
+Do not modify the source Markdown task file or change its checkbox state. Validation is determined only by the actual project state and the sidecar file above.
+
 Do not write anything else.
 `;
 
@@ -77,6 +84,10 @@ A task was executed but validation determined it is not yet complete.
 ---
 
 Please fix what is missing or incorrect. The validation above explains what still needs to be done.
+
+- Do not change the checkbox in the source Markdown file.
+- Do not mark the task complete yourself.
+- md-todo will update task completion only after validation succeeds.
 
 After making corrections, the task will be validated again.
 `;
