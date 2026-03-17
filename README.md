@@ -420,7 +420,7 @@ npx md-todo run docs/ -- opencode run
 
 ## Status
 
-`md-todo` is a public, release-quality CLI ready for GitHub and being polished for npm release.
+`md-todo` is in release candidate status as `1.0.0-rc.1`, ready for GitHub and being finalized for npm release.
 
 Built with TypeScript, AST-based Markdown parsing, and a clean modular architecture.
 
