@@ -26,12 +26,18 @@ md-todo --help
 
 ---
 
-## Other harness examples
+## Worker command examples
 
 `md-todo` is worker-agnostic. The cleanest setup is:
 
 - use the harness command directly when it already has a good CLI shape,
 - or add a tiny repository-local wrapper when the harness needs custom prompt handling.
+
+PowerShell 5.1 users should prefer the `--worker` form:
+
+```powershell
+md-todo run docs/ --worker opencode run
+```
 
 ### Direct agent CLIs
 
