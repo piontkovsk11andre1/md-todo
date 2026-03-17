@@ -151,7 +151,11 @@ The basic flow is:
 1. resolve the source into matching Markdown files,
 2. sort the files,
 3. scan each file from top to bottom,
-4. select the first unchecked task that appears.
+4. select the first runnable unchecked task.
+
+A task is runnable when it is unchecked and has no unchecked descendants. This means child tasks must be completed before their parent becomes eligible for execution.
+
+This child-before-parent rule ensures that planned subtasks are always processed first, and the parent task only runs after all its children are done.
 
 The default sorting mode should be `name-sort`.
 
@@ -181,21 +185,35 @@ Inline CLI execution is a first-class feature.
 
 If a command is written in a saved Markdown document, that should be treated as intentional permission to execute it. The tool should not interrupt the flow with an extra access prompt just because the task is an inline CLI command.
 
+## Planning
+
+A task can be decomposed into subtasks before execution.
+
+The `plan` command takes a source (file, directory, or glob) and optionally a specific task via `--at file:line`. It renders the planner template, runs a worker command, and inserts the resulting subtask items as nested children under the selected parent task.
+
+The planner worker should return only unchecked Markdown task items. These are parsed and inserted directly below the parent task line, indented one level deeper.
+
+After planning, the parent task is blocked from execution until all its new children are completed, because of the child-before-parent selection rule.
+
+The `--at file:line` argument uses the 1-based line number from the source file. This is more stable than a task index, because inserting subtasks renumbers downstream task indices but does not change line numbers of earlier tasks.
+
 ## Templates
 
 The tool should support Markdown templates instead of raw built-in prompt strings.
 
-There are three templates:
+There are four templates:
 
 - a task template,
 - a validation template,
-- and a corrector template.
+- a corrector template,
+- and a planner template.
 
 These should live in a hidden project folder:
 
 - [.md-todo/task.md](.md-todo/task.md)
 - [.md-todo/validate.md](.md-todo/validate.md)
 - [.md-todo/correct.md](.md-todo/correct.md)
+- [.md-todo/plan.md](.md-todo/plan.md)
 
 This keeps the project prompt-driven, easy to edit, and easy to version.
 

@@ -6,12 +6,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { DEFAULT_TASK_TEMPLATE, DEFAULT_VALIDATE_TEMPLATE, DEFAULT_CORRECT_TEMPLATE } from "./defaults.js";
+import {
+  DEFAULT_TASK_TEMPLATE,
+  DEFAULT_VALIDATE_TEMPLATE,
+  DEFAULT_CORRECT_TEMPLATE,
+  DEFAULT_PLAN_TEMPLATE,
+} from "./defaults.js";
 
 export interface ProjectTemplates {
   task: string;
   validate: string;
   correct: string;
+  plan: string;
 }
 
 const CONFIG_DIR = ".md-todo";
@@ -23,6 +29,7 @@ const CONFIG_DIR = ".md-todo";
  *   .md-todo/task.md
  *   .md-todo/validate.md
  *   .md-todo/correct.md
+ *   .md-todo/plan.md
  */
 export function loadProjectTemplates(cwd: string = process.cwd()): ProjectTemplates {
   const dir = path.join(cwd, CONFIG_DIR);
@@ -31,6 +38,7 @@ export function loadProjectTemplates(cwd: string = process.cwd()): ProjectTempla
     task: loadFile(path.join(dir, "task.md")) ?? DEFAULT_TASK_TEMPLATE,
     validate: loadFile(path.join(dir, "validate.md")) ?? DEFAULT_VALIDATE_TEMPLATE,
     correct: loadFile(path.join(dir, "correct.md")) ?? DEFAULT_CORRECT_TEMPLATE,
+    plan: loadFile(path.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
   };
 }
 

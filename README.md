@@ -207,12 +207,13 @@ The workflow is configured with Markdown templates stored in the repository:
   task.md
   validate.md
   correct.md
+  plan.md
   vars.json
 ```
 
 This keeps the system readable, versionable, and close to the project itself.
 
-You can also inject extra template variables from the CLI with repeatable `--var key=value` flags or load them from a JSON file with `--vars-file`. Those values are available in `task.md`, `validate.md`, and `correct.md` as `{{key}}`.
+You can also inject extra template variables from the CLI with repeatable `--var key=value` flags or load them from a JSON file with `--vars-file`. Those values are available in `task.md`, `validate.md`, `correct.md`, and `plan.md` as `{{key}}`.
 
 ```bash
 md-todo run roadmap.md --var branch=main --var ticket=ENG-42 -- opencode run
@@ -232,6 +233,9 @@ Defines how completion should be judged.
 
 ### `correct.md`
 Defines how to repair a failed attempt.
+
+### `plan.md`
+Defines how a task should be decomposed into subtasks.
 
 This makes `md-todo` feel less like a hardcoded integration and more like a small agentic framework you shape per repository.
 
@@ -266,6 +270,8 @@ Optional sort modes:
 - `new-first`
 
 Inside each file, tasks are scanned in document order.
+
+A task is only eligible for execution if it has no unchecked descendants. When a parent task has unchecked child tasks beneath it, those children must be completed first. This child-before-parent rule ensures that planned subtasks always run before the parent.
 
 ---
 
@@ -451,9 +457,46 @@ Run validation without allowing correction retries:
 md-todo run roadmap.md --validate --no-correct --worker opencode run
 ```
 
+### `md-todo plan <source> -- <command>`
+
+Decompose a task into subtasks using a worker command.
+
+```bash
+md-todo plan roadmap.md -- opencode run
+md-todo plan roadmap.md --at roadmap.md:12 --worker opencode run
+```
+
+The planner runs the worker with a planning prompt and inserts the resulting subtasks as nested children under the selected parent task.
+
+Target a specific task with `--at file:line`:
+
+```bash
+md-todo plan docs/ --at docs/roadmap.md:12 --worker opencode run
+```
+
+Without `--at`, the planner targets the next unchecked task (same as `run`).
+
+After planning, the parent task is blocked from execution until all its new children are completed.
+
+Options:
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--at <file:line>` | Target a specific task by file and line number | next task |
+| `--worker <command...>` | Worker command | — |
+| `--mode <mode>` | `wait`, `tui`, or `detached` | `wait` |
+| `--transport <transport>` | `file` or `arg` | `file` |
+| `--sort <sort>` | `name-sort`, `none`, `old-first`, `new-first` | `name-sort` |
+| `--dry-run` | Show what would be planned without executing | off |
+| `--print-prompt` | Print the plan prompt and exit | off |
+| `--vars-file [path]` | Load extra template variables | — |
+| `--var <key=value>` | Extra template variable, repeatable | — |
+
 ### `md-todo next <source>`
 
-Show the next unchecked task without executing it.
+Show the next runnable unchecked task without executing it.
+
+A task with unchecked subtasks is skipped in favor of the subtasks.
 
 ```bash
 md-todo next docs/
@@ -463,6 +506,8 @@ md-todo next docs/
 
 List all unchecked tasks across the source.
 
+Parent tasks that are blocked by unchecked subtasks are marked in the output.
+
 ```bash
 md-todo list .
 md-todo list --all roadmap.md
@@ -470,7 +515,7 @@ md-todo list --all roadmap.md
 
 ### `md-todo init`
 
-Create a `.md-todo/` directory with default templates.
+Create a `.md-todo/` directory with default templates (including `plan.md`).
 
 ```bash
 md-todo init
@@ -491,7 +536,7 @@ md-todo init
 
 ## Status
 
-`md-todo` is in release candidate status as `1.0.0-rc.3`, published on npm as `@p10i/md-todo` under the `rc` dist-tag.
+`md-todo` is in release candidate status, published on npm as `@p10i/md-todo` under the `rc` dist-tag.
 
 Built with TypeScript, AST-based Markdown parsing, and a clean modular architecture.
 
@@ -508,6 +553,8 @@ Built with TypeScript, AST-based Markdown parsing, and a clean modular architect
 - [x] validation sidecar files
 - [x] auto-correction loop with retries
 - [x] clear exit codes
+- [x] task planning and subtask decomposition
+- [x] child-before-parent task execution
 - [ ] broader `opencode` integration testing
 - [ ] npm packaging and release flow
 

@@ -138,9 +138,16 @@ describe("runWorker", () => {
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("opencode");
-    expect(args).toHaveLength(1);
-    expect(args[0]).toMatch(/^--prompt=The full rendered md-todo task prompt is staged in \.md-todo\/runtime\/prompt-.*\.md\. Open and read that file completely before taking any action, then continue the work in this session\.$/);
+    if (process.platform === "win32") {
+      expect(cmd).toBe("cmd");
+      expect(args.slice(0, 4)).toEqual(["/c", "start", "/wait", '""']);
+      expect(args[4]).toBe("opencode");
+      expect(args[5]).toMatch(/^--prompt=The full rendered md-todo task prompt is staged in \.md-todo\/runtime\/prompt-.*\.md\. Open and read that file completely before taking any action, then continue the work in this session\.$/);      
+    } else {
+      expect(cmd).toBe("opencode");
+      expect(args).toHaveLength(1);
+      expect(args[0]).toMatch(/^--prompt=The full rendered md-todo task prompt is staged in \.md-todo\/runtime\/prompt-.*\.md\. Open and read that file completely before taking any action, then continue the work in this session\.$/);
+    }
     expect(capturedPromptFile).toMatch(/\.md-todo[\\/]runtime[\\/]prompt-.*\.md$/);
     expect(capturedPromptFileContent).toBe("full prompt content");
     expect(fs.existsSync(capturedPromptFile)).toBe(true);
@@ -175,8 +182,13 @@ describe("runWorker", () => {
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
-    expect(cmd).toBe("opencode");
-    expect(args).toEqual([`--prompt=${prompt}`]);
+    if (process.platform === "win32") {
+      expect(cmd).toBe("cmd");
+      expect(args).toEqual(["/c", "start", "/wait", '""', "opencode", `--prompt=${prompt}`]);
+    } else {
+      expect(cmd).toBe("opencode");
+      expect(args).toEqual([`--prompt=${prompt}`]);
+    }
   });
 });
 

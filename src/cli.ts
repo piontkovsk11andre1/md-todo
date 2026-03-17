@@ -6,7 +6,7 @@
 
 import { Command } from "commander";
 import { resolveSources } from "./sources.js";
-import { selectNextTask } from "./selector.js";
+import { selectNextTask, selectTaskByLocation, hasUncheckedDescendants } from "./selector.js";
 import { renderTemplate, type TemplateVars } from "./template.js";
 import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
 import { validate, removeValidationFile } from "./validation.js";
@@ -15,6 +15,7 @@ import { executeInlineCli } from "./inline-cli.js";
 import { checkTask } from "./checkbox.js";
 import { loadProjectTemplates } from "./templates-loader.js";
 import { parseTasks } from "./parser.js";
+import { applyPlannerOutput } from "./planner.js";
 import {
   loadTemplateVarsFile,
   parseCliTemplateVars,
@@ -328,8 +329,9 @@ program
         const filtered = opts.all ? tasks : tasks.filter((t) => !t.checked);
 
         for (const task of filtered) {
-          const prefix = task.checked ? "  [x]" : "  [ ]";
-          console.log(log.taskLabel(task));
+          const blocked = !task.checked && hasUncheckedDescendants(task, tasks);
+          const suffix = blocked ? log.dim(" (blocked — has unchecked subtasks)") : "";
+          console.log(log.taskLabel(task) + suffix);
           count++;
         }
       }
@@ -337,6 +339,155 @@ program
       if (count === 0) {
         log.info("No tasks found.");
       }
+    } catch (err) {
+      log.error(String(err));
+      process.exit(1);
+    }
+  });
+
+// ── plan command ───────────────────────────────────────────────
+
+program
+  .command("plan")
+  .description("Decompose a task into subtasks using a worker command.")
+  .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
+  .option("--at <file:line>", "Target a specific task by file path and line number")
+  .option("--mode <mode>", "Runner execution mode: wait, tui, detached", "wait")
+  .option("--transport <transport>", "Prompt transport: file, arg", "file")
+  .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
+  .option("--dry-run", "Show what would be planned without executing", false)
+  .option("--print-prompt", "Print the rendered plan prompt and exit", false)
+  .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .md-todo/vars.json)")
+  .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
+  .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(async (source: string, opts: Record<string, string | string[] | boolean>) => {
+
+    const mode = opts.mode as RunnerMode;
+    const transport = opts.transport as PromptTransport;
+    const sortMode = opts.sort as SortMode;
+    const dryRun = opts.dryRun as boolean;
+    const printPrompt = opts.printPrompt as boolean;
+    const varsFilePath = resolveTemplateVarsFilePath(opts.varsFile as string | boolean | undefined);
+    const fileTemplateVars = varsFilePath
+      ? loadTemplateVarsFile(varsFilePath)
+      : {};
+    const cliTemplateVars = parseCliTemplateVars((opts.var as string[] | undefined) ?? []);
+    const extraTemplateVars = { ...fileTemplateVars, ...cliTemplateVars };
+
+    // Resolve worker command
+    const workerCommand = Array.isArray(opts.worker)
+      ? opts.worker.flatMap((part) => part.split(/\s+/).filter(Boolean))
+      : typeof opts.worker === "string"
+        ? opts.worker.split(/\s+/).filter(Boolean)
+        : workerFromSeparator;
+
+    try {
+      // 1. Resolve task target
+      let result: import("./selector.js").SelectionResult | null = null;
+
+      if (opts.at) {
+        const atValue = opts.at as string;
+        const colonIdx = atValue.lastIndexOf(":");
+        if (colonIdx === -1) {
+          log.error("Invalid --at format. Expected file:line (e.g. roadmap.md:12).");
+          process.exit(1);
+        }
+
+        const filePath = atValue.slice(0, colonIdx);
+        const lineNum = parseInt(atValue.slice(colonIdx + 1), 10);
+        if (!Number.isFinite(lineNum) || lineNum < 1) {
+          log.error("Invalid line number in --at: " + atValue.slice(colonIdx + 1));
+          process.exit(1);
+        }
+
+        result = selectTaskByLocation(filePath, lineNum);
+        if (!result) {
+          log.error("No task found at " + filePath + ":" + lineNum);
+          process.exit(3);
+        }
+      } else {
+        // Use normal source resolution, select next unchecked task
+        const files = await resolveSources(source);
+        if (files.length === 0) {
+          log.warn("No Markdown files found matching: " + source);
+          process.exit(3);
+        }
+
+        result = selectNextTask(files, sortMode);
+        if (!result) {
+          log.info("No unchecked tasks found.");
+          process.exit(3);
+        }
+      }
+
+      const { task, source: fileSource, contextBefore } = result!;
+      log.info("Planning task: " + log.taskLabel(task));
+
+      // 2. Ensure worker command
+      if (workerCommand.length === 0) {
+        log.error("No worker command specified. Use --worker <command...> or -- <command>.");
+        process.exit(1);
+      }
+
+      // 3. Load templates and render plan prompt
+      const templates = loadProjectTemplates();
+
+      const vars: TemplateVars = {
+        ...extraTemplateVars,
+        task: task.text,
+        file: task.file,
+        context: contextBefore,
+        taskIndex: task.index,
+        taskLine: task.line,
+        source: fileSource,
+      };
+
+      const prompt = renderTemplate(templates.plan, vars);
+
+      if (printPrompt) {
+        console.log(prompt);
+        process.exit(0);
+      }
+
+      if (dryRun) {
+        log.info("Dry run — would plan: " + workerCommand.join(" "));
+        log.info("Prompt length: " + prompt.length + " chars");
+        process.exit(0);
+      }
+
+      // 4. Execute the worker
+      log.info("Running planner: " + workerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]");
+      const runResult = await runWorker({
+        command: workerCommand,
+        prompt,
+        mode,
+        transport,
+      });
+
+      if (mode === "wait") {
+        if (runResult.stderr) process.stderr.write(runResult.stderr);
+      }
+
+      if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+        log.error("Planner worker exited with code " + runResult.exitCode + ".");
+        process.exit(1);
+      }
+
+      if (!runResult.stdout || runResult.stdout.trim().length === 0) {
+        log.warn("Planner produced no output. No subtasks created.");
+        process.exit(0);
+      }
+
+      // 5. Insert subtasks
+      const count = applyPlannerOutput(task, runResult.stdout);
+      if (count === 0) {
+        log.warn("Planner output contained no valid task items. No subtasks created.");
+        process.exit(0);
+      }
+
+      log.success("Inserted " + count + " subtask" + (count === 1 ? "" : "s") + " under: " + task.text);
+      process.exit(0);
     } catch (err) {
       log.error(String(err));
       process.exit(1);
@@ -370,12 +521,14 @@ program
       DEFAULT_TASK_TEMPLATE,
       DEFAULT_VALIDATE_TEMPLATE,
       DEFAULT_CORRECT_TEMPLATE,
+      DEFAULT_PLAN_TEMPLATE,
       DEFAULT_VARS_FILE_CONTENT,
     } = await import("./defaults.js");
 
     write("task.md", DEFAULT_TASK_TEMPLATE);
     write("validate.md", DEFAULT_VALIDATE_TEMPLATE);
     write("correct.md", DEFAULT_CORRECT_TEMPLATE);
+    write("plan.md", DEFAULT_PLAN_TEMPLATE);
     write("vars.json", DEFAULT_VARS_FILE_CONTENT);
 
     log.success("Initialized .md-todo/ with default templates.");

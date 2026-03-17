@@ -97,3 +97,42 @@ export const DEFAULT_VARS_FILE_CONTENT = `{
 	"ticket": "ENG-42"
 }
 `;
+
+export const DEFAULT_PLAN_TEMPLATE = `\
+A Markdown TODO has been selected for planning. Your job is to decompose it into concrete subtasks.
+
+## Task to plan
+
+{{task}}
+
+## Source file
+
+\`{{file}}\` (line {{taskLine}})
+
+## Document context
+
+The following is the content of the Markdown file up to the point of this task:
+
+---
+
+{{context}}
+
+---
+
+Break this task into smaller, actionable subtasks.
+
+Return ONLY a Markdown list of unchecked task items using \`- [ ]\` syntax, one per subtask.
+
+Rules:
+- Each subtask should be a single clear action.
+- Together the subtasks should fully cover the parent task.
+- Do not include the parent task itself.
+- Do not include any other text, headings, or explanation.
+- Do not modify the source Markdown file.
+
+Example output format:
+
+- [ ] First concrete step
+- [ ] Second concrete step
+- [ ] Third concrete step
+`;

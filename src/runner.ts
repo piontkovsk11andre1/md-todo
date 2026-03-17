@@ -174,7 +174,22 @@ function executeCommand(
 ): Promise<RunnerResult> {
   return new Promise((resolve, reject) => {
     if (mode === "tui") {
-      // Interactive: inherit all stdio
+      // On Windows, launch TUI in a new terminal window to avoid
+      // input-buffer issues with the parent console.
+      if (os.platform() === "win32") {
+        const child = spawn(
+          "cmd",
+          ["/c", "start", "/wait", '""', cmd, ...args],
+          { stdio: "ignore", cwd, shell: false },
+        );
+        child.on("close", (code: number | null) => {
+          resolve({ exitCode: code, stdout: "", stderr: "" });
+        });
+        child.on("error", reject);
+        return;
+      }
+
+      // Non-Windows: inherit all stdio (interactive in same terminal)
       const child = spawn(cmd, args, {
         stdio: "inherit",
         cwd,
