@@ -97,7 +97,7 @@ describe("runWorker", () => {
     expect(args).toEqual(["run", prompt]);
   });
 
-  it("uses --prompt plus the bootstrap message for opencode tui in file transport", async () => {
+  it("uses a single --prompt=... argument for opencode tui in file transport", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -124,15 +124,13 @@ describe("runWorker", () => {
       cwd: process.cwd(),
     });
 
-    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { shell?: boolean }];
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
-    expect(args).toHaveLength(2);
-    expect(args[0]).toBe("--prompt");
-    expect(args[1]).toMatch(/^Read and follow the full task instructions in \.md-todo\/runtime\/prompt-.*\.md\. Start by opening that file, then continue the work from there\.$/);
-    expect(options.shell).toBe(true);
+    expect(args).toHaveLength(1);
+    expect(args[0]).toMatch(/^--prompt=Read and follow the full task instructions in \.md-todo\/runtime\/prompt-.*\.md\. Start by opening that file, then continue the work from there\.$/);
   });
 
-  it("uses --prompt plus the message for opencode tui in arg transport", async () => {
+  it("uses a single --prompt=... argument for opencode tui in arg transport", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -160,9 +158,8 @@ describe("runWorker", () => {
       cwd: process.cwd(),
     });
 
-    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { shell?: boolean }];
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
-    expect(args).toEqual(["--prompt", prompt]);
-    expect(options.shell).toBe(true);
+    expect(args).toEqual([`--prompt=${prompt}`]);
   });
 });
