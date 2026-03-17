@@ -404,7 +404,7 @@ From source today:
 npm install -g .
 ```
 
-Planned npm package:
+npm release candidate package:
 
 ```bash
 npm install -g @p10i/md-tool
@@ -420,7 +420,7 @@ npx md-todo run docs/ -- opencode run
 
 ## Status
 
-`md-todo` is in release candidate status as `1.0.0-rc.1`, ready for GitHub and being finalized for npm release.
+`md-todo` is in release candidate status as `1.0.0-rc.2`, ready for GitHub and being finalized for npm release.
 
 Built with TypeScript, AST-based Markdown parsing, and a clean modular architecture.
 
