@@ -10,6 +10,57 @@ It is not just a todo parser and not just a wrapper around an AI CLI.
 
 It is a small, template-driven execution framework for doing real work directly from Markdown.
 
+## Install
+
+```bash
+npm install -g @p10i/md-todo@rc
+```
+
+Current channel: `rc` (release candidate).
+
+Then run:
+
+```bash
+md-todo --help
+```
+
+---
+
+## Other harness examples
+
+`md-todo` is worker-agnostic. The cleanest setup is:
+
+- use the harness command directly when it already has a good CLI shape,
+- or add a tiny repository-local wrapper when the harness needs custom prompt handling.
+
+### Direct agent CLIs
+
+```bash
+# Claude-style interactive handoff
+md-todo run roadmap.md --mode tui -- claude
+
+# OpenCode wait-mode execution
+md-todo run roadmap.md -- opencode run
+
+# OpenCode interactive handoff
+md-todo run roadmap.md --mode tui -- opencode
+```
+
+### Wrapper scripts
+
+```bash
+# Claude Code through a project-local wrapper for wait-mode execution
+md-todo run roadmap.md -- scripts/run-claude-code
+
+# GitHub Copilot or another agent harness through a wrapper
+md-todo run roadmap.md -- scripts/run-copilot-harness
+
+# PowerShell-safe form
+md-todo run roadmap.md --worker scripts/run-copilot-harness
+```
+
+The wrapper pattern is often the most durable option for tools like Claude Code, Copilot, Codex, or other local agent harnesses because it gives you one stable command shape for `md-todo` while keeping tool-specific prompt plumbing inside your repository.
+
 ---
 
 ## Why this exists
@@ -393,28 +444,6 @@ md-todo init
 | `1` | Execution error |
 | `2` | Validation failed |
 | `3` | No tasks found |
-
----
-
-## Installation
-
-From source today:
-
-```bash
-npm install -g .
-```
-
-npm release candidate package:
-
-```bash
-npm install -g @p10i/md-todo@rc
-```
-
-Or use it directly:
-
-```bash
-npx md-todo run docs/ -- opencode run
-```
 
 ---
 
