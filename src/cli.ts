@@ -33,6 +33,7 @@ import {
   displayArtifactsPath,
   findSavedRuntimeArtifact,
   finalizeRuntimeArtifacts,
+  isFailedRuntimeArtifactStatus,
   latestSavedRuntimeArtifact,
   listFailedRuntimeArtifacts,
   listSavedRuntimeArtifacts,
@@ -102,7 +103,7 @@ program
   .option("--no-correct", "Legacy alias for --no-repair", false)
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .md-todo/runs", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata for all run outcomes", false)
   .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .md-todo/vars.json)")
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
@@ -147,16 +148,19 @@ program
     let artifactContext: RuntimeArtifactsContext | null = null;
     let artifactsFinalized = false;
 
-    const finalizeArtifacts = (status: string, preserve: boolean = keepArtifacts): void => {
+    const finalizeArtifacts = (status: string, preserve: boolean = shouldPreserveArtifacts(status, keepArtifacts, mode)): void => {
       if (!artifactContext || artifactsFinalized) {
         return;
       }
 
-      finalizeRunArtifacts(artifactContext, preserve, status);
-      artifactsFinalized = true;
+      artifactsFinalized = finalizeRunArtifacts(artifactContext, preserve, status);
     };
 
-    const finishRun = (code: number, status: string, preserve: boolean = keepArtifacts): never => {
+    const finishRun = (
+      code: number,
+      status: string,
+      preserve: boolean = shouldPreserveArtifacts(status, keepArtifacts, mode),
+    ): never => {
       finalizeArtifacts(status, preserve);
       terminate(code);
     };
@@ -362,7 +366,7 @@ program
       await afterTaskComplete(task, source, commitAfterComplete, commitMessageTemplate, onCompleteCommand);
       finishRun(0, "completed");
     } catch (err) {
-      finalizeArtifacts("failed", keepArtifacts || mode === "detached");
+      finalizeArtifacts("failed");
       if (isCliExitSignal(err)) {
         throw err;
       }
@@ -561,7 +565,7 @@ program
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .md-todo/runs", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata for all run outcomes", false)
   .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .md-todo/vars.json)")
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
@@ -678,8 +682,11 @@ program
 
       const finishPlan = (code: number, status: string): never => {
         artifactStatus = status;
-        finalizeRunArtifacts(artifactContext, keepArtifacts, artifactStatus);
-        artifactsFinalized = true;
+        artifactsFinalized = finalizeRunArtifacts(
+          artifactContext,
+          shouldPreserveArtifacts(status, keepArtifacts),
+          artifactStatus,
+        );
         terminate(code);
       };
 
@@ -721,8 +728,11 @@ program
         finishPlan(0, "completed");
       } finally {
         if (!artifactsFinalized) {
-          finalizeRunArtifacts(artifactContext, keepArtifacts, artifactStatus);
-          artifactsFinalized = true;
+          artifactsFinalized = finalizeRunArtifacts(
+            artifactContext,
+            shouldPreserveArtifacts(artifactStatus, keepArtifacts),
+            artifactStatus,
+          );
         }
       }
     } catch (err) {
@@ -976,12 +986,31 @@ function finalizeRunArtifacts(
   artifactContext: RuntimeArtifactsContext,
   preserve: boolean,
   status: string,
-): void {
-  finalizeRuntimeArtifacts(artifactContext, { status, preserve });
+): boolean {
+  try {
+    finalizeRuntimeArtifacts(artifactContext, { status, preserve });
+  } catch (error) {
+    log.warn("Failed to finalize runtime artifacts: " + String(error));
+    return false;
+  }
 
   if (preserve) {
     log.info("Runtime artifacts saved at " + displayArtifactsPath(artifactContext) + ".");
   }
+
+  return true;
+}
+
+function shouldPreserveArtifacts(status: string, keepArtifacts: boolean, mode?: RunnerMode): boolean {
+  if (keepArtifacts) {
+    return true;
+  }
+
+  if (mode === "detached") {
+    return true;
+  }
+
+  return isFailedRuntimeArtifactStatus(status);
 }
 
 function toRuntimeTaskMetadata(

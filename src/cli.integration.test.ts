@@ -270,6 +270,31 @@ describe.sequential("CLI integration", () => {
     expect(fs.readdirSync(runsDir).length).toBe(1);
   });
 
+  it("run keeps failed runtime artifacts by default", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: definitely-not-a-real-command-md-todo\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+
+    const runsDir = path.join(workspace, ".md-todo", "runs");
+    expect(fs.existsSync(runsDir)).toBe(true);
+
+    const [runDirName] = fs.readdirSync(runsDir);
+    expect(runDirName).toBeTruthy();
+
+    const runJsonPath = path.join(runsDir, runDirName!, "run.json");
+    expect(fs.existsSync(runJsonPath)).toBe(true);
+
+    const metadata = JSON.parse(fs.readFileSync(runJsonPath, "utf-8")) as { status?: string };
+    expect(metadata.status).toBe("execution-failed");
+  });
+
   it("artifacts lists saved runtime runs", async () => {
     const workspace = makeTempWorkspace();
     writeSavedRun(workspace, {
