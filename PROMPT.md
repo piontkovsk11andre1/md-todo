@@ -221,19 +221,17 @@ These should live in a hidden project folder:
 - [.md-todo/repair.md](.md-todo/repair.md)
 - [.md-todo/plan.md](.md-todo/plan.md)
 
-Legacy aliases should remain supported for backward compatibility:
-
-- [.md-todo/task.md](.md-todo/task.md) as execute template,
-- [.md-todo/validate.md](.md-todo/validate.md) as verify template,
-- [.md-todo/correct.md](.md-todo/correct.md) as repair template.
-
 This keeps the project prompt-driven, easy to edit, and easy to version.
 
-The final task prompt should be built from three layers:
+The built-in prompt layout should be cache-friendly.
 
-1. instructions from the execute template,
-2. document context from the Markdown file,
-3. the exact TODO being processed.
+For execute, verify, repair, and plan, the prompt should begin with the same shared prefix:
+
+1. document context from the Markdown file,
+2. the exact TODO being processed,
+3. then the phase-specific instructions.
+
+There should be no phase-specific text before the document context block ends.
 
 If project templates do not exist, `md-todo` can fall back to built-in defaults.
 

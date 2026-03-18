@@ -4,32 +4,34 @@
  * Used when a project does not provide .md-todo/ templates.
  *
  * Layout principle: templates are structured for KV-cache efficiency.
- * Large, stable content (document context) appears first so that
- * consecutive tasks in the same file share a long common prefix.
- * Per-task variables (task text, line number, validation result)
- * appear after the context block.
+ * Every default template starts with the exact same prefix.
+ * The raw document context appears first with no phase-specific text before it.
+ * That allows execute, verify, repair, and plan prompts for the same task
+ * to reuse the same cache prefix before diverging.
  */
 
-export const DEFAULT_TASK_TEMPLATE = `\
-You are working on a project. A Markdown TODO has been selected for you to complete.
-
-## Document context
-
-The following is the content of the Markdown file up to the point of this task:
-
----
-
+const DEFAULT_TEMPLATE_SHARED_PREFIX = `\
 {{context}}
 
 ---
+
+The Markdown above is the source document up to but not including the selected unchecked task.
 
 ## Source file
 
 \`{{file}}\` (line {{taskLine}})
 
-## Task
+## Selected task
 
 {{task}}
+`;
+
+export const DEFAULT_TASK_TEMPLATE = `\
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
+
+## Phase
+
+Execute the selected task.
 
 Complete the task described above. Make the necessary changes to the project, but do not edit the source Markdown task file as part of completion tracking.
 
@@ -40,21 +42,11 @@ Complete the task described above. Make the necessary changes to the project, bu
 `;
 
 export const DEFAULT_VALIDATE_TEMPLATE = `\
-A task was just executed. Your job is to validate whether it was completed successfully.
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
 
-## Document context
+## Phase
 
-{{context}}
-
----
-
-## Source file
-
-\`{{file}}\` (line {{taskLine}})
-
-## Task
-
-{{task}}
+Verify whether the selected task is complete.
 
 Evaluate whether the task above has been completed.
 
@@ -69,21 +61,11 @@ Do not write anything else.
 `;
 
 export const DEFAULT_CORRECT_TEMPLATE = `\
-A task was executed but validation determined it is not yet complete.
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
 
-## Document context
+## Phase
 
-{{context}}
-
----
-
-## Source file
-
-\`{{file}}\` (line {{taskLine}})
-
-## Task
-
-{{task}}
+Repair the selected task after a failed verification pass.
 
 ## Previous validation result
 
@@ -105,25 +87,11 @@ export const DEFAULT_VARS_FILE_CONTENT = `{
 `;
 
 export const DEFAULT_PLAN_TEMPLATE = `\
-A Markdown TODO has been selected for planning. Your job is to decompose it into concrete subtasks.
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
 
-## Document context
+## Phase
 
-The following is the content of the Markdown file up to the point of this task:
-
----
-
-{{context}}
-
----
-
-## Source file
-
-\`{{file}}\` (line {{taskLine}})
-
-## Task to plan
-
-{{task}}
+Plan the selected task by decomposing it into concrete subtasks.
 
 Break this task into smaller, actionable subtasks.
 

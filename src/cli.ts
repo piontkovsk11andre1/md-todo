@@ -6,6 +6,7 @@
 
 import { Command } from "commander";
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { resolveSources } from "./sources.js";
 import { selectNextTask, selectTaskByLocation, hasUncheckedDescendants } from "./selector.js";
 import { renderTemplate, type TemplateVars } from "./template.js";
@@ -14,6 +15,8 @@ import { validate, removeValidationFile } from "./validation.js";
 import { correct } from "./correction.js";
 import { executeInlineCli } from "./inline-cli.js";
 import { checkTask } from "./checkbox.js";
+import { isGitRepo, commitCheckedTask } from "./git.js";
+import { runOnCompleteHook } from "./hooks.js";
 import { loadProjectTemplates } from "./templates-loader.js";
 import { parseTasks } from "./parser.js";
 import { applyPlannerOutput } from "./planner.js";
@@ -137,6 +140,9 @@ program
       : typeof opts.worker === "string"
         ? [opts.worker]
         : workerFromSeparator;
+    const commitAfterComplete = opts.commit as boolean;
+    const commitMessageTemplate = opts.commitMessage as string | undefined;
+    const onCompleteCommand = opts.onComplete as string | undefined;
 
     let artifactContext: RuntimeArtifactsContext | null = null;
     let artifactsFinalized = false;
@@ -260,12 +266,14 @@ program
 
         checkTask(task);
         log.success("Task checked: " + task.text);
+        await afterTaskComplete(task, source, commitAfterComplete, commitMessageTemplate, onCompleteCommand);
         finishRun(0, "completed");
       }
 
       if (task.isInlineCli) {
-        log.info("Executing inline CLI: " + task.cliCommand!);
-        const cliResult = await executeInlineCli(task.cliCommand!, process.cwd(), {
+        const inlineCliCwd = path.dirname(path.resolve(task.file));
+        log.info("Executing inline CLI: " + task.cliCommand! + " [cwd=" + inlineCliCwd + "]");
+        const cliResult = await executeInlineCli(task.cliCommand!, inlineCliCwd, {
           artifactContext,
           keepArtifacts,
           artifactExtra: { taskType: "inline-cli" },
@@ -300,6 +308,7 @@ program
 
         checkTask(task);
         log.success("Task checked: " + task.text);
+        await afterTaskComplete(task, source, commitAfterComplete, commitMessageTemplate, onCompleteCommand);
         finishRun(0, "completed");
       }
 
@@ -350,6 +359,7 @@ program
 
       checkTask(task);
       log.success("Task checked: " + task.text);
+      await afterTaskComplete(task, source, commitAfterComplete, commitMessageTemplate, onCompleteCommand);
       finishRun(0, "completed");
     } catch (err) {
       finalizeArtifacts("failed", keepArtifacts || mode === "detached");
@@ -822,6 +832,70 @@ async function runValidation(
   }
 
   return false;
+}
+
+/**
+ * Run post-completion actions: git auto-commit and on-complete hook.
+ *
+ * Both actions are non-fatal — failures are logged as warnings but do not
+ * affect the exit code. The task is already marked complete by this point.
+ *
+ * Order: commit first (so the hook can push or tag the commit).
+ */
+async function afterTaskComplete(
+  task: Parameters<typeof checkTask>[0],
+  source: string,
+  commit: boolean,
+  commitMessageTemplate: string | undefined,
+  onCompleteCommand: string | undefined,
+): Promise<void> {
+  const cwd = process.cwd();
+
+  if (commit) {
+    try {
+      const inGitRepo = await isGitRepo(cwd);
+      if (!inGitRepo) {
+        log.warn("--commit: not inside a git repository, skipping.");
+      } else {
+        const message = await commitCheckedTask({
+          task: task.text,
+          file: task.file,
+          line: task.line,
+          index: task.index,
+          cwd,
+          messageTemplate: commitMessageTemplate,
+        });
+        log.success("Committed: " + message);
+      }
+    } catch (err) {
+      log.warn("--commit failed: " + String(err));
+    }
+  }
+
+  if (onCompleteCommand) {
+    try {
+      const result = await runOnCompleteHook({
+        command: onCompleteCommand,
+        taskInfo: {
+          task: task.text,
+          file: task.file,
+          line: task.line,
+          index: task.index,
+        },
+        source,
+        cwd,
+      });
+
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+
+      if (!result.success) {
+        log.warn("--on-complete hook exited with code " + result.exitCode);
+      }
+    } catch (err) {
+      log.warn("--on-complete hook failed: " + String(err));
+    }
+  }
 }
 
 function collectOption(value: string, previous: string[]): string[] {

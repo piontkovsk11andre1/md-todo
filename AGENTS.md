@@ -28,9 +28,10 @@ It is more than a todo parser and more than a wrapper around an AI CLI. It is a 
 
 The framework is driven by Markdown templates stored in project-local files:
 
-- `.md-todo/task.md`
-- `.md-todo/validate.md`
-- `.md-todo/correct.md`
+- `.md-todo/execute.md`
+- `.md-todo/verify.md`
+- `.md-todo/repair.md`
+- `.md-todo/plan.md`
 
 The behavior and concepts in [PROMPT.md](PROMPT.md) are the source product definition. Keep implementation aligned with that document unless the user explicitly changes direction.
 

@@ -13,6 +13,8 @@ export { validate, readValidationFile, removeValidationFile } from "./validation
 export { correct } from "./correction.js";
 export { executeInlineCli } from "./inline-cli.js";
 export { checkTask } from "./checkbox.js";
+export { isGitRepo, commitCheckedTask, type CommitTaskOptions } from "./git.js";
+export { runOnCompleteHook, type OnCompleteHookOptions, type HookResult, type HookTaskInfo } from "./hooks.js";
 export { insertSubitems } from "./planner.js";
 export { loadProjectTemplates, type ProjectTemplates } from "./templates-loader.js";
 export {

@@ -2,6 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  DEFAULT_CORRECT_TEMPLATE,
+  DEFAULT_TASK_TEMPLATE,
+  DEFAULT_VALIDATE_TEMPLATE,
+} from "./defaults.js";
 import { loadProjectTemplates } from "./templates-loader.js";
 
 const tempDirs: string[] = [];
@@ -43,7 +48,7 @@ describe("loadProjectTemplates", () => {
     expect(templates.plan).toBe("PLAN");
   });
 
-  it("falls back to legacy task/validate/correct aliases", () => {
+  it("ignores legacy task/validate/correct filenames", () => {
     const cwd = makeTempDir();
     writeTemplate(cwd, "task.md", "LEGACY TASK");
     writeTemplate(cwd, "validate.md", "LEGACY VALIDATE");
@@ -51,12 +56,12 @@ describe("loadProjectTemplates", () => {
 
     const templates = loadProjectTemplates(cwd);
 
-    expect(templates.task).toBe("LEGACY TASK");
-    expect(templates.validate).toBe("LEGACY VALIDATE");
-    expect(templates.correct).toBe("LEGACY CORRECT");
+    expect(templates.task).toBe(DEFAULT_TASK_TEMPLATE);
+    expect(templates.validate).toBe(DEFAULT_VALIDATE_TEMPLATE);
+    expect(templates.correct).toBe(DEFAULT_CORRECT_TEMPLATE);
   });
 
-  it("prefers new filenames when both new and legacy files exist", () => {
+  it("loads new filenames even when legacy files also exist", () => {
     const cwd = makeTempDir();
     writeTemplate(cwd, "execute.md", "NEW EXECUTE");
     writeTemplate(cwd, "task.md", "OLD TASK");
