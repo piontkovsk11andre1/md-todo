@@ -38,7 +38,7 @@ Out of scope for first iteration:
 ## TODO
 
 - [x] Define command UX and help text in CLI docs (`rundown reverify`, options, examples, exit codes).
-- [ ] Add `reverify` command wiring in `src/presentation/cli.ts`.
+- [x] Add `reverify` command wiring in `src/presentation/cli.ts`.
 - [ ] Add application use case (e.g. `src/application/reverify-task.ts`) that:
 - [ ] Loads target run metadata (`latest`/explicit run id) from `ArtifactStore`.
 - [ ] Validates run/task metadata presence and emits clear actionable errors.
