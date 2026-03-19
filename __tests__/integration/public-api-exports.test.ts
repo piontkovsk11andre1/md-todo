@@ -1,42 +1,26 @@
 import { describe, expect, it } from "vitest";
 import * as api from "../../src/index.js";
-
-const expectedValueExports = [
-  "parseTasks",
-  "resolveSources",
-  "selectNextTask",
-  "selectTaskByLocation",
-  "hasUncheckedDescendants",
-  "filterRunnable",
-  "renderTemplate",
-  "runWorker",
-  "validate",
-  "readValidationFile",
-  "removeValidationFile",
-  "correct",
-  "executeInlineCli",
-  "checkTask",
-  "isGitRepo",
-  "commitCheckedTask",
-  "runOnCompleteHook",
-  "insertSubitems",
-  "loadProjectTemplates",
-  "createRuntimeArtifactsContext",
-  "displayArtifactsPath",
-  "findSavedRuntimeArtifact",
-  "latestSavedRuntimeArtifact",
-  "listFailedRuntimeArtifacts",
-  "listSavedRuntimeArtifacts",
-  "removeFailedRuntimeArtifacts",
-  "removeSavedRuntimeArtifacts",
-  "runtimeArtifactsRootDir",
-  "isFailedRuntimeArtifactStatus",
-] as const;
+import * as createAppApi from "../../src/create-app.js";
 
 describe("public API exports", () => {
-  it("keeps all expected value exports available from src/index.ts", () => {
-    for (const exportName of expectedValueExports) {
-      expect(api).toHaveProperty(exportName);
-    }
+  it("keeps root index exports intentionally narrow", () => {
+    expect(Object.keys(api).sort()).toEqual(["createApp"]);
+  });
+
+  it("keeps create-app runtime exports stable", () => {
+    expect(Object.keys(createAppApi).sort()).toEqual(["createApp"]);
+  });
+
+  it("keeps createApp application surface stable", () => {
+    const app = createAppApi.createApp();
+
+    expect(app).toMatchObject({
+      runTask: expect.any(Function),
+      planTask: expect.any(Function),
+      listTasks: expect.any(Function),
+      nextTask: expect.any(Function),
+      initProject: expect.any(Function),
+      manageArtifacts: expect.any(Function),
+    });
   });
 });

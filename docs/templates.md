@@ -63,6 +63,75 @@ When both are provided, direct `--var` entries override file-loaded values.
 
 These values are available in templates as placeholders such as `{{branch}}` or `{{ticket}}`.
 
+## Example template content
+
+The examples below show realistic `execute.md` and `verify.md` templates you can copy into `.md-todo/` and customize.
+
+### `execute.md`
+
+```md
+{{context}}
+
+---
+
+The Markdown above is the source document up to but not including the selected unchecked task.
+
+## Source file
+
+`{{file}}` (line {{taskLine}})
+
+## Selected task
+
+{{task}}
+
+## Phase
+
+Execute the selected task.
+
+Project context:
+- Branch: `{{branch}}`
+- Ticket: `{{ticket}}`
+
+Requirements:
+- Implement exactly what the selected task asks for.
+- Keep changes focused and production-ready.
+- Do not edit the source Markdown checkbox or mark completion manually.
+- Keep output concise and include file paths changed.
+```
+
+### `verify.md`
+
+```md
+{{context}}
+
+---
+
+The Markdown above is the source document up to but not including the selected unchecked task.
+
+## Source file
+
+`{{file}}` (line {{taskLine}})
+
+## Selected task
+
+{{task}}
+
+## Phase
+
+Verify whether the selected task is complete.
+
+Validation steps:
+1. Check the current project state (files, tests, output) against the selected task.
+2. Decide if the task is complete.
+
+Write your result to `{{file}}.{{taskIndex}}.validation`.
+
+- If complete, write exactly `OK`.
+- If not complete, write one short explanation of what is still missing.
+- Do not modify the source Markdown task file.
+- Do not change any checkbox.
+```
+
 ## Planning output requirements
 
 The planner worker should return only unchecked Markdown task items.

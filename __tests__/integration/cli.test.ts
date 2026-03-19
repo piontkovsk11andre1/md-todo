@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs: string[] = [];
@@ -23,7 +24,13 @@ function makeTempWorkspace(): string {
   return dir;
 }
 
-async function runCli(args: string[], cwd: string): Promise<{ code: number; logs: string[]; errors: string[] }> {
+async function runCli(args: string[], cwd: string): Promise<{
+  code: number;
+  logs: string[];
+  errors: string[];
+  stdoutWrites: string[];
+  stderrWrites: string[];
+}> {
   const previousCwd = process.cwd();
   const previousEnv = process.env.MD_TODO_DISABLE_AUTO_PARSE;
   const previousTestModeEnv = process.env.MD_TODO_TEST_MODE;
@@ -36,6 +43,8 @@ async function runCli(args: string[], cwd: string): Promise<{ code: number; logs
 
   const logs: string[] = [];
   const errors: string[] = [];
+  const stdoutWrites: string[] = [];
+  const stderrWrites: string[] = [];
 
   const logSpy = vi.spyOn(console, "log").mockImplementation((...values: unknown[]) => {
     logs.push(values.map((value) => String(value)).join(" "));
@@ -43,23 +52,70 @@ async function runCli(args: string[], cwd: string): Promise<{ code: number; logs
   const errorSpy = vi.spyOn(console, "error").mockImplementation((...values: unknown[]) => {
     errors.push(values.map((value) => String(value)).join(" "));
   });
+  const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number | string | null) => {
+    throw {
+      __cliExit: true,
+      exitCode: typeof code === "number" ? code : Number(code ?? 0),
+    };
+  }) as typeof process.exit);
+  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+    stdoutWrites.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write);
+  const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+    stderrWrites.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write);
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
     await parseCliArgs(args);
-    return { code: 0, logs, errors };
+    return { code: 0, logs, errors, stdoutWrites, stderrWrites };
   } catch (error) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "__cliExit" in error
+      && (error as { __cliExit?: unknown }).__cliExit === true
+    ) {
+      return {
+        code: (error as { exitCode: number }).exitCode,
+        logs,
+        errors,
+        stdoutWrites,
+        stderrWrites,
+      };
+    }
+
+    if (
+      typeof error === "object"
+      && error !== null
+      && "exitCode" in error
+      && typeof (error as { exitCode?: unknown }).exitCode === "number"
+    ) {
+      return {
+        code: (error as { exitCode: number }).exitCode,
+        logs,
+        errors,
+        stdoutWrites,
+        stderrWrites,
+      };
+    }
+
     const message = String(error);
     const match = message.match(/CLI exited with code (\d+)/);
     if (match) {
-      return { code: Number(match[1]), logs, errors };
+      return { code: Number(match[1]), logs, errors, stdoutWrites, stderrWrites };
     }
 
     errors.push(message);
-    return { code: 1, logs, errors };
+    return { code: 1, logs, errors, stdoutWrites, stderrWrites };
   } finally {
     logSpy.mockRestore();
     errorSpy.mockRestore();
+    exitSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
     process.chdir(previousCwd);
 
     if (previousEnv === undefined) {
@@ -95,6 +151,15 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(3);
     expect(result.logs.some((line) => line.includes("No unchecked tasks found"))).toBe(true);
+  });
+
+  it("next exits with 3 when source resolves to no markdown files", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["next", "missing/**/*.md"], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => line.includes("No Markdown files found matching: missing/**/*.md"))).toBe(true);
   });
 
   it("run dry-run preserves --worker token with spaces", async () => {
@@ -133,6 +198,37 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("would run verification"))).toBe(true);
+  });
+
+  it("run forwards worker stdout and stderr in wait mode", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({
+      stdout: "worker stdout\n",
+      stderr: "worker stderr\n",
+      exitCode: 0,
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(true);
+    expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
   });
 
   it("run accepts --keep-artifacts during dry-run", async () => {
@@ -182,38 +278,367 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("would execute inline CLI"))).toBe(true);
   });
 
-  it("run supports legacy --no-validate alias for --no-verify", async () => {
+  it("run --help lists Git and completion hook options with clear descriptions", async () => {
     const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
 
-    const result = await runCli([
-      "run",
-      "roadmap.md",
-      "--no-validate",
-      "--dry-run",
-    ], workspace);
+    const result = await runCli(["run", "roadmap.md", "--help"], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("would execute inline CLI"))).toBe(true);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--commit Auto-commit checked task file after successful completion");
+    expect(compactHelpOutput).toContain("--commit-message <template> Commit message template (supports {{task}} and {{file}})");
+    expect(compactHelpOutput).toContain("--on-complete <command> Run a shell command after successful task completion");
   });
 
-  it("run keeps legacy --only-validate and --no-correct aliases working", async () => {
+  it("run passes parsed Git and hook options to the application layer", async () => {
     const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Verify legacy flags\n", "utf-8");
+    const runTaskMock = vi.fn(async () => 0);
+
+    vi.doMock("../../src/create-app.js", () => ({
+      createApp: () => ({
+        runTask: runTaskMock,
+        nextTask: vi.fn(async () => 0),
+        listTasks: vi.fn(async () => 0),
+        planTask: vi.fn(async () => 0),
+        initProject: vi.fn(async () => 0),
+        manageArtifacts: vi.fn(() => 0),
+      }),
+    }));
 
     const result = await runCli([
       "run",
       "roadmap.md",
-      "--only-validate",
-      "--no-correct",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+      "--commit",
+      "--commit-message",
+      "done: {{task}}",
+      "--on-complete",
+      "node scripts/after.js",
+    ], workspace);
+
+    vi.doUnmock("../../src/create-app.js");
+
+    expect(result.code).toBe(0);
+    expect(runTaskMock).toHaveBeenCalledTimes(1);
+    expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: "roadmap.md",
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+      commitAfterComplete: true,
+      commitMessageTemplate: "done: {{task}}",
+      onCompleteCommand: "node scripts/after.js",
+    }));
+  });
+
+  it("run passes default Git and hook option values when flags are omitted", async () => {
+    const workspace = makeTempWorkspace();
+    const runTaskMock = vi.fn(async () => 0);
+
+    vi.doMock("../../src/create-app.js", () => ({
+      createApp: () => ({
+        runTask: runTaskMock,
+        nextTask: vi.fn(async () => 0),
+        listTasks: vi.fn(async () => 0),
+        planTask: vi.fn(async () => 0),
+        initProject: vi.fn(async () => 0),
+        manageArtifacts: vi.fn(() => 0),
+      }),
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
       "--dry-run",
       "--worker",
       "opencode",
       "run",
     ], workspace);
 
+    vi.doUnmock("../../src/create-app.js");
+
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("would run verification"))).toBe(true);
+    expect(runTaskMock).toHaveBeenCalledTimes(1);
+    expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: "roadmap.md",
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+      commitAfterComplete: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+    }));
+  });
+
+  it("run normalizes blank Git and hook option values before pass-through", async () => {
+    const workspace = makeTempWorkspace();
+    const runTaskMock = vi.fn(async () => 0);
+
+    vi.doMock("../../src/create-app.js", () => ({
+      createApp: () => ({
+        runTask: runTaskMock,
+        nextTask: vi.fn(async () => 0),
+        listTasks: vi.fn(async () => 0),
+        planTask: vi.fn(async () => 0),
+        initProject: vi.fn(async () => 0),
+        manageArtifacts: vi.fn(() => 0),
+      }),
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+      "--commit",
+      "--commit-message",
+      "   ",
+      "--on-complete",
+      "",
+    ], workspace);
+
+    vi.doUnmock("../../src/create-app.js");
+
+    expect(result.code).toBe(0);
+    expect(runTaskMock).toHaveBeenCalledTimes(1);
+    expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: "roadmap.md",
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+      commitAfterComplete: true,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+    }));
+  });
+
+  it("run executes --on-complete command with task metadata", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const hookScript = path.join(workspace, "hook.mjs");
+    fs.writeFileSync(
+      hookScript,
+      "console.log([process.env.MD_TODO_TASK, process.env.MD_TODO_SOURCE].join('|'));\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--on-complete",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("cli: echo hello|roadmap.md"))).toBe(true);
+  });
+
+  it("run keeps exit code 0 when --commit is set outside a git repository", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+  });
+
+  it("run keeps exit code 0 when --on-complete exits non-zero", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--on-complete",
+      "node -e \"process.exit(17)\"",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("--on-complete hook exited with code 17"))).toBe(true);
+  });
+
+  it("run supports --commit on its own with the default commit message", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@md-todo.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "md-todo test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Committed: md-todo: complete \"cli: echo hello\" in roadmap.md"))).toBe(true);
+
+    const commitSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(commitSubject).toBe("md-todo: complete \"cli: echo hello\" in roadmap.md");
+  });
+
+  it("run parses --commit-message without requiring --commit", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit-message",
+      "done: {{task}}",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+  });
+
+  it("run returns 1 on execution failure and skips completion side effects", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: __md_todo_missing_command__\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--on-complete",
+      "node -e \"console.log('hook-ran')\"",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Inline CLI exited with code"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("hook-ran"))).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: __md_todo_missing_command__");
+  });
+
+  it("run returns 2 on verification failure and skips completion side effects", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({
+      exitCode: 0,
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--worker",
+      "opencode",
+      "run",
+      "--commit",
+      "--on-complete",
+      "node -e \"console.log('hook-ran')\"",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("hook-ran"))).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: echo hello");
+  });
+
+  it("run forwards --commit-message template when used with --commit", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@md-todo.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "md-todo test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--commit-message",
+      "done: {{task}} ({{file}})",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Committed: done: cli: echo hello (roadmap.md)"))).toBe(true);
+
+    const commitSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(commitSubject).toBe("done: cli: echo hello (roadmap.md)");
+  });
+
+  it("run parses combined --commit, --commit-message, and --on-complete options", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@md-todo.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "md-todo test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const hookScript = path.join(workspace, "hook.mjs");
+    fs.writeFileSync(
+      hookScript,
+      "console.log([process.env.MD_TODO_TASK, process.env.MD_TODO_SOURCE].join('|'));\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--commit-message",
+      "combined: {{task}} @ {{file}}",
+      "--on-complete",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Committed: combined: cli: echo hello @ roadmap.md"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("cli: echo hello|roadmap.md"))).toBe(true);
+
+    const commitSubject = execFileSync("git", ["log", "-1", "--pretty=%s"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(commitSubject).toBe("combined: cli: echo hello @ roadmap.md");
   });
 
   it("plan rejects non-wait mode", async () => {
@@ -233,6 +658,27 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(1);
     expect(result.errors.some((line) => line.includes("Invalid --mode value: tui. Allowed: wait."))).toBe(true);
+  });
+
+  it("plan dry-run preserves planning output semantics", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(
+      result.logs.some((line) => line.includes("Planning task:") && line.includes("Break down migration")),
+    ).toBe(true);
+    expect(result.logs.some((line) => line.includes("Dry run — would plan: opencode run"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
   });
 
   it("run skips immediate verification in detached mode and keeps runtime artifacts", async () => {
@@ -437,6 +883,45 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("No tasks found"))).toBe(true);
   });
+
+  it("list keeps blocked-task label semantics", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "notes.md"), "- [ ] Parent\n  - [ ] Child\n", "utf-8");
+
+    const result = await runCli(["list", "notes.md"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Parent") && line.includes("blocked"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Child"))).toBe(true);
+  });
+
+  it("init creates .md-todo defaults and exits with 0", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["init"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, ".md-todo", "execute.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".md-todo", "verify.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".md-todo", "repair.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".md-todo", "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".md-todo", "vars.json"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Initialized .md-todo/ with default templates."))).toBe(true);
+  });
+
+  it("init keeps existing files and warns when defaults already exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    fs.mkdirSync(path.join(workspace, ".md-todo"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".md-todo", "execute.md"), "custom execute", "utf-8");
+
+    const result = await runCli(["init"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, ".md-todo", "execute.md"), "utf-8")).toBe("custom execute");
+    expect(result.logs.some((line) => line.includes(".md-todo/execute.md already exists, skipping."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Initialized .md-todo/ with default templates."))).toBe(true);
+  });
 });
 
 function writeSavedRun(
@@ -468,4 +953,33 @@ function writeSavedRun(
     completedAt: "2026-03-17T00:01:00.000Z",
     status: options.status,
   }, null, 2), "utf-8");
+}
+
+function createWaitModeSpawnMock(options: {
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+}) {
+  return vi.fn().mockImplementation(() => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter;
+      stderr: EventEmitter;
+      unref: () => void;
+    };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.unref = vi.fn();
+
+    process.nextTick(() => {
+      if (options.stdout) {
+        child.stdout.emit("data", Buffer.from(options.stdout));
+      }
+      if (options.stderr) {
+        child.stderr.emit("data", Buffer.from(options.stderr));
+      }
+      child.emit("close", options.exitCode ?? 0);
+    });
+
+    return child;
+  });
 }

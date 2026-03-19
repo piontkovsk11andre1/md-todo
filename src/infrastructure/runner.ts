@@ -14,6 +14,10 @@
 import os from "node:os";
 import path from "node:path";
 import spawn from "cross-spawn";
+import type {
+  ProcessRunMode as RunnerMode,
+  PromptTransport,
+} from "../domain/ports/index.js";
 import {
   beginRuntimePhase,
   completeRuntimePhase,
@@ -23,8 +27,7 @@ import {
   type RuntimePhase,
 } from "./runtime-artifacts.js";
 
-export type RunnerMode = "wait" | "tui" | "detached";
-export type PromptTransport = "file" | "arg";
+export type { RunnerMode, PromptTransport };
 
 export interface RunnerOptions {
   /** The command and its base arguments (everything after --). */

@@ -1,12 +1,13 @@
 import { Command } from "commander";
-import { type RunnerMode, type PromptTransport } from "../infrastructure/runner.js";
+import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { createApp } from "../create-app.js";
-import * as log from "./log.js";
+import { cliOutputPort } from "./output-port.js";
 import fs from "node:fs";
+import pc from "picocolors";
 
-const RUNNER_MODES: readonly RunnerMode[] = ["wait", "tui", "detached"];
-const PLANNER_MODES: readonly RunnerMode[] = ["wait"];
+const RUNNER_MODES: readonly ProcessRunMode[] = ["wait", "tui", "detached"];
+const PLANNER_MODES: readonly ProcessRunMode[] = ["wait"];
 const PROMPT_TRANSPORTS: readonly PromptTransport[] = ["file", "arg"];
 const SORT_MODES: readonly SortMode[] = ["name-sort", "none", "old-first", "new-first"];
 const EXIT_TEST_MODE_ENV = "MD_TODO_TEST_MODE";
@@ -33,7 +34,11 @@ function readCliVersion(): string {
 let workerFromSeparator: string[] = [];
 
 const program = new Command();
-const app = createApp();
+const app = createApp({
+  ports: {
+    output: cliOutputPort,
+  },
+});
 
 type CliActionResult = number | Promise<number>;
 program
@@ -48,19 +53,18 @@ program
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--verify", "Run verification after task execution (default)")
-  .option("--validate", "Legacy alias for --verify")
   .option("--no-verify", "Disable verification after task execution")
-  .option("--no-validate", "Legacy alias for --no-verify")
   .option("--only-verify", "Skip execution and run verification directly", false)
-  .option("--only-validate", "Legacy alias for --only-verify", false)
   .option("--retries <n>", "Max repair retries on verification failure", "0")
   .option("--no-repair", "Disable repair even when retries are set", false)
-  .option("--no-correct", "Legacy alias for --no-repair", false)
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .md-todo/runs", false)
   .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .md-todo/vars.json)")
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
+  .option("--commit", "Auto-commit checked task file after successful completion", false)
+  .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
+  .option("--on-complete <command>", "Run a shell command after successful task completion")
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
   .action(withCliAction(async (source: string, opts: Record<string, string | string[] | boolean>) => {
@@ -68,8 +72,8 @@ program
     const transport = parsePromptTransport(opts.transport as string | undefined);
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
-    const onlyVerify = Boolean((opts.onlyVerify as boolean) || (opts.onlyValidate as boolean));
-    const noRepair = Boolean((opts.noRepair as boolean) || (opts.noCorrect as boolean));
+    const onlyVerify = Boolean(opts.onlyVerify as boolean);
+    const noRepair = Boolean(opts.noRepair as boolean);
     const retries = parseRetries(opts.retries as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
@@ -82,9 +86,9 @@ program
       : typeof opts.worker === "string"
         ? [opts.worker]
         : workerFromSeparator;
-    const commitAfterComplete = opts.commit as boolean;
-    const commitMessageTemplate = opts.commitMessage as string | undefined;
-    const onCompleteCommand = opts.onComplete as string | undefined;
+    const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
+    const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     return app.runTask({
       source,
       mode,
@@ -197,8 +201,8 @@ function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
-function parseRunnerMode(value: string | undefined, allowed: readonly RunnerMode[]): RunnerMode {
-  const mode = (value ?? "wait") as RunnerMode;
+function parseRunnerMode(value: string | undefined, allowed: readonly ProcessRunMode[]): ProcessRunMode {
+  const mode = (value ?? "wait") as ProcessRunMode;
   if (!allowed.includes(mode)) {
     throw new Error(`Invalid --mode value: ${value}. Allowed: ${allowed.join(", ")}.`);
   }
@@ -233,13 +237,20 @@ function parseRetries(value: string | undefined): number {
   return parsed;
 }
 
+function normalizeOptionalString(value: string | string[] | boolean | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  return value.trim() === "" ? undefined : value;
+}
+
 function resolveVerifyFlag(opts: Record<string, string | string[] | boolean>): boolean {
   const verifyOpt = opts.verify as boolean | undefined;
-  const validateOpt = opts.validate as boolean | undefined;
-  if (verifyOpt === false || validateOpt === false) {
+  if (verifyOpt === false) {
     return false;
   }
-  if (verifyOpt === true || validateOpt === true) {
+  if (verifyOpt === true) {
     return true;
   }
   return true;
@@ -255,7 +266,7 @@ function withCliAction<Args extends unknown[]>(
       if (isCliExitSignal(err)) {
         throw err;
       }
-      log.error(String(err));
+      console.error(pc.red("✖") + " " + String(err));
       terminate(1);
     }
   };
@@ -272,7 +283,7 @@ if (process.env.MD_TODO_DISABLE_AUTO_PARSE !== "1") {
     if (isCliExitSignal(err)) {
       process.exit(err.code);
     }
-    log.error(String(err));
+    console.error(pc.red("✖") + " " + String(err));
     process.exit(1);
   });
 }

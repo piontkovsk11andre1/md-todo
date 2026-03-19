@@ -94,6 +94,14 @@ md-todo run roadmap.md --worker opencode run
 
 That's it. Write tasks. Run the command. Watch checkboxes earn their marks.
 
+Common Git-aware forms:
+
+```bash
+md-todo run roadmap.md --commit -- opencode run
+md-todo run roadmap.md --commit --commit-message "md-todo: complete \"{{task}}\" in {{file}}" -- opencode run
+md-todo run roadmap.md --on-complete "git push" -- opencode run
+```
+
 ---
 
 ## The loop
@@ -138,6 +146,31 @@ You already know Markdown. Now Markdown knows how to finish.
 | [CLI](docs/cli.md) | Commands, flags, shell-friendly usage |
 | [Templates](docs/templates.md) | Template files, variables, prompt rendering |
 | [Examples](docs/examples.md) | Practical flows: planning, validation, inline CLI, `opencode` |
+
+---
+
+## Migration notes (programmatic API)
+
+### Breaking: root exports are now intentionally narrow
+
+The package root (`@p10i/md-todo`) now exports only `createApp`.
+
+If you previously imported low-level helpers from the root barrel (for example `parseTasks`, `runWorker`, `validate`, `correct`, `resolveSources`, runtime artifact helpers, or Git/hook helpers), those imports are no longer part of the supported root API.
+
+Use `createApp()` as the stable programmatic entrypoint.
+
+### Breaking: `createApp(...)` override shape changed
+
+Dependency injection now uses a structured shape:
+
+```ts
+createApp({
+  ports: { output: myOutputPort },
+  useCaseFactories: { /* optional factory overrides */ },
+})
+```
+
+Direct root-level use-case overrides such as `createApp({ runTask: ... })` are no longer supported. Use `useCaseFactories` for explicit, port-first wiring.
 
 ---
 

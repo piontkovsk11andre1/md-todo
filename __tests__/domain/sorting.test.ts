@@ -1,10 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import fs from "node:fs";
+import { describe, it, expect } from "vitest";
 import { sortFiles } from "../../src/domain/sorting.js";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("sortFiles — name-sort", () => {
   it("should sort numerically within filenames", () => {
@@ -76,14 +71,9 @@ describe("sortFiles — time-based", () => {
       ["/docs/new.md", 300],
     ]);
 
-    vi.spyOn(fs, "statSync").mockImplementation((filePath: fs.PathLike) => {
-      const file = String(filePath);
-      return {
-        birthtimeMs: statsByFile.get(file) ?? 0,
-      } as fs.Stats;
+    const sorted = sortFiles(files, "old-first", {
+      getBirthtimeMs: (filePath) => statsByFile.get(filePath) ?? 0,
     });
-
-    const sorted = sortFiles(files, "old-first");
     expect(sorted).toEqual(["/docs/old.md", "/docs/mid.md", "/docs/new.md"]);
   });
 
@@ -95,14 +85,9 @@ describe("sortFiles — time-based", () => {
       ["/docs/new.md", 300],
     ]);
 
-    vi.spyOn(fs, "statSync").mockImplementation((filePath: fs.PathLike) => {
-      const file = String(filePath);
-      return {
-        birthtimeMs: statsByFile.get(file) ?? 0,
-      } as fs.Stats;
+    const sorted = sortFiles(files, "new-first", {
+      getBirthtimeMs: (filePath) => statsByFile.get(filePath) ?? 0,
     });
-
-    const sorted = sortFiles(files, "new-first");
     expect(sorted).toEqual(["/docs/new.md", "/docs/mid.md", "/docs/old.md"]);
   });
 });

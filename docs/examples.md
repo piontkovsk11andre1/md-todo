@@ -120,7 +120,7 @@ git log --grep='md-todo: complete' --oneline
 Custom commit messages:
 
 ```bash
-md-todo run docs/ --commit --commit-message "done: {{task}}" -- opencode run
+md-todo run docs/ --commit --commit-message "md-todo: complete \"{{task}}\" in {{file}}" -- opencode run
 ```
 
 ## 9. Post-completion hooks

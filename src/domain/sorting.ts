@@ -4,10 +4,13 @@
  * Provides sorting strategies for resolved Markdown file paths.
  */
 
-import fs from "node:fs";
 import path from "node:path";
 
 export type SortMode = "name-sort" | "none" | "old-first" | "new-first";
+
+export interface SortFilesOptions {
+  getBirthtimeMs?: (filePath: string) => number;
+}
 
 /**
  * Sort file paths according to the chosen sort mode.
@@ -17,7 +20,11 @@ export type SortMode = "name-sort" | "none" | "old-first" | "new-first";
  * - `old-first`: oldest by creation time first
  * - `new-first`: newest by creation time first
  */
-export function sortFiles(files: string[], mode: SortMode = "name-sort"): string[] {
+export function sortFiles(
+  files: string[],
+  mode: SortMode = "name-sort",
+  options: SortFilesOptions = {},
+): string[] {
   switch (mode) {
     case "none":
       return files;
@@ -26,10 +33,10 @@ export function sortFiles(files: string[], mode: SortMode = "name-sort"): string
       return [...files].sort((a, b) => naturalCompare(path.basename(a), path.basename(b)));
 
     case "old-first":
-      return [...files].sort((a, b) => birthtime(a) - birthtime(b));
+      return [...files].sort((a, b) => getBirthtime(a, options) - getBirthtime(b, options));
 
     case "new-first":
-      return [...files].sort((a, b) => birthtime(b) - birthtime(a));
+      return [...files].sort((a, b) => getBirthtime(b, options) - getBirthtime(a, options));
 
     default:
       return files;
@@ -82,10 +89,7 @@ function tokenize(s: string): (string | number)[] {
   return tokens;
 }
 
-function birthtime(filePath: string): number {
-  try {
-    return fs.statSync(filePath).birthtimeMs;
-  } catch {
-    return 0;
-  }
+function getBirthtime(filePath: string, options: SortFilesOptions): number {
+  if (!options.getBirthtimeMs) return 0;
+  return options.getBirthtimeMs(filePath);
 }

@@ -46,16 +46,28 @@ md-todo next docs/
 
 List unchecked tasks across the source.
 
+Use `--all` to include checked tasks in the output.
+
 Example:
 
 ```bash
 md-todo list .
-md-todo list --all roadmap.md
+md-todo list roadmap.md --all
 ```
 
 ### `md-todo artifacts`
 
 Inspect or clean saved runtime artifact folders under `.md-todo/runs/`.
+
+Options:
+
+| Option | Description |
+|---|---|
+| `--json` | Output artifact information as JSON. |
+| `--failed` | Show only failed runs. |
+| `--open <runId>` | Open a specific run folder by ID (use `latest` for the most recent run). |
+| `--clean` | Delete saved run folders. |
+| `--clean --failed` | Delete only failed run folders. |
 
 Examples:
 
@@ -135,11 +147,30 @@ Direct `--var` entries override values loaded from `--vars-file`.
 
 - `--at file:line` — target a specific task for `plan`
 
+### Listing
+
+- `--all` — include checked and unchecked tasks in `list` output
+
 ### Git and hooks
 
-- `--commit` — auto-commit the checked file after task completion
-- `--commit-message <template>` — custom commit message (supports `{{task}}`, `{{file}}` placeholders)
-- `--on-complete <command>` — run a shell command after successful task completion
+These options are available on `md-todo run`.
+
+| Option | Description | Default |
+|---|---|---|
+| `--commit` | Auto-commit checked task file after successful completion. | off |
+| `--commit-message <template>` | Commit message template (supports `{{task}}` and `{{file}}`). | `md-todo: complete "{{task}}" in {{file}}` |
+| `--on-complete <command>` | Run a shell command after successful task completion. | unset |
+
+`--commit-message` is only applied when `--commit` is enabled.
+
+Examples:
+
+```bash
+md-todo run docs/todos/phase-3.md --commit -- opencode run
+md-todo run docs/todos/phase-3.md --commit --commit-message "md-todo: complete \"{{task}}\" in {{file}}" -- opencode run
+md-todo run docs/todos/phase-3.md --on-complete "git push" -- opencode run
+md-todo run docs/todos/phase-3.md --commit --on-complete "npm run release:notes" -- opencode run
+```
 
 `--commit` creates a focused commit containing only the checked Markdown file, with a structured message:
 
@@ -165,17 +196,26 @@ When both are used, `--commit` runs first so that `--on-complete` can safely pus
 
 ### Inspection and dry runs
 
-- `--dry-run` — show what would happen without executing it
-- `--print-prompt` — print the rendered prompt and exit
+- `--dry-run` — select the task and render the prompt, then print what command would run and exit `0` without executing, verifying, repairing, or editing Markdown files.
+- `--print-prompt` — print the fully rendered prompt and exit `0` without executing the worker.
 
-## Legacy aliases
+Behavior notes:
 
-Legacy verification and repair flag names remain supported:
+- If both flags are provided, `--print-prompt` takes precedence.
+- For `run`, `--print-prompt` and `--dry-run` target the execute prompt by default.
+- For `run --only-verify`, `--print-prompt` and `--dry-run` target the verify prompt instead.
+- For `plan`, both flags apply to the planner prompt.
 
-- `--validate` → `--verify`
-- `--no-validate` → `--no-verify`
-- `--only-validate` → `--only-verify`
-- `--no-correct` → `--no-repair`
+Examples:
+
+```bash
+md-todo run roadmap.md --dry-run -- opencode run
+md-todo run roadmap.md --print-prompt -- opencode run
+md-todo run roadmap.md --only-verify --dry-run -- opencode run
+md-todo run roadmap.md --only-verify --print-prompt -- opencode run
+md-todo plan roadmap.md --dry-run -- opencode run
+md-todo plan roadmap.md --print-prompt -- opencode run
+```
 
 ## Inline CLI tasks
 

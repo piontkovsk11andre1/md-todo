@@ -16,6 +16,48 @@ The workflow is intentionally simple:
 
 This makes the checkbox a consequence of successful work, not a guess.
 
+## Output boundary
+
+Application use-cases are output-agnostic.
+
+Instead of writing directly to `console`, `process.stderr`, or presentation helpers, they publish typed output events through an application-facing output contract.
+
+The CLI layer implements that contract and decides how to render messages and errors. This keeps application logic testable, framework-independent, and stable across future presentation surfaces.
+
+Architecture decision record: `docs/adr/0001-application-output-boundary.md`.
+
+## Port/adapter map
+
+`src/create-app.ts` is the single composition boundary: application use-cases depend on ports, and infrastructure adapters are wired there.
+
+| Port (domain) | Adapter (infrastructure) |
+| --- | --- |
+| `FileSystem` | `createNodeFileSystem` |
+| `ProcessRunner` | `createCrossSpawnProcessRunner` |
+| `GitClient` | `createExecFileGitClient` |
+| `TemplateLoader` | `createFsTemplateLoader` |
+| `ValidationSidecar` | `createFsValidationSidecar` |
+| `ArtifactStore` | `createFsArtifactStore` |
+| `Clock` | `createSystemClock` |
+| `SourceResolverPort` | `createSourceResolverAdapter` |
+| `TaskSelectorPort` | `createTaskSelectorAdapter` |
+| `WorkerExecutorPort` | `createWorkerExecutorAdapter` |
+| `TaskValidationPort` | `createTaskValidationAdapter` |
+| `TaskCorrectionPort` | `createTaskCorrectionAdapter` |
+| `WorkingDirectoryPort` | `createWorkingDirectoryAdapter` |
+| `DirectoryOpenerPort` | `createDirectoryOpenerAdapter` |
+
+## Port-first dependency rule
+
+The dependency direction is strict:
+
+- `src/domain` defines pure logic and contracts.
+- `src/application` orchestrates use-cases and depends only on domain contracts (ports).
+- `src/infrastructure` implements those ports with side-effecting adapters.
+- `src/presentation` renders output and delegates orchestration to application use-cases.
+
+`src/application/*` should not import `src/infrastructure/*` directly. Infrastructure dependencies must flow through injected ports from `createApp(...)`.
+
 ## Sources
 
 `md-todo` can scan:

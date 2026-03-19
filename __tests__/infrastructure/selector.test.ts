@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasUncheckedDescendants, filterRunnable } from "../../src/infrastructure/selector.js";
+import { hasUncheckedDescendants, filterRunnable } from "../../src/domain/task-selection.js";
 import type { Task } from "../../src/domain/parser.js";
 
 function makeTask(overrides: Partial<Task> & { depth: number; checked?: boolean; index?: number }): Task {

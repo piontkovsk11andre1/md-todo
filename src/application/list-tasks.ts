@@ -1,10 +1,16 @@
-import fs from "node:fs";
 import { parseTasks } from "../domain/parser.js";
+import { hasUncheckedDescendants } from "../domain/task-selection.js";
 import type { SortMode } from "../domain/sorting.js";
 import { sortFiles } from "../domain/sorting.js";
-import { hasUncheckedDescendants } from "../infrastructure/selector.js";
-import { resolveSources } from "../infrastructure/sources.js";
-import * as log from "../presentation/log.js";
+import type { FileSystem } from "../domain/ports/file-system.js";
+import type { SourceResolverPort } from "../domain/ports/source-resolver-port.js";
+import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+
+export interface ListTasksDependencies {
+  fileSystem: FileSystem;
+  sourceResolver: SourceResolverPort;
+  output: ApplicationOutputPort;
+}
 
 export interface ListTasksOptions {
   source: string;
@@ -12,34 +18,58 @@ export interface ListTasksOptions {
   includeAll: boolean;
 }
 
-export async function listTasks(options: ListTasksOptions): Promise<number> {
-  const { source, sortMode, includeAll } = options;
+export function createListTasks(
+  dependencies: ListTasksDependencies,
+): (options: ListTasksOptions) => Promise<number> {
+  const emit = dependencies.output.emit.bind(dependencies.output);
 
-  const files = await resolveSources(source);
-  if (files.length === 0) {
-    log.warn("No Markdown files found matching: " + source);
-    return 3;
-  }
+  return async function listTasks(options: ListTasksOptions): Promise<number> {
+    const { source, sortMode, includeAll } = options;
 
-  const sorted = sortFiles(files, sortMode);
-  let count = 0;
-
-  for (const file of sorted) {
-    const content = fs.readFileSync(file, "utf-8");
-    const tasks = parseTasks(content, file);
-    const filtered = includeAll ? tasks : tasks.filter((task) => !task.checked);
-
-    for (const task of filtered) {
-      const blocked = !task.checked && hasUncheckedDescendants(task, tasks);
-      const suffix = blocked ? log.dim(" (blocked — has unchecked subtasks)") : "";
-      console.log(log.taskLabel(task) + suffix);
-      count++;
+    const files = await dependencies.sourceResolver.resolveSources(source);
+    if (files.length === 0) {
+      emit({ kind: "warn", message: "No Markdown files found matching: " + source });
+      return 3;
     }
-  }
 
-  if (count === 0) {
-    log.info("No tasks found.");
-  }
+    const sorted = sortFiles(files, sortMode, {
+      getBirthtimeMs: (filePath) => {
+        const stats = dependencies.fileSystem.stat(filePath);
+        if (!stats) {
+          throw new Error(`ENOENT: no such file or directory, stat '${filePath}'`);
+        }
 
-  return 0;
+        if (stats.birthtimeMs !== undefined && Number.isFinite(stats.birthtimeMs)) {
+          return stats.birthtimeMs;
+        }
+
+        if (stats.mtimeMs !== undefined && Number.isFinite(stats.mtimeMs)) {
+          return stats.mtimeMs;
+        }
+
+        throw new Error(`birthtime unavailable for '${filePath}'`);
+      },
+    });
+    let count = 0;
+
+    for (const file of sorted) {
+      const content = dependencies.fileSystem.readText(file);
+      const tasks = parseTasks(content, file);
+      const filtered = includeAll ? tasks : tasks.filter((task) => !task.checked);
+
+      for (const task of filtered) {
+        const blocked = !task.checked && hasUncheckedDescendants(task, tasks);
+        emit({ kind: "task", task, blocked });
+        count++;
+      }
+    }
+
+    if (count === 0) {
+      emit({ kind: "info", message: "No tasks found." });
+    }
+
+    return 0;
+  };
 }
+
+export const listTasks = createListTasks;

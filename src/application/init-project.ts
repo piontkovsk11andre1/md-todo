@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import {
   DEFAULT_CORRECT_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
@@ -6,32 +5,46 @@ import {
   DEFAULT_VALIDATE_TEMPLATE,
   DEFAULT_VARS_FILE_CONTENT,
 } from "../domain/defaults.js";
-import * as log from "../presentation/log.js";
+import type { FileSystem } from "../domain/ports/file-system.js";
+import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 
 const CONFIG_DIR = ".md-todo";
 
-export async function initProject(): Promise<number> {
-  if (!fs.existsSync(CONFIG_DIR)) {
-    fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  }
+export interface InitProjectDependencies {
+  fileSystem: FileSystem;
+  output: ApplicationOutputPort;
+}
 
-  const write = (name: string, content: string) => {
-    const filePath = `${CONFIG_DIR}/${name}`;
-    if (fs.existsSync(filePath)) {
-      log.warn(`${filePath} already exists, skipping.`);
-      return;
+export function createInitProject(
+  dependencies: InitProjectDependencies,
+): () => Promise<number> {
+  const emit = dependencies.output.emit.bind(dependencies.output);
+
+  return async function initProject(): Promise<number> {
+    if (!dependencies.fileSystem.exists(CONFIG_DIR)) {
+      dependencies.fileSystem.mkdir(CONFIG_DIR, { recursive: true });
     }
 
-    fs.writeFileSync(filePath, content, "utf-8");
-    log.success(`Created ${filePath}`);
+    const write = (name: string, content: string) => {
+      const filePath = `${CONFIG_DIR}/${name}`;
+      if (dependencies.fileSystem.exists(filePath)) {
+        emit({ kind: "warn", message: `${filePath} already exists, skipping.` });
+        return;
+      }
+
+      dependencies.fileSystem.writeText(filePath, content);
+      emit({ kind: "success", message: `Created ${filePath}` });
+    };
+
+    write("execute.md", DEFAULT_TASK_TEMPLATE);
+    write("verify.md", DEFAULT_VALIDATE_TEMPLATE);
+    write("repair.md", DEFAULT_CORRECT_TEMPLATE);
+    write("plan.md", DEFAULT_PLAN_TEMPLATE);
+    write("vars.json", DEFAULT_VARS_FILE_CONTENT);
+
+    emit({ kind: "success", message: "Initialized .md-todo/ with default templates." });
+    return 0;
   };
-
-  write("execute.md", DEFAULT_TASK_TEMPLATE);
-  write("verify.md", DEFAULT_VALIDATE_TEMPLATE);
-  write("repair.md", DEFAULT_CORRECT_TEMPLATE);
-  write("plan.md", DEFAULT_PLAN_TEMPLATE);
-  write("vars.json", DEFAULT_VARS_FILE_CONTENT);
-
-  log.success("Initialized .md-todo/ with default templates.");
-  return 0;
 }
+
+export const initProject = createInitProject;

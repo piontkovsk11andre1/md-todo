@@ -11,7 +11,21 @@
 
 import fs from "node:fs";
 import { parseTasks, type Task } from "../domain/parser.js";
+import { filterRunnable } from "../domain/task-selection.js";
 import { sortFiles, type SortMode } from "../domain/sorting.js";
+import { getFileBirthtimeMs } from "./file-birthtime.js";
+
+const selectorFileSystem = {
+  stat(filePath: string) {
+    const stats = fs.statSync(filePath);
+    return {
+      isFile: stats.isFile(),
+      isDirectory: stats.isDirectory(),
+      birthtimeMs: stats.birthtimeMs,
+      mtimeMs: stats.mtimeMs,
+    };
+  },
+};
 
 export interface SelectionResult {
   /** The selected task. */
@@ -36,7 +50,9 @@ export function selectNextTask(
   files: string[],
   sortMode: SortMode = "name-sort",
 ): SelectionResult | null {
-  const sorted = sortFiles(files, sortMode);
+  const sorted = sortFiles(files, sortMode, {
+    getBirthtimeMs: (filePath) => getFileBirthtimeMs(filePath, selectorFileSystem),
+  });
 
   for (const file of sorted) {
     const source = fs.readFileSync(file, "utf-8");
@@ -76,36 +92,4 @@ export function selectTaskByLocation(
   const contextBefore = lines.slice(0, task.line - 1).join("\n");
 
   return { task, source, contextBefore };
-}
-
-/**
- * Determine whether a task has unchecked descendants.
- *
- * Descendants are tasks that appear after the given task in document
- * order and have a strictly greater depth, up to the next task at the
- * same or shallower depth.
- */
-export function hasUncheckedDescendants(task: Task, allTasks: Task[]): boolean {
-  const startIdx = allTasks.indexOf(task);
-  if (startIdx === -1) return false;
-
-  for (let i = startIdx + 1; i < allTasks.length; i++) {
-    const candidate = allTasks[i]!;
-    if (candidate.depth <= task.depth) break;
-    if (!candidate.checked) return true;
-  }
-
-  return false;
-}
-
-/**
- * Filter a list of tasks to only those that are runnable.
- *
- * An unchecked task is runnable if it has no unchecked descendants.
- * Checked tasks are excluded entirely.
- */
-export function filterRunnable(tasks: Task[]): Task[] {
-  return tasks.filter(
-    (t) => !t.checked && !hasUncheckedDescendants(t, tasks),
-  );
 }

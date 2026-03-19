@@ -255,13 +255,6 @@ The CLI should also allow repeatable extra template variables such as `--var bra
 - Only if validation confirms completion should the tool mark the TODO as checked.
 - If validation does not confirm completion, the TODO should remain unchecked.
 
-Legacy flag aliases should remain supported:
-
-- `--validate` as alias for `--verify`,
-- `--no-validate` as alias for `--no-verify`,
-- `--only-validate` as alias for `--only-verify`,
-- `--no-correct` as alias for `--no-repair`.
-
 ## Validation
 
 Validation should not be a simple flag that blindly checks the box.
