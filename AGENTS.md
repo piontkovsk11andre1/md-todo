@@ -33,7 +33,7 @@ The framework is driven by Markdown templates stored in project-local files:
 - `.rundown/repair.md`
 - `.rundown/plan.md`
 
-The behavior and concepts in [PROMPT.md](PROMPT.md) are the source product definition. Keep implementation aligned with that document unless the user explicitly changes direction.
+The behavior and concepts in [README.md](README.md) are the source product definition. Keep implementation aligned with that document unless the user explicitly changes direction.
 
 ## Non-negotiable quality bar
 
@@ -235,7 +235,7 @@ A successful version of `rundown` should make a technically strong first impress
 
 When making decisions:
 
-- keep the product aligned with [PROMPT.md](PROMPT.md),
+- keep the product aligned with [README.md](README.md),
 - improve clarity before adding complexity,
 - protect the quality bar,
 - write docs as carefully as code,
