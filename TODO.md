@@ -53,7 +53,7 @@ Out of scope for first iteration:
 - [x] success path (verification passes),
 - [x] failure path (verification fails),
 - [x] missing artifacts,
-- [ ] stale task reference (task moved/edited),
+- [x] stale task reference (task moved/edited),
 - [ ] invalid run id.
 - [ ] Add tests to confirm reverify does not modify Markdown checkboxes.
 - [ ] Add tests for `--dry-run` and `--print-prompt` behavior.
