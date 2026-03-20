@@ -1,4 +1,13 @@
-export type ArtifactStoreStatus = "running" | "completed" | "failed" | "detached" | string;
+export type ArtifactStoreStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "detached"
+  | "execution-failed"
+  | "verification-failed"
+  | "reverify-completed"
+  | "reverify-failed"
+  | "metadata-missing";
 
 export type ArtifactStorePhase = "execute" | "verify" | "repair" | "plan" | "inline-cli" | "worker";
 
@@ -43,7 +52,7 @@ export interface ArtifactRunMetadata {
   keepArtifacts: boolean;
   startedAt: string;
   completedAt?: string;
-  status?: string;
+  status?: ArtifactStoreStatus;
 }
 
 export interface ArtifactStore {
@@ -92,5 +101,5 @@ export interface ArtifactStore {
   find(runId: string, cwd?: string): ArtifactRunMetadata | null;
   removeSaved(cwd?: string): number;
   removeFailed(cwd?: string): number;
-  isFailedStatus(status: string | undefined): boolean;
+  isFailedStatus(status: ArtifactStoreStatus | undefined): boolean;
 }

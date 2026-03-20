@@ -4,6 +4,7 @@ import type {
   ArtifactPhaseHandle,
   ArtifactRunMetadata,
   ArtifactStorePhase,
+  ArtifactStoreStatus,
 } from "../../domain/ports/artifact-store.js";
 import {
   beginRuntimePhase,
@@ -74,7 +75,7 @@ export function createFsArtifactStore(): ArtifactStore {
     removeFailed(cwd): number {
       return removeFailedRuntimeArtifacts(cwd);
     },
-    isFailedStatus(status: string | undefined): boolean {
+    isFailedStatus(status: ArtifactStoreStatus | undefined): boolean {
       return isFailedRuntimeArtifactStatus(status);
     },
   };

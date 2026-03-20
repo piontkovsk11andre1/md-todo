@@ -203,6 +203,32 @@ Anything else means the task stays unchecked.
 
 If verification fails and retries are enabled, `rundown` renders the repair template, runs another pass, and validates again.
 
+## Reverify historical tasks
+
+`rundown reverify` re-runs verify/repair for a previously completed task from saved artifacts.
+
+Unlike `run --only-verify`, it does not select a new unchecked task and does not mutate Markdown checkbox state. This makes it suitable for deterministic confidence checks before release or push.
+
+Task resolution from saved metadata is explicit and ordered:
+
+1. exact match by `line + text`,
+2. fallback to `index + text`,
+3. fallback to a unique `text` match.
+
+If no unique match is found, `reverify` exits with code `3` and leaves Markdown unchanged.
+
+### Residual edge cases
+
+- Heavily edited files can invalidate historical metadata (for example, task text rewritten, duplicates introduced, or source file moved/removed).
+- Ambiguous text-only matches intentionally fail instead of guessing.
+- Runs missing `run.json` or task metadata are rejected with actionable guidance.
+
+### Follow-up work
+
+- Store stronger stable task identity in artifacts (for example, structural hash or parent-heading fingerprint) to improve recovery after major edits.
+- Add optional "strict" vs "relaxed" resolution modes so CI can enforce exact matching while local flows can opt into broader recovery.
+- Explore a "task moved" helper that prints likely candidate matches when deterministic resolution fails.
+
 ## Planning
 
 `rundown plan` expands a selected task into nested subtasks.

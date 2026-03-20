@@ -26,6 +26,8 @@ Re-run verification for a previously completed task from saved run artifacts, wi
 
 By default, `reverify` targets the latest completed task in the current repository (`--run latest`).
 
+Use this when you want a deterministic confidence check against an exact historical task context (for example, before a release or push) without advancing task selection.
+
 Options:
 
 | Option | Description |
@@ -46,6 +48,7 @@ rundown reverify -- opencode run
 rundown reverify --run latest -- opencode run
 rundown reverify --run run-20260319T222645632Z-04e84d73 --retries 2 -- opencode run
 rundown reverify --run latest --no-repair --worker opencode run
+rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair -- opencode run
 rundown reverify --print-prompt --worker opencode run
 rundown reverify --dry-run --worker opencode run
 ```

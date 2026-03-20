@@ -15,7 +15,9 @@ import {
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
+import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import type {
+  ArtifactStoreStatus,
   ArtifactStore,
   FileSystem,
   GitClient,
@@ -141,7 +143,7 @@ export function createRunTask(
     let artifactContext: ArtifactContext | null = null;
     let artifactsFinalized = false;
 
-    const finalizeArtifacts = (status: string, preserve: boolean = keepArtifacts): void => {
+    const finalizeArtifacts = (status: ArtifactStoreStatus, preserve: boolean = keepArtifacts): void => {
       if (!artifactContext || artifactsFinalized) {
         return;
       }
@@ -150,7 +152,7 @@ export function createRunTask(
        artifactsFinalized = true;
      };
 
-    const finishRun = (code: number, status: string, preserve: boolean = keepArtifacts): number => {
+    const finishRun = (code: number, status: ArtifactStoreStatus, preserve: boolean = keepArtifacts): number => {
       finalizeArtifacts(status, preserve);
       return code;
     };
@@ -402,51 +404,24 @@ async function runValidation(
   extraTemplateVars: ExtraTemplateVars,
   artifactContext: ArtifactContext,
 ): Promise<boolean> {
-  const emit = dependencies.output.emit.bind(dependencies.output);
-  emit({ kind: "info", message: "Running verification..." });
-
-  const valid = await dependencies.taskValidation.validate({
+  return runVerifyRepairLoop({
+    taskValidation: dependencies.taskValidation,
+    taskCorrection: dependencies.taskCorrection,
+    validationSidecar: dependencies.validationSidecar,
+    output: dependencies.output,
+  }, {
     task,
     source: fileSource,
     contextBefore,
-    template: templates.validate,
-    command: workerCommand,
-    mode: "wait",
+    validateTemplate: templates.validate,
+    correctTemplate: templates.correct,
+    workerCommand,
     transport,
+    maxRetries,
+    allowCorrection,
     templateVars: extraTemplateVars,
     artifactContext,
   });
-
-  if (valid) {
-    dependencies.validationSidecar.remove(task);
-    emit({ kind: "success", message: "Verification passed." });
-    return true;
-  }
-
-  if (allowCorrection) {
-    emit({ kind: "warn", message: "Verification failed. Running repair (" + maxRetries + " retries)..." });
-    const result = await dependencies.taskCorrection.correct({
-      task,
-      source: fileSource,
-      contextBefore,
-      correctTemplate: templates.correct,
-      validateTemplate: templates.validate,
-      command: workerCommand,
-      maxRetries,
-      mode: "wait",
-      transport,
-      templateVars: extraTemplateVars,
-      artifactContext,
-    });
-
-    if (result.valid) {
-      dependencies.validationSidecar.remove(task);
-      emit({ kind: "success", message: "Repair succeeded after " + result.attempts + " attempt(s)." });
-      return true;
-    }
-  }
-
-  return false;
 }
 
 async function afterTaskComplete(
@@ -518,7 +493,7 @@ export function finalizeRunArtifacts(
   artifactStore: ArtifactStore,
   artifactContext: ArtifactContext,
   preserve: boolean,
-  status: string,
+  status: ArtifactStoreStatus,
   emit: ApplicationOutputPort["emit"],
 ): void {
   artifactStore.finalize(artifactContext, { status, preserve });

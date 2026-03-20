@@ -4,6 +4,17 @@ import { randomBytes } from "node:crypto";
 
 export type RuntimePhase = "execute" | "verify" | "repair" | "plan" | "inline-cli" | "worker";
 
+export type RuntimeArtifactStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "detached"
+  | "execution-failed"
+  | "verification-failed"
+  | "reverify-completed"
+  | "reverify-failed"
+  | "metadata-missing";
+
 export interface RuntimeTaskMetadata {
   text: string;
   file: string;
@@ -36,7 +47,7 @@ interface RuntimeArtifactsMetadata {
   keepArtifacts: boolean;
   startedAt: string;
   completedAt?: string;
-  status?: string;
+  status?: RuntimeArtifactStatus;
 }
 
 export interface SavedRuntimeArtifactRun {
@@ -52,7 +63,7 @@ export interface SavedRuntimeArtifactRun {
   keepArtifacts: boolean;
   startedAt: string;
   completedAt?: string;
-  status?: string;
+  status?: RuntimeArtifactStatus;
 }
 
 interface PhaseMetadata {
@@ -104,7 +115,7 @@ export interface CompleteRuntimePhaseOptions {
 }
 
 export interface FinalizeRuntimeArtifactsOptions {
-  status: string;
+  status: RuntimeArtifactStatus;
   preserve?: boolean;
 }
 
@@ -274,7 +285,7 @@ function removeRuntimeArtifactsMatching(
   return removed;
 }
 
-export function isFailedRuntimeArtifactStatus(status: string | undefined): boolean {
+export function isFailedRuntimeArtifactStatus(status: RuntimeArtifactStatus | undefined): boolean {
   if (!status) {
     return false;
   }

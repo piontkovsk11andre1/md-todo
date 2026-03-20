@@ -73,7 +73,7 @@ program
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean);
-    const noRepair = Boolean(opts.noRepair as boolean);
+    const noRepair = resolveNoRepairFlag(opts);
     const retries = parseRetries(opts.retries as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
@@ -125,7 +125,7 @@ program
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
     const transport = parsePromptTransport(opts.transport as string | undefined);
     const retries = parseRetries(opts.retries as string | undefined);
-    const noRepair = Boolean(opts.noRepair as boolean);
+    const noRepair = resolveNoRepairFlag(opts);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
@@ -137,24 +137,7 @@ program
         ? [opts.worker]
         : workerFromSeparator;
 
-    const reverifyTask = (app as {
-      reverifyTask?: (options: {
-        runId: string;
-        transport: PromptTransport;
-        retries: number;
-        noRepair: boolean;
-        dryRun: boolean;
-        printPrompt: boolean;
-        keepArtifacts: boolean;
-        workerCommand: string[];
-      }) => Promise<number>;
-    }).reverifyTask;
-
-    if (!reverifyTask) {
-      throw new Error("Reverify command is not available in this build.");
-    }
-
-    return reverifyTask({
+    return app.reverifyTask({
       runId: targetRun,
       transport,
       retries,
@@ -311,6 +294,17 @@ function resolveVerifyFlag(opts: Record<string, string | string[] | boolean>): b
   }
   return true;
 }
+
+function resolveNoRepairFlag(opts: Record<string, string | string[] | boolean>): boolean {
+  const repairOpt = opts.repair as boolean | undefined;
+  if (repairOpt === false) {
+    return true;
+  }
+
+  const noRepairOpt = opts.noRepair as boolean | undefined;
+  return noRepairOpt === true;
+}
+
 function withCliAction<Args extends unknown[]>(
   action: (...args: Args) => CliActionResult,
 ): (...args: Args) => Promise<void> {

@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const spawnMock = vi.fn();
 
@@ -10,9 +11,15 @@ vi.mock("cross-spawn", () => ({
 }));
 
 describe("runWorker", () => {
+  let workspace: string;
+
+  beforeEach(() => {
+    workspace = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-runner-test-"));
+  });
+
   afterEach(() => {
     spawnMock.mockReset();
-    cleanupWorkspaceRuns();
+    fs.rmSync(workspace, { recursive: true, force: true });
   });
 
   it("uses an attached prompt file plus a short bootstrap message for opencode run in file transport", async () => {
@@ -47,7 +54,7 @@ describe("runWorker", () => {
       prompt,
       mode: "wait",
       transport: "file",
-      cwd: process.cwd(),
+      cwd: workspace,
     });
 
     expect(result.exitCode).toBe(0);
@@ -91,7 +98,7 @@ describe("runWorker", () => {
       prompt,
       mode: "wait",
       transport: "arg",
-      cwd: process.cwd(),
+      cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
@@ -112,7 +119,7 @@ describe("runWorker", () => {
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
 
-      capturedPromptFile = findFirstPromptFile();
+      capturedPromptFile = findFirstPromptFile(workspace);
       capturedPromptFileContent = fs.readFileSync(capturedPromptFile, "utf-8");
 
       queueMicrotask(() => {
@@ -129,7 +136,7 @@ describe("runWorker", () => {
       prompt: "full prompt content",
       mode: "tui",
       transport: "file",
-      cwd: process.cwd(),
+      cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
@@ -173,7 +180,7 @@ describe("runWorker", () => {
       prompt,
       mode: "tui",
       transport: "arg",
-      cwd: process.cwd(),
+      cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
@@ -212,11 +219,11 @@ describe("runWorker", () => {
       prompt: "saved prompt",
       mode: "wait",
       transport: "file",
-      cwd: process.cwd(),
+      cwd: workspace,
       keepArtifacts: true,
     });
 
-    const runsDir = path.join(process.cwd(), ".rundown", "runs");
+    const runsDir = path.join(workspace, ".rundown", "runs");
     const [runDirName] = fs.readdirSync(runsDir);
     const phaseDir = path.join(runsDir, runDirName!, "01-worker");
 
@@ -244,12 +251,12 @@ describe("runWorker", () => {
       prompt: "detached prompt",
       mode: "detached",
       transport: "file",
-      cwd: process.cwd(),
+      cwd: workspace,
     });
 
     expect(result.exitCode).toBeNull();
 
-    const promptFile = findFirstPromptFile();
+    const promptFile = findFirstPromptFile(workspace);
     expect(promptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
     expect(fs.readFileSync(promptFile, "utf-8")).toBe("detached prompt");
   });
@@ -265,21 +272,21 @@ describe("runWorker", () => {
       child.stderr = new EventEmitter();
 
       queueMicrotask(() => {
-        fs.rmSync(path.join(process.cwd(), ".md-todo"), { recursive: true, force: true });
+        fs.rmSync(path.join(workspace, ".rundown"), { recursive: true, force: true });
         child.emit("close", 0);
       });
 
       return child;
     });
 
-    const { runWorker } = await import("./runner.js");
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
 
     await expect(runWorker({
       command: ["opencode", "run"],
       prompt: "ephemeral prompt",
       mode: "wait",
       transport: "file",
-      cwd: process.cwd(),
+      cwd: workspace,
     })).resolves.toMatchObject({
       exitCode: 0,
       stdout: "",
@@ -288,17 +295,8 @@ describe("runWorker", () => {
   });
 });
 
-function cleanupWorkspaceRuns(): void {
-  const runsDir = path.join(process.cwd(), ".rundown", "runs");
-  if (!fs.existsSync(runsDir)) {
-    return;
-  }
-
-  fs.rmSync(runsDir, { recursive: true, force: true });
-}
-
-function findFirstPromptFile(): string {
-  const runsDir = path.join(process.cwd(), ".rundown", "runs");
+function findFirstPromptFile(workspace: string): string {
+  const runsDir = path.join(workspace, ".rundown", "runs");
   for (const runDir of fs.readdirSync(runsDir)) {
     const phaseDir = path.join(runsDir, runDir, "01-worker", "prompt.md");
     if (fs.existsSync(phaseDir)) {

@@ -4,6 +4,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ArtifactStoreStatus } from "../../src/domain/ports/index.js";
 
 const tempDirs: string[] = [];
 
@@ -181,6 +182,332 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("--flag"))).toBe(true);
   });
 
+  it("reverify dry-run exits with 3 when no completed artifacts exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "reverify",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("No saved runtime artifact run found for: latest completed"))).toBe(true);
+  });
+
+  it("reverify returns 3 for invalid run id", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-existing",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--run",
+      "run-missing",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("No saved runtime artifact run found for: run-missing"))).toBe(true);
+  });
+
+  it("reverify returns 3 when selected run is missing run metadata", async () => {
+    const workspace = makeTempWorkspace();
+    const missingMetadataRunId = "run-20260317T000000000Z-missing-metadata";
+    fs.mkdirSync(path.join(workspace, ".rundown", "runs", missingMetadataRunId), { recursive: true });
+
+    const result = await runCli([
+      "reverify",
+      "--run",
+      missingMetadataRunId,
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("Selected run is missing run metadata (run.json)"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--keep-artifacts"))).toBe(true);
+  });
+
+  it("reverify --print-prompt prints verify prompt for resolved historical task", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("## Phase"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Write docs"))).toBe(true);
+  });
+
+  it("reverify --dry-run resolves task and reports planned verification", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Re-verify task:"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Dry run - would run verification with: opencode run"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
+  });
+
+  it("reverify --help lists run targeting and repair options", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["reverify", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--run <id|latest> Choose artifact run id or 'latest'");
+    expect(compactHelpOutput).toContain("--retries <n> Max repair retries on verification failure");
+    expect(compactHelpOutput).toContain("--no-repair Disable repair even when retries are set");
+  });
+
+  it("reverify returns 3 when selected run is not completed", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-incomplete",
+      status: "execution-failed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--run",
+      "run-20260317T000000000Z-incomplete",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("Selected run is not completed"))).toBe(true);
+  });
+
+  it("reverify returns 1 when no worker command is available", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-noworker",
+      status: "completed",
+      workerCommand: [],
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--run",
+      "run-20260317T000000000Z-noworker",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("No worker command specified"))).toBe(true);
+  });
+
+  it("reverify returns 1 for invalid retries value", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "reverify",
+      "--retries",
+      "abc",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Invalid --retries value: abc"))).toBe(true);
+  });
+
+  it("reverify returns 0 when verification passes and does not change markdown checkboxes", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--",
+      "node",
+      "-e",
+      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Re-verification passed."))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
+  });
+
+  it("reverify keeps checked and unchecked checkbox states unchanged on success", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markdown = "- [x] Write docs\n- [ ] Prepare release notes\n";
+    fs.writeFileSync(roadmapPath, markdown, "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--",
+      "node",
+      "-e",
+      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(markdown);
+  });
+
+  it("reverify --keep-artifacts persists run metadata with reverify-completed status", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--keep-artifacts",
+      "--",
+      "node",
+      "-e",
+      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const savedRuns = readSavedRunMetadata(workspace);
+    const reverifyRun = savedRuns.find((run) => run.commandName === "reverify");
+    expect(reverifyRun).toBeDefined();
+    expect(reverifyRun?.status).toBe("reverify-completed");
+  });
+
+  it("reverify returns 2 when verification fails", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--no-repair",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed after all retries."))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
+  });
+
+  it("reverify keeps checked and unchecked checkbox states unchanged on failure", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markdown = "- [x] Write docs\n- [ ] Prepare release notes\n";
+    fs.writeFileSync(roadmapPath, markdown, "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--no-repair",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(markdown);
+  });
+
+  it("reverify --keep-artifacts persists run metadata with reverify-failed status", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--keep-artifacts",
+      "--no-repair",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+
+    const savedRuns = readSavedRunMetadata(workspace);
+    const reverifyRun = savedRuns.find((run) => run.commandName === "reverify");
+    expect(reverifyRun).toBeDefined();
+    expect(reverifyRun?.status).toBe("reverify-failed");
+  });
+
+  it("reverify returns 3 when saved task reference is stale", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Different text\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+      taskText: "Write docs",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("Could not resolve task from saved metadata"))).toBe(true);
+  });
+
   it("run supports --only-verify and --no-repair flags", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Verify feature state\n", "utf-8");
@@ -298,6 +625,7 @@ describe.sequential("CLI integration", () => {
     vi.doMock("../../src/create-app.js", () => ({
       createApp: () => ({
         runTask: runTaskMock,
+        reverifyTask: vi.fn(async () => 0),
         nextTask: vi.fn(async () => 0),
         listTasks: vi.fn(async () => 0),
         planTask: vi.fn(async () => 0),
@@ -341,6 +669,7 @@ describe.sequential("CLI integration", () => {
     vi.doMock("../../src/create-app.js", () => ({
       createApp: () => ({
         runTask: runTaskMock,
+        reverifyTask: vi.fn(async () => 0),
         nextTask: vi.fn(async () => 0),
         listTasks: vi.fn(async () => 0),
         planTask: vi.fn(async () => 0),
@@ -379,6 +708,7 @@ describe.sequential("CLI integration", () => {
     vi.doMock("../../src/create-app.js", () => ({
       createApp: () => ({
         runTask: runTaskMock,
+        reverifyTask: vi.fn(async () => 0),
         nextTask: vi.fn(async () => 0),
         listTasks: vi.fn(async () => 0),
         planTask: vi.fn(async () => 0),
@@ -928,8 +1258,10 @@ function writeSavedRun(
   workspace: string,
   options: {
     runId: string;
-    status: string;
+    status: ArtifactStoreStatus;
     startedAt?: string;
+    taskText?: string;
+    workerCommand?: string[];
   },
 ): void {
   const runDir = path.join(workspace, ".rundown", "runs", options.runId);
@@ -937,15 +1269,15 @@ function writeSavedRun(
   fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify({
     runId: options.runId,
     commandName: "run",
-    workerCommand: ["opencode", "run"],
+    workerCommand: options.workerCommand ?? ["opencode", "run"],
     mode: "wait",
     transport: "file",
     source: "roadmap.md",
     task: {
-      text: "Write docs",
+      text: options.taskText ?? "Write docs",
       file: "roadmap.md",
       line: 1,
-      index: 1,
+      index: 0,
       source: "roadmap.md",
     },
     keepArtifacts: true,
@@ -953,6 +1285,23 @@ function writeSavedRun(
     completedAt: "2026-03-17T00:01:00.000Z",
     status: options.status,
   }, null, 2), "utf-8");
+}
+
+function readSavedRunMetadata(workspace: string): Array<{ commandName?: string; status?: string }> {
+  const runsDir = path.join(workspace, ".rundown", "runs");
+  if (!fs.existsSync(runsDir)) {
+    return [];
+  }
+
+  const runDirs = fs.readdirSync(runsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(runsDir, entry.name, "run.json"))
+    .filter((filePath) => fs.existsSync(filePath));
+
+  return runDirs.map((filePath) => JSON.parse(fs.readFileSync(filePath, "utf-8")) as {
+    commandName?: string;
+    status?: string;
+  });
 }
 
 function createWaitModeSpawnMock(options: {
