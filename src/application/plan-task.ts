@@ -10,6 +10,7 @@ import {
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
 import type {
+  ArtifactStoreStatus,
   ArtifactRunContext,
   ArtifactStore,
   FileSystem,
@@ -146,9 +147,9 @@ export function createPlanTask(
       keepArtifacts,
     });
     let artifactsFinalized = false;
-    let artifactStatus = "running";
+    let artifactStatus: ArtifactStoreStatus = "running";
 
-    const finishPlan = (code: number, status: string): number => {
+    const finishPlan = (code: number, status: ArtifactStoreStatus): number => {
       artifactStatus = status;
       finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit);
       artifactsFinalized = true;
@@ -279,7 +280,7 @@ function finalizePlanArtifacts(
   artifactStore: ArtifactStore,
   artifactContext: ArtifactContext,
   preserve: boolean,
-  status: string,
+  status: ArtifactStoreStatus,
   emit: ApplicationOutputPort["emit"],
 ): void {
   artifactStore.finalize(artifactContext, {

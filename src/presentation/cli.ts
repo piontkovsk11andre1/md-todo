@@ -73,7 +73,7 @@ program
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean);
-    const noRepair = Boolean(opts.noRepair as boolean);
+    const noRepair = resolveNoRepairFlag(opts);
     const retries = parseRetries(opts.retries as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
@@ -107,6 +107,45 @@ program
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,
+    });
+  }));
+
+program
+  .command("reverify")
+  .description("Re-run verification for the previously completed task from saved artifacts.")
+  .option("--run <id|latest>", "Choose artifact run id or 'latest'", "latest")
+  .option("--transport <transport>", "Prompt transport: file, arg", "file")
+  .option("--retries <n>", "Max repair retries on verification failure", "0")
+  .option("--no-repair", "Disable repair even when retries are set", false)
+  .option("--dry-run", "Show what would be executed without running it", false)
+  .option("--print-prompt", "Print the rendered verify prompt and exit", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
+  .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
+    const transport = parsePromptTransport(opts.transport as string | undefined);
+    const retries = parseRetries(opts.retries as string | undefined);
+    const noRepair = resolveNoRepairFlag(opts);
+    const dryRun = opts.dryRun as boolean;
+    const printPrompt = opts.printPrompt as boolean;
+    const keepArtifacts = opts.keepArtifacts as boolean;
+    const targetRun = normalizeOptionalString(opts.run) ?? "latest";
+
+    const workerCommand = Array.isArray(opts.worker)
+      ? opts.worker
+      : typeof opts.worker === "string"
+        ? [opts.worker]
+        : workerFromSeparator;
+
+    return app.reverifyTask({
+      runId: targetRun,
+      transport,
+      retries,
+      noRepair,
+      dryRun,
+      printPrompt,
+      keepArtifacts,
+      workerCommand,
     });
   }));
 
@@ -255,6 +294,17 @@ function resolveVerifyFlag(opts: Record<string, string | string[] | boolean>): b
   }
   return true;
 }
+
+function resolveNoRepairFlag(opts: Record<string, string | string[] | boolean>): boolean {
+  const repairOpt = opts.repair as boolean | undefined;
+  if (repairOpt === false) {
+    return true;
+  }
+
+  const noRepairOpt = opts.noRepair as boolean | undefined;
+  return noRepairOpt === true;
+}
+
 function withCliAction<Args extends unknown[]>(
   action: (...args: Args) => CliActionResult,
 ): (...args: Args) => Promise<void> {

@@ -152,3 +152,13 @@ A clean default pattern is:
 - `--transport file` for staged prompt files
 
 This keeps prompt handoff durable, inspectable, and friendly to large Markdown context.
+
+## 11. Reverify before release
+
+```bash
+rundown reverify --no-repair -- opencode run
+```
+
+Use this to re-check the latest completed task with the current verify template before a push or release cut. The command exits non-zero on verification failure and does not modify Markdown checkbox states.
+
+If historical metadata no longer maps to a unique task after major edits, `reverify` exits with code `3` instead of guessing.

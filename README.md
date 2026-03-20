@@ -86,6 +86,20 @@ Run against any Markdown file:
 rundown run roadmap.md -- opencode run
 ```
 
+Re-verify the most recently completed task (without changing checkbox state):
+
+```bash
+rundown reverify -- opencode run
+```
+
+Re-verify a specific historical run and fail fast without repair retries:
+
+```bash
+rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair -- opencode run
+```
+
+`rundown reverify` exits non-zero when verification fails, which makes it suitable for pre-release and pre-push confidence checks.
+
 PowerShell-safe form:
 
 ```powershell
@@ -117,6 +131,8 @@ The task context — the surrounding Markdown, the template, the file paths — 
 ### Verify
 
 A separate verification prompt checks the result. The task needs an explicit `OK` to pass. No silent failures.
+
+Need a confidence check later (for example before release)? Use `rundown reverify` to re-run verify/repair for the latest completed task from artifacts, without advancing task selection.
 
 ### Repair
 

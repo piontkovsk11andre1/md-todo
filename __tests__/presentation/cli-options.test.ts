@@ -67,6 +67,37 @@ describe("CLI run option normalization", () => {
   });
 });
 
+describe("CLI reverify option normalization", () => {
+  it("passes reverify options to application layer", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--run",
+      "run-123",
+      "--transport",
+      "arg",
+      "--retries",
+      "2",
+      "--no-repair",
+      "--dry-run",
+      "--print-prompt",
+      "--keep-artifacts",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.runId).toBe("run-123");
+    expect(call.transport).toBe("arg");
+    expect(call.retries).toBe(2);
+    expect(call.noRepair).toBe(true);
+    expect(call.dryRun).toBe(true);
+    expect(call.printPrompt).toBe(true);
+    expect(call.keepArtifacts).toBe(true);
+    expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+});
+
 async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
   const previousEnv = captureEnv();
 
@@ -76,6 +107,7 @@ async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeo
   vi.doMock("../../src/create-app.js", () => ({
     createApp: () => ({
       runTask,
+      reverifyTask: vi.fn(async () => 0),
       nextTask: vi.fn(async () => 0),
       listTasks: vi.fn(async () => 0),
       planTask: vi.fn(async () => 0),
@@ -98,6 +130,40 @@ async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeo
 
   expect(runTask).toHaveBeenCalledTimes(1);
   return runTask.mock.calls[0][0] as RunTaskCall;
+}
+
+async function invokeReverifyAndCaptureCall(args: string[], reverifyTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask,
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  expect(reverifyTask).toHaveBeenCalledTimes(1);
+  return reverifyTask.mock.calls[0][0] as RunTaskCall;
 }
 
 function captureEnv(): Record<(typeof envKeys)[number], string | undefined> {

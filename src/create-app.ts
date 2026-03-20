@@ -3,6 +3,7 @@ import { createPlanTask, type PlanTaskOptions } from "./application/plan-task.js
 import { createListTasks, type ListTasksOptions } from "./application/list-tasks.js";
 import { createNextTask, type NextTaskOptions } from "./application/next-task.js";
 import { createInitProject } from "./application/init-project.js";
+import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import {
   createManageArtifacts,
   type ManageArtifactsOptions,
@@ -43,6 +44,7 @@ import {
 
 export type App = {
   runTask: (options: RunTaskOptions) => Promise<number>;
+  reverifyTask: (options: ReverifyTaskOptions) => Promise<number>;
   planTask: (options: PlanTaskOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
   nextTask: (options: NextTaskOptions) => Promise<number>;
@@ -120,6 +122,16 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       processRunner: ports.processRunner,
       output: ports.output,
     }),
+    reverifyTask: (ports) => createReverifyTask({
+      artifactStore: ports.artifactStore,
+      taskValidation: ports.taskValidation,
+      taskCorrection: ports.taskCorrection,
+      validationSidecar: ports.validationSidecar,
+      workingDirectory: ports.workingDirectory,
+      fileSystem: ports.fileSystem,
+      templateLoader: ports.templateLoader,
+      output: ports.output,
+    }),
     planTask: (ports) => createPlanTask({
       sourceResolver: ports.sourceResolver,
       taskSelector: ports.taskSelector,
@@ -164,6 +176,7 @@ function createAppFromFactories(
 
   return {
     runTask: factories.runTask(ports),
+    reverifyTask: factories.reverifyTask(ports),
     planTask: factories.planTask(ports),
     listTasks: factories.listTasks(ports),
     nextTask: factories.nextTask(ports),
