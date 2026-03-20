@@ -62,6 +62,6 @@ Out of scope for first iteration:
 ## Acceptance criteria
 
 - [x] `rundown reverify` can verify the latest completed task deterministically.
-- [ ] Verification result is clearly surfaced with stable exit codes.
+- [x] Verification result is clearly surfaced with stable exit codes.
 - [ ] No task selection advance and no checkbox mutation occurs.
 - [ ] Command is documented and covered by tests.
