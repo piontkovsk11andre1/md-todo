@@ -45,7 +45,7 @@ Out of scope for first iteration:
 - [x] Resolves the task in the current Markdown file using persisted metadata (line/index/text fallback strategy).
 - [x] Reconstructs template vars/context needed by verify/repair prompts.
 - [x] Executes verify/repair loop using existing ports and retry policy.
-- [ ] Ensures no checkbox mutation occurs in reverify flow.
+- [x] Ensures no checkbox mutation occurs in reverify flow.
 - [ ] Persists runtime artifacts for the reverify command with explicit status values (e.g. `reverify-completed`, `reverify-failed`).
 - [ ] Update docs: `README.md` and `docs/cli.md` with command purpose and examples.
 - [ ] Add unit tests for target resolution and metadata mismatch scenarios.
