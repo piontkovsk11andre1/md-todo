@@ -51,7 +51,7 @@ Out of scope for first iteration:
 - [x] Add unit tests for target resolution and metadata mismatch scenarios.
 - [x] Add integration tests for CLI behavior and exit codes:
 - [x] success path (verification passes),
-- [ ] failure path (verification fails),
+- [x] failure path (verification fails),
 - [ ] missing artifacts,
 - [ ] stale task reference (task moved/edited),
 - [ ] invalid run id.
