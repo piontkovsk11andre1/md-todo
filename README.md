@@ -165,31 +165,6 @@ You already know Markdown. Now Markdown knows how to finish.
 
 ---
 
-## Migration notes (programmatic API)
-
-### Breaking: root exports are now intentionally narrow
-
-The package root (`@p10i/rundown`) now exports only `createApp`.
-
-If you previously imported low-level helpers from the root barrel (for example `parseTasks`, `runWorker`, `validate`, `correct`, `resolveSources`, runtime artifact helpers, or Git/hook helpers), those imports are no longer part of the supported root API.
-
-Use `createApp()` as the stable programmatic entrypoint.
-
-### Breaking: `createApp(...)` override shape changed
-
-Dependency injection now uses a structured shape:
-
-```ts
-createApp({
-  ports: { output: myOutputPort },
-  useCaseFactories: { /* optional factory overrides */ },
-})
-```
-
-Direct root-level use-case overrides such as `createApp({ runTask: ... })` are no longer supported. Use `useCaseFactories` for explicit, port-first wiring.
-
----
-
 ## Status
 
 `rundown` is usable today and intentionally small.
