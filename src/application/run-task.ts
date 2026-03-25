@@ -97,6 +97,8 @@ export interface RunTaskOptions {
   commitAfterComplete: boolean;
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
+  runAll: boolean;
+  onFailCommand?: string;
 }
 
 export function createRunTask(
@@ -124,6 +126,8 @@ export function createRunTask(
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,
+      runAll,
+      onFailCommand,
     } = options;
 
     const runBehavior = resolveRunBehavior({
@@ -164,6 +168,11 @@ export function createRunTask(
       return code;
     };
 
+    const resetArtifacts = (): void => {
+      artifactContext = null;
+      artifactsFinalized = false;
+    };
+
     try {
       const files = await dependencies.sourceResolver.resolveSources(source);
       if (files.length === 0) {
@@ -171,8 +180,16 @@ export function createRunTask(
         return 3;
       }
 
+      let tasksCompleted = 0;
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
       const result = dependencies.taskSelector.selectNextTask(files, sortMode);
       if (!result) {
+        if (tasksCompleted > 0) {
+          emit({ kind: "success", message: "All tasks completed (" + tasksCompleted + " total)." });
+          return 0;
+        }
         emit({ kind: "info", message: "No unchecked tasks found." });
         return 3;
       }
@@ -292,6 +309,7 @@ export function createRunTask(
         );
         if (!valid) {
           emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
+          await afterTaskFailed(dependencies, task, source, onFailCommand);
           return finishRun(2, "verification-failed");
         }
 
@@ -305,7 +323,11 @@ export function createRunTask(
           commitMessageTemplate,
           onCompleteCommand,
         );
-        return finishRun(0, "completed");
+        finishRun(0, "completed");
+        tasksCompleted++;
+        if (!runAll) return 0;
+        resetArtifacts();
+        continue;
       }
 
       if (task.isInlineCli) {
@@ -324,6 +346,7 @@ export function createRunTask(
 
         if (cliResult.exitCode !== 0) {
           emit({ kind: "error", message: "Inline CLI exited with code " + cliResult.exitCode });
+          await afterTaskFailed(dependencies, task, source, onFailCommand);
           return finishRun(1, "execution-failed");
         }
 
@@ -343,6 +366,7 @@ export function createRunTask(
           );
           if (!valid) {
             emit({ kind: "error", message: "Verification failed. Task not checked." });
+            await afterTaskFailed(dependencies, task, source, onFailCommand);
             return finishRun(2, "verification-failed");
           }
         }
@@ -357,7 +381,11 @@ export function createRunTask(
           commitMessageTemplate,
           onCompleteCommand,
         );
-        return finishRun(0, "completed");
+        finishRun(0, "completed");
+        tasksCompleted++;
+        if (!runAll) return 0;
+        resetArtifacts();
+        continue;
       }
 
       emit({ kind: "info", message: "Running: " + workerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]" });
@@ -378,6 +406,7 @@ export function createRunTask(
 
       if (mode !== "detached" && runResult.exitCode !== 0 && runResult.exitCode !== null) {
         emit({ kind: "error", message: "Worker exited with code " + runResult.exitCode + "." });
+        await afterTaskFailed(dependencies, task, source, onFailCommand);
         return finishRun(1, "execution-failed");
       }
 
@@ -402,6 +431,7 @@ export function createRunTask(
         );
         if (!valid) {
           emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
+          await afterTaskFailed(dependencies, task, source, onFailCommand);
           return finishRun(2, "verification-failed");
         }
       }
@@ -416,7 +446,11 @@ export function createRunTask(
         commitMessageTemplate,
         onCompleteCommand,
       );
-      return finishRun(0, "completed");
+      finishRun(0, "completed");
+      tasksCompleted++;
+      if (!runAll) return 0;
+      resetArtifacts();
+      } // end while
     } catch (error) {
       finalizeArtifacts("failed", keepArtifacts || mode === "detached");
       throw error;
@@ -455,6 +489,37 @@ async function runVerification(
     templateVars: extraTemplateVars,
     artifactContext,
   });
+}
+
+async function afterTaskFailed(
+  dependencies: RunTaskDependencies,
+  task: Task,
+  source: string,
+  onFailCommand: string | undefined,
+): Promise<void> {
+  if (!onFailCommand) return;
+  const cwd = dependencies.workingDirectory.cwd();
+  const emit = dependencies.output.emit.bind(dependencies.output);
+
+  try {
+    const result = await runOnCompleteHookWithProcessRunner(
+      dependencies.processRunner,
+      onFailCommand,
+      task,
+      source,
+      cwd,
+      dependencies.pathOperations,
+    );
+
+    if (result.stdout) emit({ kind: "text", text: result.stdout });
+    if (result.stderr) emit({ kind: "stderr", text: result.stderr });
+
+    if (!result.success) {
+      emit({ kind: "warn", message: "--on-fail hook exited with code " + result.exitCode });
+    }
+  } catch (error) {
+    emit({ kind: "warn", message: "--on-fail hook failed: " + String(error) });
+  }
 }
 
 async function afterTaskComplete(

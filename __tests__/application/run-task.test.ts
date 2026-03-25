@@ -664,6 +664,366 @@ describe("run-task exit code behavior with completion side effects", () => {
   });
 });
 
+describe("run-task --all mode", () => {
+  it("runs multiple inline CLI tasks sequentially and returns 0 when all complete", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n- [ ] cli: echo three\n",
+    });
+    const gitClient = createGitClientMock();
+    let selectCallCount = 0;
+    const events: ApplicationOutputEvent[] = [];
+    const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
+    const verificationSidecar: VerificationSidecar = {
+      filePath: vi.fn(() => ""),
+      read: vi.fn(() => null),
+      remove: vi.fn(),
+    };
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn((opts: Record<string, unknown>) => ({
+        runId: `run-${selectCallCount}`,
+        rootDir: path.join(cwd, ".rundown", "runs", `run-${selectCallCount}`),
+        cwd,
+        keepArtifacts: false,
+        commandName: "run",
+      })),
+      beginPhase: vi.fn(),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ".rundown/runs/run-test"),
+      rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const tasks = [
+      { text: "cli: echo one", cmd: "echo one" },
+      { text: "cli: echo two", cmd: "echo two" },
+      { text: "cli: echo three", cmd: "echo three" },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const t = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task: {
+              text: t.text,
+              checked: false,
+              index: selectCallCount - 1,
+              line: selectCallCount,
+              column: 1,
+              offsetStart: 0,
+              offsetEnd: t.text.length,
+              file: taskFile,
+              isInlineCli: true,
+              cliCommand: t.cmd,
+              depth: 0,
+            },
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      templateLoader,
+      verificationSidecar,
+      artifactStore,
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      output: { emit: (event) => { events.push(event); } },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(selectCallCount).toBe(3); // 3 tasks selected
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(4); // 3 tasks + 1 null
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(3);
+    expect(events.filter((e) => e.kind === "success" && e.message.startsWith("Task checked:"))).toHaveLength(3);
+    expect(events.some((e) => e.kind === "success" && e.message.includes("All tasks completed (3 total)"))).toBe(true);
+  });
+
+  it("stops on first execution failure in --all mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: fail\n",
+    });
+    const gitClient = createGitClientMock();
+    let selectCallCount = 0;
+    const events: ApplicationOutputEvent[] = [];
+
+    const tasks = [
+      { text: "cli: echo one", cmd: "echo one", exitCode: 0 },
+      { text: "cli: fail", cmd: "fail", exitCode: 1 },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const t = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task: {
+              text: t.text,
+              checked: false,
+              index: selectCallCount - 1,
+              line: selectCallCount,
+              column: 1,
+              offsetStart: 0,
+              offsetEnd: t.text.length,
+              file: taskFile,
+              isInlineCli: true,
+              cliCommand: t.cmd,
+              depth: 0,
+            },
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeInlineCli: vi.fn(async (_cmd: string) => {
+          if (_cmd === "fail") return { exitCode: 1, stdout: "", stderr: "error" };
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      templateLoader: { load: vi.fn(() => null) },
+      verificationSidecar: { filePath: vi.fn(() => ""), read: vi.fn(() => null), remove: vi.fn() },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test", rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
+          cwd, keepArtifacts: false, commandName: "run",
+        })),
+        beginPhase: vi.fn(), completePhase: vi.fn(), finalize: vi.fn(),
+        displayPath: vi.fn(() => ".rundown/runs/run-test"),
+        rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+        listSaved: vi.fn(() => []), listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null), find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0), removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      output: { emit: (event) => { events.push(event); } },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(selectCallCount).toBe(2);
+    expect(events.filter((e) => e.kind === "success" && e.message.startsWith("Task checked:"))).toHaveLength(1);
+    expect(events.some((e) => e.kind === "error" && e.message.includes("Inline CLI exited with code 1"))).toBe(true);
+  });
+
+  it("runs only one task when --all is not set", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n- [ ] cli: echo world\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: false,
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("run-task --on-fail hook", () => {
+  it("runs on-fail hook on execution failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook ran",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 9,
+      stdout: "",
+      stderr: "boom",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      onFailCommand: "node scripts/handle-fail.js",
+    }));
+
+    expect(code).toBe(1);
+    expect(processRunner.run).toHaveBeenCalledTimes(1);
+    expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
+      command: "node scripts/handle-fail.js",
+      shell: true,
+    }));
+    expect(events.some((e) => e.kind === "text" && e.text === "hook ran")).toBe(true);
+  });
+
+  it("runs on-fail hook on verification failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      workerCommand: ["opencode", "run"],
+      onFailCommand: "node scripts/handle-fail.js",
+    }));
+
+    expect(code).toBe(2);
+    expect(processRunner.run).toHaveBeenCalledTimes(1);
+    expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
+      command: "node scripts/handle-fail.js",
+    }));
+  });
+
+  it("does not run on-fail hook on success", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      onFailCommand: "node scripts/handle-fail.js",
+    }));
+
+    expect(code).toBe(0);
+    expect(processRunner.run).not.toHaveBeenCalled();
+  });
+
+  it("warns when on-fail hook exits with non-zero code", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 5,
+        stdout: "",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      onFailCommand: "node scripts/handle-fail.js",
+    }));
+
+    expect(code).toBe(1);
+    expect(events.some((e) => e.kind === "warn" && e.message === "--on-fail hook exited with code 5")).toBe(true);
+  });
+});
+
 function createDependencies(options: {
   cwd: string;
   task: Task;
@@ -844,6 +1204,8 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     commitAfterComplete: false,
     commitMessageTemplate: undefined,
     onCompleteCommand: undefined,
+    runAll: false,
+    onFailCommand: undefined,
     ...overrides,
   };
 }

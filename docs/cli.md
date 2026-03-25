@@ -6,18 +6,22 @@
 
 Scan a file, directory, or glob, select the next runnable task, execute it, verify it, optionally repair it, and mark it complete only after verification succeeds.
 
+With `--all`, process tasks sequentially until all are complete or a failure occurs.
+
 Examples:
 
 ```bash
 rundown run roadmap.md -- opencode run
 rundown run docs/ -- opencode run
 rundown run "notes/**/*.md" -- opencode run
+rundown run roadmap.md --all -- opencode run
 ```
 
 PowerShell-safe form:
 
 ```powershell
 rundown run docs/ --worker opencode run
+rundown run docs/ --all --worker opencode run
 ```
 
 ### `rundown reverify`
@@ -195,6 +199,8 @@ These options are available on `rundown run`.
 | `--commit` | Auto-commit current worktree changes after successful completion (excluding transient `.rundown/runs` artifacts). | off |
 | `--commit-message <template>` | Commit message template (supports `{{task}}` and `{{file}}`). | `rundown: complete "{{task}}" in {{file}}` |
 | `--on-complete <command>` | Run a shell command after successful task completion. | unset |
+| `--on-fail <command>` | Run a shell command when a task fails (execution or verification failure). | unset |
+| `--all` | Run all tasks sequentially instead of stopping after one. Stops on failure. | off |
 
 `--commit-message` is only applied when `--commit` is enabled.
 
@@ -205,6 +211,8 @@ rundown run docs/todos/phase-3.md --commit -- opencode run
 rundown run docs/todos/phase-3.md --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
 rundown run docs/todos/phase-3.md --on-complete "git push" -- opencode run
 rundown run docs/todos/phase-3.md --commit --on-complete "npm run release:notes" -- opencode run
+rundown run docs/todos/phase-3.md --on-fail "node scripts/notify-failure.js" -- opencode run
+rundown run docs/todos/phase-3.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
 ```
 
 `--commit` stages and commits current worktree changes (excluding transient `.rundown/runs` artifacts), with a structured message tied to the completed task:
@@ -228,6 +236,23 @@ This makes task history searchable via `git log --grep="rundown:"`.
 Both `--commit` and `--on-complete` are non-fatal: if they fail, the task is still marked complete and `rundown` exits `0` with a warning.
 
 When both are used, `--commit` runs first so that `--on-complete` can safely push or tag.
+
+`--on-fail` runs the same way but fires only when a task fails (exit code `1` or `2`). It receives the same environment variables as `--on-complete`. The hook is non-fatal: its exit code does not change the run's exit code.
+
+### Run all mode
+
+`--all` processes tasks sequentially. After each successful task, the next unchecked task is selected and run. The loop stops when:
+
+- All tasks are complete — exits `0`.
+- A task fails execution or verification — exits `1` or `2`.
+
+`--on-complete` fires after each successful task. `--on-fail` fires once on the task that caused the loop to stop. `--commit` applies after each task.
+
+Example:
+
+```bash
+rundown run roadmap.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
+```
 
 ### Inspection and dry runs
 

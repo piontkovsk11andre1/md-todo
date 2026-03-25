@@ -114,7 +114,15 @@ Common Git-aware forms:
 rundown run roadmap.md --commit -- opencode run
 rundown run roadmap.md --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
 rundown run roadmap.md --on-complete "git push" -- opencode run
+rundown run roadmap.md --on-fail "node scripts/alert.js" -- opencode run
 rundown run roadmap.md --force-execute -- opencode run
+```
+
+Run all tasks sequentially:
+
+```bash
+rundown run roadmap.md --all -- opencode run
+rundown run roadmap.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
 ```
 
 ---

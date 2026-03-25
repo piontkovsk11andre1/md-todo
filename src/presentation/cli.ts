@@ -66,6 +66,8 @@ program
   .option("--commit", "Auto-commit checked task file after successful completion", false)
   .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
   .option("--on-complete <command>", "Run a shell command after successful task completion")
+  .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
+  .option("--all", "Run all tasks sequentially instead of stopping after one", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
   .action(withCliAction(async (source: string, opts: Record<string, string | string[] | boolean>) => {
@@ -91,6 +93,8 @@ program
     const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
+    const onFailCommand = normalizeOptionalString(opts.onFail);
+    const runAll = Boolean(opts.all as boolean | undefined);
     return app.runTask({
       source,
       mode,
@@ -110,6 +114,8 @@ program
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,
+      onFailCommand,
+      runAll,
     });
   }));
 

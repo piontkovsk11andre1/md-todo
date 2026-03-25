@@ -24,6 +24,8 @@ describe("CLI run option normalization", () => {
     expect(call.commitAfterComplete).toBe(false);
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
+    expect(call.onFailCommand).toBeUndefined();
+    expect(call.runAll).toBe(false);
     expect(call.noRepair).toBe(false);
     expect(call.repairAttempts).toBe(1);
     expect(call.forceExecute).toBe(false);
@@ -39,6 +41,8 @@ describe("CLI run option normalization", () => {
       "",
       "--on-complete",
       "",
+      "--on-fail",
+      "",
       "--worker",
       "opencode",
       "run",
@@ -47,6 +51,7 @@ describe("CLI run option normalization", () => {
     expect(call.commitAfterComplete).toBe(true);
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
+    expect(call.onFailCommand).toBeUndefined();
   });
 
   it("preserves non-empty commit and hook values", async () => {
@@ -59,6 +64,8 @@ describe("CLI run option normalization", () => {
       "done: {{task}}",
       "--on-complete",
       "node scripts/after.js",
+      "--on-fail",
+      "node scripts/handle-fail.js",
       "--worker",
       "opencode",
       "run",
@@ -67,6 +74,21 @@ describe("CLI run option normalization", () => {
     expect(call.commitAfterComplete).toBe(true);
     expect(call.commitMessageTemplate).toBe("done: {{task}}");
     expect(call.onCompleteCommand).toBe("node scripts/after.js");
+    expect(call.onFailCommand).toBe("node scripts/handle-fail.js");
+  });
+
+  it("passes --all flag to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--all",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.runAll).toBe(true);
   });
 
   it("passes force-execute option to run task", async () => {

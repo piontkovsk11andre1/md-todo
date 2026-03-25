@@ -1142,6 +1142,121 @@ describe.sequential("CLI integration", () => {
     expect(commitSubject).toBe("combined: cli: echo hello @ roadmap.md");
   });
 
+  it("run --all completes multiple inline CLI tasks sequentially", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n- [ ] cli: echo three\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--all",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(3);
+    expect(result.logs.some((line) => line.includes("All tasks completed (3 total)"))).toBe(true);
+    const content = fs.readFileSync(roadmapPath, "utf-8");
+    expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
+  });
+
+  it("run --all stops on failure and preserves failure exit code", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo ok\n- [ ] cli: exit 1\n- [ ] cli: echo unreachable\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--all",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(1);
+    const content = fs.readFileSync(roadmapPath, "utf-8");
+    expect(content).toContain("- [x] cli: echo ok\n");
+    expect(content).toContain("- [ ] cli: exit 1\n");
+    expect(content).toContain("- [ ] cli: echo unreachable\n");
+  });
+
+  it("run --all returns 0 when there are no tasks to run", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] cli: echo done\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--all",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => line.includes("No unchecked tasks found"))).toBe(true);
+  });
+
+  it("run --on-fail executes hook on inline CLI failure", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: exit 1\n", "utf-8");
+
+    const hookScript = path.join(workspace, "fail-hook.mjs");
+    fs.writeFileSync(
+      hookScript,
+      "console.log('FAIL_HOOK:' + process.env.RUNDOWN_TASK);\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--on-fail",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.logs.some((line) => line.includes("FAIL_HOOK:cli: exit 1"))).toBe(true);
+  });
+
+  it("run --on-fail is not invoked on success", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    const markerPath = path.join(workspace, "fail-marker.txt");
+    const hookScript = path.join(workspace, "fail-hook.mjs");
+    fs.writeFileSync(
+      hookScript,
+      `import fs from "fs"; fs.writeFileSync(${JSON.stringify(markerPath.replace(/\\/g, "/"))}, "ran");\n`,
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--on-fail",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(markerPath)).toBe(false);
+  });
+
+  it("run --help shows --all and --on-fail options", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["run", "roadmap.md", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--all");
+    expect(compactHelpOutput).toContain("--on-fail <command>");
+  });
+
   it("plan rejects non-wait mode", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
