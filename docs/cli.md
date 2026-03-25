@@ -33,8 +33,8 @@ Options:
 | Option | Description |
 |---|---|
 | `--run <id|latest>` | Choose the artifact run to inspect for the completed task to re-verify. Default: `latest`. |
-| `--retries <n>` | Retry repair up to `n` times when verification fails. |
-| `--no-repair` | Disable repair retries and fail immediately on verification failure. |
+| `--repair-attempts <n>` | Retry repair up to `n` times when verification fails. |
+| `--no-repair` | Disable repair attempts and fail immediately on verification failure. |
 | `--transport <file|arg>` | Prompt transport for verify/repair worker invocations. |
 | `--worker <command...>` | Worker command to execute verify/repair phases (preferred on PowerShell). |
 | `--print-prompt` | Print the rendered verify prompt and exit `0` without running the worker. |
@@ -46,7 +46,7 @@ Examples:
 ```bash
 rundown reverify -- opencode run
 rundown reverify --run latest -- opencode run
-rundown reverify --run run-20260319T222645632Z-04e84d73 --retries 2 -- opencode run
+rundown reverify --run run-20260319T222645632Z-04e84d73 --repair-attempts 2 -- opencode run
 rundown reverify --run latest --no-repair --worker opencode run
 rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair -- opencode run
 rundown reverify --print-prompt --worker opencode run
@@ -141,7 +141,7 @@ If both are provided, `--worker` takes precedence.
 
 - `--no-verify` — skip verification
 - `--only-verify` — verify without executing first
-- `--retries <n>` — retry repair up to `n` times
+- `--repair-attempts <n>` — retry repair up to `n` times
 - `--no-repair` — disable repair explicitly
 
 ### Execution mode
@@ -305,5 +305,5 @@ rundown run roadmap.md --mode tui -- opencode
 
 `rundown reverify` uses the same exit-code contract:
 
-- `2` when verification still fails after retries (or immediately with `--no-repair`)
+- `2` when verification still fails after configured repair attempts (or immediately with `--no-repair`)
 - `3` when no completed task can be resolved from the selected run artifacts

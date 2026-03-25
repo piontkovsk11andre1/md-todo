@@ -24,7 +24,7 @@ export interface VerifyRepairLoopInput {
   correctTemplate: string;
   workerCommand: string[];
   transport: PromptTransport;
-  maxRetries: number;
+  maxRepairAttempts: number;
   allowCorrection: boolean;
   templateVars: Record<string, unknown>;
   artifactContext: ArtifactContext;
@@ -59,7 +59,7 @@ export async function runVerifyRepairLoop(
     return false;
   }
 
-  emit({ kind: "warn", message: "Verification failed. Running repair (" + input.maxRetries + " retries)..." });
+  emit({ kind: "warn", message: "Verification failed. Running repair (" + input.maxRepairAttempts + " attempt(s))..." });
   const result = await dependencies.taskCorrection.correct({
     task: input.task,
     source: input.source,
@@ -67,7 +67,7 @@ export async function runVerifyRepairLoop(
     correctTemplate: input.correctTemplate,
     validateTemplate: input.validateTemplate,
     command: input.workerCommand,
-    maxRetries: input.maxRetries,
+    maxRetries: input.maxRepairAttempts,
     mode: "wait",
     transport: input.transport,
     templateVars: input.templateVars,

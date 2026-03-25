@@ -59,7 +59,7 @@ export interface ReverifyTaskDependencies {
 export interface ReverifyTaskOptions {
   runId: string;
   transport: PromptTransport;
-  retries: number;
+  repairAttempts: number;
   noRepair: boolean;
   dryRun: boolean;
   printPrompt: boolean;
@@ -76,7 +76,7 @@ export function createReverifyTask(
     const {
       runId,
       transport,
-      retries,
+      repairAttempts,
       noRepair,
       dryRun,
       printPrompt,
@@ -166,7 +166,7 @@ export function createReverifyTask(
       validate: true,
       onlyValidate: true,
       noCorrect: noRepair,
-      retries,
+      repairAttempts,
     });
 
     const artifactContext = dependencies.artifactStore.createContext({
@@ -209,14 +209,14 @@ export function createReverifyTask(
         correctTemplate: templates.correct,
         workerCommand: effectiveWorkerCommand,
         transport,
-        maxRetries: runBehavior.maxRetries,
+        maxRepairAttempts: runBehavior.maxRepairAttempts,
         allowCorrection: runBehavior.allowCorrection,
         templateVars: promptContext.vars,
         artifactContext,
       });
 
       if (!valid) {
-        emit({ kind: "error", message: "Verification failed after all retries." });
+        emit({ kind: "error", message: "Verification failed after all repair attempts." });
         return finalizeAndReturn(2, "reverify-failed");
       }
 

@@ -191,17 +191,22 @@ Detached mode always keeps them.
 
 Verification is a separate phase from execution.
 
-After execution, `rundown` renders the verify template and produces a task-specific sidecar file next to the source document, for example:
+After execution, `rundown` renders the verify template, runs the verifier, and persists verifier stdout to a task-specific sidecar file next to the source document, for example:
 
 ```text
 Tasks.md.3.validation
 ```
 
-If that file contains exactly `OK`, the task is considered complete.
+Verifier contract:
+
+- `OK` means complete.
+- Any other stdout text is treated as a failure reason.
+
+If the sidecar file contains exactly `OK`, the task is considered complete.
 
 Anything else means the task stays unchecked.
 
-If verification fails and retries are enabled, `rundown` renders the repair template, runs another pass, and validates again.
+If verification fails and repair attempts are enabled, `rundown` renders the repair template, runs another pass, and validates again.
 
 ## Reverify historical tasks
 

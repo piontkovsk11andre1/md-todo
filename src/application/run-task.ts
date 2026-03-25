@@ -81,7 +81,7 @@ export interface RunTaskOptions {
   verify: boolean;
   onlyVerify: boolean;
   noRepair: boolean;
-  retries: number;
+  repairAttempts: number;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
@@ -107,7 +107,7 @@ export function createRunTask(
       verify,
       onlyVerify,
       noRepair,
-      retries,
+      repairAttempts,
       dryRun,
       printPrompt,
       keepArtifacts,
@@ -123,12 +123,12 @@ export function createRunTask(
       validate: verify,
       onlyValidate: onlyVerify,
       noCorrect: noRepair,
-      retries,
+      repairAttempts,
     });
     const shouldValidate = runBehavior.shouldValidate;
     const onlyValidate = runBehavior.onlyValidate;
     const allowCorrection = runBehavior.allowCorrection;
-    const maxRetries = runBehavior.maxRetries;
+    const maxRepairAttempts = runBehavior.maxRepairAttempts;
 
     const varsFilePath = resolveTemplateVarsFilePath(varsFileOption);
     const fileTemplateVars = varsFilePath
@@ -254,13 +254,13 @@ export function createRunTask(
           templates,
           automationCommand,
           transport,
-          maxRetries,
+          maxRepairAttempts,
           allowCorrection,
           extraTemplateVars,
           artifactContext,
         );
         if (!valid) {
-          emit({ kind: "error", message: "Verification failed after all retries. Task not checked." });
+          emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
           return finishRun(2, "verification-failed");
         }
 
@@ -303,7 +303,7 @@ export function createRunTask(
             templates,
             automationCommand,
             transport,
-            maxRetries,
+            maxRepairAttempts,
             allowCorrection,
             extraTemplateVars,
             artifactContext,
@@ -362,13 +362,13 @@ export function createRunTask(
           templates,
           automationCommand,
           transport,
-          maxRetries,
+          maxRepairAttempts,
           allowCorrection,
           extraTemplateVars,
           artifactContext,
         );
         if (!valid) {
-          emit({ kind: "error", message: "Verification failed after all retries. Task not checked." });
+          emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
           return finishRun(2, "verification-failed");
         }
       }
@@ -399,7 +399,7 @@ async function runValidation(
   templates: { validate: string; correct: string },
   workerCommand: string[],
   transport: PromptTransport,
-  maxRetries: number,
+  maxRepairAttempts: number,
   allowCorrection: boolean,
   extraTemplateVars: ExtraTemplateVars,
   artifactContext: ArtifactContext,
@@ -417,7 +417,7 @@ async function runValidation(
     correctTemplate: templates.correct,
     workerCommand,
     transport,
-    maxRetries,
+    maxRepairAttempts,
     allowCorrection,
     templateVars: extraTemplateVars,
     artifactContext,

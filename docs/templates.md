@@ -124,10 +124,12 @@ Validation steps:
 1. Check the current project state (files, tests, output) against the selected task.
 2. Decide if the task is complete.
 
-Write your result to `{{file}}.{{taskIndex}}.validation`.
+Return your result on stdout as exactly one of:
 
-- If complete, write exactly `OK`.
-- If not complete, write one short explanation of what is still missing.
+- `OK`
+- `NOT_OK: <short explanation of what is still missing>`
+
+- Do not create or modify validation files directly. `rundown` writes `{{file}}.{{taskIndex}}.validation` from your stdout result.
 - Do not modify the source Markdown task file.
 - Do not change any checkbox.
 ```
@@ -150,7 +152,7 @@ Example:
 
 Verification is intentionally strict.
 
-A task-specific sidecar validation file is produced next to the source Markdown file. If that file contains exactly `OK`, the task is considered complete.
+A task-specific sidecar validation file is produced by `rundown` next to the source Markdown file from verifier stdout. If that file contains exactly `OK`, the task is considered complete.
 
 Anything else means the task remains unchecked.
 

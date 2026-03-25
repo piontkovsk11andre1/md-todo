@@ -35,6 +35,17 @@ export function readValidationFile(task: Task): string | null {
 }
 
 /**
+ * Persist validation content for a task.
+ */
+export function writeValidationFile(task: Task, content: string): void {
+  const p = validationFilePath(task);
+  const normalized = content.trim() === ""
+    ? "Validation failed (no details)."
+    : content.trim();
+  fs.writeFileSync(p, normalized, "utf-8");
+}
+
+/**
  * Remove the validation sidecar file.
  */
 export function removeValidationFile(task: Task): void {
@@ -54,6 +65,45 @@ export function isValidationOk(task: Task): boolean {
   return content !== null && content.toUpperCase() === "OK";
 }
 
+interface ValidationResult {
+  ok: boolean;
+  sidecarContent: string;
+}
+
+function parseValidationResult(output: { exitCode: number | null; stdout: string; stderr: string }): ValidationResult {
+  const stdout = output.stdout.trim();
+  const stderr = output.stderr.trim();
+
+  if (output.exitCode !== 0) {
+    const reason = stdout || stderr || `Validation worker exited with code ${String(output.exitCode)}.`;
+    return { ok: false, sidecarContent: reason };
+  }
+
+  if (stdout.toUpperCase() === "OK") {
+    return { ok: true, sidecarContent: "OK" };
+  }
+
+  if (stdout !== "") {
+    const notOkPrefix = /^NOT_OK\s*:\s*/i;
+    const normalizedReason = stdout.replace(notOkPrefix, "").trim();
+    return {
+      ok: false,
+      sidecarContent: normalizedReason === ""
+        ? "Validation failed (no details)."
+        : normalizedReason,
+    };
+  }
+
+  if (stderr !== "") {
+    return { ok: false, sidecarContent: stderr };
+  }
+
+  return {
+    ok: false,
+    sidecarContent: "Validation worker returned empty output. Expected OK or a short failure reason.",
+  };
+}
+
 export interface ValidateOptions {
   task: Task;
   source: string;
@@ -70,7 +120,7 @@ export interface ValidateOptions {
 /**
  * Run the validation step:
  * render the validate template, execute the validator command,
- * then check the sidecar file.
+ * parse worker output, and persist a deterministic sidecar result.
  */
 export async function validate(options: ValidateOptions): Promise<boolean> {
   const vars: TemplateVars = {
@@ -97,9 +147,7 @@ export async function validate(options: ValidateOptions): Promise<boolean> {
     artifactPhase: "verify",
   });
 
-  if (runResult.exitCode !== 0) {
-    return false;
-  }
-
-  return isValidationOk(options.task);
+  const result = parseValidationResult(runResult);
+  writeValidationFile(options.task, result.sidecarContent);
+  return result.ok;
 }

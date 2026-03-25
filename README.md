@@ -92,7 +92,7 @@ Re-verify the most recently completed task (without changing checkbox state):
 rundown reverify -- opencode run
 ```
 
-Re-verify a specific historical run and fail fast without repair retries:
+Re-verify a specific historical run and fail fast without repair attempts:
 
 ```bash
 rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair -- opencode run
@@ -136,7 +136,7 @@ Need a confidence check later (for example before release)? Use `rundown reverif
 
 ### Repair
 
-If verification fails, a repair prompt fires, the worker retries, and verification runs again. Completion is earned, not assumed.
+If verification fails, a repair prompt fires, the worker runs another repair attempt, and verification runs again. Completion is earned, not assumed.
 
 ---
 

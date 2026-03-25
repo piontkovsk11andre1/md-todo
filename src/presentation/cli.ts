@@ -55,8 +55,8 @@ program
   .option("--verify", "Run verification after task execution (default)")
   .option("--no-verify", "Disable verification after task execution")
   .option("--only-verify", "Skip execution and run verification directly", false)
-  .option("--retries <n>", "Max repair retries on verification failure", "0")
-  .option("--no-repair", "Disable repair even when retries are set", false)
+  .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
+  .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
@@ -74,7 +74,7 @@ program
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean);
     const noRepair = resolveNoRepairFlag(opts);
-    const retries = parseRetries(opts.retries as string | undefined);
+    const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
@@ -97,7 +97,7 @@ program
       verify,
       onlyVerify,
       noRepair,
-      retries,
+      repairAttempts,
       dryRun,
       printPrompt,
       keepArtifacts,
@@ -115,8 +115,8 @@ program
   .description("Re-run verification for the previously completed task from saved artifacts.")
   .option("--run <id|latest>", "Choose artifact run id or 'latest'", "latest")
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
-  .option("--retries <n>", "Max repair retries on verification failure", "0")
-  .option("--no-repair", "Disable repair even when retries are set", false)
+  .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
+  .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered verify prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
@@ -124,7 +124,7 @@ program
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
     const transport = parsePromptTransport(opts.transport as string | undefined);
-    const retries = parseRetries(opts.retries as string | undefined);
+    const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const noRepair = resolveNoRepairFlag(opts);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
@@ -140,7 +140,7 @@ program
     return app.reverifyTask({
       runId: targetRun,
       transport,
-      retries,
+      repairAttempts,
       noRepair,
       dryRun,
       printPrompt,
@@ -264,14 +264,14 @@ function parseSortMode(value: string | undefined): SortMode {
   return sortMode;
 }
 
-function parseRetries(value: string | undefined): number {
-  const raw = value ?? "0";
+function parseRepairAttempts(value: string | undefined): number {
+  const raw = value ?? "1";
   if (!/^\d+$/.test(raw)) {
-    throw new Error(`Invalid --retries value: ${raw}. Must be a non-negative integer.`);
+    throw new Error(`Invalid --repair-attempts value: ${raw}. Must be a non-negative integer.`);
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed)) {
-    throw new Error(`Invalid --retries value: ${raw}. Must be a safe non-negative integer.`);
+    throw new Error(`Invalid --repair-attempts value: ${raw}. Must be a safe non-negative integer.`);
   }
   return parsed;
 }

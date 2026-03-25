@@ -43,7 +43,7 @@ describe("validate", () => {
     const sidecar = validationFilePath(task);
     fs.writeFileSync(sidecar, "OK", "utf-8");
 
-    runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+    runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "NOT_OK: still missing tests", stderr: "" });
 
     const valid = await validate({
       task,
@@ -56,12 +56,13 @@ describe("validate", () => {
     });
 
     expect(valid).toBe(false);
-    expect(fs.existsSync(sidecar)).toBe(false);
+    expect(fs.existsSync(sidecar)).toBe(true);
+    expect(fs.readFileSync(sidecar, "utf-8")).toBe("still missing tests");
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("returns false when validator exits non-zero even if sidecar says OK", async () => {
+  it("returns false when validator exits non-zero and writes failure reason", async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
     const file = path.join(tempDir, "Tasks.md");
     fs.writeFileSync(file, "# Tasks\n", "utf-8");
@@ -69,10 +70,7 @@ describe("validate", () => {
     const task = makeTask(file);
     const sidecar = validationFilePath(task);
 
-    runWorkerMock.mockImplementation(async () => {
-      fs.writeFileSync(sidecar, "OK", "utf-8");
-      return { exitCode: 2, stdout: "", stderr: "validation failed" };
-    });
+    runWorkerMock.mockResolvedValue({ exitCode: 2, stdout: "", stderr: "validation failed" });
 
     const valid = await validate({
       task,
@@ -85,6 +83,7 @@ describe("validate", () => {
     });
 
     expect(valid).toBe(false);
+    expect(fs.readFileSync(sidecar, "utf-8")).toBe("validation failed");
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
@@ -97,10 +96,7 @@ describe("validate", () => {
     const task = makeTask(file);
     const sidecar = validationFilePath(task);
 
-    runWorkerMock.mockImplementation(async () => {
-      fs.writeFileSync(sidecar, "ok", "utf-8");
-      return { exitCode: 0, stdout: "", stderr: "" };
-    });
+    runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "ok", stderr: "" });
 
     const valid = await validate({
       task,
@@ -113,6 +109,7 @@ describe("validate", () => {
     });
 
     expect(valid).toBe(true);
+    expect(fs.readFileSync(sidecar, "utf-8")).toBe("OK");
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });

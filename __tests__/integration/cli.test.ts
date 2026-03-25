@@ -288,8 +288,8 @@ describe.sequential("CLI integration", () => {
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--run <id|latest> Choose artifact run id or 'latest'");
-    expect(compactHelpOutput).toContain("--retries <n> Max repair retries on verification failure");
-    expect(compactHelpOutput).toContain("--no-repair Disable repair even when retries are set");
+    expect(compactHelpOutput).toContain("--repair-attempts <n> Max repair attempts on verification failure");
+    expect(compactHelpOutput).toContain("--no-repair Disable repair even when repair attempts are set");
   });
 
   it("reverify returns 3 when selected run is not completed", async () => {
@@ -331,12 +331,12 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("No worker command specified"))).toBe(true);
   });
 
-  it("reverify returns 1 for invalid retries value", async () => {
+  it("reverify returns 1 for invalid repair-attempts value", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli([
       "reverify",
-      "--retries",
+      "--repair-attempts",
       "abc",
       "--worker",
       "opencode",
@@ -344,7 +344,30 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(1);
-    expect(result.errors.some((line) => line.includes("Invalid --retries value: abc"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Invalid --repair-attempts value: abc"))).toBe(true);
+  });
+
+  it("reverify rejects legacy --retries flag", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "reverify",
+      "--retries",
+      "1",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--retries")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
   });
 
   it("reverify returns 0 when verification passes and does not change markdown checkboxes", async () => {
@@ -361,7 +384,7 @@ describe.sequential("CLI integration", () => {
       "--",
       "node",
       "-e",
-      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+      "console.log('OK')",
     ], workspace);
 
     expect(result.code).toBe(0);
@@ -384,7 +407,7 @@ describe.sequential("CLI integration", () => {
       "--",
       "node",
       "-e",
-      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+      "console.log('OK')",
     ], workspace);
 
     expect(result.code).toBe(0);
@@ -405,7 +428,7 @@ describe.sequential("CLI integration", () => {
       "--",
       "node",
       "-e",
-      "require('node:fs').writeFileSync('roadmap.md.0.validation','OK')",
+      "console.log('OK')",
     ], workspace);
 
     expect(result.code).toBe(0);
@@ -435,8 +458,32 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(2);
-    expect(result.errors.some((line) => line.includes("Verification failed after all retries."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
+  });
+
+  it("reverify runs repair attempts when --repair-attempts is set", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){fs.writeFileSync('.repair-done','1');process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){if(fs.existsSync('.repair-done')){console.log('OK');}process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Re-verification passed."))).toBe(true);
   });
 
   it("reverify keeps checked and unchecked checkbox states unchanged on failure", async () => {
@@ -525,6 +572,27 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("would run verification"))).toBe(true);
+  });
+
+  it("run --only-verify runs repair attempts when --repair-attempts is set", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Verify feature state\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--only-verify",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){fs.writeFileSync('.repair-done','1');process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){if(fs.existsSync('.repair-done')){console.log('OK');}process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: Verify feature state"))).toBe(true);
   });
 
   it("run forwards worker stdout and stderr in wait mode", async () => {

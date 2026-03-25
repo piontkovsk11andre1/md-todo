@@ -7,12 +7,12 @@ describe("resolveRunBehavior", () => {
       validate: false,
       onlyValidate: true,
       noCorrect: false,
-      retries: 0,
+      repairAttempts: 0,
     })).toEqual({
       shouldValidate: true,
       onlyValidate: true,
       allowCorrection: false,
-      maxRetries: 0,
+      maxRepairAttempts: 0,
     });
   });
 
@@ -21,26 +21,26 @@ describe("resolveRunBehavior", () => {
       validate: true,
       onlyValidate: false,
       noCorrect: true,
-      retries: 3,
+      repairAttempts: 3,
     })).toEqual({
       shouldValidate: true,
       onlyValidate: false,
       allowCorrection: false,
-      maxRetries: 3,
+      maxRepairAttempts: 3,
     });
   });
 
-  it("enables correction when retries are positive and no-correct is false", () => {
+  it("enables correction when repair attempts are positive and no-correct is false", () => {
     expect(resolveRunBehavior({
       validate: true,
       onlyValidate: false,
       noCorrect: false,
-      retries: 2,
+      repairAttempts: 2,
     })).toEqual({
       shouldValidate: true,
       onlyValidate: false,
       allowCorrection: true,
-      maxRetries: 2,
+      maxRepairAttempts: 2,
     });
   });
 });

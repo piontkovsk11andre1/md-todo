@@ -24,6 +24,8 @@ describe("CLI run option normalization", () => {
     expect(call.commitAfterComplete).toBe(false);
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
+    expect(call.noRepair).toBe(false);
+    expect(call.repairAttempts).toBe(1);
   });
 
   it("normalizes empty commit and hook values to undefined", async () => {
@@ -68,6 +70,19 @@ describe("CLI run option normalization", () => {
 });
 
 describe("CLI reverify option normalization", () => {
+  it("keeps repair enabled by default when --no-repair is omitted", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.noRepair).toBe(false);
+    expect(call.repairAttempts).toBe(1);
+  });
+
   it("passes reverify options to application layer", async () => {
     const reverifyTask = vi.fn(async () => 0);
     const call = await invokeReverifyAndCaptureCall([
@@ -76,7 +91,7 @@ describe("CLI reverify option normalization", () => {
       "run-123",
       "--transport",
       "arg",
-      "--retries",
+      "--repair-attempts",
       "2",
       "--no-repair",
       "--dry-run",
@@ -89,7 +104,7 @@ describe("CLI reverify option normalization", () => {
 
     expect(call.runId).toBe("run-123");
     expect(call.transport).toBe("arg");
-    expect(call.retries).toBe(2);
+    expect(call.repairAttempts).toBe(2);
     expect(call.noRepair).toBe(true);
     expect(call.dryRun).toBe(true);
     expect(call.printPrompt).toBe(true);

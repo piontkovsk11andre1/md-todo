@@ -459,7 +459,7 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     verify: true,
     onlyVerify: false,
     noRepair: false,
-    retries: 0,
+    repairAttempts: 0,
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,

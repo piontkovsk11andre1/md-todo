@@ -172,7 +172,7 @@ describe("reverify-task", () => {
     vi.mocked(taskValidation.validate).mockResolvedValue(false);
 
     const reverifyTask = createReverifyTask(dependencies);
-    const code = await reverifyTask(createOptions({ runId: "latest", noRepair: true, retries: 2 }));
+    const code = await reverifyTask(createOptions({ runId: "latest", noRepair: true, repairAttempts: 2 }));
 
     expect(code).toBe(2);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
@@ -682,7 +682,7 @@ function createOptions(overrides: Partial<ReverifyTaskOptions>): ReverifyTaskOpt
   return {
     runId: "latest",
     transport: "file",
-    retries: 0,
+    repairAttempts: 0,
     noRepair: false,
     dryRun: false,
     printPrompt: false,

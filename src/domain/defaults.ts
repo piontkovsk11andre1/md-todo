@@ -50,12 +50,14 @@ Verify whether the selected task is complete.
 
 Evaluate whether the task above has been completed.
 
-Write your result to a file named \`{{file}}.{{taskIndex}}.validation\` next to the source file.
+Return your verification result on stdout as exactly one of the following:
 
-- If the task is complete, write exactly: OK
-- If the task is not complete, write a short explanation of what is still missing.
+- \`OK\`
+- \`NOT_OK: <short explanation of what is still missing>\`
 
-Do not modify the source Markdown task file or change its checkbox state. Validation is determined only by the actual project state and the sidecar file above.
+Do not create or modify validation files directly. rundown will persist your stdout result to \`{{file}}.{{taskIndex}}.validation\`.
+
+Do not modify the source Markdown task file or change its checkbox state.
 
 Do not write anything else.
 `;

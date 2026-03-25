@@ -2,14 +2,14 @@ export interface RunBehaviorInput {
   validate: boolean;
   onlyValidate: boolean;
   noCorrect: boolean;
-  retries: number;
+  repairAttempts: number;
 }
 
 export interface RunBehavior {
   shouldValidate: boolean;
   onlyValidate: boolean;
   allowCorrection: boolean;
-  maxRetries: number;
+  maxRepairAttempts: number;
 }
 
 export interface WorkerRequirementInput {
@@ -20,18 +20,18 @@ export interface WorkerRequirementInput {
 }
 
 export function resolveRunBehavior(input: RunBehaviorInput): RunBehavior {
-  const maxRetries = Number.isFinite(input.retries) && input.retries > 0
-    ? Math.floor(input.retries)
+  const maxRepairAttempts = Number.isFinite(input.repairAttempts) && input.repairAttempts > 0
+    ? Math.floor(input.repairAttempts)
     : 0;
   const onlyValidate = input.onlyValidate;
   const shouldValidate = input.validate || onlyValidate;
-  const allowCorrection = !input.noCorrect && maxRetries > 0;
+  const allowCorrection = !input.noCorrect && maxRepairAttempts > 0;
 
   return {
     shouldValidate,
     onlyValidate,
     allowCorrection,
-    maxRetries,
+    maxRepairAttempts,
   };
 }
 

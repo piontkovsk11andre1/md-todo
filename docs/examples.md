@@ -24,7 +24,7 @@ What happens:
 2. renders the execute prompt from Markdown context,
 3. runs `opencode run`,
 4. verifies the result,
-5. retries repair if configured,
+5. runs repair attempts if configured,
 6. and only then marks the task complete.
 
 ## 2. PowerShell-safe worker usage
