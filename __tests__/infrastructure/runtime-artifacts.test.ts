@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beginRuntimePhase,
   completeRuntimePhase,
@@ -160,11 +160,132 @@ describe("runtime-artifacts", () => {
     expect(metadata.status).toBe("completed");
   });
 
+  it("returns null or zero for empty artifact stores", () => {
+    const cwd = createWorkspace();
+
+    expect(latestSavedRuntimeArtifact(cwd)).toBeNull();
+    expect(removeFailedRuntimeArtifacts(cwd)).toBe(0);
+    expect(removeSavedRuntimeArtifacts(cwd)).toBe(0);
+  });
+
+  it("records phases without prompt or captured output files", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: true });
+
+    const phase = beginRuntimePhase(context, {
+      phase: "worker",
+      command: ["node", "worker.js"],
+      mode: "wait",
+      transport: "arg",
+    });
+
+    completeRuntimePhase(phase, {
+      exitCode: 0,
+      outputCaptured: false,
+    });
+
+    const metadata = JSON.parse(fs.readFileSync(phase.metadataFile, "utf-8")) as {
+      promptFile: string | null;
+      stdoutFile: string | null;
+      stderrFile: string | null;
+      completedAt?: string;
+    };
+
+    expect(metadata.promptFile).toBeNull();
+    expect(metadata.stdoutFile).toBeNull();
+    expect(metadata.stderrFile).toBeNull();
+    expect(typeof metadata.completedAt).toBe("string");
+    expect(fs.existsSync(path.join(phase.dir, "prompt.md"))).toBe(false);
+    expect(fs.existsSync(path.join(phase.dir, "stdout.log"))).toBe(false);
+    expect(fs.existsSync(path.join(phase.dir, "stderr.log"))).toBe(false);
+  });
+
+  it("returns early when finalizing a deleted non-preserved run", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: false });
+
+    fs.rmSync(context.rootDir, { recursive: true, force: true });
+
+    expect(() => finalizeRuntimeArtifacts(context, { status: "completed", preserve: false })).not.toThrow();
+    expect(fs.existsSync(context.rootDir)).toBe(false);
+  });
+
+  it("retries finalization after an ENOENT write error when preserving artifacts", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "reverify", keepArtifacts: true });
+    const originalWriteFileSync = fs.writeFileSync;
+    let threwEnoent = false;
+
+    vi.spyOn(fs, "writeFileSync").mockImplementation(((filePath: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+      if (!threwEnoent && typeof filePath === "string" && filePath.endsWith("run.json")) {
+        threwEnoent = true;
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }
+
+      return originalWriteFileSync(filePath, data as string, "utf-8");
+    }) as typeof fs.writeFileSync);
+
+    finalizeRuntimeArtifacts(context, { status: "reverify-completed", preserve: true });
+
+    const metadata = JSON.parse(fs.readFileSync(path.join(context.rootDir, "run.json"), "utf-8")) as {
+      status?: string;
+    };
+    expect(metadata.status).toBe("reverify-completed");
+  });
+
+  it("returns when ENOENT happens during non-preserved finalization", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: false });
+    const originalWriteFileSync = fs.writeFileSync;
+    let threwEnoent = false;
+
+    vi.spyOn(fs, "writeFileSync").mockImplementation(((filePath: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+      if (!threwEnoent && typeof filePath === "string" && filePath.endsWith("run.json")) {
+        threwEnoent = true;
+        const error = new Error("missing") as NodeJS.ErrnoException;
+        error.code = "ENOENT";
+        throw error;
+      }
+
+      return originalWriteFileSync(filePath, data as string, "utf-8");
+    }) as typeof fs.writeFileSync);
+
+    expect(() => finalizeRuntimeArtifacts(context, { status: "completed", preserve: false })).not.toThrow();
+    expect(fs.existsSync(context.rootDir)).toBe(true);
+  });
+
+  it("rethrows non-ENOENT finalization write errors", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: true });
+    const originalWriteFileSync = fs.writeFileSync;
+    let threwGeneric = false;
+
+    vi.spyOn(fs, "writeFileSync").mockImplementation(((filePath: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+      if (!threwGeneric && typeof filePath === "string" && filePath.endsWith("run.json")) {
+        threwGeneric = true;
+        throw new Error("disk full");
+      }
+
+      return originalWriteFileSync(filePath, data as string, "utf-8");
+    }) as typeof fs.writeFileSync);
+
+    expect(() => finalizeRuntimeArtifacts(context, { status: "completed", preserve: true })).toThrow("disk full");
+  });
+
   it("returns display path relative to cwd", () => {
     const cwd = createWorkspace();
     const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: true });
 
     expect(displayArtifactsPath(context)).toMatch(/^\.rundown\/runs\/run-/);
+  });
+
+  it("falls back to the run directory name when display path is relative to itself", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: true });
+
+    expect(displayArtifactsPath({ ...context, cwd: context.rootDir })).toBe(path.basename(context.rootDir));
   });
 });
 

@@ -106,6 +106,38 @@ describe("runWorker", () => {
     expect(args).toEqual(["run", prompt]);
   });
 
+  it("appends the prompt directly for non-opencode commands in arg transport", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await runWorker({
+      command: ["node", "script.js"],
+      prompt: "inline prompt body",
+      mode: "wait",
+      transport: "arg",
+      cwd: workspace,
+    });
+
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("node");
+    expect(args).toEqual(["script.js", "inline prompt body"]);
+  });
+
   it("uses a single --prompt=... argument for opencode tui in file transport", async () => {
     let capturedPromptFile = "";
     let capturedPromptFileContent = "";
@@ -193,6 +225,37 @@ describe("runWorker", () => {
     }
   });
 
+  it("uses inherited stdio for non-Windows tui mode", async () => {
+    vi.spyOn(os, "platform").mockReturnValue("linux");
+
+    spawnMock.mockImplementation((_cmd: string, _args: string[], _options: Record<string, unknown>) => {
+      const child = new EventEmitter() as EventEmitter;
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    const result = await runWorker({
+      command: ["opencode"],
+      prompt: "interactive prompt",
+      mode: "tui",
+      transport: "arg",
+      cwd: workspace,
+    });
+
+    expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    expect(spawnMock).toHaveBeenCalledWith(
+      "opencode",
+      ["--prompt=interactive prompt"],
+      { stdio: "inherit", cwd: workspace, shell: false },
+    );
+  });
+
   it("keeps runtime artifacts when keepArtifacts is enabled", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
@@ -259,6 +322,102 @@ describe("runWorker", () => {
     const promptFile = findFirstPromptFile(workspace);
     expect(promptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
     expect(fs.readFileSync(promptFile, "utf-8")).toBe("detached prompt");
+  });
+
+  it("fails fast when no worker command is provided", async () => {
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await expect(runWorker({
+      command: [],
+      prompt: "unused",
+      mode: "wait",
+      transport: "arg",
+      cwd: workspace,
+    })).rejects.toThrow("No command specified after --");
+  });
+
+  it("fails when file transport is requested but no prompt file was created", async () => {
+    vi.resetModules();
+    vi.doMock("../../src/infrastructure/runtime-artifacts.js", async () => {
+      const actual = await vi.importActual<typeof import("../../src/infrastructure/runtime-artifacts.js")>("../../src/infrastructure/runtime-artifacts.js");
+      return {
+        ...actual,
+        beginRuntimePhase: vi.fn((context, options) => ({
+          context,
+          phase: options.phase,
+          sequence: 1,
+          dir: path.join(workspace, ".rundown", "runs", "mock-run", "01-worker"),
+          promptFile: null,
+          metadataFile: path.join(workspace, ".rundown", "runs", "mock-run", "01-worker", "metadata.json"),
+          metadata: {
+            runId: "mock-run",
+            sequence: 1,
+            phase: options.phase,
+            outputCaptured: false,
+            startedAt: new Date().toISOString(),
+          },
+        })),
+      };
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await expect(runWorker({
+      command: ["node", "worker.js"],
+      prompt: "prompt body",
+      mode: "wait",
+      transport: "file",
+      cwd: workspace,
+    })).rejects.toThrow("Prompt file transport requested but no prompt file was created.");
+
+    vi.doUnmock("../../src/infrastructure/runtime-artifacts.js");
+  });
+
+  it("records worker errors before rethrowing", async () => {
+    vi.resetModules();
+    vi.doUnmock("../../src/infrastructure/runtime-artifacts.js");
+
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("error", new Error("spawn failed"));
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await expect(runWorker({
+      command: ["node", "worker.js"],
+      prompt: "kept prompt",
+      mode: "wait",
+      transport: "file",
+      cwd: workspace,
+      keepArtifacts: true,
+    })).rejects.toThrow("spawn failed");
+
+    const runsDir = path.join(workspace, ".rundown", "runs");
+    const [runDirName] = fs.readdirSync(runsDir);
+    const phaseMetadataPath = path.join(runsDir, runDirName!, "01-worker", "metadata.json");
+    const phaseMetadata = JSON.parse(fs.readFileSync(phaseMetadataPath, "utf-8")) as {
+      exitCode: number | null;
+      outputCaptured: boolean;
+      notes?: string;
+      extra?: Record<string, unknown>;
+    };
+
+    expect(phaseMetadata.exitCode).toBeNull();
+    expect(phaseMetadata.outputCaptured).toBe(true);
+    expect(phaseMetadata.notes).toBe("spawn failed");
+    expect(phaseMetadata.extra).toEqual({ error: true });
   });
 
   it("does not fail when artifact directory is deleted before finalization", async () => {

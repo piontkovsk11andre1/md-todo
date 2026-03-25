@@ -110,6 +110,23 @@ describe("CLI run option normalization", () => {
     expect(call.workerCommand).toEqual(["opencode", "run"]);
   });
 
+  it("collects repeated template vars", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--var",
+      "env=prod",
+      "--var",
+      "owner=ops",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.cliTemplateVarArgs).toEqual(["env=prod", "owner=ops"]);
+  });
+
   it("logs a CLI error and exits with code 1 on invalid mode", async () => {
     const runTask = vi.fn(async () => 0);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -126,6 +143,24 @@ describe("CLI run option normalization", () => {
 
     expect(runTask).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --mode value: bad-mode"));
+  });
+
+  it("logs a CLI error and exits with code 1 on invalid sort", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--sort",
+      "created",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --sort value: created"));
   });
 });
 
@@ -170,6 +205,69 @@ describe("CLI reverify option normalization", () => {
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("accepts reverify worker commands passed after the separator", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("logs a CLI error and exits with code 1 on invalid transport", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeReverifyAndExpectExit([
+      "reverify",
+      "--transport",
+      "stdin",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(reverifyTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --transport value: stdin"));
+  });
+
+  it("logs a CLI error and exits with code 1 on invalid repair attempts", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeReverifyAndExpectExit([
+      "reverify",
+      "--repair-attempts",
+      "two",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(reverifyTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --repair-attempts value: two"));
+  });
+
+  it("logs a CLI error and exits with code 1 on unsafe repair attempts", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeReverifyAndExpectExit([
+      "reverify",
+      "--repair-attempts",
+      "9007199254740993",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(reverifyTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a safe non-negative integer"));
   });
 
   it("uses process.exit outside CLI test mode", async () => {
@@ -349,6 +447,40 @@ async function invokeReverifyAndCaptureCall(args: string[], reverifyTask: Return
 
   expect(reverifyTask).toHaveBeenCalledTimes(1);
   return reverifyTask.mock.calls[0][0] as RunTaskCall;
+}
+
+async function invokeReverifyAndExpectExit(args: string[], reverifyTask: ReturnType<typeof vi.fn>): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask,
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
 }
 
 function captureEnv(): Record<(typeof envKeys)[number], string | undefined> {
