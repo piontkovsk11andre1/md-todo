@@ -34,6 +34,7 @@ import {
   createTaskFailedEvent,
   type TracePhase,
   type TraceRunStatus,
+  type AnalysisSummaryPayload,
 } from "../domain/trace.js";
 import { parseWorkerOutput } from "../domain/worker-output-parser.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
@@ -228,6 +229,8 @@ export function createRunTask(
         durationMs: number;
       }>;
       taskOutcomeEmitted: boolean;
+      timingWaterfallEmitted: boolean;
+      pendingAnalysisSummary: AnalysisSummaryPayload | null;
       completed: boolean;
     } | null = null;
 
@@ -253,6 +256,8 @@ export function createRunTask(
         totalPhases: 0,
         phaseTimings: [],
         taskOutcomeEmitted: false,
+        timingWaterfallEmitted: false,
+        pendingAnalysisSummary: null,
         completed: false,
       };
 
@@ -486,15 +491,13 @@ export function createRunTask(
       activeTraceRun.taskOutcomeEmitted = true;
     };
 
-    const emitTraceRunCompleted = (status: ArtifactStoreStatus): void => {
-      if (!activeTraceRun || activeTraceRun.completed) {
+    const emitTraceTimingWaterfall = (): void => {
+      if (!activeTraceRun || activeTraceRun.timingWaterfallEmitted) {
         return;
       }
 
-      const runCompletedAtMs = Date.now();
-      const runCompletedAtIso = nowIso();
-      const traceStatus = toTraceStatus(status);
-      const totalDurationMs = Math.max(0, runCompletedAtMs - activeTraceRun.startedAtMs);
+      const waterfallAtIso = nowIso();
+      const totalDurationMs = Math.max(0, Date.now() - activeTraceRun.startedAtMs);
       const orderedPhaseTimings = [...activeTraceRun.phaseTimings]
         .sort((a, b) => a.sequence - b.sequence);
       const totalWorkerTimeMs = orderedPhaseTimings.reduce((sum, phase) => sum + phase.durationMs, 0);
@@ -510,7 +513,7 @@ export function createRunTask(
       }
 
       traceWriter.write(createTimingWaterfallEvent({
-        timestamp: runCompletedAtIso,
+        timestamp: waterfallAtIso,
         run_id: activeTraceRun.runId,
         payload: {
           phases: orderedPhaseTimings.map((phase) => ({
@@ -525,6 +528,19 @@ export function createRunTask(
           total_worker_time_ms: totalWorkerTimeMs,
         },
       }));
+
+      activeTraceRun.timingWaterfallEmitted = true;
+    };
+
+    const emitTraceRunCompleted = (status: ArtifactStoreStatus): void => {
+      if (!activeTraceRun || activeTraceRun.completed) {
+        return;
+      }
+
+      const runCompletedAtMs = Date.now();
+      const runCompletedAtIso = nowIso();
+      const traceStatus = toTraceStatus(status);
+      const totalDurationMs = Math.max(0, runCompletedAtMs - activeTraceRun.startedAtMs);
 
       traceWriter.write(createRunCompletedEvent({
         timestamp: runCompletedAtIso,
@@ -614,14 +630,27 @@ export function createRunTask(
           return;
         }
 
-        traceWriter.write(createAnalysisSummaryEvent({
-          timestamp: nowIso(),
-          run_id: activeTraceRun.runId,
-          payload: analysisSummaryPayload,
-        }));
+        activeTraceRun.pendingAnalysisSummary = analysisSummaryPayload;
       } catch (error) {
         completePhaseTrace(enrichmentPhase, null, "", error instanceof Error ? error.message : String(error), true);
         emit({ kind: "warn", message: "Trace enrichment failed: " + String(error) });
+      }
+    };
+
+    const emitDeferredTraceEvents = (): void => {
+      if (!activeTraceRun) {
+        return;
+      }
+
+      emitTraceTimingWaterfall();
+
+      if (activeTraceRun.pendingAnalysisSummary) {
+        traceWriter.write(createAnalysisSummaryEvent({
+          timestamp: nowIso(),
+          run_id: activeTraceRun.runId,
+          payload: activeTraceRun.pendingAnalysisSummary,
+        }));
+        activeTraceRun.pendingAnalysisSummary = null;
       }
     };
 
@@ -651,6 +680,7 @@ export function createRunTask(
     ): Promise<number> => {
       emitTraceTaskOutcome(status, failure);
       await runTraceEnrichment(status);
+      emitDeferredTraceEvents();
       emitTraceRunCompleted(status);
       finalizeArtifacts(status, preserve);
       return code;
@@ -1213,6 +1243,7 @@ export function createRunTask(
           exitCode: null,
         });
         await runTraceEnrichment("failed");
+        emitDeferredTraceEvents();
         emitTraceRunCompleted("failed");
         finalizeArtifacts("failed", keepArtifacts || mode === "detached");
       }
