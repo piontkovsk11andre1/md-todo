@@ -1,10 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import * as api from "../../src/index.js";
 import * as createAppApi from "../../src/create-app.js";
+import type { TraceEvent, TraceWriterPort } from "../../src/index.js";
+import type { TraceEvent as DomainTraceEvent } from "../../src/domain/trace.js";
 
 describe("public API exports", () => {
   it("keeps root index exports intentionally narrow", () => {
     expect(Object.keys(api).sort()).toEqual(["createApp"]);
+  });
+
+  it("exports trace-related public types", () => {
+    expectTypeOf<TraceEvent>().toEqualTypeOf<DomainTraceEvent>();
+
+    const writer: TraceWriterPort = {
+      write: () => {},
+      flush: () => {},
+    };
+
+    expectTypeOf(writer).toMatchTypeOf<TraceWriterPort>();
   });
 
   it("keeps create-app runtime exports stable", () => {

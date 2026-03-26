@@ -750,6 +750,14 @@ function createDependencies(options: {
       cwd: vi.fn(() => options.cwd),
     },
     fileSystem: options.fileSystem,
+    traceWriter: {
+      write: vi.fn(),
+      flush: vi.fn(),
+    },
+    createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+      write: vi.fn(),
+      flush: vi.fn(),
+    })),
     pathOperations: {
       join: (...parts) => path.join(...parts),
       resolve: (...parts) => path.resolve(...parts),
@@ -839,6 +847,7 @@ function createOptions(overrides: Partial<ReverifyTaskOptions>): ReverifyTaskOpt
     printPrompt: false,
     keepArtifacts: false,
     workerCommand: [],
+    trace: false,
     ...overrides,
   };
 }

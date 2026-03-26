@@ -38,6 +38,8 @@ export interface RunnerOptions {
   mode?: RunnerMode;
   /** How to pass the prompt. Default: "file". */
   transport?: PromptTransport;
+  /** Enable trace-aware runner behavior. */
+  trace?: boolean;
   /** Working directory for the command. */
   cwd?: string;
   /** Optional shared runtime artifact context. */
@@ -94,7 +96,14 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
   });
 
   const transportPromptFile = transport === "file" ? phase.promptFile : null;
-  const args = buildWorkerArgs(options.command, options.prompt, transport, transportPromptFile, cwd);
+  const args = buildWorkerArgs(
+    options.command,
+    options.prompt,
+    transport,
+    transportPromptFile,
+    cwd,
+    options.trace ?? false,
+  );
 
   const [cmd, ...cmdArgs] = args;
 
@@ -135,13 +144,14 @@ function buildWorkerArgs(
   transport: PromptTransport,
   promptFile: string | null,
   cwd: string,
+  trace: boolean,
 ): string[] {
   if (command.length === 0) {
     return [];
   }
 
   if (isOpenCodeCommand(command[0])) {
-    return buildOpenCodeArgs(command, prompt, promptFile, cwd);
+    return buildOpenCodeArgs(command, prompt, promptFile, cwd, trace);
   }
 
   const args = [...command];
@@ -170,11 +180,13 @@ function buildOpenCodeArgs(
   prompt: string,
   promptFile: string | null,
   cwd: string,
+  trace: boolean,
 ): string[] {
   const [cmd, ...rest] = command;
+  const traceArgs = trace && !hasOpenCodeThinkingArg(rest) ? ["--thinking"] : [];
 
   if (rest[0] === "run") {
-    const args = [cmd, ...rest];
+    const args = [cmd, ...rest, ...traceArgs];
 
     if (promptFile) {
       args.push(buildOpenCodeRunBootstrapPrompt());
@@ -187,10 +199,14 @@ function buildOpenCodeArgs(
   }
 
   if (promptFile) {
-    return [cmd, ...rest, buildOpenCodeTuiPromptArg(buildOpenCodeTuiBootstrapPrompt(promptFile, cwd))];
+    return [cmd, ...rest, ...traceArgs, buildOpenCodeTuiPromptArg(buildOpenCodeTuiBootstrapPrompt(promptFile, cwd))];
   }
 
-  return [cmd, ...rest, buildOpenCodeTuiPromptArg(prompt)];
+  return [cmd, ...rest, ...traceArgs, buildOpenCodeTuiPromptArg(prompt)];
+}
+
+function hasOpenCodeThinkingArg(args: string[]): boolean {
+  return args.some((arg) => arg === "--thinking" || arg.startsWith("--thinking="));
 }
 
 function buildOpenCodeRunBootstrapPrompt(): string {

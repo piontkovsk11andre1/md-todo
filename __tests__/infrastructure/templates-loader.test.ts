@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DEFAULT_PLAN_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
+  DEFAULT_TRACE_TEMPLATE,
   DEFAULT_VERIFY_TEMPLATE,
 } from "../../src/domain/defaults.js";
 import { loadProjectTemplates } from "../../src/infrastructure/templates-loader.js";
@@ -46,6 +48,7 @@ describe("loadProjectTemplates", () => {
     expect(templates.verify).toBe("VERIFY");
     expect(templates.repair).toBe("REPAIR");
     expect(templates.plan).toBe("PLAN");
+    expect(templates.trace).toBe(DEFAULT_TRACE_TEMPLATE);
   });
 
   it("falls back to defaults when templates are missing", () => {
@@ -56,6 +59,8 @@ describe("loadProjectTemplates", () => {
     expect(templates.task).toBe(DEFAULT_TASK_TEMPLATE);
     expect(templates.verify).toBe(DEFAULT_VERIFY_TEMPLATE);
     expect(templates.repair).toBe(DEFAULT_REPAIR_TEMPLATE);
+    expect(templates.plan).toBe(DEFAULT_PLAN_TEMPLATE);
+    expect(templates.trace).toBe(DEFAULT_TRACE_TEMPLATE);
   });
 
   it("loads explicit execute/verify/repair files with precedence", () => {
@@ -69,5 +74,16 @@ describe("loadProjectTemplates", () => {
     expect(templates.task).toBe("NEW EXECUTE");
     expect(templates.verify).toBe("NEW VERIFY");
     expect(templates.repair).toBe("NEW REPAIR");
+    expect(templates.plan).toBe(DEFAULT_PLAN_TEMPLATE);
+    expect(templates.trace).toBe(DEFAULT_TRACE_TEMPLATE);
+  });
+
+  it("loads trace.md when present", () => {
+    const cwd = makeTempDir();
+    writeTemplate(cwd, "trace.md", "TRACE");
+
+    const templates = loadProjectTemplates(cwd);
+
+    expect(templates.trace).toBe("TRACE");
   });
 });

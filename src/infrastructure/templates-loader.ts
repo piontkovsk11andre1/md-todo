@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  DEFAULT_TRACE_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_VERIFY_TEMPLATE,
@@ -18,6 +19,7 @@ export interface ProjectTemplates {
   verify: string;
   repair: string;
   plan: string;
+  trace: string;
 }
 
 const CONFIG_DIR = ".rundown";
@@ -30,6 +32,7 @@ const CONFIG_DIR = ".rundown";
  *   .rundown/verify.md
  *   .rundown/repair.md
  *   .rundown/plan.md
+ *   .rundown/trace.md
  */
 export function loadProjectTemplates(cwd: string = process.cwd()): ProjectTemplates {
   const dir = path.join(cwd, CONFIG_DIR);
@@ -39,6 +42,7 @@ export function loadProjectTemplates(cwd: string = process.cwd()): ProjectTempla
     verify: loadFile(path.join(dir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
     repair: loadFile(path.join(dir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
     plan: loadFile(path.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
+    trace: loadFile(path.join(dir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,
   };
 }
 

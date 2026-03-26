@@ -12,6 +12,7 @@ export interface TaskRepairOptions {
   maxRetries: number;
   mode?: ProcessRunMode;
   transport?: PromptTransport;
+  trace?: boolean;
   cwd?: string;
   templateVars?: Record<string, unknown>;
   artifactContext?: unknown;

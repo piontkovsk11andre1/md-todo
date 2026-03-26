@@ -11,3 +11,6 @@ export {
   type AppUseCaseFactories,
   type CreateAppDependencies,
 } from "./create-app.js";
+
+export type { TraceEvent } from "./domain/trace.js";
+export type { TraceWriterPort } from "./domain/ports/trace-writer-port.js";

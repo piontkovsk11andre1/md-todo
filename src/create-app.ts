@@ -23,6 +23,7 @@ import type {
   TaskVerificationPort,
   TemplateLoader,
   TemplateVarsLoaderPort,
+  TraceWriterPort,
   VerificationSidecar,
   WorkerExecutorPort,
   WorkingDirectoryPort,
@@ -35,7 +36,9 @@ import {
   createFsTemplateLoader,
   createFsVerificationSidecar,
   createFsTemplateVarsLoaderAdapter,
+  createJsonlTraceWriter,
   createNodeFileSystem,
+  createNoopTraceWriter,
   createNodePathOperationsAdapter,
   createSourceResolverAdapter,
   createSystemClock,
@@ -77,6 +80,7 @@ export interface AppPorts {
   workingDirectory: WorkingDirectoryPort;
   pathOperations: PathOperationsPort;
   templateVarsLoader: TemplateVarsLoaderPort;
+  traceWriter: TraceWriterPort;
   output: ApplicationOutputPort;
 }
 
@@ -103,6 +107,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     workingDirectory: overrides.workingDirectory ?? createWorkingDirectoryAdapter(),
     pathOperations: overrides.pathOperations ?? createNodePathOperationsAdapter(),
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
+    traceWriter: overrides.traceWriter ?? createNoopTraceWriter(),
     output: overrides.output ?? createNoopOutputPort(),
   };
 }
@@ -130,6 +135,17 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       processRunner: ports.processRunner,
       pathOperations: ports.pathOperations,
       templateVarsLoader: ports.templateVarsLoader,
+      traceWriter: ports.traceWriter,
+      createTraceWriter: (trace, artifactContext) => {
+        if (!trace) {
+          return ports.traceWriter;
+        }
+
+        return createJsonlTraceWriter(
+          ports.pathOperations.join(artifactContext.rootDir, "trace.jsonl"),
+          ports.fileSystem,
+        );
+      },
       output: ports.output,
     }),
     reverifyTask: (ports) => createReverifyTask({
@@ -139,6 +155,17 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       verificationSidecar: ports.verificationSidecar,
       workingDirectory: ports.workingDirectory,
       fileSystem: ports.fileSystem,
+      traceWriter: ports.traceWriter,
+      createTraceWriter: (trace, artifactContext) => {
+        if (!trace) {
+          return ports.traceWriter;
+        }
+
+        return createJsonlTraceWriter(
+          ports.pathOperations.join(artifactContext.rootDir, "trace.jsonl"),
+          ports.fileSystem,
+        );
+      },
       templateLoader: ports.templateLoader,
       pathOperations: ports.pathOperations,
       output: ports.output,
@@ -153,6 +180,17 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       templateVarsLoader: ports.templateVarsLoader,
       artifactStore: ports.artifactStore,
+      traceWriter: ports.traceWriter,
+      createTraceWriter: (trace, artifactContext) => {
+        if (!trace) {
+          return ports.traceWriter;
+        }
+
+        return createJsonlTraceWriter(
+          ports.pathOperations.join(artifactContext.rootDir, "trace.jsonl"),
+          ports.fileSystem,
+        );
+      },
       output: ports.output,
     }),
     listTasks: (ports) => createListTasks({

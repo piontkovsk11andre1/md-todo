@@ -61,6 +61,8 @@ program
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
+  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
+  .option("--trace-only", "Skip task execution and run only trace enrichment on the latest completed artifact run", false)
   .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .rundown/vars.json)")
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--commit", "Auto-commit checked task file after successful completion", false)
@@ -82,6 +84,8 @@ program
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
+    const trace = opts.trace as boolean;
+    const traceOnly = opts.traceOnly as boolean;
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
 
@@ -108,6 +112,8 @@ program
       dryRun,
       printPrompt,
       keepArtifacts,
+      trace,
+      traceOnly,
       varsFileOption,
       cliTemplateVarArgs,
       workerCommand,
@@ -129,6 +135,7 @@ program
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered verify prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
+  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
@@ -138,6 +145,7 @@ program
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
+    const trace = opts.trace as boolean;
     const targetRun = normalizeOptionalString(opts.run) ?? "latest";
 
     const workerCommand = Array.isArray(opts.worker)
@@ -155,6 +163,7 @@ program
       printPrompt,
       keepArtifacts,
       workerCommand,
+      trace,
     });
   }));
 
@@ -208,6 +217,7 @@ program
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
+  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
   .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .rundown/vars.json)")
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
@@ -219,6 +229,7 @@ program
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
+    const trace = opts.trace as boolean;
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
 
@@ -236,6 +247,7 @@ program
       dryRun,
       printPrompt,
       keepArtifacts,
+      trace,
       varsFileOption,
       cliTemplateVarArgs,
       workerCommand,

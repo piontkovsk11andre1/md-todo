@@ -15,6 +15,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         prompt: options.prompt,
         mode: options.mode,
         transport: options.transport,
+        trace: options.trace,
         cwd: options.cwd,
         artifactContext: options.artifactContext as RuntimeArtifactsContext | undefined,
         artifactPhase: options.artifactPhase,

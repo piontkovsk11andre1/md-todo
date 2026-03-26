@@ -112,6 +112,7 @@ export interface VerifyOptions {
   command: string[];
   mode?: RunnerMode;
   transport?: PromptTransport;
+  trace?: boolean;
   cwd?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
@@ -142,6 +143,7 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
     prompt,
     mode: options.mode ?? "wait",
     transport: options.transport ?? "file",
+    trace: options.trace,
     cwd: options.cwd,
     artifactContext: options.artifactContext,
     artifactPhase: "verify",

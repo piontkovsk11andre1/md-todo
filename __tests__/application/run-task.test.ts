@@ -213,6 +213,537 @@ describe("run-task helper exports", () => {
   });
 });
 
+describe("run-task trace enrichment", () => {
+  it("emits prompt.metrics events per traced phase", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: "tasks.md",
+      contextBefore: "abc",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "execute.md"))) {
+        return "{{context}}::{{task}}";
+      }
+      if (templatePath.endsWith(path.join(".rundown", "trace.md"))) {
+        return "TRACE {{task}}";
+      }
+      return null;
+    });
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "medium",
+            execution_quality: "clean",
+            direction_changes: 0,
+            modules_touched: [],
+            wasted_effort_pct: 0,
+            key_decisions: [],
+            risk_flags: [],
+            improvement_suggestions: [],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const promptMetricsEvents = traceWriter.write.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.event_type === "prompt.metrics");
+
+    expect(promptMetricsEvents.length).toBeGreaterThanOrEqual(2);
+    expect(promptMetricsEvents).toContainEqual(expect.objectContaining({
+      event_type: "prompt.metrics",
+      payload: expect.objectContaining({
+        char_count: 18,
+        estimated_tokens: 4.5,
+        template_name: "execute.md",
+      }),
+    }));
+    const executePromptMetrics = promptMetricsEvents.find((event) => event.payload.template_name === "execute.md");
+    expect(executePromptMetrics?.payload.context_ratio).toBeCloseTo(3 / 18);
+    expect(promptMetricsEvents.some((event) => event.payload.template_name === "trace.md")).toBe(true);
+  });
+
+  it("emits task.context event with deterministic selection metrics", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n- [ ] Follow-up\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: "tasks.md",
+      contextBefore: "Intro\nNotes",
+    });
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "medium",
+            execution_quality: "clean",
+            direction_changes: 0,
+            modules_touched: [],
+            wasted_effort_pct: 0,
+            key_decisions: [],
+            risk_flags: [],
+            improvement_suggestions: [],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "task.context",
+      payload: {
+        source_files_scanned: 1,
+        total_unchecked_tasks: 2,
+        task_position_in_file: 1,
+        document_context_lines: 2,
+        has_subtasks: false,
+        is_inline_cli: false,
+        is_verify_only: false,
+      },
+    }));
+  });
+
+  it("emits timing.waterfall event at run end with phase timings and totals", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "medium",
+            execution_quality: "clean",
+            direction_changes: 0,
+            modules_touched: [],
+            wasted_effort_pct: 0,
+            key_decisions: [],
+            risk_flags: [],
+            improvement_suggestions: [],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const timingWaterfallEvents = traceWriter.write.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.event_type === "timing.waterfall");
+
+    expect(timingWaterfallEvents).toHaveLength(1);
+    const timingEvent = timingWaterfallEvents[0];
+    expect(Array.isArray(timingEvent.payload.phases)).toBe(true);
+    expect(timingEvent.payload.phases.length).toBeGreaterThanOrEqual(2);
+    expect(timingEvent.payload.phases).toContainEqual(expect.objectContaining({ phase: "execute", sequence: 1 }));
+    expect(timingEvent.payload.phases.some((phase: { phase: string }) => phase.phase === "plan")).toBe(true);
+
+    const totalDurationFromPhases = timingEvent.payload.phases
+      .reduce((sum: number, phase: { duration_ms: number }) => sum + phase.duration_ms, 0);
+
+    expect(timingEvent.payload.total_worker_time_ms).toBe(totalDurationFromPhases);
+    expect(timingEvent.payload.idle_time_ms).toBeGreaterThanOrEqual(0);
+    expect(timingEvent.payload.total_wall_time_ms).toBeGreaterThanOrEqual(timingEvent.payload.total_worker_time_ms);
+  });
+
+  it("emits output.volume events per traced phase with byte and line counts", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "line one\nline two",
+        stderr: "warn one",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "medium",
+            execution_quality: "clean",
+            direction_changes: 0,
+            modules_touched: [],
+            wasted_effort_pct: 0,
+            key_decisions: [],
+            risk_flags: [],
+            improvement_suggestions: [],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const outputVolumeEvents = traceWriter.write.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.event_type === "output.volume");
+
+    expect(outputVolumeEvents.length).toBeGreaterThanOrEqual(2);
+    expect(outputVolumeEvents).toContainEqual(expect.objectContaining({
+      event_type: "output.volume",
+      payload: {
+        phase: "execute",
+        sequence: 1,
+        stdout_bytes: Buffer.byteLength("line one\nline two", "utf8"),
+        stderr_bytes: Buffer.byteLength("warn one", "utf8"),
+        stdout_lines: 2,
+        stderr_lines: 1,
+      },
+    }));
+  });
+
+  it("emits agent trace events from phase stdout when tracing is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "<thinking>",
+        "compare adapter choices",
+        "</thinking>",
+        "```rundown-trace",
+        "confidence: 90",
+        "files_read: src/application/run-task.ts, src/domain/trace.ts",
+        "files_written: src/application/run-task.ts",
+        "tools_used: read, apply_patch, read",
+        "approach: emit parsed events after each phase",
+        "blockers: none",
+        "```",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const eventTypes = traceWriter.write.mock.calls.map((call) => call[0]?.event_type);
+
+    expect(eventTypes).toContain("agent.signals");
+    expect(eventTypes).toContain("agent.thinking");
+    expect(eventTypes).toContain("agent.tool_usage");
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "agent.signals",
+      payload: {
+        confidence: 90,
+        files_read: ["src/application/run-task.ts", "src/domain/trace.ts"],
+        files_written: ["src/application/run-task.ts"],
+        tools_used: ["read", "apply_patch", "read"],
+        approach: "emit parsed events after each phase",
+        blockers: "none",
+      },
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "agent.tool_usage",
+      payload: {
+        tools: ["read", "apply_patch"],
+      },
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "agent.thinking",
+      payload: {
+        thinking_blocks_count: 1,
+        total_thinking_chars: "compare adapter choices".length,
+      },
+    }));
+  });
+
+  it("does not emit agent tool usage when tools_used is omitted", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "```rundown-trace",
+        "confidence: not-a-number",
+        "approach: keep scope narrow",
+        "```",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "agent.signals",
+      payload: {
+        confidence: null,
+        files_read: [],
+        files_written: [],
+        tools_used: [],
+        approach: "keep scope narrow",
+        blockers: null,
+      },
+    }));
+    expect(traceWriter.write.mock.calls.some((call) => call[0]?.event_type === "agent.tool_usage")).toBe(false);
+  });
+
+  it("emits analysis.summary event from the final trace enrichment phase", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "high",
+            execution_quality: "clean",
+            direction_changes: 1,
+            modules_touched: ["src/application/run-task.ts"],
+            wasted_effort_pct: 5,
+            key_decisions: ["reuse runtime artifacts metadata"],
+            risk_flags: [],
+            improvement_suggestions: ["reduce prompt size"],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "analysis.summary",
+      payload: {
+        task_complexity: "high",
+        execution_quality: "clean",
+        direction_changes: 1,
+        modules_touched: ["src/application/run-task.ts"],
+        wasted_effort_pct: 5,
+        key_decisions: ["reuse runtime artifacts metadata"],
+        risk_flags: [],
+        improvement_suggestions: ["reduce prompt size"],
+        skill_gaps: [],
+        thinking_quality: "clear",
+        uncertainty_moments: 0,
+      },
+    }));
+  });
+
+  it("warns and skips analysis.summary when trace enrichment output is malformed", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "not structured",
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write.mock.calls.some((call) => call[0]?.event_type === "analysis.summary")).toBe(false);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("analysis.summary"))).toBe(true);
+  });
+});
+
 describe("run-task prompt and mode behavior", () => {
   it("returns 3 when no markdown files match the source", async () => {
     const cwd = "/workspace";
@@ -756,6 +1287,14 @@ describe("run-task --all mode", () => {
         isAbsolute: (p) => path.isAbsolute(p),
       },
       templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
       output: { emit: (event) => { events.push(event); } },
     };
 
@@ -852,6 +1391,14 @@ describe("run-task --all mode", () => {
         isAbsolute: (p) => path.isAbsolute(p),
       },
       templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
       output: { emit: (event) => { events.push(event); } },
     };
 
@@ -1106,6 +1653,14 @@ function createDependencies(options: {
     templateVarsLoader: {
       load: vi.fn(() => ({})),
     },
+    traceWriter: {
+      write: vi.fn(),
+      flush: vi.fn(),
+    },
+    createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+      write: vi.fn(),
+      flush: vi.fn(),
+    })),
     output: {
       emit: (event) => {
         events.push(event);
@@ -1206,6 +1761,8 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     onCompleteCommand: undefined,
     runAll: false,
     onFailCommand: undefined,
+    trace: false,
+    traceOnly: false,
     ...overrides,
   };
 }

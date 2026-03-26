@@ -14,3 +14,5 @@ export { createWorkingDirectoryAdapter } from "./working-directory-adapter.js";
 export { createDirectoryOpenerAdapter } from "./directory-opener-adapter.js";
 export { createNodePathOperationsAdapter } from "./node-path-operations-adapter.js";
 export { createFsTemplateVarsLoaderAdapter } from "./fs-template-vars-loader-adapter.js";
+export { createJsonlTraceWriter } from "./jsonl-trace-writer.js";
+export { createNoopTraceWriter } from "./noop-trace-writer.js";

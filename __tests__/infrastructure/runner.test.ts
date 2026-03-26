@@ -106,6 +106,72 @@ describe("runWorker", () => {
     expect(args).toEqual(["run", prompt]);
   });
 
+  it("auto-appends --thinking for opencode when trace is enabled", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await runWorker({
+      command: ["opencode", "run"],
+      prompt: "trace prompt",
+      mode: "wait",
+      transport: "arg",
+      trace: true,
+      cwd: workspace,
+    });
+
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("opencode");
+    expect(args).toEqual(["run", "--thinking", "trace prompt"]);
+  });
+
+  it("does not duplicate --thinking when already provided for opencode", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await runWorker({
+      command: ["opencode", "run", "--thinking"],
+      prompt: "trace prompt",
+      mode: "wait",
+      transport: "arg",
+      trace: true,
+      cwd: workspace,
+    });
+
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("opencode");
+    expect(args).toEqual(["run", "--thinking", "trace prompt"]);
+  });
+
   it("appends the prompt directly for non-opencode commands in arg transport", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {

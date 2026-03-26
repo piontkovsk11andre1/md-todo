@@ -681,6 +681,244 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
   });
 
+  it("run --trace writes trace.jsonl with run lifecycle events", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+      "--trace",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const traceFilePaths = listTraceFiles(workspace);
+    expect(traceFilePaths.length).toBeGreaterThan(0);
+
+    const raw = fs.readFileSync(traceFilePaths[0]!, "utf-8").trim();
+    expect(raw.length).toBeGreaterThan(0);
+
+    const events = raw.split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { event_type?: string });
+    const eventTypes = events.map((event) => event.event_type);
+    expect(eventTypes).toContain("run.started");
+    expect(eventTypes).toContain("run.completed");
+  });
+
+  it("run --trace writes analysis.summary as the last event before run.completed", async () => {
+    const workspace = makeTempWorkspace();
+    const workerScriptPath = path.join(workspace, "trace-worker.mjs");
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "console.log('```analysis.summary');",
+        "console.log(JSON.stringify({",
+        "  task_complexity: 'medium',",
+        "  execution_quality: 'clean',",
+        "  direction_changes: 0,",
+        "  modules_touched: [],",
+        "  wasted_effort_pct: 0,",
+        "  key_decisions: [],",
+        "  risk_flags: [],",
+        "  improvement_suggestions: [],",
+        "  skill_gaps: [],",
+        "  thinking_quality: 'clear',",
+        "  uncertainty_moments: 0,",
+        "}));",
+        "console.log('```');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+      "--trace",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const traceFilePaths = listTraceFiles(workspace);
+    expect(traceFilePaths.length).toBeGreaterThan(0);
+
+    const events = fs.readFileSync(traceFilePaths[0]!, "utf-8")
+      .trim()
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { event_type?: string });
+    const eventTypes = events.map((event) => event.event_type);
+
+    const runCompletedIndex = eventTypes.lastIndexOf("run.completed");
+    expect(runCompletedIndex).toBeGreaterThan(0);
+    expect(eventTypes[runCompletedIndex - 1]).toBe("analysis.summary");
+  });
+
+  it("run --trace includes prompt.metrics, timing.waterfall, and verification.efficiency with numeric payloads", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Verify feature state\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--only-verify",
+      "--repair-attempts",
+      "1",
+      "--trace",
+      "--keep-artifacts",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){fs.writeFileSync('.repair-done','1');process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){if(fs.existsSync('.repair-done')){console.log('OK');}process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const traceFilePaths = listTraceFiles(workspace);
+    expect(traceFilePaths.length).toBeGreaterThan(0);
+
+    const events = fs.readFileSync(traceFilePaths[0]!, "utf-8")
+      .trim()
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as { event_type?: string; payload?: Record<string, unknown> });
+
+    const promptMetricsEvent = events.find((event) => event.event_type === "prompt.metrics");
+    expect(promptMetricsEvent).toBeDefined();
+    expect(typeof promptMetricsEvent?.payload?.char_count).toBe("number");
+    expect(Number.isFinite(promptMetricsEvent?.payload?.char_count as number)).toBe(true);
+    expect(typeof promptMetricsEvent?.payload?.estimated_tokens).toBe("number");
+    expect(Number.isFinite(promptMetricsEvent?.payload?.estimated_tokens as number)).toBe(true);
+    expect(typeof promptMetricsEvent?.payload?.context_ratio).toBe("number");
+    expect(Number.isFinite(promptMetricsEvent?.payload?.context_ratio as number)).toBe(true);
+
+    const timingWaterfallEvent = events.find((event) => event.event_type === "timing.waterfall");
+    expect(timingWaterfallEvent).toBeDefined();
+    expect(typeof timingWaterfallEvent?.payload?.idle_time_ms).toBe("number");
+    expect(Number.isFinite(timingWaterfallEvent?.payload?.idle_time_ms as number)).toBe(true);
+    expect(typeof timingWaterfallEvent?.payload?.total_wall_time_ms).toBe("number");
+    expect(Number.isFinite(timingWaterfallEvent?.payload?.total_wall_time_ms as number)).toBe(true);
+    expect(typeof timingWaterfallEvent?.payload?.total_worker_time_ms).toBe("number");
+    expect(Number.isFinite(timingWaterfallEvent?.payload?.total_worker_time_ms as number)).toBe(true);
+
+    const phases = timingWaterfallEvent?.payload?.phases;
+    expect(Array.isArray(phases)).toBe(true);
+    expect((phases as unknown[]).length).toBeGreaterThan(0);
+    const firstPhase = (phases as Array<Record<string, unknown>>)[0];
+    expect(typeof firstPhase?.duration_ms).toBe("number");
+    expect(Number.isFinite(firstPhase?.duration_ms as number)).toBe(true);
+
+    const verificationEfficiencyEvent = events.find((event) => event.event_type === "verification.efficiency");
+    expect(verificationEfficiencyEvent).toBeDefined();
+    expect(typeof verificationEfficiencyEvent?.payload?.total_verify_attempts).toBe("number");
+    expect(Number.isFinite(verificationEfficiencyEvent?.payload?.total_verify_attempts as number)).toBe(true);
+    expect(typeof verificationEfficiencyEvent?.payload?.total_repair_attempts).toBe("number");
+    expect(Number.isFinite(verificationEfficiencyEvent?.payload?.total_repair_attempts as number)).toBe(true);
+
+    const taskContextEvent = events.find((event) => event.event_type === "task.context");
+    expect(taskContextEvent).toBeDefined();
+    expect(typeof taskContextEvent?.payload?.source_files_scanned).toBe("number");
+    expect(typeof taskContextEvent?.payload?.total_unchecked_tasks).toBe("number");
+    expect(typeof taskContextEvent?.payload?.task_position_in_file).toBe("number");
+    expect(typeof taskContextEvent?.payload?.document_context_lines).toBe("number");
+    expect(typeof taskContextEvent?.payload?.has_subtasks).toBe("boolean");
+    expect(typeof taskContextEvent?.payload?.is_inline_cli).toBe("boolean");
+    expect(typeof taskContextEvent?.payload?.is_verify_only).toBe("boolean");
+  });
+
+  it("run without --trace does not create trace.jsonl", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(listTraceFiles(workspace)).toHaveLength(0);
+  });
+
+  it("run --trace-only enriches the latest completed run without changing tasks", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const enrichmentScriptPath = path.join(workspace, "trace-enrichment-worker.mjs");
+    fs.writeFileSync(roadmapPath, "- [x] Write docs\n", "utf-8");
+    fs.writeFileSync(
+      enrichmentScriptPath,
+      [
+        "console.log('```analysis.summary');",
+        "console.log(JSON.stringify({",
+        "  task_complexity: 'medium',",
+        "  execution_quality: 'clean',",
+        "  direction_changes: 0,",
+        "  modules_touched: [],",
+        "  wasted_effort_pct: 0,",
+        "  key_decisions: [],",
+        "  risk_flags: [],",
+        "  improvement_suggestions: [],",
+        "  skill_gaps: [],",
+        "  thinking_quality: 'clear',",
+        "  uncertainty_moments: 0,",
+        "}));",
+        "console.log('```');",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--trace-only",
+      "--trace",
+      "--worker",
+      "node",
+      enrichmentScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Trace-only enrichment for run: run-20260317T000000000Z-completed"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Trace enrichment completed for run: run-20260317T000000000Z-completed"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
+
+    const tracePath = path.join(workspace, ".rundown", "runs", "run-20260317T000000000Z-completed", "trace.jsonl");
+    expect(fs.existsSync(tracePath)).toBe(true);
+    const events = fs.readFileSync(tracePath, "utf-8").trim().split(/\r?\n/).map((line) => JSON.parse(line) as { event_type?: string });
+    const eventTypes = events.map((event) => event.event_type);
+    expect(eventTypes).toContain("phase.started");
+    expect(eventTypes).toContain("phase.completed");
+    expect(eventTypes).toContain("analysis.summary");
+  });
+
+  it("run --trace-only returns 3 when no completed artifacts exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--trace-only",
+      "--trace",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("No saved runtime artifact run found for: latest completed"))).toBe(true);
+  });
+
   it("run enables verification by default", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
@@ -1521,6 +1759,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "verify.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "repair.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "vars.json"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Initialized .rundown/ with default templates."))).toBe(true);
   });
@@ -1588,6 +1827,18 @@ function readSavedRunMetadata(workspace: string): Array<{ commandName?: string; 
     commandName?: string;
     status?: string;
   });
+}
+
+function listTraceFiles(workspace: string): string[] {
+  const runsDir = path.join(workspace, ".rundown", "runs");
+  if (!fs.existsSync(runsDir)) {
+    return [];
+  }
+
+  return fs.readdirSync(runsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(runsDir, entry.name, "trace.jsonl"))
+    .filter((filePath) => fs.existsSync(filePath));
 }
 
 function createWaitModeSpawnMock(options: {

@@ -10,6 +10,7 @@ export interface TaskVerificationOptions {
   command: string[];
   mode?: ProcessRunMode;
   transport?: PromptTransport;
+  trace?: boolean;
   cwd?: string;
   templateVars?: Record<string, unknown>;
   artifactContext?: unknown;

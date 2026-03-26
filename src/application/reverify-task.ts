@@ -1,10 +1,15 @@
 import {
   DEFAULT_REPAIR_TEMPLATE,
+  getTraceInstructions,
   DEFAULT_VERIFY_TEMPLATE,
 } from "../domain/defaults.js";
 import { type Task, parseTasks } from "../domain/parser.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
+import {
+  createRunCompletedEvent,
+  createRunStartedEvent,
+} from "../domain/trace.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import type {
   ArtifactStoreStatus,
@@ -16,6 +21,7 @@ import type {
   TaskRepairPort,
   TaskVerificationPort,
   TemplateLoader,
+  TraceWriterPort,
   VerificationSidecar,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
@@ -52,6 +58,8 @@ export interface ReverifyTaskDependencies {
   verificationSidecar: VerificationSidecar;
   workingDirectory: WorkingDirectoryPort;
   fileSystem: FileSystem;
+  traceWriter: TraceWriterPort;
+  createTraceWriter: (trace: boolean, artifactContext: { rootDir: string }) => TraceWriterPort;
   pathOperations: PathOperationsPort;
   templateLoader: TemplateLoader;
   output: ApplicationOutputPort;
@@ -66,6 +74,7 @@ export interface ReverifyTaskOptions {
   printPrompt: boolean;
   keepArtifacts: boolean;
   workerCommand: string[];
+  trace: boolean;
 }
 
 export function createReverifyTask(
@@ -83,6 +92,7 @@ export function createReverifyTask(
       printPrompt,
       keepArtifacts,
       workerCommand,
+      trace,
     } = options;
 
     const cwd = dependencies.workingDirectory.cwd();
@@ -146,7 +156,7 @@ export function createReverifyTask(
     emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
 
     const templates = loadProjectTemplates(cwd, dependencies.templateLoader, dependencies.pathOperations);
-    const promptContext = buildReverifyPromptContext(taskContext, templates.verify);
+    const promptContext = buildReverifyPromptContext(taskContext, templates.verify, trace);
 
     if (printPrompt) {
       emit({ kind: "text", text: promptContext.verificationPrompt });
@@ -185,10 +195,49 @@ export function createReverifyTask(
       task: toRuntimeTaskMetadata(taskContext.task, taskContext.source),
       keepArtifacts,
     });
+    const traceWriter = dependencies.createTraceWriter(trace, artifactContext);
+    const traceStartedAtMs = Date.now();
+    let traceCompleted = false;
     let artifactsFinalized = false;
+
+    const nowIso = (): string => new Date().toISOString();
+
+    traceWriter.write(createRunStartedEvent({
+      timestamp: nowIso(),
+      run_id: artifactContext.runId,
+      payload: {
+        command: "reverify",
+        source: selectedRun.source ?? taskContext.task.file,
+        worker: effectiveWorkerCommand,
+        mode: "wait",
+        transport,
+        task_text: taskContext.task.text,
+        task_file: taskContext.task.file,
+        task_line: taskContext.task.line,
+      },
+    }));
+
+    const completeTraceRun = (status: ArtifactStoreStatus): void => {
+      if (traceCompleted) {
+        return;
+      }
+
+      traceWriter.write(createRunCompletedEvent({
+        timestamp: nowIso(),
+        run_id: artifactContext.runId,
+        payload: {
+          status,
+          total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
+          total_phases: 0,
+        },
+      }));
+      traceCompleted = true;
+    };
 
     const finalizeAndReturn = (exitCode: number, status: ArtifactStoreStatus): number => {
       if (!artifactsFinalized) {
+        completeTraceRun(status);
+        traceWriter.flush();
         dependencies.artifactStore.finalize(artifactContext, { status, preserve: keepArtifacts });
         artifactsFinalized = true;
         if (keepArtifacts) {
@@ -206,6 +255,7 @@ export function createReverifyTask(
         taskVerification: dependencies.taskVerification,
         taskRepair: dependencies.taskRepair,
         verificationSidecar: dependencies.verificationSidecar,
+        traceWriter,
         output: dependencies.output,
       }, {
         task: taskContext.task,
@@ -219,6 +269,7 @@ export function createReverifyTask(
         allowRepair: runBehavior.allowRepair,
         templateVars: promptContext.vars,
         artifactContext,
+        trace,
       });
 
       if (!valid) {
@@ -230,6 +281,8 @@ export function createReverifyTask(
       return finalizeAndReturn(0, "reverify-completed");
     } catch (error) {
       if (!artifactsFinalized) {
+        completeTraceRun("reverify-failed");
+        traceWriter.flush();
         dependencies.artifactStore.finalize(artifactContext, {
           status: "reverify-failed",
           preserve: keepArtifacts,
@@ -361,6 +414,7 @@ function toRuntimeTaskMetadata(task: Task, source: string): RuntimeTaskMetadata 
 function buildReverifyPromptContext(
   taskContext: ResolvedTaskContext,
   verifyTemplate: string,
+  trace: boolean,
 ): ReverifyPromptContext {
   const vars: TemplateVars = {
     task: taskContext.task.text,
@@ -369,6 +423,7 @@ function buildReverifyPromptContext(
     taskIndex: taskContext.task.index,
     taskLine: taskContext.task.line,
     source: taskContext.source,
+    traceInstructions: getTraceInstructions(trace),
   };
 
   return {

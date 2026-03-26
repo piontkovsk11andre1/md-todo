@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN_TEMPLATE } from "../domain/defaults.js";
+import { DEFAULT_PLAN_TEMPLATE, getTraceInstructions } from "../domain/defaults.js";
 import { insertSubitems, parsePlannerOutput } from "../domain/planner.js";
 import type { Task } from "../domain/parser.js";
 import type { SortMode } from "../domain/sorting.js";
@@ -8,6 +8,14 @@ import {
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
+import {
+  createOutputVolumeEvent,
+  createPhaseCompletedEvent,
+  createPhaseStartedEvent,
+  createRunCompletedEvent,
+  createRunStartedEvent,
+  type TraceRunStatus,
+} from "../domain/trace.js";
 import type {
   ArtifactStoreStatus,
   ArtifactRunContext,
@@ -20,6 +28,7 @@ import type {
   TaskSelectorPort,
   TemplateLoader,
   TemplateVarsLoaderPort,
+  TraceWriterPort,
   WorkerExecutorPort,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
@@ -41,6 +50,8 @@ export interface PlanTaskDependencies {
   templateVarsLoader: TemplateVarsLoaderPort;
   templateLoader: TemplateLoader;
   artifactStore: ArtifactStore;
+  traceWriter: TraceWriterPort;
+  createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
 }
 
@@ -56,6 +67,7 @@ export interface PlanTaskOptions {
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
   workerCommand: string[];
+  trace: boolean;
 }
 
 export function createPlanTask(
@@ -76,6 +88,7 @@ export function createPlanTask(
       varsFileOption,
       cliTemplateVarArgs,
       workerCommand,
+      trace,
     } = options;
 
     const varsFilePath = resolveTemplateVarsFilePath(varsFileOption);
@@ -112,6 +125,7 @@ export function createPlanTask(
 
     const vars: TemplateVars = {
       ...extraTemplateVars,
+      traceInstructions: getTraceInstructions(trace),
       task: task.text,
       file: task.file,
       context: contextBefore,
@@ -149,11 +163,103 @@ export function createPlanTask(
       },
       keepArtifacts,
     });
+    const traceWriter = dependencies.createTraceWriter(trace, artifactContext);
     let artifactsFinalized = false;
     let artifactStatus: ArtifactStoreStatus = "running";
+    let tracePhaseCount = 0;
+    let traceCompleted = false;
+    const traceStartedAtMs = Date.now();
+
+    const nowIso = (): string => new Date().toISOString();
+    const toTraceStatus = (status: ArtifactStoreStatus): TraceRunStatus => status;
+
+    traceWriter.write(createRunStartedEvent({
+      timestamp: nowIso(),
+      run_id: artifactContext.runId,
+      payload: {
+        command: "plan",
+        source,
+        worker: workerCommand,
+        mode,
+        transport,
+        task_text: task.text,
+        task_file: task.file,
+        task_line: task.line,
+      },
+    }));
+
+    const beginPlanPhaseTrace = (command: string[]): { sequence: number; startedAtMs: number } => {
+      const sequence = tracePhaseCount + 1;
+      tracePhaseCount = sequence;
+      traceWriter.write(createPhaseStartedEvent({
+        timestamp: nowIso(),
+        run_id: artifactContext.runId,
+        payload: {
+          phase: "plan",
+          sequence,
+          command,
+        },
+      }));
+
+      return { sequence, startedAtMs: Date.now() };
+    };
+
+    const completePlanPhaseTrace = (
+      phaseTrace: { sequence: number; startedAtMs: number },
+      exitCode: number | null,
+      stdout: string,
+      stderr: string,
+      outputCaptured: boolean,
+    ): void => {
+      const timestamp = nowIso();
+      traceWriter.write(createPhaseCompletedEvent({
+        timestamp,
+        run_id: artifactContext.runId,
+        payload: {
+          phase: "plan",
+          sequence: phaseTrace.sequence,
+          exit_code: exitCode,
+          duration_ms: Math.max(0, Date.now() - phaseTrace.startedAtMs),
+          stdout_bytes: Buffer.byteLength(stdout, "utf8"),
+          stderr_bytes: Buffer.byteLength(stderr, "utf8"),
+          output_captured: outputCaptured,
+        },
+      }));
+      traceWriter.write(createOutputVolumeEvent({
+        timestamp,
+        run_id: artifactContext.runId,
+        payload: {
+          phase: "plan",
+          sequence: phaseTrace.sequence,
+          stdout_bytes: Buffer.byteLength(stdout, "utf8"),
+          stderr_bytes: Buffer.byteLength(stderr, "utf8"),
+          stdout_lines: countTraceLines(stdout),
+          stderr_lines: countTraceLines(stderr),
+        },
+      }));
+    };
+
+    const completeTraceRun = (status: ArtifactStoreStatus): void => {
+      if (traceCompleted) {
+        return;
+      }
+
+      traceWriter.write(createRunCompletedEvent({
+        timestamp: nowIso(),
+        run_id: artifactContext.runId,
+        payload: {
+          status: toTraceStatus(status),
+          total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
+          total_phases: tracePhaseCount,
+        },
+      }));
+      traceCompleted = true;
+    };
 
     const finishPlan = (code: number, status: ArtifactStoreStatus): number => {
       artifactStatus = status;
+      completeTraceRun(status);
+      traceWriter.flush();
       finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit);
       artifactsFinalized = true;
       return code;
@@ -164,15 +270,24 @@ export function createPlanTask(
         kind: "info",
         message: "Running planner: " + workerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]",
       });
+      const planPhaseTrace = beginPlanPhaseTrace(workerCommand);
       const runResult = await dependencies.workerExecutor.runWorker({
         command: workerCommand,
         prompt,
         mode,
         transport,
+        trace,
         cwd,
         artifactContext,
         artifactPhase: "plan",
       });
+      completePlanPhaseTrace(
+        planPhaseTrace,
+        runResult.exitCode,
+        runResult.stdout,
+        runResult.stderr,
+        mode === "wait",
+      );
 
       if (mode === "wait" && runResult.stderr) {
         emit({ kind: "stderr", text: runResult.stderr });
@@ -201,7 +316,10 @@ export function createPlanTask(
       return finishPlan(0, "completed");
     } finally {
       if (!artifactsFinalized) {
-        finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit);
+        const finalStatus = artifactStatus === "running" ? "failed" : artifactStatus;
+        completeTraceRun(finalStatus);
+        traceWriter.flush();
+        finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, finalStatus, emit);
         artifactsFinalized = true;
       }
     }
@@ -278,6 +396,14 @@ function parseTaskLocation(
 }
 
 export const planTask = createPlanTask;
+
+function countTraceLines(text: string): number {
+  if (text.length === 0) {
+    return 0;
+  }
+
+  return text.split(/\r?\n/).length;
+}
 
 function finalizePlanArtifacts(
   artifactStore: ArtifactStore,

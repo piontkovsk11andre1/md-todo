@@ -26,6 +26,30 @@ The Markdown above is the source document up to but not including the selected u
 {{task}}
 `;
 
+export const TRACE_INSTRUCTIONS_BLOCK = `\
+
+## Trace output
+
+Tracing is active for this run.
+
+At the end of your response, append exactly one fenced block in this format:
+
+\`\`\`rundown-trace
+confidence: <0-100>
+files_read: <comma-separated list or "none">
+files_written: <comma-separated list or "none">
+tools_used: <comma-separated list or "none">
+approach: <one-line summary>
+blockers: <issues or "none">
+\`\`\`
+
+Keep values short and concrete.
+`;
+
+export function getTraceInstructions(trace: boolean): string {
+  return trace ? TRACE_INSTRUCTIONS_BLOCK : "";
+}
+
 export const DEFAULT_TASK_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 
@@ -39,6 +63,7 @@ Complete the task described above. Make the necessary changes to the project, bu
 - Do not rewrite the task item to make it look completed.
 - Do not treat editing the TODO file itself as evidence that the task is done unless the task explicitly requires documentation changes in that file.
 - rundown is responsible for marking the task complete after validation succeeds.
+{{traceInstructions}}
 `;
 
 export const DEFAULT_VERIFY_TEMPLATE = `\
@@ -60,6 +85,7 @@ Do not create or modify validation files directly. rundown will persist your std
 Do not modify the source Markdown task file or change its checkbox state.
 
 Do not write anything else.
+{{traceInstructions}}
 `;
 
 export const DEFAULT_REPAIR_TEMPLATE = `\
@@ -80,6 +106,7 @@ Please fix what is missing or incorrect. The validation above explains what stil
 - rundown will update task completion only after validation succeeds.
 
 After making corrections, the task will be validated again.
+{{traceInstructions}}
 `;
 
 export const DEFAULT_VARS_FILE_CONTENT = `{
@@ -111,5 +138,71 @@ Example output format:
 - [ ] First concrete step
 - [ ] Second concrete step
 - [ ] Third concrete step
+{{traceInstructions}}
+`;
+
+export const DEFAULT_TRACE_TEMPLATE = `\
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
+
+## Phase
+
+Analyze this completed run and produce an \`analysis.summary\` event payload.
+
+## Run context
+
+- Run ID: {{runId}}
+- Command: {{command}}
+- Status: {{status}}
+- Worker: {{worker}}
+- Started at: {{startedAt}}
+- Completed at: {{completedAt}}
+- Total duration (ms): {{totalDurationMs}}
+
+## Phase timings
+
+{{phaseTimings}}
+
+## Phase outputs
+
+{{phaseOutputs}}
+
+## Agent signals
+
+{{agentSignals}}
+
+## Thinking blocks
+
+{{thinkingBlocks}}
+
+## Tool usage
+
+{{toolUsage}}
+
+Return exactly one fenced code block tagged \`analysis.summary\` containing valid JSON only.
+Do not include any text before or after the fenced block.
+
+Required JSON shape:
+
+\`\`\`analysis.summary
+{
+  "task_complexity": "low | medium | high | critical",
+  "execution_quality": "clean | minor_issues | significant_issues | failed",
+  "direction_changes": 0,
+  "modules_touched": ["module/or/area"],
+  "wasted_effort_pct": 0,
+  "key_decisions": ["decision"],
+  "risk_flags": ["risk"],
+  "improvement_suggestions": ["suggestion"],
+  "skill_gaps": ["gap"],
+  "thinking_quality": "clear | scattered | circular",
+  "uncertainty_moments": 0
+}
+\`\`\`
+
+Rules:
+- Base the analysis on the provided run context only.
+- Keep arrays concise and concrete.
+- Use empty arrays when there is no relevant data.
+- Use non-negative integers for \`direction_changes\`, \`wasted_effort_pct\`, and \`uncertainty_moments\`.
 `;
 

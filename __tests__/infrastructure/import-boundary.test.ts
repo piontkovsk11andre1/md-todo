@@ -3,6 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const INFRASTRUCTURE_DIR = path.resolve("src/infrastructure");
+const INFRASTRUCTURE_TRACE_ADAPTER_FILES = [
+  "adapters/jsonl-trace-writer.ts",
+  "adapters/noop-trace-writer.ts",
+];
 
 function collectTypeScriptFiles(dirPath: string): string[] {
   const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -37,6 +41,18 @@ function isDisallowedInfrastructureImport(specifier: string): boolean {
 }
 
 describe("infrastructure import boundary", () => {
+  it("includes trace adapter files in boundary scan", () => {
+    const files = collectTypeScriptFiles(INFRASTRUCTURE_DIR);
+
+    for (const relativePath of INFRASTRUCTURE_TRACE_ADAPTER_FILES) {
+      const absolutePath = path.join(INFRASTRUCTURE_DIR, relativePath);
+
+      if (fs.existsSync(absolutePath)) {
+        expect(files).toContain(absolutePath);
+      }
+    }
+  });
+
   it("prevents infrastructure from depending on application", () => {
     const files = collectTypeScriptFiles(INFRASTRUCTURE_DIR);
     const violations: string[] = [];

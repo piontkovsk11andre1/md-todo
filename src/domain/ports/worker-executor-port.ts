@@ -13,6 +13,7 @@ export interface WorkerExecutionOptions {
   prompt: string;
   mode: ProcessRunMode;
   transport: PromptTransport;
+  trace?: boolean;
   cwd: string;
   artifactContext?: unknown;
   artifactPhase?: "execute" | "verify" | "repair" | "worker" | "plan";

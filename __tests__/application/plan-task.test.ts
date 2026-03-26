@@ -375,6 +375,14 @@ function createDependencies(options: {
     templateVarsLoader: { load: vi.fn(() => ({})) },
     templateLoader: { load: vi.fn(() => null) },
     artifactStore,
+    traceWriter: {
+      write: vi.fn(),
+      flush: vi.fn(),
+    },
+    createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+      write: vi.fn(),
+      flush: vi.fn(),
+    })),
     output: {
       emit: (event) => events.push(event),
     },
@@ -401,6 +409,7 @@ function createOptions(overrides: Partial<PlanTaskOptions> = {}): PlanTaskOption
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,
+    trace: false,
     varsFileOption: false,
     cliTemplateVarArgs: [],
     workerCommand: ["opencode", "run"],

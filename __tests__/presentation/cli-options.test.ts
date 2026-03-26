@@ -132,6 +132,34 @@ describe("CLI run option normalization", () => {
     expect(call.workerCommand).toEqual(["opencode", "run"]);
   });
 
+  it("passes trace option to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--trace",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.trace).toBe(true);
+  });
+
+  it("passes trace-only option to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--trace-only",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.traceOnly).toBe(true);
+  });
+
   it("collects repeated template vars", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -239,6 +267,19 @@ describe("CLI reverify option normalization", () => {
     ], reverifyTask);
 
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("passes trace option to reverify task", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--trace",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.trace).toBe(true);
   });
 
   it("logs a CLI error and exits with code 1 on invalid transport", async () => {
@@ -401,6 +442,20 @@ describe("CLI plan and utility command normalization", () => {
     expect(call.varsFileOption).toBe("custom-vars.json");
     expect(call.cliTemplateVarArgs).toEqual(["env=prod"]);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("passes trace option to plan task", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.md",
+      "--trace",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(call.trace).toBe(true);
   });
 
   it("passes list options to the application layer", async () => {

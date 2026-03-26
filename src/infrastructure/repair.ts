@@ -21,6 +21,7 @@ export interface RepairOptions {
   maxRetries: number;
   mode?: RunnerMode;
   transport?: PromptTransport;
+  trace?: boolean;
   cwd?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
@@ -70,6 +71,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       prompt,
       mode: options.mode ?? "wait",
       transport: options.transport ?? "file",
+      trace: options.trace,
       cwd: options.cwd,
       artifactContext: options.artifactContext,
       artifactPhase: "repair",
@@ -85,6 +87,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       command: options.command,
       mode: options.mode,
       transport: options.transport,
+      trace: options.trace,
       cwd: options.cwd,
       templateVars: options.templateVars,
       artifactContext: options.artifactContext,

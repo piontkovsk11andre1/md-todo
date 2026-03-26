@@ -102,4 +102,34 @@ describe("renderTemplate", () => {
 
     expect(result).toBe("Verification: ");
   });
+
+  it("should render traceInstructions as empty when variable is empty", () => {
+    const template = "Before\n{{traceInstructions}}\nAfter";
+    const result = renderTemplate(template, {
+      task: "",
+      file: "",
+      context: "",
+      taskIndex: 0,
+      taskLine: 1,
+      source: "",
+      traceInstructions: "",
+    });
+
+    expect(result).toBe("Before\n\nAfter");
+  });
+
+  it("should render traceInstructions content when set", () => {
+    const template = "Before\n{{traceInstructions}}\nAfter";
+    const result = renderTemplate(template, {
+      task: "",
+      file: "",
+      context: "",
+      taskIndex: 0,
+      taskLine: 1,
+      source: "",
+      traceInstructions: "## Trace output\nTracing is active.",
+    });
+
+    expect(result).toBe("Before\n## Trace output\nTracing is active.\nAfter");
+  });
 });
