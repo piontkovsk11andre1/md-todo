@@ -248,6 +248,8 @@ describe("CLI reverify option normalization", () => {
     ], reverifyTask);
 
     expect(call.runId).toBe("run-123");
+    expect(call.last).toBeUndefined();
+    expect(call.all).toBe(false);
     expect(call.transport).toBe("arg");
     expect(call.repairAttempts).toBe(2);
     expect(call.noRepair).toBe(true);
@@ -280,6 +282,52 @@ describe("CLI reverify option normalization", () => {
     ], reverifyTask);
 
     expect(call.trace).toBe(true);
+  });
+
+  it("parses --last value for reverify", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--last",
+      "3",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.last).toBe(3);
+    expect(call.all).toBe(false);
+  });
+
+  it("parses --all flag for reverify", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--all",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.all).toBe(true);
+    expect(call.last).toBeUndefined();
+  });
+
+  it("logs a CLI error and exits with code 1 on non-integer --last", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeReverifyAndExpectExit([
+      "reverify",
+      "--last",
+      "three",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(reverifyTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --last value: three"));
   });
 
   it("logs a CLI error and exits with code 1 on invalid transport", async () => {

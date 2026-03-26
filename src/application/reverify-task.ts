@@ -67,6 +67,8 @@ export interface ReverifyTaskDependencies {
 
 export interface ReverifyTaskOptions {
   runId: string;
+  last?: number;
+  all?: boolean;
   transport: PromptTransport;
   repairAttempts: number;
   noRepair: boolean;
@@ -85,6 +87,8 @@ export function createReverifyTask(
   return async function reverifyTask(options: ReverifyTaskOptions): Promise<number> {
     const {
       runId,
+      last,
+      all,
       transport,
       repairAttempts,
       noRepair,
@@ -95,9 +99,230 @@ export function createReverifyTask(
       trace,
     } = options;
 
+    const hasMultiRunSelection = all === true || last !== undefined;
+
+    if (all && last !== undefined) {
+      emit({ kind: "error", message: "Cannot combine --all with --last." });
+      return 1;
+    }
+
+    if (hasMultiRunSelection && runId !== "latest") {
+      emit({ kind: "error", message: "Cannot combine --run <id> with --all or --last." });
+      return 1;
+    }
+
+    if (hasMultiRunSelection && printPrompt) {
+      emit({ kind: "error", message: "--print-prompt is not supported with --all or --last." });
+      return 1;
+    }
+
+    if (last !== undefined && (last < 1 || !Number.isInteger(last))) {
+      emit({ kind: "error", message: "--last must be a positive integer." });
+      return 1;
+    }
+
     const cwd = dependencies.workingDirectory.cwd();
-    const selectedRun = resolveTargetRunMetadata(dependencies.artifactStore, cwd, runId);
-    if (!selectedRun) {
+    const reverifyOneRun = async (
+      selectedRun: ArtifactRunMetadata,
+    ): Promise<{ exitCode: number; status: ArtifactStoreStatus | null }> => {
+      if (selectedRun.status === "metadata-missing") {
+        emit({
+          kind: "error",
+          message: "Selected run is missing run metadata (run.json). Re-run the original task with --keep-artifacts, then retry reverify.",
+        });
+        return { exitCode: 3, status: null };
+      }
+
+      if (!isCompletedRun(selectedRun)) {
+        emit({
+          kind: "error",
+          message: "Selected run is not completed (status=" + (selectedRun.status ?? "unknown") + "). Use `rundown artifacts` to choose a completed run.",
+        });
+        return { exitCode: 3, status: null };
+      }
+
+      if (!selectedRun.task) {
+        emit({
+          kind: "error",
+          message: "Selected run has no task metadata to re-verify. Choose a different run or execute tasks again to refresh artifacts.",
+        });
+        return { exitCode: 3, status: null };
+      }
+
+      const metadataError = validateTaskMetadata(selectedRun.task);
+      if (metadataError) {
+        emit({
+          kind: "error",
+          message: "Selected run has invalid task metadata: " + metadataError
+            + " Re-run the task to regenerate runtime artifacts.",
+        });
+        return { exitCode: 3, status: null };
+      }
+
+      const taskContext = resolveTaskContextFromMetadata(
+        selectedRun.task,
+        cwd,
+        dependencies.fileSystem,
+        dependencies.pathOperations,
+      );
+      if (!taskContext) {
+        emit({
+          kind: "error",
+          message: "Could not resolve task from saved metadata. The task may have moved or been edited.",
+        });
+        return { exitCode: 3, status: null };
+      }
+
+      emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
+
+      const templates = loadProjectTemplates(cwd, dependencies.templateLoader, dependencies.pathOperations);
+      const promptContext = buildReverifyPromptContext(taskContext, templates.verify, trace);
+
+      if (printPrompt) {
+        emit({ kind: "text", text: promptContext.verificationPrompt });
+        return { exitCode: 0, status: null };
+      }
+
+      const effectiveWorkerCommand = workerCommand.length > 0
+        ? workerCommand
+        : selectedRun.workerCommand ?? [];
+
+      if (dryRun) {
+        emit({ kind: "info", message: "Dry run - would run verification with: " + effectiveWorkerCommand.join(" ") });
+        emit({ kind: "info", message: "Prompt length: " + promptContext.verificationPrompt.length + " chars" });
+        return { exitCode: 0, status: null };
+      }
+
+      if (effectiveWorkerCommand.length === 0) {
+        emit({ kind: "error", message: "No worker command specified. Use --worker <command...> or -- <command>." });
+        return { exitCode: 1, status: null };
+      }
+
+      const runBehavior = resolveRunBehavior({
+        verify: true,
+        onlyVerify: true,
+        noRepair: noRepair,
+        repairAttempts,
+      });
+
+      const artifactContext = dependencies.artifactStore.createContext({
+        cwd,
+        commandName: "reverify",
+        workerCommand: effectiveWorkerCommand,
+        mode: "wait",
+        transport,
+        source: selectedRun.source,
+        task: toRuntimeTaskMetadata(taskContext.task, taskContext.source),
+        keepArtifacts,
+      });
+      const traceWriter = dependencies.createTraceWriter(trace, artifactContext);
+      const traceStartedAtMs = Date.now();
+      let traceCompleted = false;
+      let artifactsFinalized = false;
+
+      const nowIso = (): string => new Date().toISOString();
+
+      traceWriter.write(createRunStartedEvent({
+        timestamp: nowIso(),
+        run_id: artifactContext.runId,
+        payload: {
+          command: "reverify",
+          source: selectedRun.source ?? taskContext.task.file,
+          worker: effectiveWorkerCommand,
+          mode: "wait",
+          transport,
+          task_text: taskContext.task.text,
+          task_file: taskContext.task.file,
+          task_line: taskContext.task.line,
+        },
+      }));
+
+      const completeTraceRun = (status: ArtifactStoreStatus): void => {
+        if (traceCompleted) {
+          return;
+        }
+
+        traceWriter.write(createRunCompletedEvent({
+          timestamp: nowIso(),
+          run_id: artifactContext.runId,
+          payload: {
+            status,
+            total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
+            total_phases: 0,
+          },
+        }));
+        traceCompleted = true;
+      };
+
+      const finalizeAndReturn = (
+        exitCode: number,
+        status: ArtifactStoreStatus,
+      ): { exitCode: number; status: ArtifactStoreStatus } => {
+        if (!artifactsFinalized) {
+          completeTraceRun(status);
+          traceWriter.flush();
+          dependencies.artifactStore.finalize(artifactContext, { status, preserve: keepArtifacts });
+          artifactsFinalized = true;
+          if (keepArtifacts) {
+            emit({
+              kind: "info",
+              message: "Runtime artifacts saved at " + dependencies.artifactStore.displayPath(artifactContext) + ".",
+            });
+          }
+        }
+        return { exitCode, status };
+      };
+
+      try {
+        const valid = await runVerifyRepairLoop({
+          taskVerification: dependencies.taskVerification,
+          taskRepair: dependencies.taskRepair,
+          verificationSidecar: dependencies.verificationSidecar,
+          traceWriter,
+          output: dependencies.output,
+        }, {
+          task: taskContext.task,
+          source: taskContext.source,
+          contextBefore: taskContext.contextBefore,
+          verifyTemplate: templates.verify,
+          repairTemplate: templates.repair,
+          workerCommand: effectiveWorkerCommand,
+          transport,
+          maxRepairAttempts: runBehavior.maxRepairAttempts,
+          allowRepair: runBehavior.allowRepair,
+          templateVars: promptContext.vars,
+          artifactContext,
+          trace,
+        });
+
+        if (!valid) {
+          emit({ kind: "error", message: "Verification failed after all repair attempts." });
+          return finalizeAndReturn(2, "reverify-failed");
+        }
+
+        emit({ kind: "success", message: "Re-verification passed." });
+        return finalizeAndReturn(0, "reverify-completed");
+      } catch (error) {
+        if (!artifactsFinalized) {
+          completeTraceRun("reverify-failed");
+          traceWriter.flush();
+          dependencies.artifactStore.finalize(artifactContext, {
+            status: "reverify-failed",
+            preserve: keepArtifacts,
+          });
+          artifactsFinalized = true;
+        }
+        throw error;
+      }
+    };
+
+    const targetRuns = resolveTargetRuns(dependencies.artifactStore, cwd, { runId, last, all });
+    if (targetRuns.length === 0) {
+      if (hasMultiRunSelection) {
+        emit({ kind: "error", message: "No completed runs found to re-verify." });
+        return 3;
+      }
+
       const target = runId === "latest"
         ? "latest completed"
         : runId;
@@ -105,192 +330,47 @@ export function createReverifyTask(
       return 3;
     }
 
-    if (selectedRun.status === "metadata-missing") {
+    if (hasMultiRunSelection && dryRun) {
       emit({
-        kind: "error",
-        message: "Selected run is missing run metadata (run.json). Re-run the original task with --keep-artifacts, then retry reverify.",
+        kind: "info",
+        message: "Dry run - would re-verify " + targetRuns.length + " completed runs:",
       });
-      return 3;
-    }
-
-    if (!isCompletedRun(selectedRun)) {
-      emit({
-        kind: "error",
-        message: "Selected run is not completed (status=" + (selectedRun.status ?? "unknown") + "). Use `rundown artifacts` to choose a completed run.",
-      });
-      return 3;
-    }
-
-    if (!selectedRun.task) {
-      emit({
-        kind: "error",
-        message: "Selected run has no task metadata to re-verify. Choose a different run or execute tasks again to refresh artifacts.",
-      });
-      return 3;
-    }
-
-    const metadataError = validateTaskMetadata(selectedRun.task);
-    if (metadataError) {
-      emit({
-        kind: "error",
-        message: "Selected run has invalid task metadata: " + metadataError
-          + " Re-run the task to regenerate runtime artifacts.",
-      });
-      return 3;
-    }
-
-    const taskContext = resolveTaskContextFromMetadata(
-      selectedRun.task,
-      cwd,
-      dependencies.fileSystem,
-      dependencies.pathOperations,
-    );
-    if (!taskContext) {
-      emit({
-        kind: "error",
-        message: "Could not resolve task from saved metadata. The task may have moved or been edited.",
-      });
-      return 3;
-    }
-
-    emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
-
-    const templates = loadProjectTemplates(cwd, dependencies.templateLoader, dependencies.pathOperations);
-    const promptContext = buildReverifyPromptContext(taskContext, templates.verify, trace);
-
-    if (printPrompt) {
-      emit({ kind: "text", text: promptContext.verificationPrompt });
-      return 0;
-    }
-
-    const effectiveWorkerCommand = workerCommand.length > 0
-      ? workerCommand
-      : selectedRun.workerCommand ?? [];
-
-    if (dryRun) {
-      emit({ kind: "info", message: "Dry run - would run verification with: " + effectiveWorkerCommand.join(" ") });
-      emit({ kind: "info", message: "Prompt length: " + promptContext.verificationPrompt.length + " chars" });
-      return 0;
-    }
-
-    if (effectiveWorkerCommand.length === 0) {
-      emit({ kind: "error", message: "No worker command specified. Use --worker <command...> or -- <command>." });
-      return 1;
-    }
-
-    const runBehavior = resolveRunBehavior({
-      verify: true,
-      onlyVerify: true,
-      noRepair: noRepair,
-      repairAttempts,
-    });
-
-    const artifactContext = dependencies.artifactStore.createContext({
-      cwd,
-      commandName: "reverify",
-      workerCommand: effectiveWorkerCommand,
-      mode: "wait",
-      transport,
-      source: selectedRun.source,
-      task: toRuntimeTaskMetadata(taskContext.task, taskContext.source),
-      keepArtifacts,
-    });
-    const traceWriter = dependencies.createTraceWriter(trace, artifactContext);
-    const traceStartedAtMs = Date.now();
-    let traceCompleted = false;
-    let artifactsFinalized = false;
-
-    const nowIso = (): string => new Date().toISOString();
-
-    traceWriter.write(createRunStartedEvent({
-      timestamp: nowIso(),
-      run_id: artifactContext.runId,
-      payload: {
-        command: "reverify",
-        source: selectedRun.source ?? taskContext.task.file,
-        worker: effectiveWorkerCommand,
-        mode: "wait",
-        transport,
-        task_text: taskContext.task.text,
-        task_file: taskContext.task.file,
-        task_line: taskContext.task.line,
-      },
-    }));
-
-    const completeTraceRun = (status: ArtifactStoreStatus): void => {
-      if (traceCompleted) {
-        return;
-      }
-
-      traceWriter.write(createRunCompletedEvent({
-        timestamp: nowIso(),
-        run_id: artifactContext.runId,
-        payload: {
-          status,
-          total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
-          total_phases: 0,
-        },
-      }));
-      traceCompleted = true;
-    };
-
-    const finalizeAndReturn = (exitCode: number, status: ArtifactStoreStatus): number => {
-      if (!artifactsFinalized) {
-        completeTraceRun(status);
-        traceWriter.flush();
-        dependencies.artifactStore.finalize(artifactContext, { status, preserve: keepArtifacts });
-        artifactsFinalized = true;
-        if (keepArtifacts) {
+      for (const run of targetRuns) {
+        if (run.task) {
           emit({
             kind: "info",
-            message: "Runtime artifacts saved at " + dependencies.artifactStore.displayPath(artifactContext) + ".",
+            message: "- " + run.runId + " " + formatTaskMetadataLabel(run.task),
           });
         }
       }
-      return exitCode;
-    };
-
-    try {
-      const valid = await runVerifyRepairLoop({
-        taskVerification: dependencies.taskVerification,
-        taskRepair: dependencies.taskRepair,
-        verificationSidecar: dependencies.verificationSidecar,
-        traceWriter,
-        output: dependencies.output,
-      }, {
-        task: taskContext.task,
-        source: taskContext.source,
-        contextBefore: taskContext.contextBefore,
-        verifyTemplate: templates.verify,
-        repairTemplate: templates.repair,
-        workerCommand: effectiveWorkerCommand,
-        transport,
-        maxRepairAttempts: runBehavior.maxRepairAttempts,
-        allowRepair: runBehavior.allowRepair,
-        templateVars: promptContext.vars,
-        artifactContext,
-        trace,
-      });
-
-      if (!valid) {
-        emit({ kind: "error", message: "Verification failed after all repair attempts." });
-        return finalizeAndReturn(2, "reverify-failed");
-      }
-
-      emit({ kind: "success", message: "Re-verification passed." });
-      return finalizeAndReturn(0, "reverify-completed");
-    } catch (error) {
-      if (!artifactsFinalized) {
-        completeTraceRun("reverify-failed");
-        traceWriter.flush();
-        dependencies.artifactStore.finalize(artifactContext, {
-          status: "reverify-failed",
-          preserve: keepArtifacts,
-        });
-        artifactsFinalized = true;
-      }
-      throw error;
+      return 0;
     }
+
+    let tasksReverified = 0;
+    for (const run of targetRuns) {
+      const result = await reverifyOneRun(run);
+      if (result.exitCode !== 0) {
+        if (hasMultiRunSelection) {
+          emit({
+            kind: "error",
+            message: "Re-verify stopped on " + run.runId + " after " + tasksReverified
+              + " successful task(s).",
+          });
+        }
+        return result.exitCode;
+      }
+
+      tasksReverified += 1;
+    }
+
+    if (hasMultiRunSelection) {
+      emit({
+        kind: "success",
+        message: "Re-verified " + tasksReverified + " tasks successfully.",
+      });
+    }
+
+    return 0;
   };
 }
 
@@ -316,6 +396,30 @@ function resolveTargetRunMetadata(
   }
 
   return artifactStore.find(runId, cwd);
+}
+
+function resolveTargetRuns(
+  artifactStore: ArtifactStore,
+  cwd: string,
+  options: Pick<ReverifyTaskOptions, "runId" | "last" | "all">,
+): ArtifactRunMetadata[] {
+  const { runId, last, all } = options;
+
+  if (all) {
+    return artifactStore
+      .listSaved(cwd)
+      .filter((run) => isCompletedRun(run) && hasReverifiableTask(run));
+  }
+
+  if (last !== undefined) {
+    return artifactStore
+      .listSaved(cwd)
+      .filter((run) => isCompletedRun(run) && hasReverifiableTask(run))
+      .slice(0, last);
+  }
+
+  const selectedRun = resolveTargetRunMetadata(artifactStore, cwd, runId);
+  return selectedRun ? [selectedRun] : [];
 }
 
 function hasReverifiableTask(run: ArtifactRunMetadata): boolean {
@@ -433,6 +537,10 @@ function buildReverifyPromptContext(
 }
 
 function formatTaskLabel(task: Task): string {
+  return `${task.file}:${task.line} [#${task.index}] ${task.text}`;
+}
+
+function formatTaskMetadataLabel(task: RuntimeTaskMetadata): string {
   return `${task.file}:${task.line} [#${task.index}] ${task.text}`;
 }
 

@@ -316,6 +316,90 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
   });
 
+  it("reverify --all --dry-run lists all selected completed runs", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n- [x] Ship release\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-newest",
+      status: "completed",
+      taskText: "Write docs",
+      startedAt: "2026-03-17T00:01:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-older",
+      status: "reverify-completed",
+      taskText: "Ship release",
+      startedAt: "2026-03-17T00:00:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000200000Z-failed",
+      status: "verification-failed",
+      taskText: "Ignore failed",
+      startedAt: "2026-03-17T00:02:00.000Z",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--all",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("would re-verify 2 completed runs"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000100000Z-newest"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000000000Z-older"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000200000Z-failed"))).toBe(false);
+  });
+
+  it("reverify --last 2 --dry-run lists the two most recent completed runs", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n- [x] Ship release\n- [x] Publish changelog\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000300000Z-newest-completed",
+      status: "completed",
+      taskText: "Write docs",
+      startedAt: "2026-03-17T00:03:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000200000Z-second-completed",
+      status: "reverify-completed",
+      taskText: "Ship release",
+      startedAt: "2026-03-17T00:02:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-third-completed",
+      status: "completed",
+      taskText: "Publish changelog",
+      startedAt: "2026-03-17T00:01:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000400000Z-failed",
+      status: "verification-failed",
+      taskText: "Ignore failed",
+      startedAt: "2026-03-17T00:04:00.000Z",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--last",
+      "2",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("would re-verify 2 completed runs"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000300000Z-newest-completed"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000200000Z-second-completed"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("run-20260317T000100000Z-third-completed"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("run-20260317T000400000Z-failed"))).toBe(false);
+  });
+
   it("reverify --help lists run targeting and repair options", async () => {
     const workspace = makeTempWorkspace();
 

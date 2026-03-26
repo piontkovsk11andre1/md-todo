@@ -129,6 +129,8 @@ program
   .command("reverify")
   .description("Re-run verification for the previously completed task from saved artifacts.")
   .option("--run <id|latest>", "Choose artifact run id or 'latest'", "latest")
+  .option("--last <n>", "Re-verify the last N completed runs")
+  .option("--all", "Re-verify all completed runs", false)
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
   .option("--no-repair", "Disable repair even when repair attempts are set")
@@ -140,6 +142,8 @@ program
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
     const transport = parsePromptTransport(opts.transport as string | undefined);
+    const last = parseLastReverifyCount(opts.last as string | undefined);
+    const all = Boolean(opts.all as boolean | undefined);
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const noRepair = resolveNoRepairFlag(opts);
     const dryRun = opts.dryRun as boolean;
@@ -156,6 +160,8 @@ program
 
     return app.reverifyTask({
       runId: targetRun,
+      last,
+      all,
       transport,
       repairAttempts,
       noRepair,
@@ -294,6 +300,23 @@ function parseRepairAttempts(value: string | undefined): number {
   if (!Number.isSafeInteger(parsed)) {
     throw new Error(`Invalid --repair-attempts value: ${raw}. Must be a safe non-negative integer.`);
   }
+  return parsed;
+}
+
+function parseLastReverifyCount(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid --last value: ${value}. Must be a positive integer.`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid --last value: ${value}. Must be a safe positive integer.`);
+  }
+
   return parsed;
 }
 

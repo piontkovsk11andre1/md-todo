@@ -37,6 +37,8 @@ Options:
 | Option | Description |
 |---|---|
 | `--run <id|latest>` | Choose the artifact run to inspect for the completed task to re-verify. Default: `latest`. |
+| `--last <n>` | Re-verify the last `n` completed runs (newest first). |
+| `--all` | Re-verify all completed runs. |
 | `--repair-attempts <n>` | Retry repair up to `n` times when verification fails. |
 | `--no-repair` | Disable repair attempts and fail immediately on verification failure. |
 | `--transport <file|arg>` | Prompt transport for verify/repair worker invocations. |
@@ -45,10 +47,14 @@ Options:
 | `--dry-run` | Resolve the target task, render the verify prompt, print planned execution, and exit `0`. |
 | `--keep-artifacts` | Keep the reverify run folder under `.rundown/runs/`. |
 
+Note: `--print-prompt` is only supported for single-run reverify. Combining it with `--all` or `--last` returns exit code `1`.
+
 Examples:
 
 ```bash
 rundown reverify -- opencode run
+rundown reverify --all -- opencode run
+rundown reverify --last 3 -- opencode run
 rundown reverify --run latest -- opencode run
 rundown reverify --run run-20260319T222645632Z-04e84d73 --repair-attempts 2 -- opencode run
 rundown reverify --run latest --no-repair --worker opencode run
@@ -265,6 +271,7 @@ Behavior notes:
 - For `run`, `--print-prompt` and `--dry-run` target the execute prompt by default.
 - For `run --only-verify`, `--print-prompt` and `--dry-run` target the verify prompt instead.
 - For `reverify`, `--print-prompt` and `--dry-run` target the verify prompt for the resolved historical task.
+- For `reverify --all` or `reverify --last <n>`, `--print-prompt` is not supported and returns exit code `1`; use `--dry-run` to inspect all selected runs.
 - For `plan`, both flags apply to the planner prompt.
 - For inline `cli:` tasks on `run`, `--print-prompt` prints the inline command and exits without executing it.
 - Worker command validation still applies before execution for flows that require a worker command. Invalid or missing worker command input can still return exit code `1`.
