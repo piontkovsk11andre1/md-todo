@@ -1589,6 +1589,110 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("Invalid --mode value: tui. Allowed: wait."))).toBe(true);
   });
 
+  it("plan rejects missing markdown file path with actionable guidance", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "plan",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("requires exactly one Markdown file path"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("rundown plan <markdown-file>"))).toBe(true);
+  });
+
+  it("plan rejects multiple markdown file paths", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "plan",
+      "one.md",
+      "two.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("accepts exactly one Markdown file path"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("one.md, two.md"))).toBe(true);
+  });
+
+  it("plan rejects non-markdown file paths", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.txt"), "plan text\n", "utf-8");
+
+    const result = await runCli([
+      "plan",
+      "roadmap.txt",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Invalid plan document path: roadmap.txt"))).toBe(true);
+    expect(result.errors.some((line) => line.includes(".md or .markdown"))).toBe(true);
+  });
+
+  it("plan accepts .markdown file paths", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.markdown"), "- [ ] Break down migration\n", "utf-8");
+
+    const result = await runCli([
+      "plan",
+      "roadmap.markdown",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Planning document:") && line.includes("roadmap.markdown"))).toBe(true);
+  });
+
+  it("plan rejects legacy --at with migration guidance", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--at",
+      "roadmap.md:1",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("--at option is no longer supported for `plan`"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Remove --at"))).toBe(true);
+  });
+
+  it("plan rejects legacy --sort with migration guidance", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--sort",
+      "none",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("--sort option is no longer supported for `plan`"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Remove --sort"))).toBe(true);
+  });
+
   it("plan dry-run preserves planning output semantics", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
@@ -1604,10 +1708,220 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(
-      result.logs.some((line) => line.includes("Planning task:") && line.includes("Break down migration")),
+      result.logs.some((line) => line.includes("Planning document:") && line.includes("roadmap.md")),
     ).toBe(true);
     expect(result.logs.some((line) => line.includes("Dry run — would plan: opencode run"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
+  });
+
+  it("plan converges for a document with no existing TODO items", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-no-todos.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-no-todos");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Summary\nShip the release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "if (prompt.includes('- [ ] Add release checklist')) {",
+        "  process.exit(0);",
+        "}",
+        "console.log('- [ ] Add release checklist');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "3",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("No existing TODO items detected in document"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-03"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-03"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("converged at scan 2"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Inserted 1 TODO item"))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Add release checklist");
+  });
+
+  it("plan converges for a document with partial TODO coverage", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-partial-todos.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-partial");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Next Steps\n- [ ] Existing task\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "void promptPath;",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "console.log('- [ ] Existing task');",
+        "console.log('- [ ] Add CI checks');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "4",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Detected 1 existing TODO item"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-04"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-04"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("converged at scan 2"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Inserted 1 TODO item"))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Existing task");
+    expect(updated).toContain("- [ ] Add CI checks");
+    expect(updated.indexOf("- [ ] Existing task")).toBe(updated.lastIndexOf("- [ ] Existing task"));
+    expect(updated.indexOf("- [ ] Add CI checks")).toBe(updated.lastIndexOf("- [ ] Add CI checks"));
+  });
+
+  it("plan uses markdown updated by earlier scans in later scan prompts", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-updated-state.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-updated-state");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nDeliver API workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "if (current === 2 && !prompt.includes('- [ ] Create API schema')) {",
+        "  console.error('scan 2 did not receive markdown updates from scan 1');",
+        "  process.exit(22);",
+        "}",
+        "if (current === 3 && !prompt.includes('- [ ] Implement API handler')) {",
+        "  console.error('scan 3 did not receive markdown updates from scan 2');",
+        "  process.exit(23);",
+        "}",
+        "if (current === 1) {",
+        "  console.log('- [ ] Create API schema');",
+        "  process.exit(0);",
+        "}",
+        "if (current === 2) {",
+        "  console.log('- [ ] Implement API handler');",
+        "  process.exit(0);",
+        "}",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "4",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-04"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-04"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Planning plan-scan-03-of-04"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("converged at scan 3"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("3");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Create API schema");
+    expect(updated).toContain("- [ ] Implement API handler");
+    expect(updated.indexOf("- [ ] Create API schema")).toBeLessThan(updated.indexOf("- [ ] Implement API handler"));
+  });
+
+  it("plan preserves artifacts and reports clear error for invalid worker output format", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-invalid-format.cjs");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\n- [ ] Existing task\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "void fs.readFileSync(promptPath, 'utf-8');",
+        "console.log('Here are missing tasks:');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("stdout contract"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("`- [ ]` syntax"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Runtime artifacts saved at"))).toBe(true);
+
+    const savedRuns = readSavedRunMetadata(workspace);
+    expect(savedRuns.some((run) => run.commandName === "plan" && run.status === "failed")).toBe(true);
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toBe("# Roadmap\n\n## Scope\n- [ ] Existing task\n");
   });
 
   it("run skips immediate verification in detached mode and keeps runtime artifacts", async () => {

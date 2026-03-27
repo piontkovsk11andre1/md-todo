@@ -1,7 +1,6 @@
 import { DEFAULT_PLAN_TEMPLATE, getTraceInstructions } from "../domain/defaults.js";
-import { insertSubitems, parsePlannerOutput } from "../domain/planner.js";
-import type { Task } from "../domain/parser.js";
-import type { SortMode } from "../domain/sorting.js";
+import { parseTasks } from "../domain/parser.js";
+import { insertPlannerTodos } from "../domain/planner.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import {
   parseCliTemplateVars,
@@ -23,9 +22,6 @@ import type {
   FileSystem,
   PathOperationsPort,
   ProcessRunMode,
-  SourceResolverPort,
-  TaskSelectionResult as PortTaskSelectionResult,
-  TaskSelectorPort,
   TemplateLoader,
   TemplateVarsLoaderPort,
   TraceWriterPort,
@@ -37,12 +33,9 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 export type RunnerMode = ProcessRunMode;
 export type PromptTransport = "file" | "arg";
 type ArtifactContext = ArtifactRunContext;
-
-export type TaskSelectionResult = PortTaskSelectionResult;
+type PlanConvergenceOutcome = "converged" | "scan-cap-reached";
 
 export interface PlanTaskDependencies {
-  sourceResolver: SourceResolverPort;
-  taskSelector: TaskSelectorPort;
   workerExecutor: WorkerExecutorPort;
   workingDirectory: WorkingDirectoryPort;
   fileSystem: FileSystem;
@@ -57,10 +50,9 @@ export interface PlanTaskDependencies {
 
 export interface PlanTaskOptions {
   source: string;
-  at?: string;
+  scanCount?: number;
   mode: RunnerMode;
   transport: PromptTransport;
-  sortMode: SortMode;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
@@ -70,6 +62,8 @@ export interface PlanTaskOptions {
   trace: boolean;
 }
 
+const OPENCODE_CONTINUATION_ARG_PATTERN = /^--(?:continue|resume|session|thread|conversation)(?:=|$)/i;
+
 export function createPlanTask(
   dependencies: PlanTaskDependencies,
 ): (options: PlanTaskOptions) => Promise<number> {
@@ -78,10 +72,9 @@ export function createPlanTask(
   return async function planTask(options: PlanTaskOptions): Promise<number> {
     const {
       source,
-      at,
+      scanCount = 1,
       mode,
       transport,
-      sortMode,
       dryRun,
       printPrompt,
       keepArtifacts,
@@ -102,15 +95,29 @@ export function createPlanTask(
       ...cliTemplateVars,
     };
 
-    const selection = await selectPlanTask(source, at, sortMode, dependencies, emit);
-    if (!selection.result) {
-      return selection.exitCode;
+    let documentSource: string;
+    try {
+      documentSource = dependencies.fileSystem.readText(source);
+    } catch {
+      emit({
+        kind: "error",
+        message: "Unable to read Markdown document: " + source,
+      });
+      return 3;
     }
 
-    const { task, source: fileSource, contextBefore } = selection.result;
+    const documentIntent = deriveDocumentIntent(documentSource, source);
+    const existingTodoCount = parseTasks(documentSource, source).length;
+    const hasExistingTodos = existingTodoCount > 0;
     emit({
       kind: "info",
-      message: "Planning task: " + formatTaskLabel(task),
+      message: "Planning document: " + source,
+    });
+    emit({
+      kind: "info",
+      message: hasExistingTodos
+        ? "Detected " + existingTodoCount + " existing TODO item" + (existingTodoCount === 1 ? "" : "s") + " in document."
+        : "No existing TODO items detected in document.",
     });
 
     if (workerCommand.length === 0) {
@@ -121,29 +128,39 @@ export function createPlanTask(
       return 1;
     }
 
+    const cleanSessionCommandError = validatePlanCleanSessionWorkerCommand(workerCommand);
+    if (cleanSessionCommandError) {
+      emit({ kind: "error", message: cleanSessionCommandError });
+      return 1;
+    }
+
     const planTemplate = loadPlanTemplateFromPorts(cwd, dependencies.templateLoader, dependencies.pathOperations);
 
     const vars: TemplateVars = {
       ...extraTemplateVars,
       traceInstructions: getTraceInstructions(trace),
-      task: task.text,
-      file: task.file,
-      context: contextBefore,
-      taskIndex: task.index,
-      taskLine: task.line,
-      source: fileSource,
+      task: documentIntent,
+      file: source,
+      context: documentSource,
+      taskIndex: 0,
+      taskLine: 1,
+      source: documentSource,
+      scanCount,
+      existingTodoCount,
+      hasExistingTodos: hasExistingTodos ? "true" : "false",
     };
 
     const prompt = renderTemplate(planTemplate, vars);
 
     if (printPrompt) {
-      emit({ kind: "text", text: prompt });
+      emit({ kind: "text", text: buildPlanScanPrompt(prompt, documentSource, 1, scanCount) });
       return 0;
     }
 
     if (dryRun) {
       emit({ kind: "info", message: "Dry run — would plan: " + workerCommand.join(" ") });
-      emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
+      emit({ kind: "info", message: "Scan count: " + scanCount });
+      emit({ kind: "info", message: "Prompt length: " + buildPlanScanPrompt(prompt, documentSource, 1, scanCount).length + " chars" });
       return 0;
     }
 
@@ -155,11 +172,11 @@ export function createPlanTask(
       transport,
       source,
       task: {
-        text: task.text,
-        file: task.file,
-        line: task.line,
-        index: task.index,
-        source: fileSource,
+        text: documentIntent,
+        file: source,
+        line: 1,
+        index: 0,
+        source: source,
       },
       keepArtifacts,
     });
@@ -176,17 +193,17 @@ export function createPlanTask(
     traceWriter.write(createRunStartedEvent({
       timestamp: nowIso(),
       run_id: artifactContext.runId,
-      payload: {
-        command: "plan",
-        source,
-        worker: workerCommand,
-        mode,
-        transport,
-        task_text: task.text,
-        task_file: task.file,
-        task_line: task.line,
-      },
-    }));
+        payload: {
+          command: "plan",
+          source,
+          worker: workerCommand,
+          mode,
+          transport,
+          task_text: documentIntent,
+          task_file: source,
+          task_line: 1,
+        },
+      }));
 
     const beginPlanPhaseTrace = (command: string[]): { sequence: number; startedAtMs: number } => {
       const sequence = tracePhaseCount + 1;
@@ -256,11 +273,15 @@ export function createPlanTask(
       traceCompleted = true;
     };
 
-    const finishPlan = (code: number, status: ArtifactStoreStatus): number => {
+    const finishPlan = (
+      code: number,
+      status: ArtifactStoreStatus,
+      extra?: Record<string, unknown>,
+    ): number => {
       artifactStatus = status;
       completeTraceRun(status);
       traceWriter.flush();
-      finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit);
+      finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit, extra);
       artifactsFinalized = true;
       return code;
     };
@@ -270,50 +291,116 @@ export function createPlanTask(
         kind: "info",
         message: "Running planner: " + workerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]",
       });
-      const planPhaseTrace = beginPlanPhaseTrace(workerCommand);
-      const runResult = await dependencies.workerExecutor.runWorker({
-        command: workerCommand,
-        prompt,
-        mode,
-        transport,
-        trace,
-        cwd,
-        artifactContext,
-        artifactPhase: "plan",
-      });
-      completePlanPhaseTrace(
-        planPhaseTrace,
-        runResult.exitCode,
-        runResult.stdout,
-        runResult.stderr,
-        mode === "wait",
-      );
 
-      if (mode === "wait" && runResult.stderr) {
-        emit({ kind: "stderr", text: runResult.stderr });
+      let latestDocumentSource = documentSource;
+      let insertedTotal = 0;
+      let scansExecuted = 0;
+      let convergenceOutcome: PlanConvergenceOutcome | null = null;
+
+      for (let scanIndex = 1; scanIndex <= scanCount; scanIndex += 1) {
+        const scanLabel = buildPlanScanLabel(scanIndex, scanCount);
+        try {
+          latestDocumentSource = dependencies.fileSystem.readText(source);
+        } catch {
+          emit({
+            kind: "error",
+            message: "Unable to reload Markdown document before scan " + scanIndex + ": " + source,
+          });
+          return finishPlan(3, "failed");
+        }
+
+        emit({
+          kind: "info",
+          message: "Planning " + scanLabel + ".",
+        });
+        scansExecuted += 1;
+
+        const scanPrompt = buildPlanScanPrompt(prompt, latestDocumentSource, scanIndex, scanCount);
+        const planPhaseTrace = beginPlanPhaseTrace(workerCommand);
+        const runResult = await dependencies.workerExecutor.runWorker({
+          command: [...workerCommand],
+          prompt: scanPrompt,
+          mode,
+          transport,
+          trace,
+          cwd,
+          artifactContext,
+          artifactPhase: "plan",
+          artifactPhaseLabel: buildPlanScanPhaseLabel(scanIndex, scanCount),
+          artifactExtra: {
+            scanIndex,
+            scanCount,
+            scanLabel,
+          },
+        });
+        completePlanPhaseTrace(
+          planPhaseTrace,
+          runResult.exitCode,
+          runResult.stdout,
+          runResult.stderr,
+          mode === "wait",
+        );
+
+        if (mode === "wait" && runResult.stderr) {
+          emit({ kind: "stderr", text: runResult.stderr });
+        }
+
+        if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+          emit({ kind: "error", message: "Planner worker exited with code " + runResult.exitCode + " during scan " + scanIndex + "." });
+          return finishPlan(1, "execution-failed");
+        }
+
+        if (!runResult.stdout || runResult.stdout.trim().length === 0) {
+          convergenceOutcome = "converged";
+          if (scanIndex === 1) {
+            emit({ kind: "warn", message: "Planner produced no output. No TODO items added." });
+          } else {
+            emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": no additional TODO items proposed." });
+          }
+          break;
+        }
+
+        const applyResult = applyPlannerOutput(latestDocumentSource, runResult.stdout);
+        if (applyResult.rejected) {
+          emit({
+            kind: "error",
+            message: applyResult.rejectionReason ?? "Planner output was rejected because only additive TODO operations are allowed.",
+          });
+          return finishPlan(1, "failed");
+        }
+
+        if (applyResult.insertedCount === 0) {
+          convergenceOutcome = "converged";
+          if (scanIndex === 1) {
+            emit({ kind: "warn", message: "Planner output contained no valid TODO items to add." });
+          } else {
+            emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": no new TODO additions required." });
+          }
+          break;
+        }
+
+        latestDocumentSource = applyResult.updatedSource;
+        dependencies.fileSystem.writeText(source, latestDocumentSource);
+        insertedTotal += applyResult.insertedCount;
       }
 
-      if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
-        emit({ kind: "error", message: "Planner worker exited with code " + runResult.exitCode + "." });
-        return finishPlan(1, "execution-failed");
+      if (scansExecuted > 0 && convergenceOutcome === null) {
+        convergenceOutcome = "scan-cap-reached";
       }
 
-      if (!runResult.stdout || runResult.stdout.trim().length === 0) {
-        emit({ kind: "warn", message: "Planner produced no output. No subtasks created." });
-        return finishPlan(0, "completed");
-      }
+      const convergenceMetadata = convergenceOutcome
+        ? buildPlanConvergenceMetadata(scanCount, scansExecuted, convergenceOutcome)
+        : undefined;
 
-      const count = applyPlannerOutputWithFileSystem(task, runResult.stdout, dependencies.fileSystem);
-      if (count === 0) {
-        emit({ kind: "warn", message: "Planner output contained no valid task items. No subtasks created." });
-        return finishPlan(0, "completed");
+      if (insertedTotal === 0) {
+        return finishPlan(0, "completed", convergenceMetadata);
       }
 
       emit({
         kind: "success",
-        message: "Inserted " + count + " subtask" + (count === 1 ? "" : "s") + " under: " + task.text,
+        message: "Inserted " + insertedTotal + " TODO item" + (insertedTotal === 1 ? "" : "s") + " into: " + source,
       });
-      return finishPlan(0, "completed");
+      return finishPlan(0, "completed", convergenceMetadata);
     } finally {
       if (!artifactsFinalized) {
         const finalStatus = artifactStatus === "running" ? "failed" : artifactStatus;
@@ -324,75 +411,6 @@ export function createPlanTask(
       }
     }
   };
-}
-
-async function selectPlanTask(
-  source: string,
-  at: string | undefined,
-  sortMode: SortMode,
-  dependencies: PlanTaskDependencies,
-  emit: ApplicationOutputPort["emit"],
-): Promise<{ result: TaskSelectionResult | null; exitCode: number }> {
-  if (at) {
-    const parsed = parseTaskLocation(at);
-    if (parsed.kind === "invalid-format") {
-      emit({ kind: "error", message: "Invalid --at format. Expected file:line (e.g. roadmap.md:12)." });
-      return { result: null, exitCode: 1 };
-    }
-
-    if (parsed.kind === "invalid-line") {
-      emit({ kind: "error", message: "Invalid line number in --at: " + parsed.lineRaw });
-      return { result: null, exitCode: 1 };
-    }
-
-    const { filePath, lineNum } = parsed;
-    const selected = dependencies.taskSelector.selectTaskByLocation(filePath, lineNum);
-    if (!selected) {
-      emit({ kind: "error", message: "No task found at " + filePath + ":" + lineNum });
-      return { result: null, exitCode: 3 };
-    }
-
-    return { result: selected, exitCode: 0 };
-  }
-
-  const files = await dependencies.sourceResolver.resolveSources(source);
-  if (files.length === 0) {
-    emit({ kind: "warn", message: "No Markdown files found matching: " + source });
-    return { result: null, exitCode: 3 };
-  }
-
-  const selected = dependencies.taskSelector.selectNextTask(files, sortMode);
-  if (!selected) {
-    emit({ kind: "info", message: "No unchecked tasks found." });
-    return { result: null, exitCode: 3 };
-  }
-
-  return { result: selected, exitCode: 0 };
-}
-
-function formatTaskLabel(task: Task): string {
-  return `${task.file}:${task.line} [#${task.index}] ${task.text}`;
-}
-
-function parseTaskLocation(
-  value: string,
-):
-  | { kind: "ok"; filePath: string; lineNum: number }
-  | { kind: "invalid-format" }
-  | { kind: "invalid-line"; lineRaw: string } {
-  const colonIdx = value.lastIndexOf(":");
-  if (colonIdx === -1) {
-    return { kind: "invalid-format" };
-  }
-
-  const filePath = value.slice(0, colonIdx);
-  const lineRaw = value.slice(colonIdx + 1);
-  const lineNum = Number.parseInt(lineRaw, 10);
-  if (!Number.isFinite(lineNum) || lineNum < 1) {
-    return { kind: "invalid-line", lineRaw };
-  }
-
-  return { kind: "ok", filePath, lineNum };
 }
 
 export const planTask = createPlanTask;
@@ -408,13 +426,16 @@ function countTraceLines(text: string): number {
 function finalizePlanArtifacts(
   artifactStore: ArtifactStore,
   artifactContext: ArtifactContext,
-  preserve: boolean,
+  keepArtifacts: boolean,
   status: ArtifactStoreStatus,
   emit: ApplicationOutputPort["emit"],
+  extra?: Record<string, unknown>,
 ): void {
+  const preserve = keepArtifacts || artifactStore.isFailedStatus(status);
   artifactStore.finalize(artifactContext, {
     status,
     preserve,
+    extra,
   });
 
   if (preserve) {
@@ -435,19 +456,98 @@ function loadPlanTemplateFromPorts(
   return templateLoader.load(pathOperations.join(cwd, ".rundown", "plan.md")) ?? DEFAULT_PLAN_TEMPLATE;
 }
 
-function applyPlannerOutputWithFileSystem(
-  task: Task,
+function applyPlannerOutput(
+  markdownSource: string,
   plannerOutput: string,
-  fileSystem: FileSystem,
-): number {
-  const subitemLines = parsePlannerOutput(plannerOutput);
-  if (subitemLines.length === 0) {
-    return 0;
+): { updatedSource: string; insertedCount: number; rejected: boolean; rejectionReason?: string } {
+  const hasExistingTodos = parseTasks(markdownSource).length > 0;
+  return insertPlannerTodos(markdownSource, plannerOutput, { hasExistingTodos });
+}
+
+function buildPlanConvergenceMetadata(
+  scanCount: number,
+  scansExecuted: number,
+  convergenceOutcome: PlanConvergenceOutcome,
+): Record<string, unknown> {
+  return {
+    planScanCount: scanCount,
+    planScansExecuted: scansExecuted,
+    planConvergenceOutcome: convergenceOutcome,
+    planConverged: convergenceOutcome === "converged",
+    planScanCapReached: convergenceOutcome === "scan-cap-reached",
+  };
+}
+
+function deriveDocumentIntent(source: string, fallbackPath: string): string {
+  const headingMatch = source.match(/^\s{0,3}#\s+(.+)$/m);
+  if (headingMatch?.[1]) {
+    return headingMatch[1].trim();
   }
 
-  const source = fileSystem.readText(task.file);
-  const updated = insertSubitems(source, task, subitemLines);
-  fileSystem.writeText(task.file, updated);
+  return "Plan TODO coverage for " + fallbackPath;
+}
 
-  return subitemLines.length;
+function buildPlanScanPrompt(
+  basePrompt: string,
+  latestDocumentSource: string,
+  scanIndex: number,
+  scanCount: number,
+): string {
+  const scanLabel = buildPlanScanLabel(scanIndex, scanCount);
+  const stableDocumentSource = normalizeScanDocumentSource(latestDocumentSource);
+
+  return `${basePrompt}\n\n## Scan Context\n\nScan label: ${scanLabel}\nScan pass ${scanIndex} of ${scanCount}.\n\nTreat this scan as a clean standalone worker session. Do not rely on prior prompt history or prior scan outputs beyond the current document state shown below.\n\nCurrent document state (normalized to LF newlines):\n\n\`\`\`markdown\n${stableDocumentSource}\n\`\`\`\n\nReturn ONLY missing TODO additions that are not already present in the current document.\nIf there are no missing TODO additions, return an empty response.`;
+}
+
+function buildPlanScanLabel(scanIndex: number, scanCount: number): string {
+  const width = Math.max(2, String(scanCount).length);
+  const indexLabel = String(scanIndex).padStart(width, "0");
+  const countLabel = String(scanCount).padStart(width, "0");
+  return `plan-scan-${indexLabel}-of-${countLabel}`;
+}
+
+function buildPlanScanPhaseLabel(scanIndex: number, scanCount: number): string {
+  const width = Math.max(2, String(scanCount).length);
+  const indexLabel = String(scanIndex).padStart(width, "0");
+  return `plan-scan-${indexLabel}`;
+}
+
+function normalizeScanDocumentSource(source: string): string {
+  const normalized = source.replace(/\r\n?/g, "\n");
+  return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+}
+
+function validatePlanCleanSessionWorkerCommand(workerCommand: string[]): string | null {
+  if (!isOpenCodeCommand(workerCommand[0])) {
+    return null;
+  }
+
+  const continuationArg = workerCommand.find((arg) => OPENCODE_CONTINUATION_ARG_PATTERN.test(arg));
+  if (continuationArg) {
+    return `The \`plan\` command requires clean per-scan worker sessions. Remove continuation argument \`${continuationArg}\` from --worker.`;
+  }
+
+  const hasResumeSubcommand = workerCommand.some((arg) => arg.toLowerCase() === "resume");
+  if (hasResumeSubcommand) {
+    return "The `plan` command does not allow `opencode resume` because scans must run in clean worker sessions.";
+  }
+
+  return null;
+}
+
+function isOpenCodeCommand(command: string | undefined): boolean {
+  if (!command) {
+    return false;
+  }
+
+  const normalized = command.toLowerCase();
+  return normalized === "opencode"
+    || normalized.endsWith("/opencode")
+    || normalized.endsWith("\\opencode")
+    || normalized.endsWith("/opencode.cmd")
+    || normalized.endsWith("\\opencode.cmd")
+    || normalized.endsWith("/opencode.exe")
+    || normalized.endsWith("\\opencode.exe")
+    || normalized.endsWith("/opencode.ps1")
+    || normalized.endsWith("\\opencode.ps1");
 }

@@ -2,225 +2,311 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createPlanTask, type PlanTaskDependencies, type PlanTaskOptions } from "../../src/application/plan-task.js";
 import type { ApplicationOutputEvent, ArtifactStore, FileSystem } from "../../src/domain/ports/index.js";
-import type { Task } from "../../src/domain/parser.js";
 
 describe("plan-task", () => {
   it("prints the plan prompt and exits before running worker", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ printPrompt: true }));
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
 
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
-    expect(events.some((event) => event.kind === "text" && event.text.includes("Build release"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("# Roadmap"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("## Phase"))).toBe(true);
+  });
+
+  it("renders custom plan templates with vars from vars file and --var", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
+      "# Custom Plan Prompt",
+      "Task: {{task}}",
+      "File: {{file}}",
+      "Scan count: {{scanCount}}",
+      "Todos present: {{hasExistingTodos}}",
+      "Existing todos: {{existingTodoCount}}",
+      "Branch: {{branch}}",
+      "Env: {{env}}",
+    ].join("\n"));
+    vi.mocked(dependencies.templateVarsLoader.load).mockReturnValue({ branch: "main" });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 3,
+      printPrompt: true,
+      varsFileOption: "custom-vars.json",
+      cliTemplateVarArgs: ["env=prod"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith("/workspace/.rundown/plan.md");
+    expect(vi.mocked(dependencies.templateVarsLoader.load)).toHaveBeenCalledWith("custom-vars.json", "/workspace");
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("# Custom Plan Prompt");
+    expect(prompt).toContain("Task: Roadmap");
+    expect(prompt).toContain(`File: ${markdownFile}`);
+    expect(prompt).toContain("Scan count: 3");
+    expect(prompt).toContain("Todos present: false");
+    expect(prompt).toContain("Existing todos: 0");
+    expect(prompt).toContain("Branch: main");
+    expect(prompt).toContain("Env: prod");
+  });
+
+  it("keeps core plan template variables authoritative over user vars", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# True Intent\nBuild a new release process.\n",
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("Task={{task}}|File={{file}}|Scan={{scanCount}}");
+    vi.mocked(dependencies.templateVarsLoader.load).mockReturnValue({
+      task: "Injected task",
+      file: "Injected file",
+      scanCount: "99",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 2,
+      printPrompt: true,
+      varsFileOption: "custom-vars.json",
+      cliTemplateVarArgs: ["task=CLI injected task"],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`Task=True Intent|File=${markdownFile}|Scan=2`);
+    expect(prompt).not.toContain("Injected task");
+    expect(prompt).not.toContain("Injected file");
+    expect(prompt).not.toContain("Scan=99");
   });
 
   it("supports dry-run and skips worker execution", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ dryRun: true }));
+    const code = await planTask(createOptions({ source: markdownFile, dryRun: true }));
 
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planning document:"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("No existing TODO items detected"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(true);
+  });
+
+  it("detects existing TODO items before any worker invocation", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\n- [ ] Existing task\n",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, dryRun: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Detected 1 existing TODO item"))).toBe(true);
+  });
+
+  it("returns 3 when source markdown cannot be read", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "missing.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "",
+      readThrows: true,
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Unable to read Markdown document"))).toBe(true);
   });
 
   it("returns 1 when worker command is missing", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, events } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ workerCommand: [] }));
+    const code = await planTask(createOptions({ source: markdownFile, workerCommand: [] }));
 
     expect(code).toBe(1);
     expect(events.some((event) => event.kind === "error" && event.message.includes("No worker command"))).toBe(true);
   });
 
-  it("returns 1 for invalid --at format", async () => {
+  it("rejects opencode continuation args to enforce clean scan sessions", async () => {
     const cwd = "/workspace";
-    const { dependencies, events, taskSelector } = createDependencies({
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor } = createDependencies({
       cwd,
-      selectedTask: null,
-      files: [],
-      fileContent: "",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ at: "roadmap.md" }));
+    const code = await planTask(createOptions({ source: markdownFile, workerCommand: ["opencode", "run", "--continue"] }));
 
     expect(code).toBe(1);
-    expect(vi.mocked(taskSelector.selectTaskByLocation)).not.toHaveBeenCalled();
-    expect(events.some((event) => event.kind === "error" && event.message.includes("Invalid --at format"))).toBe(true);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "error" && event.message.includes("clean per-scan worker sessions"))).toBe(true);
   });
 
-  it("returns 1 for invalid --at line number", async () => {
+  it("rejects opencode resume to enforce clean scan sessions", async () => {
     const cwd = "/workspace";
-    const { dependencies, events, taskSelector } = createDependencies({
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor } = createDependencies({
       cwd,
-      selectedTask: null,
-      files: [],
-      fileContent: "",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ at: "roadmap.md:0" }));
+    const code = await planTask(createOptions({ source: markdownFile, workerCommand: ["opencode", "resume"] }));
 
     expect(code).toBe(1);
-    expect(vi.mocked(taskSelector.selectTaskByLocation)).not.toHaveBeenCalled();
-    expect(events.some((event) => event.kind === "error" && event.message.includes("Invalid line number in --at: 0"))).toBe(true);
-  });
-
-  it("returns 3 when no task is found at an explicit location", async () => {
-    const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
-    const { dependencies, events, taskSelector } = createDependencies({
-      cwd,
-      selectedTask: null,
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
-    });
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ at: `${taskFile}:2` }));
-
-    expect(code).toBe(3);
-    expect(vi.mocked(taskSelector.selectTaskByLocation)).toHaveBeenCalledWith(taskFile, 2);
-    expect(events.some((event) => event.kind === "error" && event.message.includes(`No task found at ${taskFile}:2`))).toBe(true);
-  });
-
-  it("returns 3 when no files match source", async () => {
-    const cwd = "/workspace";
-    const { dependencies, events } = createDependencies({
-      cwd,
-      selectedTask: null,
-      files: [],
-      fileContent: "",
-    });
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
-
-    expect(code).toBe(3);
-    expect(events.some((event) => event.kind === "warn" && event.message.includes("No Markdown files"))).toBe(true);
-  });
-
-  it("returns 3 when no unchecked tasks are found", async () => {
-    const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
-    const { dependencies, events } = createDependencies({
-      cwd,
-      selectedTask: null,
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [x] Build release\n",
-    });
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
-
-    expect(code).toBe(3);
-    expect(events.some((event) => event.kind === "info" && event.message.includes("No unchecked tasks found"))).toBe(true);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "error" && event.message.includes("does not allow `opencode resume`"))).toBe(true);
   });
 
   it("returns execution-failed when planner exits non-zero", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, workerExecutor, artifactStore } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
     vi.mocked(workerExecutor.runWorker).mockResolvedValue({ exitCode: 9, stdout: "", stderr: "boom" });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
+    const code = await planTask(createOptions({ source: markdownFile }));
 
     expect(code).toBe(1);
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "execution-failed" }),
+      expect.objectContaining({ status: "execution-failed", preserve: true }),
     );
   });
 
   it("completes with warning when planner produces no output", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, workerExecutor, artifactStore, fileSystem, events } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
     vi.mocked(workerExecutor.runWorker).mockResolvedValue({ exitCode: 0, stdout: "   \n", stderr: "" });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
+    const code = await planTask(createOptions({ source: markdownFile }));
 
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "completed", preserve: false }),
     );
     expect(events.some((event) => event.kind === "warn" && event.message.includes("Planner produced no output"))).toBe(true);
   });
 
+  it("preserves successful plan artifacts when keepArtifacts is enabled", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, workerExecutor, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, keepArtifacts: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "completed", preserve: true }),
+    );
+  });
+
   it("completes with warning when planner output has no task items", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
+    const markdownFile = path.join(cwd, "roadmap.md");
     const { dependencies, workerExecutor, artifactStore, fileSystem, events } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
-      fileContent: "# Roadmap\n- [ ] Build release\n",
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
     vi.mocked(workerExecutor.runWorker).mockResolvedValue({ exitCode: 0, stdout: "No task list here", stderr: "" });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
+    const code = await planTask(createOptions({ source: markdownFile }));
 
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "failed", preserve: true }),
     );
-    expect(events.some((event) => event.kind === "warn" && event.message.includes("no valid task items"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("stdout contract"))).toBe(true);
   });
 
-  it("inserts parsed subtasks into markdown on success", async () => {
+  it("inserts generated TODO items into relevant section when no TODOs exist", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
-    const content = "# Roadmap\n- [ ] Build release\n";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "## Summary",
+      "Build a new release process.",
+      "",
+      "## Next Steps",
+      "Coordinate delivery.",
+      "",
+      "## Notes",
+      "Track decisions.",
+      "",
+    ].join("\n");
     const { dependencies, workerExecutor, fileSystem, artifactStore, events } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
+      markdownFile,
       fileContent: content,
     });
 
@@ -231,95 +317,365 @@ describe("plan-task", () => {
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions());
+    const code = await planTask(createOptions({ source: markdownFile }));
 
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
     const updated = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
-    expect(updated).toContain("  - [ ] Write tests");
-    expect(updated).toContain("  - [ ] Update docs");
+    expect(updated).toContain("## Next Steps\nCoordinate delivery.\n\n- [ ] Write tests\n- [ ] Update docs\n## Notes");
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "completed" }),
+      expect.objectContaining({ status: "completed", preserve: false }),
     );
-    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 subtasks"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
   });
 
-  it("uses explicit location selection and preserves artifacts for a single subtask", async () => {
+  it("deduplicates TODO items already present in the markdown document", async () => {
     const cwd = "/workspace";
-    const taskFile = path.join(cwd, "roadmap.md");
-    const content = "# Roadmap\n- [ ] Build release\n";
-    const { dependencies, workerExecutor, fileSystem, artifactStore, events, taskSelector } = createDependencies({
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\n- [ ] Existing task\n";
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
       cwd,
-      selectedTask: createSelection(taskFile),
-      files: [taskFile],
+      markdownFile,
       fileContent: content,
     });
 
     vi.mocked(workerExecutor.runWorker).mockResolvedValue({
       exitCode: 0,
-      stdout: "- [ ] Write changelog\n",
+      stdout: "- [ ] Existing task\n- [ ] New task\n",
       stderr: "",
     });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ at: `${taskFile}:2`, keepArtifacts: true }));
+    const code = await planTask(createOptions({ source: markdownFile }));
 
     expect(code).toBe(0);
-    expect(vi.mocked(taskSelector.selectTaskByLocation)).toHaveBeenCalledWith(taskFile, 2);
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    const updated = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
+    expect(updated).toContain("- [ ] Existing task");
+    expect(updated).toContain("- [ ] New task");
+    expect(updated.indexOf("- [ ] Existing task")).toBe(updated.lastIndexOf("- [ ] Existing task"));
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 TODO item"))).toBe(true);
+  });
+
+  it("enhances existing TODO documents by appending only missing additions", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "## Next Steps",
+      "- [ ] Existing task",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Existing task\n- [ ] Add CI pipeline checks\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Existing task\n- [ ] Add CI pipeline checks\n",
+        stderr: "",
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    const finalSource = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
+    expect(finalSource).toContain("- [ ] Existing task");
+    expect(finalSource).toContain("- [ ] Add CI pipeline checks");
+    expect(finalSource.indexOf("- [ ] Existing task")).toBe(finalSource.lastIndexOf("- [ ] Existing task"));
+    expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 2"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 TODO item"))).toBe(true);
+  });
+
+  it("runs multiple scan passes until convergence and appends only missing TODO additions", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Write tests\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Write tests\n- [ ] Update docs\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0]?.artifactPhaseLabel).toBe("plan-scan-01");
+    expect(vi.mocked(workerExecutor.runWorker).mock.calls[1]?.[0]?.artifactPhaseLabel).toBe("plan-scan-02");
+    expect(vi.mocked(workerExecutor.runWorker).mock.calls[2]?.[0]?.artifactPhaseLabel).toBe("plan-scan-03");
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(2);
+    const finalSource = vi.mocked(fileSystem.writeText).mock.calls[1]?.[1] ?? "";
+    expect(finalSource).toContain("- [ ] Write tests");
+    expect(finalSource).toContain("- [ ] Update docs");
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planning plan-scan-01-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planning plan-scan-03-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 3"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+  });
+
+  it("includes clean-session instruction in each scan prompt", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const firstPrompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0]?.prompt ?? "";
+    expect(firstPrompt).toContain("clean standalone worker session");
+    expect(firstPrompt).toContain("Do not rely on prior prompt history");
+    expect(firstPrompt).toContain("Scan label: plan-scan-01-of-01");
+  });
+
+  it("uses stable scan input construction with normalized newlines", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\r\nBuild a new release process.";
+    const { dependencies, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile }));
+
+    expect(code).toBe(0);
+    const firstPrompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0]?.prompt ?? "";
+    expect(firstPrompt).toContain("Current document state (normalized to LF newlines):");
+    const fencedSection = firstPrompt.split("```markdown\n")[1]?.split("\n```")[0] ?? "";
+    expect(fencedSection).toBe("# Roadmap\nBuild a new release process.\n");
+    expect(fencedSection).not.toContain("\r");
+  });
+
+  it("stops early when a scan proposes zero valid TODO additions", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Write tests\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Write tests\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Update docs\n",
+        stderr: "",
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    const finalSource = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
+    expect(finalSource).toContain("- [ ] Write tests");
+    expect(finalSource).not.toContain("- [ ] Update docs");
+    expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 2"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 TODO item"))).toBe(true);
+    expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 3,
+          planScansExecuted: 2,
+          planConvergenceOutcome: "converged",
+          planConverged: true,
+          planScanCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("stops at scan cap when worker keeps adding TODO items", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Scan one\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Scan two\n",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "- [ ] Scan three\n",
+        stderr: "",
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 2 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(2);
+    const finalSource = vi.mocked(fileSystem.writeText).mock.calls[1]?.[1] ?? "";
+    expect(finalSource).toContain("- [ ] Scan one");
+    expect(finalSource).toContain("- [ ] Scan two");
+    expect(finalSource).not.toContain("- [ ] Scan three");
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 2,
+          planScansExecuted: 2,
+          planConvergenceOutcome: "scan-cap-reached",
+          planConverged: false,
+          planScanCapReached: true,
+        }),
+      }),
+    );
+  });
+
+  it("fails when planner output attempts non-additive edits to existing TODO lines", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\n- [ ] Existing task\n";
+    const { dependencies, workerExecutor, fileSystem, artifactStore, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "- [x] Existing task\n- [ ] New task\n",
+      stderr: "",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Only additive TODO operations are allowed"))).toBe(true);
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ status: "completed", preserve: true }),
+      expect.objectContaining({ status: "failed", preserve: true }),
     );
-    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 subtask under"))).toBe(true);
-    expect(events.some((event) => event.kind === "info" && event.message.includes("Runtime artifacts saved at"))).toBe(true);
+  });
+
+  it("fails when planner output violates strict stdout contract", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\n- [ ] Existing task\n";
+    const { dependencies, workerExecutor, fileSystem, artifactStore, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "Here are missing tasks:\n- [ ] New task\n",
+      stderr: "",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "error" && event.message.includes("stdout contract"))).toBe(true);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "failed", preserve: true }),
+    );
   });
 });
 
-function createSelection(taskFile: string): { task: Task; source: string; contextBefore: string } {
-  return {
-    task: {
-      text: "Build release",
-      checked: false,
-      index: 0,
-      line: 2,
-      column: 1,
-      offsetStart: 0,
-      offsetEnd: 0,
-      file: taskFile,
-      isInlineCli: false,
-      depth: 0,
-    },
-    source: "roadmap.md",
-    contextBefore: "# Roadmap",
-  };
-}
-
 function createDependencies(options: {
   cwd: string;
-  selectedTask: { task: Task; source: string; contextBefore: string } | null;
-  files: string[];
+  markdownFile: string;
   fileContent: string;
+  readThrows?: boolean;
 }): {
   dependencies: PlanTaskDependencies;
   events: ApplicationOutputEvent[];
   workerExecutor: PlanTaskDependencies["workerExecutor"];
-  taskSelector: PlanTaskDependencies["taskSelector"];
-  sourceResolver: PlanTaskDependencies["sourceResolver"];
   artifactStore: ArtifactStore;
   fileSystem: FileSystem;
 } {
   const events: ApplicationOutputEvent[] = [];
-
-  const sourceResolver: PlanTaskDependencies["sourceResolver"] = {
-    resolveSources: vi.fn(async () => options.files),
-  };
-
-  const taskSelector: PlanTaskDependencies["taskSelector"] = {
-    selectNextTask: vi.fn(() => options.selectedTask),
-    selectTaskByLocation: vi.fn(() => options.selectedTask),
-  };
+  let currentContent = options.fileContent;
 
   const workerExecutor: PlanTaskDependencies["workerExecutor"] = {
     runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
@@ -328,8 +684,20 @@ function createDependencies(options: {
 
   const fileSystem: FileSystem = {
     exists: vi.fn(() => true),
-    readText: vi.fn(() => options.fileContent),
-    writeText: vi.fn(),
+    readText: vi.fn((filePath: string) => {
+      if (options.readThrows && filePath === options.markdownFile) {
+        throw new Error("missing file");
+      }
+      if (filePath === options.markdownFile) {
+        return currentContent;
+      }
+      return "";
+    }),
+    writeText: vi.fn((filePath: string, content: string) => {
+      if (filePath === options.markdownFile) {
+        currentContent = content;
+      }
+    }),
     mkdir: vi.fn(),
     readdir: vi.fn(() => []),
     stat: vi.fn(() => null),
@@ -356,12 +724,10 @@ function createDependencies(options: {
     find: vi.fn(() => null),
     removeSaved: vi.fn(() => 0),
     removeFailed: vi.fn(() => 0),
-    isFailedStatus: vi.fn(() => false),
+    isFailedStatus: vi.fn((status) => typeof status === "string" && status.includes("failed")),
   };
 
   const dependencies: PlanTaskDependencies = {
-    sourceResolver,
-    taskSelector,
     workerExecutor,
     workingDirectory: { cwd: vi.fn(() => options.cwd) },
     fileSystem,
@@ -392,8 +758,6 @@ function createDependencies(options: {
     dependencies,
     events,
     workerExecutor,
-    taskSelector,
-    sourceResolver,
     artifactStore,
     fileSystem,
   };
@@ -402,10 +766,9 @@ function createDependencies(options: {
 function createOptions(overrides: Partial<PlanTaskOptions> = {}): PlanTaskOptions {
   return {
     source: "roadmap.md",
-    at: undefined,
+    scanCount: 1,
     mode: "wait",
     transport: "arg",
-    sortMode: "none",
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,

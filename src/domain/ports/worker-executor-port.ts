@@ -17,6 +17,7 @@ export interface WorkerExecutionOptions {
   cwd: string;
   artifactContext?: unknown;
   artifactPhase?: "execute" | "verify" | "repair" | "worker" | "plan";
+  artifactPhaseLabel?: string;
   artifactExtra?: Record<string, unknown>;
 }
 

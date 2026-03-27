@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { createApp } from "../create-app.js";
@@ -11,6 +11,7 @@ const PLANNER_MODES: readonly ProcessRunMode[] = ["wait"];
 const PROMPT_TRANSPORTS: readonly PromptTransport[] = ["file", "arg"];
 const SORT_MODES: readonly SortMode[] = ["name-sort", "none", "old-first", "new-first"];
 const EXIT_TEST_MODE_ENV = "RUNDOWN_TEST_MODE";
+const DEFAULT_PLAN_SCAN_COUNT = 1;
 
 class CliExitSignal extends Error {
   readonly code: number;
@@ -214,12 +215,13 @@ program
   }));
 program
   .command("plan")
-  .description("Decompose a task into subtasks using a worker command.")
-  .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
-  .option("--at <file:line>", "Target a specific task by file path and line number")
+  .description("Synthesize actionable TODOs for a Markdown document using a worker command.")
+  .argument("[markdown-file...]", "Markdown document to plan")
+  .addOption(new Option("--at <file:line>", "Deprecated legacy task selector for plan").hideHelp())
+  .addOption(new Option("--sort <sort>", "Deprecated legacy sort selector for plan").hideHelp())
+  .option("--scan-count <n>", "Max clean-session TODO coverage scans", String(DEFAULT_PLAN_SCAN_COUNT))
   .option("--mode <mode>", "Planner mode: wait", "wait")
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
-  .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
@@ -228,10 +230,12 @@ program
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
-  .action(withCliAction((source: string, opts: Record<string, string | string[] | boolean>) => {
+  .action(withCliAction((markdownFiles: string[], opts: Record<string, string | string[] | boolean>) => {
+    assertNoLegacyPlanSelectionOptions(opts);
+    const markdownFile = resolvePlanMarkdownFile(markdownFiles);
+    const scanCount = parseScanCount(opts.scanCount as string | undefined);
     const mode = parseRunnerMode(opts.mode as string | undefined, PLANNER_MODES);
     const transport = parsePromptTransport(opts.transport as string | undefined);
-    const sortMode = parseSortMode(opts.sort as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
@@ -245,11 +249,10 @@ program
         ? [opts.worker]
         : workerFromSeparator;
     return app.planTask({
-      source,
-      at: opts.at as string | undefined,
+      source: markdownFile,
+      scanCount,
       mode,
       transport,
-      sortMode,
       dryRun,
       printPrompt,
       keepArtifacts,
@@ -301,6 +304,51 @@ function parseRepairAttempts(value: string | undefined): number {
     throw new Error(`Invalid --repair-attempts value: ${raw}. Must be a safe non-negative integer.`);
   }
   return parsed;
+}
+
+function parseScanCount(value: string | undefined): number {
+  const raw = value ?? String(DEFAULT_PLAN_SCAN_COUNT);
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid --scan-count value: ${raw}. Must be a positive integer.`);
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid --scan-count value: ${raw}. Must be a safe positive integer.`);
+  }
+
+  if (parsed < 1) {
+    throw new Error(`Invalid --scan-count value: ${raw}. Must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function assertNoLegacyPlanSelectionOptions(opts: Record<string, string | string[] | boolean>): void {
+  if (opts.at !== undefined) {
+    throw new Error("The --at option is no longer supported for `plan`. `plan` now operates on the entire <markdown-file>. Remove --at and pass the target document as the command argument.");
+  }
+
+  if (opts.sort !== undefined) {
+    throw new Error("The --sort option is no longer supported for `plan`. Planning no longer selects a task from multiple files. Remove --sort and pass only the target <markdown-file>.");
+  }
+}
+
+function resolvePlanMarkdownFile(markdownFiles: string[]): string {
+  if (markdownFiles.length === 0) {
+    throw new Error("The `plan` command requires exactly one Markdown file path. Usage: rundown plan <markdown-file> [options].");
+  }
+
+  if (markdownFiles.length > 1) {
+    throw new Error(`The \`plan\` command accepts exactly one Markdown file path. Received ${markdownFiles.length}: ${markdownFiles.join(", ")}.`);
+  }
+
+  const markdownFile = markdownFiles[0] ?? "";
+  if (!/\.(md|markdown)$/i.test(markdownFile)) {
+    throw new Error(`Invalid plan document path: ${markdownFile}. The \`plan\` command only accepts Markdown files (.md or .markdown).`);
+  }
+
+  return markdownFile;
 }
 
 function parseLastReverifyCount(value: string | undefined): number | undefined {

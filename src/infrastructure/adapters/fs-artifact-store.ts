@@ -49,6 +49,7 @@ export function createFsArtifactStore(): ArtifactStore {
       finalizeRuntimeArtifacts(context as RuntimeArtifactsContext, {
         status: options.status,
         preserve: options.preserve,
+        extra: options.extra,
       });
     },
     displayPath(context): string {

@@ -63,16 +63,68 @@ rundown reverify --print-prompt --worker opencode run
 rundown reverify --dry-run --worker opencode run
 ```
 
-### `rundown plan <source>`
+### `rundown plan <markdown-file>`
 
-Select a task and expand it into nested unchecked subtasks using the planner template.
+Run document-level TODO synthesis on a single Markdown document using the planner template.
 
-Use `--at file:line` to target a specific task by source file and 1-based line number.
+`plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
 
-Example:
+Input rules:
+
+- Exactly one file path is required.
+- File extension must be `.md` or `.markdown`.
+- Legacy task selection flags (`--at`, `--sort`) are rejected for `plan`.
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--scan-count <n>` | Maximum clean-session scan iterations. Must be a safe positive integer. | `1` |
+| `--mode <mode>` | Planner execution mode. Currently only `wait` is supported. | `wait` |
+| `--transport <file|arg>` | Prompt transport for planner invocations. | `file` |
+| `--dry-run` | Render plan prompt + execution intent and exit without running the worker. | off |
+| `--print-prompt` | Print the rendered planner prompt and exit `0` without running the worker. | off |
+| `--keep-artifacts` | Preserve runtime artifacts under `.rundown/runs/` even on success. | off |
+| `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl`. | off |
+| `--vars-file [path]` | Load template variables from JSON (default path: `.rundown/vars.json`). | unset |
+| `--var <key=value>` | Inject template variables (repeatable). | none |
+| `--worker <command...>` | Worker command (preferred on PowerShell). | unset |
+
+Worker command requirement:
+
+- Provide a worker with `--worker <command...>` or separator form `-- <command>`.
+- For OpenCode workers, continuation/resume session arguments are rejected so each scan runs in a clean session.
+
+Scan loop and convergence semantics:
+
+- Scans run from `1..scan-count` and always read the latest on-disk document before each pass.
+- Each scan may only add TODO lines; edits/deletes/reorders of existing TODO text are rejected.
+- Converges early when either:
+  - worker output is empty, or
+  - worker output contains no valid new TODO additions after normalization/idempotency checks.
+- If no convergence signal occurs before the limit, planning stops at the configured scan cap.
+
+Artifacts and audit expectations:
+
+- Scan phases are recorded with deterministic labels (`plan-scan-01`, `plan-scan-02`, ...).
+- Run metadata includes convergence fields (`planConvergenceOutcome`, `planConverged`, `planScanCapReached`, plus scan counts).
+- Failed planning runs keep artifacts automatically.
+- Successful runs are pruned by default unless `--keep-artifacts` is set.
+
+Examples:
 
 ```bash
-rundown plan roadmap.md --at roadmap.md:12 -- opencode run
+# Basic plan run
+rundown plan roadmap.md --scan-count 3 -- opencode run
+
+# No TODOs yet: bootstrap actionable TODOs, then converge
+rundown plan docs/spec.md --scan-count 3 -- opencode run
+
+# Existing TODOs: append missing implementation items only
+rundown plan docs/migration.md --scan-count 2 -- opencode run
+
+# PowerShell-safe worker form
+rundown plan docs/spec.md --scan-count 2 --worker opencode run
 ```
 
 ### `rundown next <source>`
@@ -190,7 +242,7 @@ Direct `--var` entries override values loaded from `--vars-file`.
 
 ### Planning
 
-- `--at file:line` — target a specific task for `plan`
+- `--scan-count <n>` — set max clean-session plan scans for `plan` (positive integer)
 
 ### Listing
 

@@ -200,6 +200,32 @@ describe("runtime-artifacts", () => {
     expect(fs.existsSync(path.join(phase.dir, "stderr.log"))).toBe(false);
   });
 
+  it("supports scan-style phase labels in directory names and metadata", () => {
+    const cwd = createWorkspace();
+    const context = createRuntimeArtifactsContext({ cwd, commandName: "plan", keepArtifacts: true });
+
+    const phase = beginRuntimePhase(context, {
+      phase: "plan",
+      phaseLabel: "plan-scan-01",
+      command: ["opencode", "run"],
+      mode: "wait",
+      transport: "arg",
+    });
+
+    completeRuntimePhase(phase, {
+      exitCode: 0,
+      outputCaptured: false,
+    });
+
+    expect(path.basename(phase.dir)).toBe("01-plan-scan-01");
+    const metadata = JSON.parse(fs.readFileSync(phase.metadataFile, "utf-8")) as {
+      phase: string;
+      phaseLabel?: string;
+    };
+    expect(metadata.phase).toBe("plan");
+    expect(metadata.phaseLabel).toBe("plan-scan-01");
+  });
+
   it("returns early when finalizing a deleted non-preserved run", () => {
     const cwd = createWorkspace();
     const context = createRuntimeArtifactsContext({ cwd, commandName: "run", keepArtifacts: false });

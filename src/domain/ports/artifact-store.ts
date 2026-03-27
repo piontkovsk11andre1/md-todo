@@ -53,6 +53,7 @@ export interface ArtifactRunMetadata {
   startedAt: string;
   completedAt?: string;
   status?: ArtifactStoreStatus;
+  extra?: Record<string, unknown>;
 }
 
 export interface ArtifactStore {
@@ -91,7 +92,7 @@ export interface ArtifactStore {
   ): void;
   finalize(
     context: ArtifactRunContext,
-    options: { status: ArtifactStoreStatus; preserve?: boolean },
+    options: { status: ArtifactStoreStatus; preserve?: boolean; extra?: Record<string, unknown> },
   ): void;
   displayPath(context: ArtifactRunContext): string;
   rootDir(cwd?: string): string;

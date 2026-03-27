@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  insertPlannerTodos,
+  normalizePlannerTodoAdditions,
   parsePlannerOutput,
   insertSubitems,
   computeChildIndent,
@@ -185,5 +187,353 @@ describe("insertSubitems", () => {
     const task = makeTask({ line: 5 });
 
     expect(() => insertSubitems(source, task, ["- [ ] Child"])).toThrow("Task line 5 is out of range.");
+  });
+});
+
+describe("normalizePlannerTodoAdditions", () => {
+  it("returns only normalized unchecked TODO additions", () => {
+    const output = [
+      "text",
+      "* [ ] First",
+      "+ [ ] Second",
+      "- [x] Done",
+    ].join("\n");
+
+    const additions = normalizePlannerTodoAdditions(output);
+    expect(additions).toEqual(["- [ ] First", "- [ ] Second"]);
+  });
+
+  it("deduplicates output and filters existing TODO lines", () => {
+    const output = [
+      "- [ ] Existing",
+      "* [ ] Existing",
+      "- [ ] New",
+      "- [ ] New",
+    ].join("\n");
+
+    const additions = normalizePlannerTodoAdditions(output, {
+      existingTodoLines: ["- [ ] Existing"],
+    });
+
+    expect(additions).toEqual(["- [ ] New"]);
+  });
+
+  it("treats whitespace-only text differences as duplicates", () => {
+    const output = [
+      "- [ ] Align   release   checklist",
+      "- [ ] Align release checklist",
+    ].join("\n");
+
+    const additions = normalizePlannerTodoAdditions(output);
+    expect(additions).toEqual(["- [ ] Align   release   checklist"]);
+  });
+});
+
+describe("insertPlannerTodos", () => {
+  it("inserts TODOs under the most relevant section when none exist", () => {
+    const source = [
+      "# Delivery Plan",
+      "",
+      "## Scope",
+      "Define the release boundaries.",
+      "",
+      "## Next Steps",
+      "Coordinate rollout.",
+      "",
+      "## Notes",
+      "Additional context.",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, "- [ ] Draft rollout plan\n- [ ] Confirm ownership\n", {
+      hasExistingTodos: false,
+    });
+
+    expect(result.insertedCount).toBe(2);
+    expect(result.updatedSource).toContain("## Next Steps\nCoordinate rollout.\n\n- [ ] Draft rollout plan\n- [ ] Confirm ownership\n## Notes");
+  });
+
+  it("falls back to EOF insertion when no headings are present", () => {
+    const source = "Release intent without sections.";
+
+    const result = insertPlannerTodos(source, "- [ ] Add milestone list\n", {
+      hasExistingTodos: false,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toBe("Release intent without sections.\n\n- [ ] Add milestone list\n");
+  });
+
+  it("uses heading proximity to break semantic ties near fallback section", () => {
+    const source = [
+      "# Delivery Plan",
+      "",
+      "## Release Validation Deployment Overview",
+      "Capture current status.",
+      "",
+      "## Background",
+      "Context details.",
+      "",
+      "## Next Steps",
+      "Coordinate rollout.",
+      "",
+      "## Release Validation Deployment Notes",
+      "Capture rollout checks.",
+      "",
+      "## Appendix",
+      "Reference links.",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, "- [ ] Release validation deployment across staging\n", {
+      hasExistingTodos: false,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toContain(
+      "## Release Validation Deployment Notes\nCapture rollout checks.\n\n- [ ] Release validation deployment across staging\n## Appendix",
+    );
+  });
+
+  it("breaks exact heading-score ties deterministically by document order", () => {
+    const source = [
+      "# Plan",
+      "",
+      "## Release Checklist",
+      "First candidate section.",
+      "",
+      "## Release Checklist",
+      "Second candidate section.",
+      "",
+      "## Notes",
+      "General context.",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, "- [ ] Validate release checklist\n", {
+      hasExistingTodos: false,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toContain(
+      "## Release Checklist\nFirst candidate section.\n\n- [ ] Validate release checklist\n## Release Checklist",
+    );
+  });
+
+  it("falls back to EOF insertion when headings exist but no section is relevant", () => {
+    const source = [
+      "# Plan",
+      "",
+      "## Scope",
+      "Define boundaries.",
+      "",
+      "## Notes",
+      "General context.",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, "- [ ] Rotate database credentials\n", {
+      hasExistingTodos: false,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toBe([
+      "# Plan",
+      "",
+      "## Scope",
+      "Define boundaries.",
+      "",
+      "## Notes",
+      "General context.",
+      "",
+      "- [ ] Rotate database credentials",
+      "",
+    ].join("\n"));
+  });
+
+  it("appends TODOs to end of document when TODOs already exist", () => {
+    const source = [
+      "# Plan",
+      "",
+      "## TODO",
+      "- [ ] Existing",
+      "",
+      "## Notes",
+      "Keep this untouched.",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, "- [ ] Existing\n- [ ] New\n", {
+      hasExistingTodos: true,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toBe([
+      "# Plan",
+      "",
+      "## TODO",
+      "- [ ] Existing",
+      "",
+      "## Notes",
+      "Keep this untouched.",
+      "- [ ] New",
+      "",
+    ].join("\n"));
+  });
+
+  it("deduplicates planner output and existing TODO entries", () => {
+    const source = "# Plan\n\n- [ ] Existing\n";
+    const output = "* [ ] Existing\n- [ ] New\n- [ ] New\n";
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toContain("- [ ] New\n");
+    expect(result.updatedSource.match(/- \[ \] New/g)).toHaveLength(1);
+    expect(result.rejected).toBe(false);
+  });
+
+  it("is idempotent when the same planner output is applied repeatedly", () => {
+    const source = [
+      "# Plan",
+      "",
+      "## TODO",
+      "- [ ] Existing",
+      "",
+    ].join("\n");
+    const output = "- [ ] Existing\n- [ ] Add migration tests\n";
+
+    const firstPass = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(firstPass.rejected).toBe(false);
+    expect(firstPass.insertedCount).toBe(1);
+    expect(firstPass.updatedSource.match(/- \[ \] Add migration tests/g)).toHaveLength(1);
+
+    const secondPass = insertPlannerTodos(firstPass.updatedSource, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(secondPass.rejected).toBe(false);
+    expect(secondPass.insertedCount).toBe(0);
+    expect(secondPass.updatedSource).toBe(firstPass.updatedSource);
+  });
+
+  it("does not duplicate existing TODO when only spacing differs", () => {
+    const source = "# Plan\n\n- [ ] Align release checklist\n";
+    const output = "- [ ] Align   release   checklist\n- [ ] New\n";
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource.match(/Align release checklist/g)).toHaveLength(1);
+    expect(result.updatedSource).toContain("- [ ] New\n");
+    expect(result.rejected).toBe(false);
+  });
+
+  it("rejects output that attempts to modify completion state of existing TODO lines", () => {
+    const source = "# Plan\n\n- [ ] Existing\n";
+    const output = "- [x] Existing\n- [ ] New\n";
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.rejected).toBe(true);
+    expect(result.insertedCount).toBe(0);
+    expect(result.updatedSource).toBe(source);
+    expect(result.rejectionReason).toContain("completion state");
+  });
+
+  it("rejects output that attempts to reorder existing TODO lines", () => {
+    const source = [
+      "# Plan",
+      "",
+      "- [ ] First",
+      "- [ ] Second",
+      "",
+    ].join("\n");
+    const output = [
+      "- [ ] Second",
+      "- [ ] First",
+      "- [ ] Third",
+      "",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.rejected).toBe(true);
+    expect(result.insertedCount).toBe(0);
+    expect(result.updatedSource).toBe(source);
+    expect(result.rejectionReason).toContain("reorder");
+  });
+
+  it("rejects output that attempts to remove existing TODO lines", () => {
+    const source = [
+      "# Plan",
+      "",
+      "- [ ] First",
+      "- [ ] Second",
+      "",
+    ].join("\n");
+    const output = [
+      "- [ ] First",
+      "- [ ] Third",
+      "",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.rejected).toBe(true);
+    expect(result.insertedCount).toBe(0);
+    expect(result.updatedSource).toBe(source);
+    expect(result.rejectionReason).toContain("remove");
+  });
+
+  it("allows additive output that echoes existing TODO lines in document order", () => {
+    const source = [
+      "# Plan",
+      "",
+      "- [ ] First",
+      "- [ ] Second",
+      "",
+    ].join("\n");
+    const output = [
+      "- [ ] First",
+      "- [ ] Second",
+      "- [ ] Third",
+      "",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.rejected).toBe(false);
+    expect(result.insertedCount).toBe(1);
+    expect(result.updatedSource).toContain("- [ ] Third\n");
+  });
+
+  it("rejects output that violates strict stdout TODO-list contract", () => {
+    const source = "# Plan\n\n- [ ] Existing\n";
+    const output = [
+      "Here are missing tasks:",
+      "- [ ] New",
+      "Thanks",
+      "",
+    ].join("\n");
+
+    const result = insertPlannerTodos(source, output, {
+      hasExistingTodos: true,
+    });
+
+    expect(result.rejected).toBe(true);
+    expect(result.insertedCount).toBe(0);
+    expect(result.updatedSource).toBe(source);
+    expect(result.rejectionReason).toContain("stdout contract");
   });
 });

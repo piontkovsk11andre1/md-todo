@@ -19,6 +19,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         cwd: options.cwd,
         artifactContext: options.artifactContext as RuntimeArtifactsContext | undefined,
         artifactPhase: options.artifactPhase,
+        artifactPhaseLabel: options.artifactPhaseLabel,
         artifactExtra: options.artifactExtra,
       });
     },

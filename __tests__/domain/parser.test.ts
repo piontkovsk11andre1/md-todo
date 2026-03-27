@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseTasks } from "../../src/domain/parser.js";
+import {
+  countTodoItems,
+  extractHeadingLines,
+  extractHeadingSections,
+  extractTodoItems,
+  hasTodoItems,
+  parseTasks,
+} from "../../src/domain/parser.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -147,6 +154,7 @@ describe("parseTasks", () => {
       }),
     }));
 
+    // @ts-expect-error Vitest query suffix forces a fresh module instance.
     const { parseTasks: parseTasksWithoutPositions } = await import("../../src/domain/parser.js?missing-positions");
     const tasks = parseTasksWithoutPositions("- [ ] Task without position", "test.md");
 
@@ -195,5 +203,181 @@ describe("parseTasks", () => {
     expect(tasks[1]!.checked).toBe(false);
     expect(tasks[2]!.checked).toBe(true);
     expect(tasks[3]!.checked).toBe(false);
+  });
+});
+
+describe("document-level TODO helpers", () => {
+  it("extractTodoItems returns all TODOs across the document", () => {
+    const md = [
+      "# Plan",
+      "",
+      "- [ ] Top-level task",
+      "",
+      "## Details",
+      "- [x] Completed task",
+      "  - [ ] Nested task",
+    ].join("\n");
+
+    const todos = extractTodoItems(md, "plan.md");
+
+    expect(todos).toHaveLength(3);
+    expect(todos[0]!.text).toBe("Top-level task");
+    expect(todos[1]!.text).toBe("Completed task");
+    expect(todos[2]!.text).toBe("Nested task");
+    expect(todos.every((todo) => todo.file === "plan.md")).toBe(true);
+  });
+
+  it("extractTodoItems handles markdown edge cases like CRLF and mixed markers", () => {
+    const md = [
+      "# Plan",
+      "",
+      "* [ ] First",
+      "+ [x] Second",
+      "  - [ ] Nested third",
+    ].join("\r\n");
+
+    const todos = extractTodoItems(md);
+
+    expect(todos).toHaveLength(3);
+    expect(todos.map((todo) => todo.text)).toEqual(["First", "Second", "Nested third"]);
+    expect(todos.map((todo) => todo.checked)).toEqual([false, true, false]);
+  });
+
+  it("hasTodoItems detects whether TODOs exist", () => {
+    expect(hasTodoItems("# Doc\n\n- [ ] One task\n")).toBe(true);
+    expect(hasTodoItems("# Doc\n\nNo tasks here.\n")).toBe(false);
+  });
+
+  it("countTodoItems returns total TODO count", () => {
+    const md = "- [ ] First\n- [x] Second\n- [ ] Third\n";
+    expect(countTodoItems(md)).toBe(3);
+    expect(countTodoItems("# Empty\n\nNo TODOs\n")).toBe(0);
+  });
+
+  it("extractHeadingLines returns ATX headings with normalized text", () => {
+    const md = [
+      "# Plan",
+      "",
+      "## Next Steps ###",
+      "Text",
+      "### Implementation",
+      "",
+      "Not a heading # because no leading marker",
+    ].join("\n");
+
+    const headings = extractHeadingLines(md);
+
+    expect(headings).toEqual([
+      {
+        lineIndex: 0,
+        level: 1,
+        text: "Plan",
+        normalizedText: "plan",
+      },
+      {
+        lineIndex: 2,
+        level: 2,
+        text: "Next Steps",
+        normalizedText: "next steps",
+      },
+      {
+        lineIndex: 4,
+        level: 3,
+        text: "Implementation",
+        normalizedText: "implementation",
+      },
+    ]);
+  });
+
+  it("extractHeadingLines handles heading syntax edge cases deterministically", () => {
+    const md = [
+      "   ###   Trimmed heading   ###",
+      "    #### Not a heading (too much indent)",
+      "##",
+      "## Valid",
+    ].join("\n");
+
+    const headings = extractHeadingLines(md);
+
+    expect(headings).toEqual([
+      {
+        lineIndex: 0,
+        level: 3,
+        text: "Trimmed heading",
+        normalizedText: "trimmed heading",
+      },
+      {
+        lineIndex: 3,
+        level: 2,
+        text: "Valid",
+        normalizedText: "valid",
+      },
+    ]);
+  });
+
+  it("extractHeadingSections returns deterministic section boundaries", () => {
+    const md = [
+      "# Plan",
+      "Intro",
+      "",
+      "## Scope",
+      "Scope details",
+      "### In Scope",
+      "Item",
+      "## Next Steps",
+      "Action",
+      "# Appendix",
+      "Tail",
+    ].join("\n");
+
+    const sections = extractHeadingSections(md);
+
+    expect(sections).toHaveLength(5);
+
+    expect(sections[0]).toMatchObject({
+      startLineIndex: 0,
+      endLineIndexExclusive: 9,
+      heading: { level: 1, text: "Plan", lineIndex: 0 },
+    });
+
+    expect(sections[1]).toMatchObject({
+      startLineIndex: 3,
+      endLineIndexExclusive: 7,
+      heading: { level: 2, text: "Scope", lineIndex: 3 },
+    });
+
+    expect(sections[2]).toMatchObject({
+      startLineIndex: 5,
+      endLineIndexExclusive: 7,
+      heading: { level: 3, text: "In Scope", lineIndex: 5 },
+    });
+
+    expect(sections[3]).toMatchObject({
+      startLineIndex: 7,
+      endLineIndexExclusive: 9,
+      heading: { level: 2, text: "Next Steps", lineIndex: 7 },
+    });
+
+    expect(sections[4]).toMatchObject({
+      startLineIndex: 9,
+      endLineIndexExclusive: 11,
+      heading: { level: 1, text: "Appendix", lineIndex: 9 },
+    });
+  });
+
+  it("extractHeadingSections returns empty list when no headings exist", () => {
+    expect(extractHeadingSections("plain text\n- [ ] todo")).toEqual([]);
+  });
+
+  it("extractHeadingSections handles CRLF input and single-section documents", () => {
+    const md = ["# Only section", "- [ ] Task", "tail"].join("\r\n");
+    const sections = extractHeadingSections(md);
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatchObject({
+      startLineIndex: 0,
+      endLineIndexExclusive: 3,
+      heading: { level: 1, text: "Only section", lineIndex: 0 },
+    });
   });
 });

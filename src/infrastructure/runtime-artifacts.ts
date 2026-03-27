@@ -48,6 +48,7 @@ interface RuntimeArtifactsMetadata {
   startedAt: string;
   completedAt?: string;
   status?: RuntimeArtifactStatus;
+  extra?: Record<string, unknown>;
 }
 
 export interface SavedRuntimeArtifactRun {
@@ -64,12 +65,14 @@ export interface SavedRuntimeArtifactRun {
   startedAt: string;
   completedAt?: string;
   status?: RuntimeArtifactStatus;
+  extra?: Record<string, unknown>;
 }
 
 interface PhaseMetadata {
   runId: string;
   sequence: number;
   phase: RuntimePhase;
+  phaseLabel?: string;
   command?: string[];
   mode?: string;
   transport?: string;
@@ -87,6 +90,7 @@ interface PhaseMetadata {
 
 export interface BeginRuntimePhaseOptions {
   phase: RuntimePhase;
+  phaseLabel?: string;
   prompt?: string;
   command?: string[];
   mode?: string;
@@ -117,6 +121,7 @@ export interface CompleteRuntimePhaseOptions {
 export interface FinalizeRuntimeArtifactsOptions {
   status: RuntimeArtifactStatus;
   preserve?: boolean;
+  extra?: Record<string, unknown>;
 }
 
 export function createRuntimeArtifactsContext(options: {
@@ -203,6 +208,7 @@ export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRun
         startedAt: fallbackStartedAt,
         completedAt: undefined,
         status: "metadata-missing",
+        extra: undefined,
       });
       continue;
     }
@@ -221,6 +227,7 @@ export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRun
       startedAt: metadata.startedAt,
       completedAt: metadata.completedAt,
       status: metadata.status,
+      extra: metadata.extra,
     });
   }
 
@@ -299,7 +306,8 @@ export function beginRuntimePhase(
 ): RuntimePhaseHandle {
   context.sequence += 1;
   const sequence = context.sequence;
-  const dirName = `${String(sequence).padStart(2, "0")}-${options.phase}`;
+  const resolvedPhaseLabel = resolvePhaseLabel(options.phase, options.phaseLabel);
+  const dirName = `${String(sequence).padStart(2, "0")}-${resolvedPhaseLabel}`;
   const dir = path.join(context.rootDir, dirName);
   fs.mkdirSync(dir, { recursive: true });
 
@@ -315,6 +323,7 @@ export function beginRuntimePhase(
     runId: context.runId,
     sequence,
     phase: options.phase,
+    phaseLabel: resolvedPhaseLabel,
     command: options.command,
     mode: options.mode,
     transport: options.transport,
@@ -405,6 +414,12 @@ export function finalizeRuntimeArtifacts(
 
   metadata.completedAt = new Date().toISOString();
   metadata.status = options.status;
+  if (options.extra !== undefined) {
+    metadata.extra = {
+      ...(metadata.extra ?? {}),
+      ...options.extra,
+    };
+  }
   try {
     writeJson(metadataFile, metadata);
   } catch (error) {
@@ -428,6 +443,20 @@ export function finalizeRuntimeArtifacts(
 export function displayArtifactsPath(context: RuntimeArtifactsContext): string {
   const relative = path.relative(context.cwd, context.rootDir);
   return relative === "" ? path.basename(context.rootDir) : relative.split(path.sep).join("/");
+}
+
+function resolvePhaseLabel(phase: RuntimePhase, phaseLabel: string | undefined): string {
+  const normalized = (phaseLabel ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return phase;
+  }
+
+  const sanitized = normalized
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+  return sanitized.length > 0 ? sanitized : phase;
 }
 
 function buildRunId(): string {

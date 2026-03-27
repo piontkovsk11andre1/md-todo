@@ -120,16 +120,17 @@ ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 
 ## Phase
 
-Plan the selected task by decomposing it into concrete subtasks.
+Plan full-document implementation coverage as additive TODO candidates.
 
-Break this task into smaller, actionable subtasks.
+Analyze the entire Markdown document and identify only actionable TODO items that are still missing.
 
-Return ONLY a Markdown list of unchecked task items using \`- [ ]\` syntax, one per subtask.
+Return ONLY a Markdown list of unchecked task items using \`- [ ]\` syntax, one per missing TODO to add.
 
 Rules:
-- Each subtask should be a single clear action.
-- Together the subtasks should fully cover the parent task.
-- Do not include the parent task itself.
+- Cover the document's implementation intent end-to-end; include only executable actions.
+- Each TODO should be a single clear action and specific enough to implement directly.
+- Only propose additive TODO candidates that are not already present.
+- Do not rewrite, reorder, delete, or mark existing TODO items as complete.
 - Do not include any other text, headings, or explanation.
 - Do not modify the source Markdown file.
 

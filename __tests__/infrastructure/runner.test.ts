@@ -363,6 +363,50 @@ describe("runWorker", () => {
     expect(fs.existsSync(path.join(phaseDir, "metadata.json"))).toBe(true);
   });
 
+  it("uses custom artifact phase labels for directory naming", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+    await runWorker({
+      command: ["opencode", "run"],
+      prompt: "scan prompt",
+      mode: "wait",
+      transport: "file",
+      cwd: workspace,
+      keepArtifacts: true,
+      artifactPhase: "plan",
+      artifactPhaseLabel: "plan-scan-01",
+    });
+
+    const runsDir = path.join(workspace, ".rundown", "runs");
+    const [runDirName] = fs.readdirSync(runsDir);
+    const phaseDir = path.join(runsDir, runDirName!, "01-plan-scan-01");
+    const metadataPath = path.join(phaseDir, "metadata.json");
+
+    expect(fs.existsSync(metadataPath)).toBe(true);
+    const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as {
+      phase: string;
+      phaseLabel?: string;
+    };
+    expect(metadata.phase).toBe("plan");
+    expect(metadata.phaseLabel).toBe("plan-scan-01");
+  });
+
   it("preserves detached runtime artifacts even without keepArtifacts", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {

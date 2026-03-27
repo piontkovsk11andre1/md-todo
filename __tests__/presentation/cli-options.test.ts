@@ -460,13 +460,13 @@ describe("CLI reverify option normalization", () => {
 });
 
 describe("CLI plan and utility command normalization", () => {
-  it("passes plan options through with separator worker command", async () => {
+  it("passes document-mode plan options through with separator worker command", async () => {
     const planTask = vi.fn(async () => 0);
     const call = await invokePlanAndCaptureCall([
       "plan",
       "tasks.md",
-      "--at",
-      "tasks.md:7",
+      "--scan-count",
+      "3",
       "--dry-run",
       "--print-prompt",
       "--keep-artifacts",
@@ -480,16 +480,78 @@ describe("CLI plan and utility command normalization", () => {
     ], planTask);
 
     expect(call.source).toBe("tasks.md");
-    expect(call.at).toBe("tasks.md:7");
+    expect(call.scanCount).toBe(3);
     expect(call.mode).toBe("wait");
     expect(call.transport).toBe("file");
-    expect(call.sortMode).toBe("name-sort");
     expect(call.dryRun).toBe(true);
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
     expect(call.varsFileOption).toBe("custom-vars.json");
     expect(call.cliTemplateVarArgs).toEqual(["env=prod"]);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("logs a CLI error and exits with code 1 when plan is missing a markdown file path", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires exactly one Markdown file path"));
+  });
+
+  it("logs a CLI error and exits with code 1 when plan receives multiple markdown file paths", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "one.md",
+      "two.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("accepts exactly one Markdown file path"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("one.md, two.md"));
+  });
+
+  it("logs a CLI error and exits with code 1 when plan file path is not markdown", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.txt",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid plan document path: tasks.txt"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(".md or .markdown"));
+  });
+
+  it("accepts .markdown extension for plan file path", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.markdown",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(call.source).toBe("tasks.markdown");
   });
 
   it("passes trace option to plan task", async () => {
@@ -504,6 +566,207 @@ describe("CLI plan and utility command normalization", () => {
     ], planTask);
 
     expect(call.trace).toBe(true);
+  });
+
+  it("defaults plan scan count to 1", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(call.scanCount).toBe(1);
+  });
+
+  it("logs a CLI error and exits with code 1 on non-integer scan count", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--scan-count",
+      "two",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --scan-count value: two"));
+  });
+
+  it("logs a CLI error and exits with code 1 on zero scan count", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--scan-count",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a positive integer"));
+  });
+
+  it("logs a CLI error and exits with code 1 on negative scan count", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--scan-count",
+      "-1",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --scan-count value: -1"));
+  });
+
+  it("logs a CLI error and exits with code 1 on unsafe scan count", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--scan-count",
+      "9007199254740993",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a safe positive integer"));
+  });
+
+  it("rejects deprecated --at option for plan with migration guidance", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--at",
+      "tasks.md:12",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--at option is no longer supported for `plan`"));
+  });
+
+  it("emits stable deprecation output and exits with code 1 for --at", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const exitCode = await invokePlanAndCaptureExitCode([
+      "plan",
+      "tasks.md",
+      "--at",
+      "tasks.md:12",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(String(errorSpy.mock.calls[0]?.[0] ?? ""))).toBe(
+      "✖ Error: The --at option is no longer supported for `plan`. `plan` now operates on the entire <markdown-file>. Remove --at and pass the target document as the command argument.",
+    );
+  });
+
+  it("rejects deprecated --at option for plan even when empty", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--at",
+      "",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--at option is no longer supported for `plan`"));
+  });
+
+  it("rejects deprecated --sort option for plan", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--sort",
+      "none",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--sort option is no longer supported for `plan`"));
+  });
+
+  it("emits stable deprecation output and exits with code 1 for --sort", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const exitCode = await invokePlanAndCaptureExitCode([
+      "plan",
+      "tasks.md",
+      "--sort",
+      "none",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(String(errorSpy.mock.calls[0]?.[0] ?? ""))).toBe(
+      "✖ Error: The --sort option is no longer supported for `plan`. Planning no longer selects a task from multiple files. Remove --sort and pass only the target <markdown-file>.",
+    );
+  });
+
+  it("rejects deprecated --sort option for plan even when empty", async () => {
+    const planTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokePlanAndExpectExit([
+      "plan",
+      "tasks.md",
+      "--sort",
+      "",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(planTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--sort option is no longer supported for `plan`"));
   });
 
   it("passes list options to the application layer", async () => {
@@ -718,6 +981,75 @@ async function invokePlanAndCaptureCall(args: string[], planTask: ReturnType<typ
   return planTask.mock.calls[0][0] as RunTaskCall;
 }
 
+async function invokePlanAndExpectExit(args: string[], planTask: ReturnType<typeof vi.fn>): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+async function invokePlanAndCaptureExitCode(args: string[], planTask: ReturnType<typeof vi.fn>): Promise<number> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    const match = /CLI exited with code (\d+)/.exec(message);
+    if (match) {
+      return Number(match[1]);
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
 async function invokeListAndCaptureCall(args: string[], listTasks: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
   const previousEnv = captureEnv();
 
@@ -833,4 +1165,8 @@ function restoreEnv(previousEnv: Record<(typeof envKeys)[number], string | undef
       process.env[key] = value;
     }
   }
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
 }

@@ -41,7 +41,24 @@ export interface Task {
   depth: number;
 }
 
+/** Document-level TODO item extracted from Markdown. */
+export type TodoItem = Task;
+
+export interface MarkdownHeadingLine {
+  lineIndex: number;
+  level: number;
+  text: string;
+  normalizedText: string;
+}
+
+export interface MarkdownSection {
+  heading: MarkdownHeadingLine;
+  startLineIndex: number;
+  endLineIndexExclusive: number;
+}
+
 const CLI_PREFIX = /^cli:\s*/i;
+const ATX_HEADING_PATTERN = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 
 /**
  * Parse a Markdown source string and return all task list items found.
@@ -58,6 +75,83 @@ export function parseTasks(source: string, file: string = ""): Task[] {
   const tasks: Task[] = [];
   walkForTasks(tree, tasks, file, 0);
   return tasks;
+}
+
+/**
+ * Extract all TODO items globally across a Markdown document.
+ *
+ * This is a document-level helper used by planning flows that only care about
+ * TODO coverage and not task-selection semantics.
+ */
+export function extractTodoItems(source: string, file: string = ""): TodoItem[] {
+  return parseTasks(source, file);
+}
+
+/** Return true when the Markdown document contains at least one TODO item. */
+export function hasTodoItems(source: string): boolean {
+  return extractTodoItems(source).length > 0;
+}
+
+/** Count TODO items globally across a Markdown document. */
+export function countTodoItems(source: string): number {
+  return extractTodoItems(source).length;
+}
+
+/**
+ * Extract all ATX heading lines from a Markdown document.
+ *
+ * These heading descriptors are used by section-aware insertion heuristics.
+ */
+export function extractHeadingLines(source: string): MarkdownHeadingLine[] {
+  const lines = source.split(/\r?\n/);
+  const headings: MarkdownHeadingLine[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const match = line.match(ATX_HEADING_PATTERN);
+    if (!match) {
+      continue;
+    }
+
+    const text = match[2].trim();
+    headings.push({
+      lineIndex: index,
+      level: match[1].length,
+      text,
+      normalizedText: text.toLowerCase(),
+    });
+  }
+
+  return headings;
+}
+
+/**
+ * Build section boundaries from ATX headings.
+ *
+ * Each section starts at a heading and ends before the next heading
+ * whose level is less than or equal to the current heading level.
+ */
+export function extractHeadingSections(source: string): MarkdownSection[] {
+  const lines = source.split(/\r?\n/);
+  const headings = extractHeadingLines(source);
+
+  return headings.map((heading, index) => {
+    let endLineIndexExclusive = lines.length;
+
+    for (let nextIndex = index + 1; nextIndex < headings.length; nextIndex += 1) {
+      const nextHeading = headings[nextIndex]!;
+      if (nextHeading.level <= heading.level) {
+        endLineIndexExclusive = nextHeading.lineIndex;
+        break;
+      }
+    }
+
+    return {
+      heading,
+      startLineIndex: heading.lineIndex,
+      endLineIndexExclusive,
+    };
+  });
 }
 
 function walkForTasks(

@@ -1,5 +1,5 @@
 import { createRunTask, type RunTaskOptions } from "./application/run-task.js";
-import { createPlanTask, type PlanTaskOptions } from "./application/plan-task.js";
+import { createPlanTask, type PlanTaskOptions as PlanTaskUseCaseOptions } from "./application/plan-task.js";
 import { createListTasks, type ListTasksOptions } from "./application/list-tasks.js";
 import { createNextTask, type NextTaskOptions } from "./application/next-task.js";
 import { createInitProject } from "./application/init-project.js";
@@ -52,12 +52,26 @@ import {
 export type App = {
   runTask: (options: RunTaskOptions) => Promise<number>;
   reverifyTask: (options: ReverifyTaskOptions) => Promise<number>;
-  planTask: (options: PlanTaskOptions) => Promise<number>;
+  planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
   nextTask: (options: NextTaskOptions) => Promise<number>;
   initProject: () => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
 };
+
+export interface PlanTaskCommandOptions {
+  source: string;
+  scanCount?: number;
+  mode: PlanTaskUseCaseOptions["mode"];
+  transport: PlanTaskUseCaseOptions["transport"];
+  dryRun: boolean;
+  printPrompt: boolean;
+  keepArtifacts: boolean;
+  varsFileOption: string | boolean | undefined;
+  cliTemplateVarArgs: string[];
+  workerCommand: string[];
+  trace: boolean;
+}
 
 export type AppUseCaseFactories = {
   [Key in keyof App]: (ports: AppPorts) => App[Key];
@@ -119,6 +133,28 @@ function createNoopOutputPort(): ApplicationOutputPort {
 }
 
 function createDefaultUseCaseFactories(): AppUseCaseFactories {
+  const planTaskUseCase = (ports: AppPorts) => createPlanTask({
+    workerExecutor: ports.workerExecutor,
+    workingDirectory: ports.workingDirectory,
+    fileSystem: ports.fileSystem,
+    templateLoader: ports.templateLoader,
+    pathOperations: ports.pathOperations,
+    templateVarsLoader: ports.templateVarsLoader,
+    artifactStore: ports.artifactStore,
+    traceWriter: ports.traceWriter,
+    createTraceWriter: (trace, artifactContext) => {
+      if (!trace) {
+        return ports.traceWriter;
+      }
+
+      return createJsonlTraceWriter(
+        ports.pathOperations.join(artifactContext.rootDir, "trace.jsonl"),
+        ports.fileSystem,
+      );
+    },
+    output: ports.output,
+  });
+
   return {
     runTask: (ports) => createRunTask({
       sourceResolver: ports.sourceResolver,
@@ -170,29 +206,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       output: ports.output,
     }),
-    planTask: (ports) => createPlanTask({
-      sourceResolver: ports.sourceResolver,
-      taskSelector: ports.taskSelector,
-      workerExecutor: ports.workerExecutor,
-      workingDirectory: ports.workingDirectory,
-      fileSystem: ports.fileSystem,
-      templateLoader: ports.templateLoader,
-      pathOperations: ports.pathOperations,
-      templateVarsLoader: ports.templateVarsLoader,
-      artifactStore: ports.artifactStore,
-      traceWriter: ports.traceWriter,
-      createTraceWriter: (trace, artifactContext) => {
-        if (!trace) {
-          return ports.traceWriter;
-        }
-
-        return createJsonlTraceWriter(
-          ports.pathOperations.join(artifactContext.rootDir, "trace.jsonl"),
-          ports.fileSystem,
-        );
-      },
-      output: ports.output,
-    }),
+    planTask: (ports) => planTaskUseCase(ports),
     listTasks: (ports) => createListTasks({
       fileSystem: ports.fileSystem,
       sourceResolver: ports.sourceResolver,

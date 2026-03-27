@@ -107,9 +107,11 @@ Useful first commands:
 ```bash
 rundown next docs/
 rundown list docs/
-rundown plan roadmap.md -- opencode run
+rundown plan roadmap.md --scan-count 3 -- opencode run
 rundown reverify -- opencode run
 ```
+
+Plan migration note: `rundown plan` now operates on the entire markdown file and no longer supports `--at file:line` task targeting.
 
 ## Install Into Any Agent Harness
 
@@ -194,9 +196,21 @@ This makes failure part of the workload model instead of an untracked side effec
 
 ### 5. Plan
 
-When a task is too large, `rundown plan` expands it into nested unchecked subtasks using `.rundown/plan.md`.
+When implementation intent is spread across a full document, `rundown plan` scans that markdown file and appends missing actionable TODOs using `.rundown/plan.md`.
 
-The parent then becomes blocked until the new child tasks are complete.
+If the document has no TODOs yet, `plan` creates an initial actionable set first, then runs iterative clean-session scans (`--scan-count`) until no additional TODOs are proposed or the scan cap is reached.
+
+Updates are append-only for safety: existing TODO text is preserved while missing work is added deterministically.
+
+Practical examples:
+
+```bash
+# Bootstrap a spec with no TODOs
+rundown plan docs/release-plan.md --scan-count 3 -- opencode run
+
+# Enrich an existing TODO list with missing implementation steps
+rundown plan docs/migration.md --scan-count 2 -- opencode run
+```
 
 ### 6. Reverify
 

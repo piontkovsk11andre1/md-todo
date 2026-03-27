@@ -46,6 +46,8 @@ export interface RunnerOptions {
   artifactContext?: RuntimeArtifactsContext;
   /** The phase name for persisted runtime artifacts. */
   artifactPhase?: RuntimePhase;
+  /** Optional custom phase label used in artifact directory naming. */
+  artifactPhaseLabel?: string;
   /** Extra metadata to attach to the artifact phase. */
   artifactExtra?: Record<string, unknown>;
   /** Preserve artifacts after completion. */
@@ -87,6 +89,7 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
 
   const phase = beginRuntimePhase(artifactContext, {
     phase: options.artifactPhase ?? "worker",
+    phaseLabel: options.artifactPhaseLabel,
     prompt: options.prompt,
     command: options.command,
     mode,
