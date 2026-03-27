@@ -8,6 +8,8 @@ Scan a file, directory, or glob, select the next runnable task, execute it, veri
 
 With `--all`, process tasks sequentially until all are complete or a failure occurs.
 
+Use `--hide-agent-output` to suppress execution transcript noise while keeping rundown lifecycle/status messages visible.
+
 Examples:
 
 ```bash
@@ -15,6 +17,7 @@ rundown run roadmap.md -- opencode run
 rundown run docs/ -- opencode run
 rundown run "notes/**/*.md" -- opencode run
 rundown run roadmap.md --all -- opencode run
+rundown run tasks.md --hide-agent-output --worker opencode run
 ```
 
 PowerShell-safe form:
@@ -22,7 +25,15 @@ PowerShell-safe form:
 ```powershell
 rundown run docs/ --worker opencode run
 rundown run docs/ --all --worker opencode run
+rundown run docs/ --hide-agent-output --worker opencode run
 ```
+
+Quiet execution notes (`run --hide-agent-output`):
+
+- Suppressed during execution: worker-derived `text` and `stderr` transcript output (including inline `cli:` task stdout/stderr).
+- Still visible: rundown lifecycle/status messages (`info`, `warn`, `error`, `success`, `task`).
+- Still visible: hook output from `--on-complete` and `--on-fail` (intentionally out of scope for this flag).
+- Artifacts/traces still capture output for audit/debug; terminal suppression does not disable persistence.
 
 ### `rundown reverify`
 
@@ -258,6 +269,7 @@ These options are available on `rundown run`.
 | `--commit-message <template>` | Commit message template (supports `{{task}}` and `{{file}}`). | `rundown: complete "{{task}}" in {{file}}` |
 | `--on-complete <command>` | Run a shell command after successful task completion. | unset |
 | `--on-fail <command>` | Run a shell command when a task fails (execution or verification failure). | unset |
+| `--hide-agent-output` | Hide worker stdout/stderr during execution; show only rundown status messages. | off |
 | `--all` | Run all tasks sequentially instead of stopping after one. Stops on failure. | off |
 
 `--commit-message` is only applied when `--commit` is enabled.

@@ -25,10 +25,38 @@ describe("CLI run option normalization", () => {
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
     expect(call.onFailCommand).toBeUndefined();
+    expect(call.hideAgentOutput).toBe(false);
     expect(call.runAll).toBe(false);
     expect(call.noRepair).toBe(false);
     expect(call.repairAttempts).toBe(1);
     expect(call.forceExecute).toBe(false);
+  });
+
+  it("passes hide-agent-output option to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--hide-agent-output",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.hideAgentOutput).toBe(true);
+  });
+
+  it("defaults hide-agent-output to false when omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.hideAgentOutput).toBe(false);
   });
 
   it("normalizes empty commit and hook values to undefined", async () => {

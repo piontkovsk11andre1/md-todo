@@ -182,6 +182,31 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("--flag"))).toBe(true);
   });
 
+  it("run rejects unknown hide-agent-output variants", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-outputs",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--hide-agent-outputs")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
+  });
+
   it("run auto-skips execution for verify-only tasks", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] verify: release docs are consistent\n", "utf-8");
@@ -491,6 +516,28 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("unknown option")).toBe(true);
   });
 
+  it("reverify rejects run-only --hide-agent-output flag", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "reverify",
+      "--hide-agent-output",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--hide-agent-output")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
+  });
+
   it("reverify returns 0 when verification passes and does not change markdown checkboxes", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -745,6 +792,117 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(true);
     expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
+  });
+
+  it("run hides worker stdout and stderr with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({
+      stdout: "worker stdout\n",
+      stderr: "worker stderr\n",
+      exitCode: 0,
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-output",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(false);
+    expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
+  });
+
+  it("run keeps exit code stable on inline CLI success with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(
+      path.join(workspace, "roadmap.md"),
+      "- [ ] cli: node -e \"console.log('inline stdout'); console.error('inline stderr')\"\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-output",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs).not.toContain("inline stdout\n");
+    expect(result.stderrWrites).not.toContain("inline stderr\n");
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node -e"))).toBe(true);
+  });
+
+  it("run keeps failure exit code and rundown error output visible with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({
+      stdout: "worker stdout\n",
+      stderr: "worker stderr\n",
+      exitCode: 7,
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-output",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(1);
+    expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(false);
+    expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(false);
+    expect(result.errors.some((line) => line.includes("Worker exited with code 7"))).toBe(true);
+    expect(fs.readFileSync(path.join(workspace, "roadmap.md"), "utf-8")).toContain("- [ ] Write docs");
+  });
+
+  it("run keeps verification/repair summaries visible with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--hide-agent-output",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){fs.writeFileSync('.repair-done','1');console.log('repair stdout');console.error('repair stderr');process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){if(fs.existsSync('.repair-done')){console.log('OK');}else{console.log('NOT_OK: failing checks');}console.error('verify stderr');process.exit(0);}console.log('worker stdout');console.error('worker stderr');process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Verification failed. Running repair (1 attempt(s))..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
+    expect(result.logs).not.toContain("worker stdout\n");
+    expect(result.stderrWrites).not.toContain("worker stderr\n");
   });
 
   it("run accepts --keep-artifacts during dry-run", async () => {
@@ -1057,6 +1215,27 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli:");
   });
 
+  it("run --print-prompt takes precedence over --dry-run", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Draft release plan\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Draft release plan"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Dry run - would run"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("Dry run — would run"))).toBe(false);
+  });
+
   it("run --help lists Git and completion hook options with clear descriptions", async () => {
     const workspace = makeTempWorkspace();
 
@@ -1252,6 +1431,32 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
     expect(result.logs.some((line) => line.includes("--on-complete hook exited with code 17"))).toBe(true);
+  });
+
+  it("run keeps --on-complete hook output visible with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
+
+    const hookScript = path.join(workspace, "hook-visible.mjs");
+    fs.writeFileSync(
+      hookScript,
+      "console.log('HOOK_STDOUT'); console.error('HOOK_STDERR');\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-output",
+      "--on-complete",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("HOOK_STDOUT"))).toBe(true);
+    expect(result.stderrWrites.some((line) => line.includes("HOOK_STDERR"))).toBe(true);
   });
 
   it("run supports --commit on its own with the default commit message", async () => {
@@ -1531,6 +1736,32 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(1);
     expect(result.logs.some((line) => line.includes("FAIL_HOOK:cli: exit 1"))).toBe(true);
+  });
+
+  it("run keeps --on-fail hook output visible with --hide-agent-output", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: exit 1\n", "utf-8");
+
+    const hookScript = path.join(workspace, "fail-hook-visible.mjs");
+    fs.writeFileSync(
+      hookScript,
+      "console.log('FAIL_HOOK_STDOUT'); console.error('FAIL_HOOK_STDERR');\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--hide-agent-output",
+      "--on-fail",
+      `node ${hookScript.replace(/\\/g, "/")}`,
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.logs.some((line) => line.includes("FAIL_HOOK_STDOUT"))).toBe(true);
+    expect(result.stderrWrites.some((line) => line.includes("FAIL_HOOK_STDERR"))).toBe(true);
   });
 
   it("run --on-fail is not invoked on success", async () => {

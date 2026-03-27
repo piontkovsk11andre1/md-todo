@@ -70,6 +70,7 @@ program
   .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
   .option("--on-complete <command>", "Run a shell command after successful task completion")
   .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
+  .option("--hide-agent-output", "Hide worker stdout/stderr during execution; show only rundown status messages.", false)
   .option("--all", "Run all tasks sequentially instead of stopping after one", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
@@ -99,6 +100,7 @@ program
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
+    const hideAgentOutput = Boolean(opts.hideAgentOutput as boolean | undefined);
     const runAll = Boolean(opts.all as boolean | undefined);
     return app.runTask({
       source,
@@ -122,6 +124,7 @@ program
       commitMessageTemplate,
       onCompleteCommand,
       onFailCommand,
+      hideAgentOutput,
       runAll,
     });
   }));

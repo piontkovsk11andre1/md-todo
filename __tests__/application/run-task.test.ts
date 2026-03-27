@@ -1106,6 +1106,400 @@ describe("run-task prompt and mode behavior", () => {
     expect(events.some((event) => event.kind === "error" && event.message.includes("Worker exited with code 7"))).toBe(true);
   });
 
+  it("suppresses worker stdout and stderr when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] Build release\n");
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Running:"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Task checked: Build release"))).toBe(true);
+  });
+
+  it("keeps rundown status events visible on worker failure when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 7,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] Build release\n");
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Running:"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Worker exited with code 7"))).toBe(true);
+  });
+
+  it("returns failure code and specific worker error message when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 23,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] Build release\n");
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
+    expect(events).toContainEqual({ kind: "error", message: "Worker exited with code 23." });
+  });
+
+  it("emits inline CLI stdout and stderr when hideAgentOutput is disabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: false,
+    }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
+    expect(events).toContainEqual({ kind: "text", text: "inline out" });
+    expect(events).toContainEqual({ kind: "stderr", text: "inline err" });
+  });
+
+  it("suppresses inline CLI stdout and stderr when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
+    expect(events).not.toContainEqual({ kind: "text", text: "inline out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "inline err" });
+  });
+
+  it("returns failure and keeps error messaging when inline CLI fails with hideAgentOutput enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: fail");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: fail\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 42,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: fail\n");
+    expect(events).not.toContainEqual({ kind: "text", text: "inline out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "inline err" });
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Inline CLI exited with code 42"))).toBe(true);
+  });
+
+  it("keeps verification and repair summaries visible when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.taskRepair.repair = vi.fn(async () => ({ valid: true, attempts: 1 }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      verify: true,
+      repairAttempts: 1,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
+    expect(events.some((event) => event.kind === "info" && event.message === "Running verification...")).toBe(true);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("Verification failed. Running repair"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Repair succeeded after 1 attempt(s).")).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Task checked: Build release")).toBe(true);
+  });
+
+  it("keeps verification result messages visible when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+    dependencies.taskVerification.verify = vi.fn(async () => true);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      verify: true,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
+    expect(events.some((event) => event.kind === "info" && event.message === "Running verification...")).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Verification passed.")).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Task checked: Build release")).toBe(true);
+  });
+
+  it("still emits phase and output-volume trace events when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "worker out line 1\nworker out line 2",
+        stderr: "worker err line 1",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: [
+          "```analysis.summary",
+          JSON.stringify({
+            task_complexity: "medium",
+            execution_quality: "clean",
+            direction_changes: 0,
+            modules_touched: [],
+            wasted_effort_pct: 0,
+            key_decisions: [],
+            risk_flags: [],
+            improvement_suggestions: [],
+            skill_gaps: [],
+            thinking_quality: "clear",
+            uncertainty_moments: 0,
+          }),
+          "```",
+        ].join("\n"),
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(events).not.toContainEqual({ kind: "text", text: "worker out line 1\nworker out line 2" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "worker err line 1" });
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.completed",
+      payload: expect.objectContaining({
+        phase: "execute",
+        sequence: 1,
+        stdout_bytes: Buffer.byteLength("worker out line 1\nworker out line 2", "utf8"),
+        stderr_bytes: Buffer.byteLength("worker err line 1", "utf8"),
+        output_captured: true,
+      }),
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "output.volume",
+      payload: {
+        phase: "execute",
+        sequence: 1,
+        stdout_bytes: Buffer.byteLength("worker out line 1\nworker out line 2", "utf8"),
+        stderr_bytes: Buffer.byteLength("worker err line 1", "utf8"),
+        stdout_lines: 2,
+        stderr_lines: 1,
+      },
+    }));
+  });
+
+  it("still records traced output metrics for inline CLI when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "```analysis.summary",
+        JSON.stringify({
+          task_complexity: "medium",
+          execution_quality: "clean",
+          direction_changes: 0,
+          modules_touched: [],
+          wasted_effort_pct: 0,
+          key_decisions: [],
+          risk_flags: [],
+          improvement_suggestions: [],
+          skill_gaps: [],
+          thinking_quality: "clear",
+          uncertainty_moments: 0,
+        }),
+        "```",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(events).not.toContainEqual({ kind: "text", text: "inline out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "inline err" });
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.completed",
+      payload: expect.objectContaining({
+        phase: "execute",
+        sequence: 1,
+        stdout_bytes: Buffer.byteLength("inline out", "utf8"),
+        stderr_bytes: Buffer.byteLength("inline err", "utf8"),
+        output_captured: true,
+      }),
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "output.volume",
+      payload: {
+        phase: "execute",
+        sequence: 1,
+        stdout_bytes: Buffer.byteLength("inline out", "utf8"),
+        stderr_bytes: Buffer.byteLength("inline err", "utf8"),
+        stdout_lines: 1,
+        stderr_lines: 1,
+      },
+    }));
+  });
+
   it("finalizes artifacts as failed when the worker throws", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -1178,6 +1572,82 @@ describe("run-task on-complete hook behavior", () => {
     expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
     expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
     expect(events.some((event) => event.kind === "warn" && event.message.includes("--on-complete"))).toBe(false);
+  });
+
+  it("keeps on-complete hook stdout/stderr visible when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      onCompleteCommand: "node scripts/after.js",
+    }));
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "text" && event.text === "inline out")).toBe(false);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "inline err")).toBe(false);
+    expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
+  });
+
+  it("suppresses worker output but still emits on-complete hook output when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      onCompleteCommand: "node scripts/after.js",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "text" && event.text === "worker out")).toBe(false);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "worker err")).toBe(false);
+    expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
   });
 
   it("warns when on-complete hook exits with non-zero code", async () => {
@@ -1690,6 +2160,81 @@ describe("run-task --on-fail hook", () => {
     expect(code).toBe(1);
     expect(events.some((e) => e.kind === "warn" && e.message === "--on-fail hook exited with code 5")).toBe(true);
   });
+
+  it("keeps on-fail hook stdout/stderr visible when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 1,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      onFailCommand: "node scripts/handle-fail.js",
+    }));
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "text" && event.text === "inline out")).toBe(false);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "inline err")).toBe(false);
+    expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
+  });
+
+  it("suppresses worker output but still emits on-fail hook output when hideAgentOutput is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 8,
+      stdout: "worker out",
+      stderr: "worker err",
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      onFailCommand: "node scripts/handle-fail.js",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "text" && event.text === "worker out")).toBe(false);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "worker err")).toBe(false);
+    expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
+  });
 });
 
 function createDependencies(options: {
@@ -1882,6 +2427,7 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     onCompleteCommand: undefined,
     runAll: false,
     onFailCommand: undefined,
+    hideAgentOutput: false,
     trace: false,
     traceOnly: false,
     ...overrides,

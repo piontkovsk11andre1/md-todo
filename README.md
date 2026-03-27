@@ -266,6 +266,7 @@ rundown run roadmap.md -- opencode run
 Or you can turn it into a more operational loop:
 
 ```bash
+rundown run roadmap.md --hide-agent-output --worker opencode run
 rundown run roadmap.md --all --commit --on-complete "git push" -- opencode run
 rundown run roadmap.md --keep-artifacts --transport file -- opencode run
 rundown reverify --no-repair -- opencode run
@@ -274,6 +275,7 @@ rundown reverify --no-repair -- opencode run
 Useful capabilities that stay out of the way until you need them:
 
 - run all remaining tasks sequentially with `--all`
+- hide worker stdout/stderr with `--hide-agent-output` (default: off) to show only rundown status messages
 - use interactive sessions with `--mode tui`
 - keep durable prompt handoff on Windows with `--transport file`
 - auto-commit completed work with a task-derived message

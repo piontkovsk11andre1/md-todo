@@ -147,6 +147,7 @@ export interface RunTaskOptions {
   onCompleteCommand?: string;
   runAll: boolean;
   onFailCommand?: string;
+  hideAgentOutput: boolean;
   trace: boolean;
   traceOnly: boolean;
 }
@@ -157,7 +158,7 @@ export function createRunTask(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function runTask(options: RunTaskOptions): Promise<number> {
-    const {
+      const {
       source,
       mode,
       transport,
@@ -178,9 +179,29 @@ export function createRunTask(
       onCompleteCommand,
       runAll,
       onFailCommand,
+      hideAgentOutput,
       trace,
-      traceOnly,
-    } = options;
+        traceOnly,
+      } = options;
+
+      // Suppress only worker-produced execution transcript in terminal output.
+      // Artifact/trace capture still records stdout/stderr via phase completion events.
+      const emitExecutionWorkerOutput = (stdout: string, stderr: string): void => {
+        if (hideAgentOutput) {
+          return;
+        }
+
+        if (stdout) {
+          emit({ kind: "text", text: stdout });
+        }
+
+        if (stderr) {
+          emit({ kind: "stderr", text: stderr });
+        }
+      };
+      // Hook output is intentionally out of scope for --hide-agent-output.
+      // Keep --on-complete/--on-fail stdout/stderr visible as explicit user hooks.
+      const hideHookOutput = false;
 
     if (traceOnly) {
       return runTraceOnlyEnrichment({
@@ -1075,7 +1096,7 @@ export function createRunTask(
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
           emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
-          await afterTaskFailed(dependencies, task, source, onFailCommand);
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
           return await failRun(2, "verification-failed", "Verification failed after all repair attempts.", 2);
         }
 
@@ -1088,6 +1109,7 @@ export function createRunTask(
           commitAfterComplete,
           commitMessageTemplate,
           onCompleteCommand,
+          hideHookOutput,
         );
         await finishRun(0, "completed");
         tasksCompleted++;
@@ -1115,12 +1137,11 @@ export function createRunTask(
           true,
         );
 
-        if (cliResult.stdout) emit({ kind: "text", text: cliResult.stdout });
-        if (cliResult.stderr) emit({ kind: "stderr", text: cliResult.stderr });
+        emitExecutionWorkerOutput(cliResult.stdout, cliResult.stderr);
 
         if (cliResult.exitCode !== 0) {
           emit({ kind: "error", message: "Inline CLI exited with code " + cliResult.exitCode });
-          await afterTaskFailed(dependencies, task, source, onFailCommand);
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
           return await failRun(
             1,
             "execution-failed",
@@ -1150,7 +1171,7 @@ export function createRunTask(
           completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
           if (!valid) {
             emit({ kind: "error", message: "Verification failed. Task not checked." });
-            await afterTaskFailed(dependencies, task, source, onFailCommand);
+            await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
             return await failRun(2, "verification-failed", "Verification failed after inline CLI execution.", 2);
           }
         }
@@ -1164,6 +1185,7 @@ export function createRunTask(
           commitAfterComplete,
           commitMessageTemplate,
           onCompleteCommand,
+          hideHookOutput,
         );
         await finishRun(0, "completed");
         tasksCompleted++;
@@ -1194,13 +1216,12 @@ export function createRunTask(
       );
 
       if (mode === "wait") {
-        if (runResult.stdout) emit({ kind: "text", text: runResult.stdout });
-        if (runResult.stderr) emit({ kind: "stderr", text: runResult.stderr });
+        emitExecutionWorkerOutput(runResult.stdout, runResult.stderr);
       }
 
       if (mode !== "detached" && runResult.exitCode !== 0 && runResult.exitCode !== null) {
         emit({ kind: "error", message: "Worker exited with code " + runResult.exitCode + "." });
-        await afterTaskFailed(dependencies, task, source, onFailCommand);
+        await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
         return await failRun(1, "execution-failed", "Worker exited with a non-zero code.", runResult.exitCode);
       }
 
@@ -1230,7 +1251,7 @@ export function createRunTask(
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
           emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
-          await afterTaskFailed(dependencies, task, source, onFailCommand);
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
           return await failRun(2, "verification-failed", "Verification failed after all repair attempts.", 2);
         }
       }
@@ -1244,6 +1265,7 @@ export function createRunTask(
         commitAfterComplete,
         commitMessageTemplate,
         onCompleteCommand,
+        hideHookOutput,
       );
       await finishRun(0, "completed");
       tasksCompleted++;
@@ -1312,6 +1334,7 @@ async function afterTaskFailed(
   task: Task,
   source: string,
   onFailCommand: string | undefined,
+  hideHookOutput: boolean,
 ): Promise<void> {
   if (!onFailCommand) return;
   const cwd = dependencies.workingDirectory.cwd();
@@ -1327,8 +1350,8 @@ async function afterTaskFailed(
       dependencies.pathOperations,
     );
 
-    if (result.stdout) emit({ kind: "text", text: result.stdout });
-    if (result.stderr) emit({ kind: "stderr", text: result.stderr });
+    if (!hideHookOutput && result.stdout) emit({ kind: "text", text: result.stdout });
+    if (!hideHookOutput && result.stderr) emit({ kind: "stderr", text: result.stderr });
 
     if (!result.success) {
       emit({ kind: "warn", message: "--on-fail hook exited with code " + result.exitCode });
@@ -1345,6 +1368,7 @@ async function afterTaskComplete(
   commit: boolean,
   commitMessageTemplate: string | undefined,
   onCompleteCommand: string | undefined,
+  hideHookOutput: boolean,
 ): Promise<void> {
   const cwd = dependencies.workingDirectory.cwd();
   const emit = dependencies.output.emit.bind(dependencies.output);
@@ -1375,8 +1399,8 @@ async function afterTaskComplete(
         dependencies.pathOperations,
       );
 
-      if (result.stdout) emit({ kind: "text", text: result.stdout });
-      if (result.stderr) emit({ kind: "stderr", text: result.stderr });
+      if (!hideHookOutput && result.stdout) emit({ kind: "text", text: result.stdout });
+      if (!hideHookOutput && result.stderr) emit({ kind: "stderr", text: result.stderr });
 
       if (!result.success) {
         emit({ kind: "warn", message: "--on-complete hook exited with code " + result.exitCode });
