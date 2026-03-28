@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
+import type { VerificationStore } from "../../src/domain/ports/verification-store.js";
 
 const { runWorkerMock } = vi.hoisted(() => ({
   runWorkerMock: vi.fn(),
@@ -13,12 +11,7 @@ vi.mock("../../src/infrastructure/runner.js", () => ({
 }));
 
 import {
-  isVerificationOk,
-  readVerificationFile,
-  removeVerificationFile,
   verify,
-  verificationFilePath,
-  writeVerificationFile,
 } from "../../src/infrastructure/verification.js";
 
 function makeTask(file: string): Task {
@@ -36,19 +29,23 @@ function makeTask(file: string): Task {
   };
 }
 
+function createVerificationStore(): VerificationStore {
+  return {
+    write: vi.fn(),
+    read: vi.fn(() => null),
+    remove: vi.fn(),
+  };
+}
+
 describe("verify", () => {
   afterEach(() => {
     runWorkerMock.mockReset();
   });
 
-  it("removes stale sidecar before running verification", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+  it("removes prior verification state before running verification", async () => {
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
-    fs.writeFileSync(sidecar, "OK", "utf-8");
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "NOT_OK: still missing tests", stderr: "" });
 
@@ -58,24 +55,20 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
       mode: "wait",
       transport: "file",
     });
 
     expect(valid).toBe(false);
-    expect(fs.existsSync(sidecar)).toBe(true);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("still missing tests");
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(verificationStore.remove).toHaveBeenCalledWith(task);
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "still missing tests");
   });
 
   it("returns false when verifier exits non-zero and writes failure reason", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 2, stdout: "", stderr: "validation failed" });
 
@@ -85,23 +78,19 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
       mode: "wait",
       transport: "file",
     });
 
     expect(valid).toBe(false);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("validation failed");
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "validation failed");
   });
 
   it("accepts case-insensitive OK on successful verifier exit", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "ok", stderr: "" });
 
@@ -111,23 +100,19 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
       mode: "wait",
       transport: "file",
     });
 
     expect(valid).toBe(true);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("OK");
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "OK");
   });
 
   it("normalizes empty NOT_OK output into a default failure message", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "NOT_OK:   ", stderr: "" });
 
@@ -137,21 +122,17 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
     });
 
     expect(valid).toBe(false);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("Verification failed (no details).");
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "Verification failed (no details).");
   });
 
   it("uses stderr when verification exits successfully without stdout", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "missing proof" });
 
@@ -161,21 +142,17 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
     });
 
     expect(valid).toBe(false);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("missing proof");
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "missing proof");
   });
 
   it("writes a default message when verifier returns empty output", async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    fs.writeFileSync(file, "# Tasks\n", "utf-8");
-
+    const file = "Tasks.md";
     const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
+    const verificationStore = createVerificationStore();
 
     runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "", stderr: "" });
 
@@ -185,38 +162,13 @@ describe("verify", () => {
       contextBefore: "",
       template: "{{task}}",
       command: ["worker"],
+      verificationStore,
     });
 
     expect(valid).toBe(false);
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe(
+    expect(verificationStore.write).toHaveBeenCalledWith(
+      task,
       "Verification worker returned empty output. Expected OK or a short failure reason.",
     );
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  });
-});
-
-describe("verification helpers", () => {
-  it("writes, reads, checks, and removes verification sidecars", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-validation-"));
-    const file = path.join(tempDir, "Tasks.md");
-    const task = makeTask(file);
-    const sidecar = verificationFilePath(task);
-
-    expect(readVerificationFile(task)).toBeNull();
-    expect(isVerificationOk(task)).toBe(false);
-
-    writeVerificationFile(task, "  OK  ");
-    expect(readVerificationFile(task)).toBe("OK");
-    expect(isVerificationOk(task)).toBe(true);
-
-    writeVerificationFile(task, "   ");
-    expect(fs.readFileSync(sidecar, "utf-8")).toBe("Verification failed (no details).");
-
-    removeVerificationFile(task);
-    expect(fs.existsSync(sidecar)).toBe(false);
-    removeVerificationFile(task);
-
-    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 });

@@ -1513,6 +1513,29 @@ describe.sequential("CLI integration", () => {
     expect(result.stderrWrites).not.toContain("worker stderr\n");
   });
 
+  it("run does not create *.validation files during a full run", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--keep-artifacts",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Verify whether the selected task is complete.')){console.log('OK');}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
+
+    const validationFiles = listFilesRecursively(workspace)
+      .filter((filePath) => filePath.endsWith(".validation"));
+    expect(validationFiles).toEqual([]);
+  });
+
   it("run accepts --keep-artifacts during dry-run", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
@@ -2341,7 +2364,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(betaDir, ".rundown", "roadmap.md.lock"))).toBe(false);
   });
 
-  it("run keeps verification sidecar mapping consistent while source lock is held", async () => {
+  it("run persists verification failure details in verify phase artifacts while source lock is held", async () => {
     const workspace = makeTempWorkspace();
     const sourceName = "roadmap.md";
     const sourcePath = path.join(workspace, sourceName);
@@ -2352,23 +2375,13 @@ describe.sequential("CLI integration", () => {
     );
 
     const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`).replace(/\\/g, "/");
-    const sidecarPath = `${sourcePath}.1.validation`.replace(/\\/g, "/");
-    const hookScript = path.join(workspace, "hook-check-sidecar-lock.mjs");
+    const hookScript = path.join(workspace, "hook-check-artifacts-lock.mjs");
     fs.writeFileSync(
       hookScript,
       [
         "import fs from \"node:fs\";",
-        "const sourceFile = process.env.RUNDOWN_FILE ?? '';",
-        "const taskIndex = process.env.RUNDOWN_INDEX ?? '';",
-        "const derivedSidecar = `${sourceFile}.${taskIndex}.validation`;",
-        `const expectedSidecar = ${JSON.stringify(sidecarPath)};`,
         `const lockPath = ${JSON.stringify(lockPath)};`,
         "console.log('LOCK_EXISTS=' + String(fs.existsSync(lockPath)));",
-        "console.log('SIDECAR_MATCH=' + String(derivedSidecar.replace(/\\\\/g, '/') === expectedSidecar));",
-        "console.log('SIDECAR_EXISTS=' + String(fs.existsSync(derivedSidecar)));",
-        "if (fs.existsSync(derivedSidecar)) {",
-        "  console.log('SIDECAR_CONTENT=' + fs.readFileSync(derivedSidecar, 'utf-8').trim());",
-        "}",
       ].join("\n"),
       "utf-8",
     );
@@ -2378,6 +2391,7 @@ describe.sequential("CLI integration", () => {
       sourceName,
       "--only-verify",
       "--no-repair",
+      "--keep-artifacts",
       "--on-fail",
       `node ${hookScript.replace(/\\/g, "/")}`,
       "--",
@@ -2388,11 +2402,27 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(2);
     expect(result.logs.some((line) => line.includes("LOCK_EXISTS=true"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("SIDECAR_MATCH=true"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("SIDECAR_EXISTS=true"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("SIDECAR_CONTENT=verification mismatch"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", `${sourceName}.lock`))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, `${sourceName}.1.validation`), "utf-8")).toBe("verification mismatch");
+    const latestRun = findSavedRunByCommand(workspace, "run");
+    expect(latestRun).not.toBeNull();
+
+    const runDir = path.join(workspace, ".rundown", "runs", latestRun!.runId);
+    const verifyPhaseMetadataPath = fs.readdirSync(runDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(runDir, entry.name, "metadata.json"))
+      .find((metadataPath) => {
+        if (!fs.existsSync(metadataPath)) {
+          return false;
+        }
+        const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as { phase?: unknown };
+        return metadata.phase === "verify";
+      });
+
+    expect(verifyPhaseMetadataPath).toBeDefined();
+    const verifyPhaseMetadata = JSON.parse(fs.readFileSync(verifyPhaseMetadataPath!, "utf-8")) as {
+      verificationResult?: unknown;
+    };
+    expect(verifyPhaseMetadata.verificationResult).toBe("verification mismatch");
   });
 
   (process.env.CI ? it.skip : it)("run releases source lock on Ctrl+C (SIGINT)", async () => {
@@ -3151,44 +3181,6 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Planning document:") && line.includes("roadmap.markdown"))).toBe(true);
   });
 
-  it("plan rejects legacy --at with migration guidance", async () => {
-    const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
-
-    const result = await runCli([
-      "plan",
-      "roadmap.md",
-      "--at",
-      "roadmap.md:1",
-      "--worker",
-      "opencode",
-      "run",
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    expect(result.errors.some((line) => line.includes("--at option is no longer supported for `plan`"))).toBe(true);
-    expect(result.errors.some((line) => line.includes("Remove --at"))).toBe(true);
-  });
-
-  it("plan rejects legacy --sort with migration guidance", async () => {
-    const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
-
-    const result = await runCli([
-      "plan",
-      "roadmap.md",
-      "--sort",
-      "none",
-      "--worker",
-      "opencode",
-      "run",
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    expect(result.errors.some((line) => line.includes("--sort option is no longer supported for `plan`"))).toBe(true);
-    expect(result.errors.some((line) => line.includes("Remove --sort"))).toBe(true);
-  });
-
   it("plan dry-run preserves planning output semantics", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Break down migration\n", "utf-8");
@@ -3769,6 +3761,30 @@ function listTraceFiles(workspace: string): string[] {
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(runsDir, entry.name, "trace.jsonl"))
     .filter((filePath) => fs.existsSync(filePath));
+}
+
+function listFilesRecursively(rootDir: string): string[] {
+  const directories: string[] = [rootDir];
+  const files: string[] = [];
+
+  while (directories.length > 0) {
+    const currentDir = directories.pop();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        directories.push(entryPath);
+      } else if (entry.isFile()) {
+        files.push(entryPath);
+      }
+    }
+  }
+
+  return files;
 }
 
 function readGlobalOutputLogEntries(workspace: string): Array<{

@@ -20,7 +20,7 @@ export interface TemplateVars {
   taskLine: number;
   /** Full source file content. */
   source: string;
-  /** Content of the validation sidecar file (available during correction). */
+  /** Parsed verification result text (available during correction). */
   verificationResult?: string;
   /** Command output from the previous run (if captured). */
   commandOutput?: string;

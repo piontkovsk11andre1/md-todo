@@ -8,7 +8,6 @@ const {
   executeInlineCliMock,
   verifyMock,
   repairMock,
-  readVerificationFileMock,
 } = vi.hoisted(() => ({
   resolveSourcesMock: vi.fn(),
   selectNextTaskMock: vi.fn(),
@@ -17,7 +16,6 @@ const {
   executeInlineCliMock: vi.fn(),
   verifyMock: vi.fn(),
   repairMock: vi.fn(),
-  readVerificationFileMock: vi.fn(() => "missing tests"),
 }));
 
 vi.mock("../../../src/infrastructure/sources.js", () => ({
@@ -39,7 +37,6 @@ vi.mock("../../../src/infrastructure/inline-cli.js", () => ({
 
 vi.mock("../../../src/infrastructure/verification.js", () => ({
   verify: verifyMock,
-  readVerificationFile: readVerificationFileMock,
 }));
 
 vi.mock("../../../src/infrastructure/repair.js", () => ({
@@ -144,7 +141,12 @@ describe("infrastructure adapters", () => {
   it("task verification adapter delegates to verify", async () => {
     verifyMock.mockResolvedValue(true);
 
-    const adapter = createTaskVerificationAdapter();
+    const verificationStore = {
+      write: vi.fn(),
+      read: vi.fn(() => null),
+      remove: vi.fn(),
+    };
+    const adapter = createTaskVerificationAdapter(verificationStore);
     const task = {
       text: "Task",
       checked: false,
@@ -179,6 +181,7 @@ describe("infrastructure adapters", () => {
       contextBefore: "# Tasks",
       template: "{{task}}",
       command: ["worker", "run"],
+      verificationStore,
       mode: "wait",
       transport: "arg",
       cwd: "/repo",
@@ -191,7 +194,12 @@ describe("infrastructure adapters", () => {
   it("task repair adapter delegates to repair", async () => {
     repairMock.mockResolvedValue({ valid: true, attempts: 1 });
 
-    const adapter = createTaskRepairAdapter();
+    const verificationStore = {
+      write: vi.fn(),
+      read: vi.fn(() => null),
+      remove: vi.fn(),
+    };
+    const adapter = createTaskRepairAdapter(verificationStore);
     const task = {
       text: "Task",
       checked: false,
@@ -230,6 +238,7 @@ describe("infrastructure adapters", () => {
       verifyTemplate: "verify",
       command: ["worker", "run"],
       maxRetries: 2,
+      verificationStore,
       mode: "wait",
       transport: "file",
       cwd: "/repo",

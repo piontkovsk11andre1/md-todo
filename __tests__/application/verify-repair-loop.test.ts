@@ -1,6 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runVerifyRepairLoop } from "../../src/application/verify-repair-loop.js";
 import type { Task } from "../../src/domain/parser.js";
+import { createArtifactVerificationStore } from "../../src/infrastructure/adapters/artifact-verification-store.js";
+import {
+  beginRuntimePhase,
+  completeRuntimePhase,
+  createRuntimeArtifactsContext,
+  type RuntimeArtifactsContext,
+} from "../../src/infrastructure/runtime-artifacts.js";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 describe("verify-repair-loop trace metrics", () => {
   it("emits verification.efficiency on first-pass success", async () => {
@@ -16,8 +34,8 @@ describe("verify-repair-loop trace metrics", () => {
       taskRepair: {
         repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
       },
-      verificationSidecar: {
-        filePath: vi.fn(() => ""),
+      verificationStore: {
+        write: vi.fn(),
         read: vi.fn(() => null),
         remove: vi.fn(),
       },
@@ -59,7 +77,7 @@ describe("verify-repair-loop trace metrics", () => {
       flush: vi.fn(),
     };
 
-    const sidecarRead = vi.fn()
+    const verificationStoreRead = vi.fn()
       .mockReturnValueOnce("missing test coverage")
       .mockReturnValueOnce("missing test coverage")
       .mockReturnValueOnce("missing test coverage")
@@ -74,9 +92,9 @@ describe("verify-repair-loop trace metrics", () => {
           .mockResolvedValueOnce({ valid: false, attempts: 1 })
           .mockResolvedValueOnce({ valid: true, attempts: 1 }),
       },
-      verificationSidecar: {
-        filePath: vi.fn(() => ""),
-        read: sidecarRead,
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
         remove: vi.fn(),
       },
       traceWriter,
@@ -134,8 +152,8 @@ describe("verify-repair-loop output", () => {
       taskRepair: {
         repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
       },
-      verificationSidecar: {
-        filePath: vi.fn(() => ""),
+      verificationStore: {
+        write: vi.fn(),
         read: vi.fn(() => "should not be emitted"),
         remove: vi.fn(),
       },
@@ -178,8 +196,8 @@ describe("verify-repair-loop output", () => {
       taskRepair: {
         repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
       },
-      verificationSidecar: {
-        filePath: vi.fn(() => ""),
+      verificationStore: {
+        write: vi.fn(),
         read: vi.fn(() => "schema mismatch on metadata.version"),
         remove: vi.fn(),
       },
@@ -215,7 +233,7 @@ describe("verify-repair-loop output", () => {
       emit: vi.fn(),
     };
 
-    const sidecarRead = vi.fn()
+    const verificationStoreRead = vi.fn()
       .mockReturnValueOnce("missing integration test")
       .mockReturnValueOnce("missing integration test")
       .mockReturnValueOnce("assertion failed in attempt 1")
@@ -230,9 +248,9 @@ describe("verify-repair-loop output", () => {
           .mockResolvedValueOnce({ valid: false, attempts: 1 })
           .mockResolvedValueOnce({ valid: false, attempts: 1 }),
       },
-      verificationSidecar: {
-        filePath: vi.fn(() => ""),
-        read: sidecarRead,
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
         remove: vi.fn(),
       },
       traceWriter: {
@@ -261,9 +279,214 @@ describe("verify-repair-loop output", () => {
       message: "Last validation error: type mismatch in payload.id",
     });
   });
+
+  it("reads failure reasons from artifact-backed verification store", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-loop-artifact-store-"));
+    tempDirs.push(root);
+
+    const task = createTask(path.join(root, "tasks.md"));
+    fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
+
+    const artifactContext = createRuntimeArtifactsContext({
+      cwd: root,
+      commandName: "run",
+      task: {
+        text: task.text,
+        file: task.file,
+        line: task.line,
+        index: task.index,
+        source: "- [ ] Ship release",
+      },
+      keepArtifacts: true,
+    });
+    const verificationStore = createArtifactVerificationStore(root);
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => {
+          persistVerifyResult(artifactContext, task, verificationStore, "missing integration test", false);
+          return false;
+        }),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => {
+          persistVerifyResult(artifactContext, task, verificationStore, "type mismatch in payload.id", false);
+          return { valid: false, attempts: 1 };
+        }),
+      },
+      verificationStore,
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task,
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext,
+      trace: false,
+    });
+
+    expect(result).toBe(false);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Last validation error: type mismatch in payload.id",
+    });
+  });
+
+  it("keeps verification artifacts when loop calls remove on success", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-loop-artifact-store-"));
+    tempDirs.push(root);
+
+    const task = createTask(path.join(root, "tasks.md"));
+    fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
+
+    const artifactContext = createRuntimeArtifactsContext({
+      cwd: root,
+      commandName: "run",
+      task: {
+        text: task.text,
+        file: task.file,
+        line: task.line,
+        index: task.index,
+        source: "- [ ] Ship release",
+      },
+      keepArtifacts: true,
+    });
+    const verificationStore = createArtifactVerificationStore(root);
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => {
+          persistVerifyResult(artifactContext, task, verificationStore, "OK", true);
+          return true;
+        }),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
+      },
+      verificationStore,
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output: {
+        emit: vi.fn(),
+      },
+    }, {
+      task,
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext,
+      trace: false,
+    });
+
+    expect(result).toBe(true);
+    expect(verificationStore.read(task)).toBe("OK");
+  });
+
+  it("passes verification failure to repair via in-memory store when artifacts are not persisted", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-loop-artifact-store-"));
+    tempDirs.push(root);
+
+    const task = createTask(path.join(root, "tasks.md"));
+    fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
+
+    const verificationStore = createArtifactVerificationStore(root);
+    const output = {
+      emit: vi.fn(),
+    };
+    const repairReadReasons: string[] = [];
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => {
+          verificationStore.write(task, "  missing migration rollback  ");
+          return false;
+        }),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => {
+          repairReadReasons.push(
+            verificationStore.read(task) ?? "<missing>",
+          );
+          verificationStore.write(task, "still failing post-repair");
+          return { valid: false, attempts: 1 };
+        }),
+      },
+      verificationStore,
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task,
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: undefined,
+      trace: false,
+    });
+
+    expect(result).toBe(false);
+    expect(repairReadReasons).toEqual(["missing migration rollback"]);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Last validation error: still failing post-repair",
+    });
+  });
 });
 
-function createTask(): Task {
+function persistVerifyResult(
+  artifactContext: RuntimeArtifactsContext,
+  task: Task,
+  verificationStore: ReturnType<typeof createArtifactVerificationStore>,
+  verificationResult: string,
+  ok: boolean,
+): void {
+  const phase = beginRuntimePhase(artifactContext, {
+    phase: "verify",
+    prompt: "verify",
+    command: ["worker"],
+    mode: "wait",
+    transport: "file",
+  });
+  completeRuntimePhase(phase, {
+    exitCode: ok ? 0 : 1,
+    stdout: verificationResult,
+    stderr: "",
+    outputCaptured: true,
+  });
+
+  verificationStore.write(task, verificationResult);
+}
+
+function createTask(file = "tasks.md"): Task {
   return {
     text: "Ship release",
     checked: false,
@@ -272,7 +495,7 @@ function createTask(): Task {
     column: 1,
     offsetStart: 0,
     offsetEnd: 12,
-    file: "tasks.md",
+    file,
     isInlineCli: false,
     depth: 0,
   };

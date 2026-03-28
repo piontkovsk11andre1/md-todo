@@ -80,7 +80,7 @@ Return your verification result on stdout as exactly one of the following:
 - \`OK\`
 - \`NOT_OK: <short explanation of what is still missing>\`
 
-Do not create or modify validation files directly. rundown will persist your stdout result to \`{{file}}.{{taskIndex}}.validation\`.
+Do not create or modify validation files directly. rundown will persist your stdout result in run artifacts for use by subsequent repair and trace steps.
 
 Do not modify the source Markdown task file or change its checkbox state.
 

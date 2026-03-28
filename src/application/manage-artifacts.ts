@@ -135,4 +135,3 @@ export function createManageArtifacts(
   };
 }
 
-export const manageArtifacts = createManageArtifacts;

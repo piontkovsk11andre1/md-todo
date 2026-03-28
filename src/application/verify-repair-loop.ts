@@ -4,7 +4,7 @@ import type {
   TaskRepairPort,
   TaskVerificationPort,
   TraceWriterPort,
-  VerificationSidecar,
+  VerificationStore,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import {
@@ -19,7 +19,7 @@ type ArtifactContext = any;
 export interface VerifyRepairLoopDependencies {
   taskVerification: TaskVerificationPort;
   taskRepair: TaskRepairPort;
-  verificationSidecar: VerificationSidecar;
+  verificationStore: VerificationStore;
   traceWriter: TraceWriterPort;
   output: ApplicationOutputPort;
 }
@@ -57,7 +57,7 @@ export async function runVerifyRepairLoop(
         outcome: valid ? "pass" : "fail",
         failure_reason: valid
           ? null
-          : dependencies.verificationSidecar.read(input.task) ?? "Verification failed (no details).",
+          : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).",
         attempt_number: attemptNumber,
       },
     }));
@@ -143,7 +143,7 @@ export async function runVerifyRepairLoop(
 
   const initialFailureReason = valid
     ? null
-    : dependencies.verificationSidecar.read(input.task) ?? "Verification failed (no details).";
+    : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
 
   if (initialFailureReason) {
     cumulativeFailureReasons.push(initialFailureReason);
@@ -153,7 +153,7 @@ export async function runVerifyRepairLoop(
   emitVerificationResult(valid, 1);
 
   if (valid) {
-    dependencies.verificationSidecar.remove(input.task);
+    dependencies.verificationStore.remove(input.task);
     emitVerificationEfficiency();
     emit({ kind: "success", message: "Verification passed." });
     return true;
@@ -168,7 +168,7 @@ export async function runVerifyRepairLoop(
 
   emit({ kind: "warn", message: "Verification failed. Running repair (" + input.maxRepairAttempts + " attempt(s))..." });
   let attempts = 0;
-  let previousFailure = dependencies.verificationSidecar.read(input.task) ?? "Verification failed (no details).";
+  let previousFailure = dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
 
   while (attempts < input.maxRepairAttempts) {
     attempts += 1;
@@ -195,7 +195,7 @@ export async function runVerifyRepairLoop(
     verifyAttempts += 1;
     const repairFailureReason = result.valid
       ? null
-      : dependencies.verificationSidecar.read(input.task) ?? "Verification failed (no details).";
+      : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
 
     if (repairFailureReason) {
       cumulativeFailureReasons.push(repairFailureReason);
@@ -204,7 +204,7 @@ export async function runVerifyRepairLoop(
 
     if (result.valid) {
       emitRepairOutcome(true, attempts);
-      dependencies.verificationSidecar.remove(input.task);
+      dependencies.verificationStore.remove(input.task);
       emitVerificationEfficiency();
       emit({ kind: "success", message: "Repair succeeded after " + attempts + " attempt(s)." });
       return true;

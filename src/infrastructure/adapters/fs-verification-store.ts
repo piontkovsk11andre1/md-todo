@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import type { Task } from "../../domain/parser.js";
-import type { VerificationSidecar } from "../../domain/ports/verification-sidecar.js";
+import type { VerificationStore } from "../../domain/ports/verification-store.js";
 
-export function createFsVerificationSidecar(): VerificationSidecar {
+export function createFsVerificationStore(): VerificationStore {
   return {
-    filePath(task) {
-      return validationFilePath(task);
+    write(task, content) {
+      const filePath = validationFilePath(task);
+      fs.writeFileSync(filePath, content, "utf-8");
     },
     read(task) {
       const filePath = validationFilePath(task);

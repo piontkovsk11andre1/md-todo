@@ -34,7 +34,7 @@ The CLI layer implements that contract and decides how to render messages and er
 | `ProcessRunner` | `createCrossSpawnProcessRunner` |
 | `GitClient` | `createExecFileGitClient` |
 | `TemplateLoader` | `createFsTemplateLoader` |
-| `VerificationSidecar` | `createFsVerificationSidecar` |
+| `VerificationStore` | `createArtifactVerificationStore` |
 | `ArtifactStore` | `createFsArtifactStore` |
 | `Clock` | `createSystemClock` |
 | `SourceResolverPort` | `createSourceResolverAdapter` |
@@ -196,20 +196,18 @@ Detached mode always keeps them.
 
 Verification is a separate phase from execution.
 
-After execution, `rundown` renders the verify template, runs the verifier, and persists verifier stdout to a task-specific sidecar file next to the source document, for example:
-
-```text
-Tasks.md.3.validation
-```
+After execution, `rundown` renders the verify template, runs the verifier, and persists the parsed verification result in verify-phase runtime artifacts (stored in phase metadata alongside stdout/stderr logs).
 
 Verifier contract:
 
 - `OK` means complete.
 - Any other stdout text is treated as a failure reason.
 
-If the sidecar file contains exactly `OK`, the task is considered complete.
+If the persisted verification result contains exactly `OK`, the task is considered complete.
 
 Anything else means the task stays unchecked.
+
+When repair runs, `{{verificationResult}}` is sourced from the latest verify-phase artifact metadata for that task.
 
 If verification fails and repair attempts are enabled, `rundown` renders the repair template, runs another pass, and verifies again.
 

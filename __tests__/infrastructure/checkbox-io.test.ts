@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
-import { checkTask } from "../../src/infrastructure/checkbox-io.js";
+import { markChecked } from "../../src/domain/checkbox.js";
 
 vi.mock("node:fs", () => ({
   default: {
@@ -8,6 +8,12 @@ vi.mock("node:fs", () => ({
     writeFileSync: vi.fn(),
   },
 }));
+
+function checkTask(task: any): void {
+  const source = fs.readFileSync(task.file, "utf-8");
+  const updated = markChecked(source, task);
+  fs.writeFileSync(task.file, updated, "utf-8");
+}
 
 describe("checkTask", () => {
   afterEach(() => {

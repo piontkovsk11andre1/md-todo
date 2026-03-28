@@ -59,7 +59,7 @@ import type {
   TemplateLoader,
   TemplateVarsLoaderPort,
   TraceWriterPort,
-  VerificationSidecar,
+  VerificationStore,
   WorkerExecutorPort,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
@@ -118,7 +118,7 @@ export interface RunTaskDependencies {
   fileSystem: FileSystem;
   fileLock: FileLock;
   templateLoader: TemplateLoader;
-  verificationSidecar: VerificationSidecar;
+  verificationStore: VerificationStore;
   artifactStore: ArtifactStore;
   gitClient: GitClient;
   processRunner: ProcessRunner;
@@ -1360,7 +1360,7 @@ async function runVerification(
   return runVerifyRepairLoop({
     taskVerification: dependencies.taskVerification,
     taskRepair: dependencies.taskRepair,
-    verificationSidecar: dependencies.verificationSidecar,
+    verificationStore: dependencies.verificationStore,
     traceWriter,
     output: dependencies.output,
   }, {
@@ -2105,4 +2105,3 @@ export function isOpenCodeWorkerCommand(workerCommand: string[]): boolean {
     || command.endsWith("\\opencode.ps1");
 }
 
-export const runTask = createRunTask;

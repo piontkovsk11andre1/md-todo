@@ -72,4 +72,3 @@ export function createListTasks(
   };
 }
 
-export const listTasks = createListTasks;

@@ -22,7 +22,7 @@ import type {
   TaskVerificationPort,
   TemplateLoader,
   TraceWriterPort,
-  VerificationSidecar,
+  VerificationStore,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -55,7 +55,7 @@ export interface ReverifyTaskDependencies {
   artifactStore: ArtifactStore;
   taskVerification: TaskVerificationPort;
   taskRepair: TaskRepairPort;
-  verificationSidecar: VerificationSidecar;
+  verificationStore: VerificationStore;
   workingDirectory: WorkingDirectoryPort;
   fileSystem: FileSystem;
   // Intentionally no FileLock dependency: reverify reads markdown to resolve context,
@@ -281,7 +281,7 @@ export function createReverifyTask(
         const valid = await runVerifyRepairLoop({
           taskVerification: dependencies.taskVerification,
           taskRepair: dependencies.taskRepair,
-          verificationSidecar: dependencies.verificationSidecar,
+          verificationStore: dependencies.verificationStore,
           traceWriter,
           output: dependencies.output,
         }, {
@@ -554,4 +554,3 @@ function formatTaskMetadataLabel(task: RuntimeTaskMetadata): string {
   return `${task.file}:${task.line} [#${task.index}] ${task.text}`;
 }
 
-export const reverifyTask = createReverifyTask;

@@ -62,6 +62,7 @@ describe("runtime-artifacts", () => {
       exitCode: 2,
       stdout: "not ok",
       stderr: "details",
+      verificationResult: "schema mismatch on metadata.version",
       outputCaptured: true,
       notes: "phase-end",
       extra: { repaired: false },
@@ -71,6 +72,7 @@ describe("runtime-artifacts", () => {
       promptFile: string | null;
       stdoutFile: string | null;
       stderrFile: string | null;
+      verificationResult?: string;
       exitCode: number | null;
       notes?: string;
       extra?: Record<string, unknown>;
@@ -80,6 +82,7 @@ describe("runtime-artifacts", () => {
     expect(metadata.promptFile).toBe("prompt.md");
     expect(metadata.stdoutFile).toBe("stdout.log");
     expect(metadata.stderrFile).toBe("stderr.log");
+    expect(metadata.verificationResult).toBe("schema mismatch on metadata.version");
     expect(metadata.exitCode).toBe(2);
     expect(metadata.notes).toBe("phase-end");
     expect(metadata.extra).toEqual({ attempt: 1, repaired: false });

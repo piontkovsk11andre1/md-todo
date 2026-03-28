@@ -4,7 +4,7 @@ export { FileLockError } from "./file-lock.js";
 export type { ProcessRunner, ProcessRunOptions, ProcessRunResult, ProcessRunMode } from "./process-runner.js";
 export type { GitClient } from "./git-client.js";
 export type { TemplateLoader } from "./template-loader.js";
-export type { VerificationSidecar } from "./verification-sidecar.js";
+export type { VerificationStore } from "./verification-store.js";
 export type {
   ArtifactStore,
   ArtifactStoreStatus,

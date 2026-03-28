@@ -684,5 +684,3 @@ function collectRevertLockTargets(
 
   return Array.from(lockTargets);
 }
-
-export const revertTask = createRevertTask;

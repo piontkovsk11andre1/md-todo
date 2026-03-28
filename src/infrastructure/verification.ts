@@ -1,69 +1,15 @@
 /**
  * Verification system.
  *
- * Manages task-specific verification sidecar files and evaluates results.
+ * Executes task verification and persists parsed verification results.
  */
 
-import fs from "node:fs";
 import type { Task } from "../domain/parser.js";
+import type { VerificationStore } from "../domain/ports/verification-store.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
-
-/**
- * Build the verification sidecar file path for a given task.
- *
- * Format: <source-file>.<task-index>.validation
- * Example: Tasks.md.3.validation
- */
-export function verificationFilePath(task: Task): string {
-  return `${task.file}.${task.index}.validation`;
-}
-
-/**
- * Read the verification sidecar file content.
- * Returns null if the file does not exist.
- */
-export function readVerificationFile(task: Task): string | null {
-  const p = verificationFilePath(task);
-  try {
-    return fs.readFileSync(p, "utf-8").trim();
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persist verification content for a task.
- */
-export function writeVerificationFile(task: Task, content: string): void {
-  const p = verificationFilePath(task);
-  const normalized = content.trim() === ""
-    ? "Verification failed (no details)."
-    : content.trim();
-  fs.writeFileSync(p, normalized, "utf-8");
-}
-
-/**
- * Remove the verification sidecar file.
- */
-export function removeVerificationFile(task: Task): void {
-  const p = verificationFilePath(task);
-  try {
-    fs.unlinkSync(p);
-  } catch {
-    // Ignore if already gone
-  }
-}
-
-/**
- * Check whether the verification file indicates success.
- */
-export function isVerificationOk(task: Task): boolean {
-  const content = readVerificationFile(task);
-  return content !== null && content.toUpperCase() === "OK";
-}
 
 interface VerificationResult {
   ok: boolean;
@@ -110,6 +56,7 @@ export interface VerifyOptions {
   contextBefore: string;
   template: string;
   command: string[];
+  verificationStore: VerificationStore;
   mode?: RunnerMode;
   transport?: PromptTransport;
   trace?: boolean;
@@ -136,7 +83,7 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
 
   const prompt = renderTemplate(options.template, vars);
 
-  removeVerificationFile(options.task);
+  options.verificationStore.remove(options.task);
 
   const runResult = await runWorker({
     command: options.command,
@@ -150,6 +97,6 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
   });
 
   const result = parseVerificationResult(runResult);
-  writeVerificationFile(options.task, result.sidecarContent);
+  options.verificationStore.write(options.task, result.sidecarContent);
   return result.ok;
 }

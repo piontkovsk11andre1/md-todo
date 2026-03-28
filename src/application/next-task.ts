@@ -45,4 +45,3 @@ export function createNextTask(
   };
 }
 
-export const nextTask = createNextTask;

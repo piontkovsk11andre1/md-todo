@@ -49,4 +49,3 @@ export function createInitProject(
   };
 }
 
-export const initProject = createInitProject;

@@ -453,8 +453,6 @@ export function createPlanTask(
   };
 }
 
-export const planTask = createPlanTask;
-
 function countTraceLines(text: string): number {
   if (text.length === 0) {
     return 0;

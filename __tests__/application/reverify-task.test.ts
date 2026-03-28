@@ -12,7 +12,7 @@ import type {
   ArtifactStore,
   FileSystem,
   TaskRepairResult,
-  VerificationSidecar,
+  VerificationStore,
 } from "../../src/domain/ports/index.js";
 import type { Task } from "../../src/domain/parser.js";
 
@@ -36,7 +36,7 @@ describe("reverify-task", () => {
       },
     });
 
-    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationSidecar } =
+    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationStore } =
       createDependencies({
         cwd,
         fileSystem,
@@ -50,7 +50,7 @@ describe("reverify-task", () => {
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
     expect(vi.mocked(taskVerification.verify)).not.toHaveBeenCalled();
     expect(vi.mocked(taskRepair.repair)).not.toHaveBeenCalled();
-    expect(vi.mocked(verificationSidecar.remove)).not.toHaveBeenCalled();
+    expect(vi.mocked(verificationStore.remove)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "text" && event.text.includes("Build release"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("## Phase"))).toBe(true);
   });
@@ -74,7 +74,7 @@ describe("reverify-task", () => {
       },
     });
 
-    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationSidecar } =
+    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationStore } =
       createDependencies({
         cwd,
         fileSystem,
@@ -88,7 +88,7 @@ describe("reverify-task", () => {
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
     expect(vi.mocked(taskVerification.verify)).not.toHaveBeenCalled();
     expect(vi.mocked(taskRepair.repair)).not.toHaveBeenCalled();
-    expect(vi.mocked(verificationSidecar.remove)).not.toHaveBeenCalled();
+    expect(vi.mocked(verificationStore.remove)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run - would run verification with: opencode run"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt length:"))).toBe(true);
   });
@@ -417,6 +417,9 @@ describe("reverify-task", () => {
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       task: expect.objectContaining({ text: "Task middle" }),
+      artifactContext: expect.objectContaining({
+        runId: "run-reverify",
+      }),
     }));
   });
 
@@ -860,7 +863,7 @@ describe("reverify-task", () => {
       startedAt: "2026-03-19T18:01:00.000Z",
     });
 
-    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationSidecar } =
+    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationStore } =
       createDependencies({
         cwd,
         fileSystem,
@@ -875,7 +878,7 @@ describe("reverify-task", () => {
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(taskRepair.repair)).not.toHaveBeenCalled();
-    expect(vi.mocked(verificationSidecar.remove)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(verificationStore.remove)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ status: "reverify-completed", preserve: false }),
@@ -900,7 +903,7 @@ describe("reverify-task", () => {
         source: "roadmap.md",
       },
     });
-    const { dependencies, artifactStore, taskVerification, taskRepair, verificationSidecar } = createDependencies({
+    const { dependencies, artifactStore, taskVerification, taskRepair, verificationStore } = createDependencies({
       cwd,
       fileSystem,
       runs: [completedRun],
@@ -913,7 +916,7 @@ describe("reverify-task", () => {
     expect(code).toBe(2);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(taskRepair.repair)).not.toHaveBeenCalled();
-    expect(vi.mocked(verificationSidecar.remove)).not.toHaveBeenCalled();
+    expect(vi.mocked(verificationStore.remove)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ status: "reverify-failed", preserve: false }),
@@ -997,6 +1000,9 @@ describe("reverify-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       task: expect.objectContaining({ text: "Build release", line: 1, index: 0 }),
+      artifactContext: expect.objectContaining({
+        runId: "run-reverify",
+      }),
     }));
   });
 
@@ -1307,6 +1313,9 @@ describe("reverify-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       task: expect.objectContaining({ text: "Build release", index: 0, line: 3 }),
+      artifactContext: expect.objectContaining({
+        runId: "run-reverify",
+      }),
     }));
   });
 
@@ -1341,6 +1350,9 @@ describe("reverify-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       task: expect.objectContaining({ text: "Ship release", file: absoluteTaskFile, line: 2 }),
+      artifactContext: expect.objectContaining({
+        runId: "run-reverify",
+      }),
     }));
   });
 
@@ -1429,7 +1441,7 @@ function createDependencies(options: {
   artifactStore: ArtifactStore;
   taskVerification: { verify: ReturnType<typeof vi.fn> };
   taskRepair: { repair: ReturnType<typeof vi.fn> };
-  verificationSidecar: VerificationSidecar;
+  verificationStore: VerificationStore;
 } {
   const events: ApplicationOutputEvent[] = [];
 
@@ -1444,8 +1456,8 @@ function createDependencies(options: {
     })),
   };
 
-  const verificationSidecar: VerificationSidecar = {
-    filePath: vi.fn(() => ""),
+  const verificationStore: VerificationStore = {
+    write: vi.fn(),
     read: vi.fn(() => null),
     remove: vi.fn(),
   };
@@ -1481,7 +1493,7 @@ function createDependencies(options: {
     artifactStore,
     taskVerification,
     taskRepair,
-    verificationSidecar,
+    verificationStore,
     workingDirectory: {
       cwd: vi.fn(() => options.cwd),
     },
@@ -1517,7 +1529,7 @@ function createDependencies(options: {
     artifactStore,
     taskVerification,
     taskRepair,
-    verificationSidecar,
+    verificationStore,
   };
 }
 

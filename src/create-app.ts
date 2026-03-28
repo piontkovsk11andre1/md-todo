@@ -27,7 +27,7 @@ import type {
   TemplateLoader,
   TemplateVarsLoaderPort,
   TraceWriterPort,
-  VerificationSidecar,
+  VerificationStore,
   WorkerExecutorPort,
   WorkingDirectoryPort,
 } from "./domain/ports/index.js";
@@ -35,10 +35,10 @@ import {
   createCrossSpawnProcessRunner,
   createDirectoryOpenerAdapter,
   createExecFileGitClient,
+  createArtifactVerificationStore,
   createFsArtifactStore,
   createFsFileLock,
   createFsTemplateLoader,
-  createFsVerificationSidecar,
   createFsTemplateVarsLoaderAdapter,
   createFanoutTraceWriter,
   createJsonlTraceWriter,
@@ -92,7 +92,7 @@ export interface AppPorts {
   processRunner: ProcessRunner;
   gitClient: GitClient;
   templateLoader: TemplateLoader;
-  verificationSidecar: VerificationSidecar;
+  verificationStore: VerificationStore;
   artifactStore: ArtifactStore;
   clock: Clock;
   directoryOpener: DirectoryOpenerPort;
@@ -114,22 +114,30 @@ export interface CreateAppDependencies {
 }
 
 function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
+  const workingDirectory = overrides.workingDirectory ?? createWorkingDirectoryAdapter();
+  const verificationStore = overrides.verificationStore
+    ?? createArtifactVerificationStore(workingDirectory.cwd());
+  const taskVerification = overrides.taskVerification
+    ?? createTaskVerificationAdapter(verificationStore);
+  const taskRepair = overrides.taskRepair
+    ?? createTaskRepairAdapter(verificationStore);
+
   return {
     fileSystem: overrides.fileSystem ?? createNodeFileSystem(),
     fileLock: overrides.fileLock ?? createFsFileLock(),
     processRunner: overrides.processRunner ?? createCrossSpawnProcessRunner(),
     gitClient: overrides.gitClient ?? createExecFileGitClient(),
     templateLoader: overrides.templateLoader ?? createFsTemplateLoader(),
-    verificationSidecar: overrides.verificationSidecar ?? createFsVerificationSidecar(),
+    verificationStore,
     artifactStore: overrides.artifactStore ?? createFsArtifactStore(),
     clock: overrides.clock ?? createSystemClock(),
     directoryOpener: overrides.directoryOpener ?? createDirectoryOpenerAdapter(),
     sourceResolver: overrides.sourceResolver ?? createSourceResolverAdapter(),
     taskSelector: overrides.taskSelector ?? createTaskSelectorAdapter(),
     workerExecutor: overrides.workerExecutor ?? createWorkerExecutorAdapter(),
-    taskVerification: overrides.taskVerification ?? createTaskVerificationAdapter(),
-    taskRepair: overrides.taskRepair ?? createTaskRepairAdapter(),
-    workingDirectory: overrides.workingDirectory ?? createWorkingDirectoryAdapter(),
+    taskVerification,
+    taskRepair,
+    workingDirectory,
     pathOperations: overrides.pathOperations ?? createNodePathOperationsAdapter(),
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
     traceWriter: overrides.traceWriter ?? createNoopTraceWriter(),
@@ -191,7 +199,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       fileSystem: ports.fileSystem,
       fileLock: ports.fileLock,
       templateLoader: ports.templateLoader,
-      verificationSidecar: ports.verificationSidecar,
+      verificationStore: ports.verificationStore,
       artifactStore: ports.artifactStore,
       gitClient: ports.gitClient,
       processRunner: ports.processRunner,
@@ -211,7 +219,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       artifactStore: ports.artifactStore,
       taskVerification: ports.taskVerification,
       taskRepair: ports.taskRepair,
-      verificationSidecar: ports.verificationSidecar,
+      verificationStore: ports.verificationStore,
       workingDirectory: ports.workingDirectory,
       fileSystem: ports.fileSystem,
       traceWriter: ports.traceWriter,

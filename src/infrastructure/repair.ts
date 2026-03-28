@@ -5,10 +5,11 @@
  */
 
 import type { Task } from "../domain/parser.js";
+import type { VerificationStore } from "../domain/ports/verification-store.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
-import { verify, readVerificationFile } from "./verification.js";
+import { verify } from "./verification.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
 
 export interface RepairOptions {
@@ -19,6 +20,7 @@ export interface RepairOptions {
   verifyTemplate: string;
   command: string[];
   maxRetries: number;
+  verificationStore: VerificationStore;
   mode?: RunnerMode;
   transport?: PromptTransport;
   trace?: boolean;
@@ -50,7 +52,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
     attempts++;
 
     // Read current verification failure reason
-    const verificationResult = readVerificationFile(options.task) ?? "Verification failed (no details).";
+    const verificationResult = options.verificationStore.read(options.task) ?? "Verification failed (no details).";
 
     const vars: TemplateVars = {
       ...options.templateVars,
@@ -85,6 +87,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       contextBefore: options.contextBefore,
       template: options.verifyTemplate,
       command: options.command,
+      verificationStore: options.verificationStore,
       mode: options.mode,
       transport: options.transport,
       trace: options.trace,

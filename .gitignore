@@ -1,6 +1,5 @@
 node_modules/
 dist/
-*.validation
 .rundown-tmp/
 **/.rundown/runs/
 **/.rundown/logs/

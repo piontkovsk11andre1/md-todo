@@ -129,7 +129,7 @@ Return your result on stdout as exactly one of:
 - `OK`
 - `NOT_OK: <short explanation of what is still missing>`
 
-- Do not create or modify validation files directly. `rundown` writes `{{file}}.{{taskIndex}}.validation` from your stdout result.
+- Do not create or modify verification artifacts directly. `rundown` persists your parsed stdout result in verify-phase runtime artifact metadata.
 - Do not modify the source Markdown task file.
 - Do not change any checkbox.
 ```
@@ -152,7 +152,7 @@ Example:
 
 Verification is intentionally strict.
 
-A task-specific sidecar validation file is produced by `rundown` next to the source Markdown file from verifier stdout. If that file contains exactly `OK`, the task is considered complete.
+`rundown` persists the parsed verifier stdout result in verify-phase runtime artifact metadata. If that persisted result contains exactly `OK`, the task is considered complete.
 
 Anything else means the task remains unchecked.
 

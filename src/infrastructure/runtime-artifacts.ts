@@ -82,6 +82,7 @@ interface PhaseMetadata {
   promptFile?: string | null;
   stdoutFile?: string | null;
   stderrFile?: string | null;
+  verificationResult?: string;
   exitCode?: number | null;
   outputCaptured: boolean;
   startedAt: string;
@@ -115,6 +116,7 @@ export interface CompleteRuntimePhaseOptions {
   exitCode: number | null;
   stdout?: string;
   stderr?: string;
+  verificationResult?: string;
   outputCaptured: boolean;
   notes?: string;
   extra?: Record<string, unknown>;
@@ -379,6 +381,10 @@ export function completeRuntimePhase(
     ensureParentDir(stderrFile);
     fs.writeFileSync(stderrFile, options.stderr, "utf-8");
     handle.metadata.stderrFile = "stderr.log";
+  }
+
+  if (options.verificationResult !== undefined) {
+    handle.metadata.verificationResult = options.verificationResult;
   }
 
   if (options.notes !== undefined) {

@@ -42,5 +42,3 @@ export function createUnlockTask(
     return 0;
   };
 }
-
-export const unlockTask = createUnlockTask;

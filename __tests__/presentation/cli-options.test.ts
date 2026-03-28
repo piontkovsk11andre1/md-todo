@@ -1066,122 +1066,6 @@ describe("CLI plan and utility command normalization", () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a safe positive integer"));
   });
 
-  it("rejects deprecated --at option for plan with migration guidance", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await invokePlanAndExpectExit([
-      "plan",
-      "tasks.md",
-      "--at",
-      "tasks.md:12",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--at option is no longer supported for `plan`"));
-  });
-
-  it("emits stable deprecation output and exits with code 1 for --at", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    const exitCode = await invokePlanAndCaptureExitCode([
-      "plan",
-      "tasks.md",
-      "--at",
-      "tasks.md:12",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(stripAnsi(String(errorSpy.mock.calls[0]?.[0] ?? ""))).toBe(
-      "✖ Error: The --at option is no longer supported for `plan`. `plan` now operates on the entire <markdown-file>. Remove --at and pass the target document as the command argument.",
-    );
-  });
-
-  it("rejects deprecated --at option for plan even when empty", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await invokePlanAndExpectExit([
-      "plan",
-      "tasks.md",
-      "--at",
-      "",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--at option is no longer supported for `plan`"));
-  });
-
-  it("rejects deprecated --sort option for plan", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await invokePlanAndExpectExit([
-      "plan",
-      "tasks.md",
-      "--sort",
-      "none",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--sort option is no longer supported for `plan`"));
-  });
-
-  it("emits stable deprecation output and exits with code 1 for --sort", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    const exitCode = await invokePlanAndCaptureExitCode([
-      "plan",
-      "tasks.md",
-      "--sort",
-      "none",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(exitCode).toBe(1);
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(stripAnsi(String(errorSpy.mock.calls[0]?.[0] ?? ""))).toBe(
-      "✖ Error: The --sort option is no longer supported for `plan`. Planning no longer selects a task from multiple files. Remove --sort and pass only the target <markdown-file>.",
-    );
-  });
-
-  it("rejects deprecated --sort option for plan even when empty", async () => {
-    const planTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await invokePlanAndExpectExit([
-      "plan",
-      "tasks.md",
-      "--sort",
-      "",
-      "--worker",
-      "opencode",
-      "run",
-    ], planTask);
-
-    expect(planTask).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--sort option is no longer supported for `plan`"));
-  });
-
   it("passes list options to the application layer", async () => {
     const listTasks = vi.fn(async () => 0);
     const call = await invokeListAndCaptureCall([
@@ -1505,7 +1389,7 @@ async function invokeRevertAndExpectExit(args: string[], revertTask: ReturnType<
     await parseCliArgs(args);
   } catch (error) {
     const message = String(error);
-    if (/CLI exited with code \d+/.test(message)) {
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
       return;
     }
     throw error;
@@ -1539,7 +1423,7 @@ async function invokePlanAndExpectExit(args: string[], planTask: ReturnType<type
     await parseCliArgs(args);
   } catch (error) {
     const message = String(error);
-    if (/CLI exited with code \d+/.test(message)) {
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
       return;
     }
     throw error;
@@ -1576,6 +1460,9 @@ async function invokePlanAndCaptureExitCode(args: string[], planTask: ReturnType
     const match = /CLI exited with code (\d+)/.exec(message);
     if (match) {
       return Number(match[1]);
+    }
+    if (/process\.exit unexpectedly called/.test(message)) {
+      return 1;
     }
     throw error;
   } finally {

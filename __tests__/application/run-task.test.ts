@@ -20,7 +20,7 @@ import type {
   GitClient,
   ProcessRunner,
   TemplateLoader,
-  VerificationSidecar,
+  VerificationStore,
 } from "../../src/domain/ports/index.js";
 
 describe("run-task commit behavior", () => {
@@ -1413,6 +1413,9 @@ describe("run-task prompt and mode behavior", () => {
     }));
     expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       command: ["opencode", "run"],
+      artifactContext: expect.objectContaining({
+        runId: "run-test",
+      }),
     }));
     expect(fileSystem.readText(taskFile)).toBe("- [x] Build release\n");
     expect(events).toContainEqual({
@@ -2348,7 +2351,7 @@ describe("run-task --all mode", () => {
       fileSystem,
       fileLock,
       templateLoader: { load: vi.fn(() => null) },
-      verificationSidecar: { filePath: vi.fn(() => ""), read: vi.fn(() => null), remove: vi.fn() },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
       artifactStore: {
         createContext: vi.fn(() => ({
           runId: "run-test",
@@ -2420,8 +2423,8 @@ describe("run-task --all mode", () => {
     let selectCallCount = 0;
     const events: ApplicationOutputEvent[] = [];
     const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
-    const verificationSidecar: VerificationSidecar = {
-      filePath: vi.fn(() => ""),
+    const verificationStore: VerificationStore = {
+      write: vi.fn(),
       read: vi.fn(() => null),
       remove: vi.fn(),
     };
@@ -2490,7 +2493,7 @@ describe("run-task --all mode", () => {
       fileSystem,
       fileLock: createNoopFileLock(),
       templateLoader,
-      verificationSidecar,
+      verificationStore,
       artifactStore,
       gitClient,
       processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
@@ -2583,7 +2586,7 @@ describe("run-task --all mode", () => {
       fileSystem,
       fileLock: createNoopFileLock(),
       templateLoader: { load: vi.fn(() => null) },
-      verificationSidecar: { filePath: vi.fn(() => ""), read: vi.fn(() => null), remove: vi.fn() },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
       artifactStore: {
         createContext: vi.fn(() => ({
           runId: "run-test", rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
@@ -2909,8 +2912,8 @@ function createDependencies(options: {
 }): { dependencies: RunTaskDependencies; events: ApplicationOutputEvent[] } {
   const events: ApplicationOutputEvent[] = [];
   const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
-  const verificationSidecar: VerificationSidecar = {
-    filePath: vi.fn(() => ""),
+  const verificationStore: VerificationStore = {
+    write: vi.fn(),
     read: vi.fn(() => null),
     remove: vi.fn(),
   };
@@ -2969,7 +2972,7 @@ function createDependencies(options: {
     fileSystem: options.fileSystem,
     fileLock: createNoopFileLock(),
     templateLoader,
-    verificationSidecar,
+    verificationStore,
     artifactStore,
     gitClient: options.gitClient,
     processRunner,
