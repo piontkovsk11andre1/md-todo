@@ -6,6 +6,7 @@ import { createUnlockTask, type UnlockTaskOptions } from "./application/unlock-t
 import { createInitProject } from "./application/init-project.js";
 import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
+import { createLogRuns, type LogRunsOptions } from "./application/log-runs.js";
 import {
   createManageArtifacts,
   type ManageArtifactsOptions,
@@ -62,6 +63,7 @@ export type App = {
   unlockTask: (options: UnlockTaskOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
   nextTask: (options: NextTaskOptions) => Promise<number>;
+  logRuns: (options: LogRunsOptions) => number;
   initProject: () => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
   releaseAllLocks?: () => void;
@@ -260,6 +262,12 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       taskSelector: ports.taskSelector,
       output: ports.output,
     }),
+    logRuns: (ports) => createLogRuns({
+      artifactStore: ports.artifactStore,
+      workingDirectory: ports.workingDirectory,
+      clock: ports.clock,
+      output: ports.output,
+    }),
     initProject: (ports) => createInitProject({
       fileSystem: ports.fileSystem,
       output: ports.output,
@@ -290,6 +298,7 @@ function createAppFromFactories(
     unlockTask: factories.unlockTask(ports),
     listTasks: factories.listTasks(ports),
     nextTask: factories.nextTask(ports),
+    logRuns: factories.logRuns(ports),
     initProject: factories.initProject(ports),
     manageArtifacts: factories.manageArtifacts(ports),
     releaseAllLocks: () => {

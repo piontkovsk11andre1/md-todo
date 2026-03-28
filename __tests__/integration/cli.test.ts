@@ -615,6 +615,26 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("No saved runtime artifact run found for: latest completed"))).toBe(true);
   });
 
+  it("revert suggests `rundown log --revertable` when completed runs exist but none are revertable", async () => {
+    const workspace = makeTempWorkspace();
+
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed-no-sha",
+      status: "completed",
+      extra: {
+        note: "missing commit SHA",
+      },
+    });
+
+    const result = await runCli([
+      "revert",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("No revertable runs found."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("rundown log --revertable"))).toBe(true);
+  });
+
   it("revert succeeds for a single committed run created via CLI", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -3445,6 +3465,43 @@ describe.sequential("CLI integration", () => {
     const runsDir = path.join(workspace, ".rundown", "runs");
     expect(fs.existsSync(runsDir)).toBe(true);
     expect(fs.readdirSync(runsDir).length).toBe(1);
+  });
+
+  it("log prints compact run history and exits 0", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-log-basic",
+      status: "completed",
+      extra: {
+        commitSha: "1234567890abcdef1234567890abcdef12345678",
+      },
+    });
+
+    const result = await runCli(["log"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("run-20260317T000"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("command=run"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("sha=1234567890ab"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("revertable=yes"))).toBe(true);
+  });
+
+  it("log exits 0 with an informational message when no runs exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["log"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("No matching completed runs found."))).toBe(true);
+  });
+
+  it("log exits 1 for invalid --limit values", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["log", "--limit", "0"], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Invalid --limit value: 0"))).toBe(true);
   });
 
   it("artifacts lists saved runtime runs", async () => {

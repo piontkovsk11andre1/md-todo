@@ -268,6 +268,37 @@ rundown artifacts --open latest
 rundown artifacts --clean --failed
 ```
 
+### `rundown log`
+
+Show completed run history in a compact, one-line-per-run format to help pick revert targets.
+
+Default behavior:
+
+- Shows only runs with status `completed`.
+- Orders runs newest-first (same order as saved artifacts metadata).
+- Prints one compact line per run: short run ID, relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
+- Non-revertable entries are dimmed in terminal output.
+
+Options:
+
+| Option | Description |
+|---|---|
+| `--revertable` | Show only revertable runs (`status=completed` and metadata contains `extra.commitSha`). |
+| `--command <name>` | Filter by command name (for example `run`, `plan`, `revert`, `reverify`). |
+| `--limit <n>` | Show only the first `n` matching runs. |
+| `--json` | Print matching runs as JSON for machine consumption. |
+
+Examples:
+
+```bash
+rundown log
+rundown log --revertable
+rundown log --command run --limit 5
+rundown log --json
+```
+
+`--json` outputs an array of run entries with fields such as `runId`, `shortRunId`, `commandName`, `status`, `relativeTime`, `taskSummary`, `source`, `commitSha`, `shortCommitSha`, `revertable`, `startedAt`, and `completedAt`.
+
 ## Source file locking
 
 `rundown` uses per-source lockfiles to prevent concurrent writes to the same Markdown file.

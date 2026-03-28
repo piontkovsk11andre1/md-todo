@@ -150,6 +150,16 @@ function createAppForInvocation(argv: string[]) {
 }
 
 type CliActionResult = number | Promise<number>;
+
+interface LogCommandOptions {
+  revertable: boolean;
+  commandName?: string;
+  limit?: number;
+  json: boolean;
+}
+
+type LogCommandHandler = (options: LogCommandOptions) => CliActionResult;
+
 configureCommanderOutputHandlers(program);
 program
   .name("rundown")
@@ -363,6 +373,22 @@ program
     });
   }));
 program
+  .command("log")
+  .description("Show completed run history in a compact log view.")
+  .option("--revertable", "Show only runs that can be reverted", false)
+  .option("--command <name>", "Filter runs by command name")
+  .option("--limit <n>", "Show only the first N matching runs")
+  .option("--json", "Print matching runs as JSON", false)
+  .allowUnknownOption(false)
+  .action(withCliAction((opts: Record<string, string | boolean>) => {
+    return resolveLogCommandHandler(getApp())({
+      revertable: Boolean(opts.revertable as boolean | undefined),
+      commandName: normalizeOptionalString(opts.command),
+      limit: parseLimitCount(opts.limit as string | undefined),
+      json: Boolean(opts.json as boolean | undefined),
+    });
+  }));
+program
   .command("plan")
   .description("Synthesize actionable TODOs for a Markdown document using a worker command.")
   .argument("[markdown-file...]", "Markdown document to plan")
@@ -513,6 +539,23 @@ function parseLastCount(value: string | undefined): number | undefined {
   return parsed;
 }
 
+function parseLimitCount(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid --limit value: ${value}. Must be a positive integer.`);
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid --limit value: ${value}. Must be a safe positive integer.`);
+  }
+
+  return parsed;
+}
+
 function parseRevertMethod(value: string | undefined): "revert" | "reset" {
   const method = (value ?? "revert") as (typeof REVERT_METHODS)[number];
   if (!REVERT_METHODS.includes(method)) {
@@ -566,6 +609,23 @@ function withCliAction<Args extends unknown[]>(
       terminate(1);
     }
   };
+}
+
+function resolveLogCommandHandler(appInstance: ReturnType<typeof createApp>): LogCommandHandler {
+  const maybeLogHandlers = appInstance as ReturnType<typeof createApp> & {
+    logTask?: LogCommandHandler;
+    logRuns?: LogCommandHandler;
+  };
+
+  if (typeof maybeLogHandlers.logTask === "function") {
+    return maybeLogHandlers.logTask;
+  }
+
+  if (typeof maybeLogHandlers.logRuns === "function") {
+    return maybeLogHandlers.logRuns;
+  }
+
+  throw new Error("The `log` command is not available in this build.");
 }
 
 export async function parseCliArgs(argv: string[]): Promise<void> {

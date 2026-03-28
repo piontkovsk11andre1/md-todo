@@ -37,6 +37,9 @@ const GIT_ARTIFACT_AND_LOCK_EXCLUDES = [
   ":(glob,exclude)**/.rundown/*.lock",
 ] as const;
 
+const NO_REVERTABLE_RUNS_BASE_MESSAGE = "No revertable runs found. The original run must be completed with --commit and --keep-artifacts so run.json contains extra.commitSha.";
+const REVERTABLE_LOG_HINT = "See `rundown log --revertable` for eligible runs.";
+
 interface RevertOperation {
   run: ArtifactRunMetadata;
   type: "commit" | "pre-reset-ref";
@@ -75,7 +78,7 @@ export function createRevertTask(
       if (completedRuns.length > 0) {
         emit({
           kind: "error",
-          message: "No revertable runs found. The original run must be completed with --commit and --keep-artifacts so run.json contains extra.commitSha.",
+          message: buildNoRevertableRunsMessage(true),
         });
         return 3;
       }
@@ -98,7 +101,7 @@ export function createRevertTask(
     if (revertOperations.length === 0) {
       emit({
         kind: "error",
-        message: "No revertable runs found. The original run must be completed with --commit and --keep-artifacts so run.json contains extra.commitSha.",
+        message: buildNoRevertableRunsMessage(completedRuns.length > 0),
       });
       return 3;
     }
@@ -683,4 +686,12 @@ function collectRevertLockTargets(
   }
 
   return Array.from(lockTargets);
+}
+
+function buildNoRevertableRunsMessage(includeLogHint: boolean): string {
+  if (!includeLogHint) {
+    return NO_REVERTABLE_RUNS_BASE_MESSAGE;
+  }
+
+  return NO_REVERTABLE_RUNS_BASE_MESSAGE + " " + REVERTABLE_LOG_HINT;
 }

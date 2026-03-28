@@ -139,6 +139,22 @@ describe("revert-task", () => {
     expect(code).toBe(3);
     expect(events.some((event) => event.kind === "error" && event.message.includes("No revertable runs found."))).toBe(true);
     expect(events.some((event) => event.kind === "error" && event.message.includes("extra.commitSha"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("rundown log --revertable"))).toBe(true);
+    expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
+  });
+
+  it("omits log hint when no revertable runs are found and no completed runs exist", async () => {
+    const runs: ArtifactRunMetadata[] = [
+      createRunMetadata({ runId: "run-reverted", status: "reverted", commandName: "revert" }),
+    ];
+
+    const { revertTask, events, gitClient } = createDependencies(runs);
+
+    const code = await revertTask(createOptions({ runId: "run-reverted" }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("No revertable runs found."))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("rundown log --revertable"))).toBe(false);
     expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
   });
 

@@ -123,6 +123,7 @@ Useful first commands:
 ```bash
 rundown next docs/
 rundown list docs/
+rundown log --revertable --limit 10
 rundown plan roadmap.md --scan-count 3 -- opencode run
 rundown reverify -- opencode run
 rundown revert --dry-run --worker opencode run

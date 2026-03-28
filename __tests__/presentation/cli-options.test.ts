@@ -843,6 +843,72 @@ describe("CLI revert option normalization", () => {
   });
 });
 
+describe("CLI log option normalization", () => {
+  it("passes log options to application layer", async () => {
+    const logTask = vi.fn(async () => 0);
+    const call = await invokeLogAndCaptureCall([
+      "log",
+      "--revertable",
+      "--command",
+      "run",
+      "--limit",
+      "5",
+      "--json",
+    ], logTask);
+
+    expect(call.revertable).toBe(true);
+    expect(call.commandName).toBe("run");
+    expect(call.limit).toBe(5);
+    expect(call.json).toBe(true);
+  });
+
+  it("uses defaults for omitted log options", async () => {
+    const logTask = vi.fn(async () => 0);
+    const call = await invokeLogAndCaptureCall(["log"], logTask);
+
+    expect(call.revertable).toBe(false);
+    expect(call.commandName).toBeUndefined();
+    expect(call.limit).toBeUndefined();
+    expect(call.json).toBe(false);
+  });
+
+  it("normalizes empty command filter to undefined", async () => {
+    const logTask = vi.fn(async () => 0);
+    const call = await invokeLogAndCaptureCall([
+      "log",
+      "--command",
+      "",
+    ], logTask);
+
+    expect(call.commandName).toBeUndefined();
+  });
+
+  it("logs a CLI error and exits with code 1 on non-integer --limit", async () => {
+    const logTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeLogAndExpectExit([
+      "log",
+      "--limit",
+      "many",
+    ], logTask);
+
+    expect(logTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --limit value: many"));
+  });
+
+  it("rejects unsupported --no-color option for log command", async () => {
+    const logTask = vi.fn(async () => 0);
+
+    await invokeLogAndExpectExit([
+      "log",
+      "--no-color",
+    ], logTask);
+
+    expect(logTask).not.toHaveBeenCalled();
+  });
+});
+
 describe("CLI plan and utility command normalization", () => {
   it("passes document-mode plan options through with separator worker command", async () => {
     const planTask = vi.fn(async () => 0);
@@ -1415,6 +1481,80 @@ async function invokePlanAndExpectExit(args: string[], planTask: ReturnType<type
       planTask,
       initProject: vi.fn(async () => 0),
       manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+async function invokeLogAndCaptureCall(args: string[], logTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      revertTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      unlockTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+      logTask,
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  expect(logTask).toHaveBeenCalledTimes(1);
+  return logTask.mock.calls[0][0] as RunTaskCall;
+}
+
+async function invokeLogAndExpectExit(args: string[], logTask: ReturnType<typeof vi.fn>): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      revertTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      unlockTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+      logTask,
     }),
   }));
 
