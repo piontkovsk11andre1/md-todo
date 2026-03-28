@@ -120,6 +120,52 @@ describe("CLI run option normalization", () => {
     expect(call.runAll).toBe(true);
   });
 
+  it("expands runall alias to run --all", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "runall",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+    expect(call.runAll).toBe(true);
+  });
+
+  it("parses runall with --worker echo and enables runAll", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "runall",
+      "tasks.md",
+      "--worker",
+      "echo",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+    expect(call.workerCommand).toEqual(["echo"]);
+    expect(call.runAll).toBe(true);
+  });
+
+  it("accepts run options when using runall alias", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "runall",
+      "tasks.md",
+      "--verify",
+      "--keep-artifacts",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+    expect(call.verify).toBe(true);
+    expect(call.keepArtifacts).toBe(true);
+    expect(call.runAll).toBe(true);
+  });
+
   it("passes force-execute option to run task", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -608,6 +654,13 @@ describe("CLI invocation logging context", () => {
     const context = await invokeCliAndCaptureLoggedContext(["--help"]);
 
     expect(context.command).toBe("rundown");
+  });
+
+  it("records run command in invocation context for runall alias", async () => {
+    const context = await invokeCliAndCaptureLoggedContext(["runall", "tasks.md", "--worker", "opencode", "run"]);
+
+    expect(context.command).toBe("run");
+    expect(context.argv).toEqual(["run", "--all", "tasks.md", "--worker", "opencode", "run"]);
   });
 });
 

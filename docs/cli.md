@@ -6,7 +6,7 @@
 
 Scan a file, directory, or glob, select the next runnable task, execute it, verify it, optionally repair it, and mark it complete only after verification succeeds.
 
-With `--all`, process tasks sequentially until all are complete or a failure occurs.
+With `--all` (or the shorthand `runall` command), process tasks sequentially until all are complete or a failure occurs.
 
 Use `--hide-agent-output` to suppress execution transcript noise while keeping rundown lifecycle/status messages visible.
 
@@ -17,6 +17,7 @@ rundown run roadmap.md -- opencode run
 rundown run docs/ -- opencode run
 rundown run "notes/**/*.md" -- opencode run
 rundown run roadmap.md --all -- opencode run
+rundown runall roadmap.md -- opencode run
 rundown run tasks.md --hide-agent-output --worker opencode run
 ```
 
@@ -25,6 +26,7 @@ PowerShell-safe form:
 ```powershell
 rundown run docs/ --worker opencode run
 rundown run docs/ --all --worker opencode run
+rundown runall docs/ --worker opencode run
 rundown run docs/ --hide-agent-output --worker opencode run
 ```
 
@@ -453,7 +455,7 @@ For `run`, source-file locks remain held for the full task lifecycle, including 
 
 ### Run all mode
 
-`--all` processes tasks sequentially. After each successful task, the next unchecked task is selected and run. The loop stops when:
+`--all` (or `runall <source>`) processes tasks sequentially. After each successful task, the next unchecked task is selected and run. The loop stops when:
 
 - All tasks are complete — exits `0`.
 - A task fails execution or verification — exits `1` or `2`.

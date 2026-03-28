@@ -180,7 +180,7 @@ program
   .option("--on-complete <command>", "Run a shell command after successful task completion")
   .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
   .option("--hide-agent-output", "Hide worker stdout/stderr during execution; show only rundown status messages.", false)
-  .option("--all", "Run all tasks sequentially instead of stopping after one", false)
+  .option("--all", "Run all tasks sequentially instead of stopping after one (alias: runall)", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring run locks", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
@@ -582,8 +582,9 @@ function withCliAction<Args extends unknown[]>(
 }
 
 export async function parseCliArgs(argv: string[]): Promise<void> {
-  const { rundownArgs, workerFromSeparator: workerCommandArgs } = splitWorkerFromSeparator(argv);
-  app = createAppForInvocation(argv);
+  const rewrittenArgv = rewriteRunallAlias(argv);
+  const { rundownArgs, workerFromSeparator: workerCommandArgs } = splitWorkerFromSeparator(rewrittenArgv);
+  app = createAppForInvocation(rewrittenArgv);
   getLockReleaseState().app = app;
   registerLockReleaseSignalHandlers();
   workerFromSeparator = workerCommandArgs;
@@ -696,6 +697,27 @@ function splitWorkerFromSeparator(argv: string[]): { rundownArgs: string[]; work
     rundownArgs: sepIndex !== -1 ? argv.slice(0, sepIndex) : argv,
     workerFromSeparator: sepIndex !== -1 ? argv.slice(sepIndex + 1) : [],
   };
+}
+
+function rewriteRunallAlias(argv: string[]): string[] {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === "--") {
+      break;
+    }
+
+    if (token.startsWith("-")) {
+      continue;
+    }
+
+    if (token === "runall") {
+      return [...argv.slice(0, i), "run", "--all", ...argv.slice(i + 1)];
+    }
+
+    break;
+  }
+
+  return argv;
 }
 
 function resolveInvocationCommand(argv: string[]): string {

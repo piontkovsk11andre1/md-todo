@@ -2851,6 +2851,24 @@ describe.sequential("CLI integration", () => {
     expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
   });
 
+  it("runall completes multiple inline CLI tasks sequentially", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n- [ ] cli: echo three\n", "utf-8");
+
+    const result = await runCli([
+      "runall",
+      "roadmap.md",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(3);
+    expect(result.logs.some((line) => line.includes("All tasks completed (3 total)"))).toBe(true);
+    const content = fs.readFileSync(roadmapPath, "utf-8");
+    expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
+  });
+
   it("run --all stops on failure and preserves failure exit code", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -2972,6 +2990,17 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--all");
     expect(compactHelpOutput).toContain("--on-fail <command>");
     expect(compactHelpOutput).toContain("--force-unlock");
+  });
+
+  it("runall --help works and includes --all option", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["runall", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--all");
   });
 
   it("plan --help shows --force-unlock option", async () => {
