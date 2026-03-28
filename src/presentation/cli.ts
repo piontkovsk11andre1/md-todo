@@ -2,8 +2,14 @@ import { Command, Option } from "commander";
 import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { createApp } from "../create-app.js";
+import { createNodeFileSystem } from "../infrastructure/adapters/fs-file-system.js";
+import { createGlobalOutputLogWriter } from "../infrastructure/adapters/global-output-log-writer.js";
+import { globalOutputLogFilePath } from "../infrastructure/runtime-artifacts.js";
+import { createLoggedOutputPort } from "./logged-output-port.js";
+import type { LoggedOutputContext } from "./logged-output-port.js";
 import { cliOutputPort } from "./output-port.js";
 import fs from "node:fs";
+import { randomBytes } from "node:crypto";
 import pc from "picocolors";
 
 const RUNNER_MODES: readonly ProcessRunMode[] = ["wait", "tui", "detached"];
@@ -33,20 +39,51 @@ function readCliVersion(): string {
   }
 }
 
+function createSessionId(): string {
+  return `sess-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+}
+
 let workerFromSeparator: string[] = [];
+let cliInvocationLogState: CliInvocationLogState | undefined;
 
 const program = new Command();
-const app = createApp({
-  ports: {
+const cliVersion = readCliVersion();
+let app: ReturnType<typeof createApp> | undefined;
+
+interface CliInvocationLogState {
+  writer: ReturnType<typeof createGlobalOutputLogWriter>;
+  context: LoggedOutputContext;
+}
+
+function getApp(): ReturnType<typeof createApp> {
+  if (!app) {
+    throw new Error("CLI app is not initialized. Call parseCliArgs(...) before invoking commands.");
+  }
+  return app;
+}
+
+function createAppForInvocation(argv: string[]) {
+  const invocationLogState = createCliInvocationLogState(argv);
+  cliInvocationLogState = invocationLogState;
+  const loggedOutputPort = createLoggedOutputPort({
     output: cliOutputPort,
-  },
-});
+    writer: invocationLogState.writer,
+    context: invocationLogState.context,
+  });
+
+  return createApp({
+    ports: {
+      output: loggedOutputPort,
+    },
+  });
+}
 
 type CliActionResult = number | Promise<number>;
+configureCommanderOutputHandlers(program);
 program
   .name("rundown")
   .description("A Markdown-native task runtime for agentic workflows.")
-  .version(readCliVersion());
+  .version(cliVersion);
 program
   .command("run")
   .description("Find the next unchecked TODO and execute it.")
@@ -103,7 +140,7 @@ program
     const onFailCommand = normalizeOptionalString(opts.onFail);
     const hideAgentOutput = Boolean(opts.hideAgentOutput as boolean | undefined);
     const runAll = Boolean(opts.all as boolean | undefined);
-    return app.runTask({
+    return getApp().runTask({
       source,
       mode,
       transport,
@@ -163,7 +200,7 @@ program
         ? [opts.worker]
         : workerFromSeparator;
 
-    return app.reverifyTask({
+    return getApp().reverifyTask({
       runId: targetRun,
       last,
       all,
@@ -198,7 +235,7 @@ program
     const force = Boolean(opts.force as boolean | undefined);
     const keepArtifacts = Boolean(opts.keepArtifacts as boolean | undefined);
 
-    return app.revertTask({
+    return getApp().revertTask({
       runId: targetRun,
       last,
       all,
@@ -215,7 +252,7 @@ program
   .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .action(withCliAction((source: string, opts: Record<string, string | string[] | boolean>) => {
-    return app.nextTask({
+    return getApp().nextTask({
       source,
       sortMode: parseSortMode(opts.sort as string | undefined),
     });
@@ -227,7 +264,7 @@ program
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--all", "Show all tasks including checked ones", false)
   .action(withCliAction((source: string, opts: Record<string, string | boolean>) => {
-    return app.listTasks({
+    return getApp().listTasks({
       source,
       sortMode: parseSortMode(opts.sort as string | undefined),
       includeAll: opts.all as boolean,
@@ -241,7 +278,7 @@ program
   .option("--failed", "Show only failed runtime artifact runs", false)
   .option("--open <runId>", "Open a saved runtime artifact folder by run id, unique prefix, or 'latest'")
   .action(withCliAction((opts: Record<string, boolean | string>) => {
-    return app.manageArtifacts({
+    return getApp().manageArtifacts({
       clean: opts.clean as boolean,
       json: opts.json as boolean,
       failed: opts.failed as boolean,
@@ -283,7 +320,7 @@ program
       : typeof opts.worker === "string"
         ? [opts.worker]
         : workerFromSeparator;
-    return app.planTask({
+    return getApp().planTask({
       source: markdownFile,
       scanCount,
       mode,
@@ -300,7 +337,7 @@ program
 program
   .command("init")
   .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair).")
-  .action(withCliAction(() => app.initProject()));
+  .action(withCliAction(() => getApp().initProject()));
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -452,7 +489,7 @@ function withCliAction<Args extends unknown[]>(
       if (isCliExitSignal(err)) {
         throw err;
       }
-      console.error(pc.red("✖") + " " + String(err));
+      emitCliFatalError(err);
       terminate(1);
     }
   };
@@ -460,6 +497,7 @@ function withCliAction<Args extends unknown[]>(
 
 export async function parseCliArgs(argv: string[]): Promise<void> {
   const { rundownArgs, workerFromSeparator: workerCommandArgs } = splitWorkerFromSeparator(argv);
+  app = createAppForInvocation(argv);
   workerFromSeparator = workerCommandArgs;
   await program.parseAsync(rundownArgs, { from: "user" });
 }
@@ -469,9 +507,99 @@ if (process.env.RUNDOWN_DISABLE_AUTO_PARSE !== "1") {
     if (isCliExitSignal(err)) {
       process.exit(err.code);
     }
-    console.error(pc.red("✖") + " " + String(err));
+    emitCliFatalError(err);
     process.exit(1);
   });
+}
+
+function createCliInvocationLogState(argv: string[]): CliInvocationLogState {
+  const invocationArgv = [...argv];
+  const context: LoggedOutputContext = {
+    command: resolveInvocationCommand(invocationArgv),
+    argv: invocationArgv,
+    cwd: process.cwd(),
+    pid: process.pid,
+    version: cliVersion,
+    sessionId: createSessionId(),
+  };
+
+  return {
+    writer: createGlobalOutputLogWriter(globalOutputLogFilePath(context.cwd), createNodeFileSystem()),
+    context,
+  };
+}
+
+function emitCliFatalError(error: unknown): void {
+  const message = String(error);
+  console.error(pc.red("✖") + " " + message);
+  appendCliFatalErrorToGlobalLog(message);
+}
+
+function appendCliFatalErrorToGlobalLog(message: string): void {
+  const state = cliInvocationLogState;
+  if (!state) {
+    return;
+  }
+
+  try {
+    state.writer.write({
+      ts: new Date().toISOString(),
+      level: "error",
+      stream: "stderr",
+      kind: "cli-fatal",
+      message,
+      command: state.context.command,
+      argv: state.context.argv,
+      cwd: state.context.cwd,
+      pid: state.context.pid,
+      version: state.context.version,
+      session_id: state.context.sessionId,
+    });
+  } catch {
+    // best-effort logging: never interrupt command flow on log write failures
+  }
+}
+
+function configureCommanderOutputHandlers(command: Command): void {
+  command.configureOutput({
+    writeOut(output: string) {
+      process.stdout.write(output);
+      appendCommanderFrameworkOutputToGlobalLog(output, "stdout");
+    },
+    writeErr(output: string) {
+      process.stderr.write(output);
+      appendCommanderFrameworkOutputToGlobalLog(output, "stderr");
+    },
+  });
+}
+
+function appendCommanderFrameworkOutputToGlobalLog(message: string, stream: "stdout" | "stderr"): void {
+  if (message.length === 0) {
+    return;
+  }
+
+  const state = cliInvocationLogState;
+  if (!state) {
+    return;
+  }
+
+  try {
+    state.writer.write({
+      ts: new Date().toISOString(),
+      level: stream === "stderr" ? "error" : "info",
+      stream,
+      kind: "commander",
+      message,
+      command: state.context.command,
+      argv: state.context.argv,
+      cwd: state.context.cwd,
+      pid: state.context.pid,
+      version: state.context.version,
+      session_id: state.context.sessionId,
+    });
+  } catch {
+    // best-effort logging: never interrupt command flow on log write failures
+  }
 }
 
 function splitWorkerFromSeparator(argv: string[]): { rundownArgs: string[]; workerFromSeparator: string[] } {
@@ -480,6 +608,20 @@ function splitWorkerFromSeparator(argv: string[]): { rundownArgs: string[]; work
     rundownArgs: sepIndex !== -1 ? argv.slice(0, sepIndex) : argv,
     workerFromSeparator: sepIndex !== -1 ? argv.slice(sepIndex + 1) : [],
   };
+}
+
+function resolveInvocationCommand(argv: string[]): string {
+  for (const token of argv) {
+    if (token === "--") {
+      break;
+    }
+
+    if (!token.startsWith("-")) {
+      return token;
+    }
+  }
+
+  return "rundown";
 }
 
 function terminate(code: number): never {

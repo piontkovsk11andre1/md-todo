@@ -240,6 +240,30 @@ rundown artifacts --open latest
 rundown artifacts --clean --failed
 ```
 
+## Global output log (JSONL)
+
+`rundown` also defines a process-wide append-only JSONL stream at `.rundown/logs/output.jsonl`.
+
+Promtail note: configure this file as a scrape target to ingest a single cumulative CLI output stream across all runs.
+
+First-iteration constraints: rundown does not implement built-in rotation or compression for this file, and it does not backfill older run output into this global stream. Manage retention with external log rotation or downstream pipeline policy.
+
+Each line is one JSON object with these stable fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `ts` | `string` | Event timestamp in ISO-8601 UTC format. |
+| `level` | `"info" \| "warn" \| "error"` | Severity level for the rendered event. |
+| `stream` | `"stdout" \| "stderr"` | Logical stream classification for sink routing. |
+| `kind` | `string` | Stable event kind label from rundown output semantics. |
+| `message` | `string` | Plain-text message payload for the event. |
+| `command` | `string` | Top-level CLI command name (for example `run`, `reverify`, `plan`). |
+| `argv` | `string[]` | Full CLI argument vector for the invocation (excluding node runtime executable paths). |
+| `cwd` | `string` | Process current working directory for the invocation. |
+| `pid` | `number` | Process identifier for the CLI invocation. |
+| `version` | `string` | Rundown CLI version string. |
+| `session_id` | `string` | Invocation-scoped unique identifier used to correlate entries from one CLI session. |
+
 ### `rundown init`
 
 Create `.rundown/` with default templates and `vars.json`.

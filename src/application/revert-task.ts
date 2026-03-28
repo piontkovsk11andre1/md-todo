@@ -462,7 +462,7 @@ async function isGitRepoWithGitClient(gitClient: GitClient, cwd: string): Promis
 
 async function isWorkingDirectoryClean(gitClient: GitClient, cwd: string): Promise<boolean> {
   const output = await gitClient.run(
-    ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"],
+    ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"],
     cwd,
   );
   return output.trim().length === 0;

@@ -1548,6 +1548,213 @@ describe.sequential("CLI integration", () => {
     expect(listTraceFiles(workspace)).toHaveLength(0);
   });
 
+  it("run creates .rundown/logs/output.jsonl", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(outputLogPath)).toBe(true);
+  });
+
+  it("run writes global output log even when runtime artifacts are not preserved", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(outputLogPath)).toBe(true);
+
+    const entries = readGlobalOutputLogEntries(workspace);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((entry) => entry.command === "run")).toBe(true);
+
+    expect(readSavedRunMetadata(workspace)).toHaveLength(0);
+  });
+
+  it("keeps global output logging append-only across run commands with mixed artifact retention", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    const firstResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+    ], workspace);
+    expect(firstResult.code).toBe(0);
+    expect(readSavedRunMetadata(workspace)).toHaveLength(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(outputLogPath)).toBe(true);
+
+    const firstLines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+    expect(firstLines.length).toBeGreaterThan(0);
+
+    const secondResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+    ], workspace);
+    expect(secondResult.code).toBe(0);
+
+    const secondLines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+
+    expect(secondLines.length).toBeGreaterThan(firstLines.length);
+    expect(secondLines.slice(0, firstLines.length)).toEqual(firstLines);
+
+    const firstEntries = firstLines.map((line) => JSON.parse(line) as { command?: string });
+    const appendedEntries = secondLines.slice(firstLines.length)
+      .map((line) => JSON.parse(line) as { command?: string });
+    expect(firstEntries.some((entry) => entry.command === "run")).toBe(true);
+    expect(appendedEntries.some((entry) => entry.command === "run")).toBe(true);
+
+    expect(readSavedRunMetadata(workspace).length).toBeGreaterThan(0);
+  });
+
+  it("appends to .rundown/logs/output.jsonl across consecutive CLI commands", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");
+
+    const firstResult = await runCli(["next", "tasks.md"], workspace);
+    expect(firstResult.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(outputLogPath)).toBe(true);
+
+    const firstLines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+    expect(firstLines.length).toBeGreaterThan(0);
+
+    const secondResult = await runCli(["list", "tasks.md"], workspace);
+    expect(secondResult.code).toBe(0);
+
+    const secondLines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+
+    expect(secondLines.length).toBeGreaterThan(firstLines.length);
+    expect(secondLines.slice(0, firstLines.length)).toEqual(firstLines);
+
+    const parsedLines = secondLines.map((line) => JSON.parse(line) as { command?: string });
+    expect(parsedLines.slice(0, firstLines.length).some((entry) => entry.command === "next")).toBe(true);
+    expect(parsedLines.slice(firstLines.length).some((entry) => entry.command === "list")).toBe(true);
+  });
+
+  it("writes stable single-line JSONL entries suitable for Promtail ingestion", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");
+
+    const result = await runCli(["next", "tasks.md"], workspace);
+    expect(result.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    const expectedKeys = [
+      "argv",
+      "command",
+      "cwd",
+      "kind",
+      "level",
+      "message",
+      "pid",
+      "session_id",
+      "stream",
+      "ts",
+      "version",
+    ];
+
+    const lines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+
+    expect(lines.length).toBeGreaterThan(0);
+
+    for (const line of lines) {
+      expect(line.includes("\u001b")).toBe(false);
+
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      expect(Object.keys(entry).sort()).toEqual(expectedKeys);
+      expect(typeof entry.ts).toBe("string");
+      expect(Number.isNaN(Date.parse(String(entry.ts)))).toBe(false);
+      expect(["info", "warn", "error"]).toContain(entry.level);
+      expect(["stdout", "stderr"]).toContain(entry.stream);
+      expect(typeof entry.kind).toBe("string");
+      expect(typeof entry.message).toBe("string");
+      expect(typeof entry.command).toBe("string");
+      expect(Array.isArray(entry.argv)).toBe(true);
+      expect((entry.argv as unknown[]).every((arg) => typeof arg === "string")).toBe(true);
+      expect(typeof entry.cwd).toBe("string");
+      expect(typeof entry.pid).toBe("number");
+      expect(Number.isInteger(entry.pid)).toBe(true);
+      expect(typeof entry.version).toBe("string");
+      expect(typeof entry.session_id).toBe("string");
+    }
+  });
+
+  it("captures invalid flag errors in .rundown/logs/output.jsonl", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--hide-agent-outputs",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+
+    const entries = readGlobalOutputLogEntries(workspace);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((entry) => entry.command === "run")).toBe(true);
+    expect(entries.some((entry) => {
+      return entry.kind === "commander"
+        && entry.stream === "stderr"
+        && entry.message.toLowerCase().includes("unknown option")
+        && entry.message.includes("--hide-agent-outputs");
+    })).toBe(true);
+  });
+
+  it("captures execution failures in .rundown/logs/output.jsonl", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: __rundown_missing_command__\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+
+    const entries = readGlobalOutputLogEntries(workspace);
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((entry) => {
+      return entry.command === "run"
+        && entry.kind === "error"
+        && entry.stream === "stderr"
+        && entry.message.includes("Inline CLI exited with code");
+    })).toBe(true);
+  });
+
   it("run --trace-only enriches the latest completed run without changing tasks", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -2939,6 +3146,34 @@ function listTraceFiles(workspace: string): string[] {
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(runsDir, entry.name, "trace.jsonl"))
     .filter((filePath) => fs.existsSync(filePath));
+}
+
+function readGlobalOutputLogEntries(workspace: string): Array<{
+  command: string;
+  kind: string;
+  stream: string;
+  message: string;
+}> {
+  const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+  if (!fs.existsSync(outputLogPath)) {
+    return [];
+  }
+
+  return fs.readFileSync(outputLogPath, "utf-8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as {
+      command?: unknown;
+      kind?: unknown;
+      stream?: unknown;
+      message?: unknown;
+    })
+    .map((entry) => ({
+      command: typeof entry.command === "string" ? entry.command : "",
+      kind: typeof entry.kind === "string" ? entry.kind : "",
+      stream: typeof entry.stream === "string" ? entry.stream : "",
+      message: typeof entry.message === "string" ? entry.message : "",
+    }));
 }
 
 function createWaitModeSpawnMock(options: {

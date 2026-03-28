@@ -8,6 +8,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("../../src/create-app.js");
+  vi.doUnmock("../../src/infrastructure/adapters/global-output-log-writer.js");
 });
 
 describe("CLI run option normalization", () => {
@@ -221,6 +222,80 @@ describe("CLI run option normalization", () => {
 
     expect(runTask).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --mode value: bad-mode"));
+  });
+
+  it("appends CLI fatal fallback errors to the global output log", async () => {
+    const runTask = vi.fn(async () => 0);
+    const writeSpy = vi.fn();
+
+    await invokeRunAndExpectExitWithGlobalLogCapture([
+      "run",
+      "tasks.md",
+      "--mode",
+      "bad-mode",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask, writeSpy);
+
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(writeSpy).toHaveBeenCalledWith(expect.objectContaining({
+      level: "error",
+      stream: "stderr",
+      kind: "cli-fatal",
+      message: expect.stringContaining("Invalid --mode value: bad-mode"),
+      command: "run",
+      argv: [
+        "run",
+        "tasks.md",
+        "--mode",
+        "bad-mode",
+        "--worker",
+        "opencode",
+        "run",
+      ],
+      cwd: process.cwd(),
+      pid: process.pid,
+      version: expect.any(String),
+      session_id: expect.any(String),
+      ts: expect.any(String),
+    }));
+  });
+
+  it("appends Commander framework stderr output to the global output log", async () => {
+    const runTask = vi.fn(async () => 0);
+    const writeSpy = vi.fn();
+
+    await invokeRunAndExpectExitWithGlobalLogCapture([
+      "run",
+      "tasks.md",
+      "--unknown-flag",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask, writeSpy);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(writeSpy).toHaveBeenCalledWith(expect.objectContaining({
+      level: "error",
+      stream: "stderr",
+      kind: "commander",
+      message: expect.stringContaining("unknown option"),
+      command: "run",
+      argv: [
+        "run",
+        "tasks.md",
+        "--unknown-flag",
+        "--worker",
+        "opencode",
+        "run",
+      ],
+      cwd: process.cwd(),
+      pid: process.pid,
+      version: expect.any(String),
+      session_id: expect.any(String),
+      ts: expect.any(String),
+    }));
   });
 
   it("logs a CLI error and exits with code 1 on invalid sort", async () => {
@@ -485,6 +560,40 @@ describe("CLI reverify option normalization", () => {
     expect(reverifyTask).toHaveBeenCalledTimes(1);
   });
 
+});
+
+describe("CLI invocation logging context", () => {
+  it("sets command name to the selected top-level command", async () => {
+    const context = await invokeCliAndCaptureLoggedContext([
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ]);
+
+    expect(context.command).toBe("run");
+  });
+
+  it("captures full argv including separator worker command", async () => {
+    const args = [
+      "run",
+      "tasks.md",
+      "--",
+      "opencode",
+      "run",
+      "--json",
+    ];
+    const context = await invokeCliAndCaptureLoggedContext(args);
+
+    expect(context.argv).toEqual(args);
+  });
+
+  it("falls back to rundown command when no subcommand is provided", async () => {
+    const context = await invokeCliAndCaptureLoggedContext(["--help"]);
+
+    expect(context.command).toBe("rundown");
+  });
 });
 
 describe("CLI revert option normalization", () => {
@@ -1100,6 +1209,51 @@ async function invokePlanAndCaptureCall(args: string[], planTask: ReturnType<typ
   return planTask.mock.calls[0][0] as RunTaskCall;
 }
 
+async function invokeRunAndExpectExitWithGlobalLogCapture(
+  args: string[],
+  runTask: ReturnType<typeof vi.fn>,
+  writeSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  vi.doMock("../../src/infrastructure/adapters/global-output-log-writer.js", () => ({
+    createGlobalOutputLogWriter: vi.fn(() => ({
+      write: writeSpy,
+      flush: vi.fn(),
+    })),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
 async function invokeRevertAndCaptureCall(args: string[], revertTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
   const previousEnv = captureEnv();
 
@@ -1124,7 +1278,7 @@ async function invokeRevertAndCaptureCall(args: string[], revertTask: ReturnType
     await parseCliArgs(args);
   } catch (error) {
     const message = String(error);
-    if (!/CLI exited with code \d+/.test(message)) {
+    if (!/CLI exited with code \d+/.test(message) && !/process\.exit unexpectedly called/.test(message)) {
       throw error;
     }
   } finally {
@@ -1358,4 +1512,68 @@ function restoreEnv(previousEnv: Record<(typeof envKeys)[number], string | undef
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+interface LoggedOutputContextCapture {
+  command: string;
+  argv: string[];
+}
+
+async function invokeCliAndCaptureLoggedContext(args: string[]): Promise<LoggedOutputContextCapture> {
+  const previousEnv = captureEnv();
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  let captured: LoggedOutputContextCapture | undefined;
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      revertTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  vi.doMock("../../src/presentation/logged-output-port.js", async () => {
+    const actual = await vi.importActual<typeof import("../../src/presentation/logged-output-port.js")>(
+      "../../src/presentation/logged-output-port.js",
+    );
+
+    return {
+      ...actual,
+      createLoggedOutputPort: vi.fn((options: {
+        output: { emit: (event: unknown) => void };
+        context: LoggedOutputContextCapture;
+      }) => {
+        captured = {
+          command: options.context.command,
+          argv: [...options.context.argv],
+        };
+        return options.output;
+      }),
+    };
+  });
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message) && !/process\.exit unexpectedly called/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  if (!captured) {
+    throw new Error("Expected logged output context to be captured");
+  }
+
+  return captured;
 }

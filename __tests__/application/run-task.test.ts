@@ -53,7 +53,7 @@ describe("run-task commit behavior", () => {
     expect(code).toBe(0);
     expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
       3,
       ["rev-parse", "--is-inside-work-tree"],
@@ -61,7 +61,7 @@ describe("run-task commit behavior", () => {
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
       4,
-      ["add", "-A", "--", ".", ":(exclude).rundown/runs/**"],
+      ["add", "-A", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
@@ -118,7 +118,7 @@ describe("run-task commit behavior", () => {
     }));
 
     expect(code).toBe(0);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
       3,
       ["rev-parse", "--is-inside-work-tree"],
@@ -126,7 +126,7 @@ describe("run-task commit behavior", () => {
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
       4,
-      ["add", "-A", "--", ".", ":(exclude).rundown/runs/**"],
+      ["add", "-A", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
@@ -326,7 +326,7 @@ describe("run-task commit behavior", () => {
     expect(events.some((event) => event.kind === "error" && event.message.includes("working directory is not clean"))).toBe(true);
     expect(gitClient.run).toHaveBeenCalledTimes(2);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "add")).toBe(false);
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(false);
   });
@@ -362,7 +362,7 @@ describe("run-task commit behavior", () => {
     expect(code).toBe(0);
     expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) =>
-      JSON.stringify(args) === JSON.stringify(["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"])
+      JSON.stringify(args) === JSON.stringify(["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"])
     )).toBe(false);
   });
 });
@@ -1943,7 +1943,7 @@ describe("run-task exit code behavior with completion side effects", () => {
     expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
     expect(gitClient.run).toHaveBeenCalledTimes(2);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
     expect(processRunner.run).not.toHaveBeenCalled();
   });
 
@@ -1979,7 +1979,7 @@ describe("run-task exit code behavior with completion side effects", () => {
     expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
     expect(gitClient.run).toHaveBeenCalledTimes(2);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["status", "--porcelain", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
     expect(processRunner.run).not.toHaveBeenCalled();
   });
 });

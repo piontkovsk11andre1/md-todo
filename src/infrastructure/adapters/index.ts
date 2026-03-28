@@ -16,3 +16,4 @@ export { createNodePathOperationsAdapter } from "./node-path-operations-adapter.
 export { createFsTemplateVarsLoaderAdapter } from "./fs-template-vars-loader-adapter.js";
 export { createJsonlTraceWriter } from "./jsonl-trace-writer.js";
 export { createNoopTraceWriter } from "./noop-trace-writer.js";
+export { createGlobalOutputLogWriter } from "./global-output-log-writer.js";

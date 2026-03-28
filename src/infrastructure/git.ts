@@ -60,7 +60,7 @@ export async function commitCheckedTask(options: CommitTaskOptions): Promise<str
     { task, file: relativePath, line, index },
   );
 
-  await git(["add", "-A", "--", ".", ":(exclude).rundown/runs/**"], cwd);
+  await git(["add", "-A", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
   await git(["commit", "-m", message], cwd);
 
   return message;

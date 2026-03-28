@@ -259,6 +259,26 @@ That gives you a concrete record of what happened:
 
 This matters for debugging, trust, and repeatability. The workflow is not a black box chat session. It leaves evidence.
 
+In addition to per-run artifacts, rundown defines a cumulative append-only JSONL log at `.rundown/logs/output.jsonl`. It is designed as a single stable scrape target for Promtail and other line-oriented log shippers.
+
+The file is never truncated by normal execution flow: each CLI invocation appends new lines, preserving prior history across runs and commands. It captures normal application output plus CLI/framework-level error paths in the same stream, and stores rendered messages as plain text (no ANSI color codes).
+
+First-iteration constraints: this sink currently has no built-in rotation or compression policy, and rundown does not backfill historical output from older runs into this file. Treat it as an append-only stream and use external tooling (for example OS log rotation or log pipeline retention controls) to manage growth.
+
+Each log line is one JSON object with stable top-level fields:
+
+- `ts` — event timestamp (ISO-8601 UTC)
+- `level` — severity (`info`, `warn`, `error`)
+- `stream` — logical output stream (`stdout` or `stderr`)
+- `kind` — output event kind label
+- `message` — plain-text rendered payload
+- `command` — CLI command name for the invocation
+- `argv` — CLI argument vector for the invocation
+- `cwd` — invocation working directory
+- `pid` — process ID
+- `version` — rundown CLI version
+- `session_id` — invocation-scoped correlation ID
+
 ## Flexible In Practice
 
 You can keep `rundown` minimal:

@@ -126,6 +126,8 @@ export interface FinalizeRuntimeArtifactsOptions {
   extra?: Record<string, unknown>;
 }
 
+export const GLOBAL_OUTPUT_LOG_RELATIVE_PATH = ".rundown/logs/output.jsonl";
+
 export function createRuntimeArtifactsContext(options: {
   cwd?: string;
   commandName: string;
@@ -175,6 +177,10 @@ export function createRuntimeArtifactsContext(options: {
 
 export function runtimeArtifactsRootDir(cwd: string = process.cwd()): string {
   return path.join(cwd, ".rundown", "runs");
+}
+
+export function globalOutputLogFilePath(cwd: string = process.cwd()): string {
+  return path.join(cwd, ".rundown", "logs", "output.jsonl");
 }
 
 export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRuntimeArtifactRun[] {
