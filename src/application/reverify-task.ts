@@ -71,6 +71,7 @@ export interface ReverifyTaskOptions {
   runId: string;
   last?: number;
   all?: boolean;
+  oldestFirst?: boolean;
   transport: PromptTransport;
   repairAttempts: number;
   noRepair: boolean;
@@ -91,6 +92,7 @@ export function createReverifyTask(
       runId,
       last,
       all,
+      oldestFirst,
       transport,
       repairAttempts,
       noRepair,
@@ -318,7 +320,12 @@ export function createReverifyTask(
       }
     };
 
-    const targetRuns = resolveTargetRuns(dependencies.artifactStore, cwd, { runId, last, all });
+    const targetRuns = resolveTargetRuns(dependencies.artifactStore, cwd, {
+      runId,
+      last,
+      all,
+      oldestFirst,
+    });
     if (targetRuns.length === 0) {
       if (hasMultiRunSelection) {
         emit({ kind: "error", message: "No completed runs found to re-verify." });
@@ -403,25 +410,26 @@ function resolveTargetRunMetadata(
 function resolveTargetRuns(
   artifactStore: ArtifactStore,
   cwd: string,
-  options: Pick<ReverifyTaskOptions, "runId" | "last" | "all">,
+  options: Pick<ReverifyTaskOptions, "runId" | "last" | "all" | "oldestFirst">,
 ): ArtifactRunMetadata[] {
-  const { runId, last, all } = options;
+  const { runId, last, all, oldestFirst } = options;
+  let selectedRuns: ArtifactRunMetadata[];
 
   if (all) {
-    return artifactStore
+    selectedRuns = artifactStore
       .listSaved(cwd)
       .filter((run) => isCompletedRun(run) && hasReverifiableTask(run));
-  }
-
-  if (last !== undefined) {
-    return artifactStore
+  } else if (last !== undefined) {
+    selectedRuns = artifactStore
       .listSaved(cwd)
       .filter((run) => isCompletedRun(run) && hasReverifiableTask(run))
       .slice(0, last);
+  } else {
+    const selectedRun = resolveTargetRunMetadata(artifactStore, cwd, runId);
+    selectedRuns = selectedRun ? [selectedRun] : [];
   }
 
-  const selectedRun = resolveTargetRunMetadata(artifactStore, cwd, runId);
-  return selectedRun ? [selectedRun] : [];
+  return oldestFirst ? [...selectedRuns].reverse() : selectedRuns;
 }
 
 function hasReverifiableTask(run: ArtifactRunMetadata): boolean {

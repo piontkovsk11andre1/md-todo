@@ -367,6 +367,7 @@ describe("CLI reverify option normalization", () => {
     expect(call.runId).toBe("run-123");
     expect(call.last).toBeUndefined();
     expect(call.all).toBe(false);
+    expect(call.oldestFirst).toBe(false);
     expect(call.transport).toBe("arg");
     expect(call.repairAttempts).toBe(2);
     expect(call.noRepair).toBe(true);
@@ -819,6 +820,21 @@ describe("CLI plan and utility command normalization", () => {
     expect(call.varsFileOption).toBe("custom-vars.json");
     expect(call.cliTemplateVarArgs).toEqual(["env=prod"]);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("parses --oldest-first flag for reverify", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--all",
+      "--oldest-first",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.all).toBe(true);
+    expect(call.oldestFirst).toBe(true);
   });
 
   it("logs a CLI error and exits with code 1 when plan is missing a markdown file path", async () => {

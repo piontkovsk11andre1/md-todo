@@ -215,6 +215,276 @@ describe("reverify-task", () => {
     expect(events.some((event) => event.kind === "success" && event.message === "Re-verified 2 tasks successfully.")).toBe(true);
   });
 
+  it("re-verifies all completed runs in oldest-first order with --oldest-first", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Task newest\n- [x] Task middle\n- [x] Task oldest\n",
+    });
+
+    const runNewest = createRunMetadata({
+      runId: "run-newest",
+      status: "completed",
+      task: {
+        text: "Task newest",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+    const runMiddle = createRunMetadata({
+      runId: "run-middle",
+      status: "completed",
+      task: {
+        text: "Task middle",
+        file: taskFile,
+        line: 2,
+        index: 1,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:59:00.000Z",
+    });
+    const runOldest = createRunMetadata({
+      runId: "run-oldest",
+      status: "reverify-completed",
+      task: {
+        text: "Task oldest",
+        file: taskFile,
+        line: 3,
+        index: 2,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:58:00.000Z",
+    });
+
+    const { dependencies, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [runNewest, runMiddle, runOldest],
+    });
+    vi.mocked(taskVerification.verify).mockResolvedValue(true);
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      all: true,
+      oldestFirst: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(3);
+    const verifiedTaskTexts = vi.mocked(taskVerification.verify).mock.calls
+      .map(([input]) => (input as { task: Task }).task.text);
+    expect(verifiedTaskTexts).toEqual(["Task oldest", "Task middle", "Task newest"]);
+  });
+
+  it("re-verifies --last N newest runs in oldest-first order with --oldest-first", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Task newest\n- [x] Task middle\n- [x] Task oldest\n- [x] Task very oldest\n",
+    });
+
+    const runNewest = createRunMetadata({
+      runId: "run-newest",
+      status: "completed",
+      task: {
+        text: "Task newest",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+    const runMiddle = createRunMetadata({
+      runId: "run-middle",
+      status: "completed",
+      task: {
+        text: "Task middle",
+        file: taskFile,
+        line: 2,
+        index: 1,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:59:00.000Z",
+    });
+    const runOldest = createRunMetadata({
+      runId: "run-oldest",
+      status: "completed",
+      task: {
+        text: "Task oldest",
+        file: taskFile,
+        line: 3,
+        index: 2,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:58:00.000Z",
+    });
+    const runVeryOldest = createRunMetadata({
+      runId: "run-very-oldest",
+      status: "completed",
+      task: {
+        text: "Task very oldest",
+        file: taskFile,
+        line: 4,
+        index: 3,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:57:00.000Z",
+    });
+
+    const { dependencies, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [runNewest, runMiddle, runOldest, runVeryOldest],
+    });
+    vi.mocked(taskVerification.verify).mockResolvedValue(true);
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      last: 3,
+      oldestFirst: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(3);
+    const verifiedTaskTexts = vi.mocked(taskVerification.verify).mock.calls
+      .map(([input]) => (input as { task: Task }).task.text);
+    expect(verifiedTaskTexts).toEqual(["Task oldest", "Task middle", "Task newest"]);
+  });
+
+  it("ignores --oldest-first when re-verifying a single explicit --run <id>", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Task newest\n- [x] Task middle\n- [x] Task oldest\n",
+    });
+
+    const runNewest = createRunMetadata({
+      runId: "run-newest",
+      status: "completed",
+      task: {
+        text: "Task newest",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T18:00:00.000Z",
+    });
+    const runMiddle = createRunMetadata({
+      runId: "run-middle",
+      status: "completed",
+      task: {
+        text: "Task middle",
+        file: taskFile,
+        line: 2,
+        index: 1,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:59:00.000Z",
+    });
+    const runOldest = createRunMetadata({
+      runId: "run-oldest",
+      status: "completed",
+      task: {
+        text: "Task oldest",
+        file: taskFile,
+        line: 3,
+        index: 2,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:58:00.000Z",
+    });
+
+    const { dependencies, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [runNewest, runMiddle, runOldest],
+    });
+    vi.mocked(taskVerification.verify).mockResolvedValue(true);
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "run-middle",
+      oldestFirst: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
+      task: expect.objectContaining({ text: "Task middle" }),
+    }));
+  });
+
+  it("re-verifies --all runs in ascending startedAt order with --oldest-first", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Run @ 18:00\n- [x] Run @ 17:59\n- [x] Run @ 17:58\n",
+    });
+
+    const runNewest = createRunMetadata({
+      runId: "run-newest",
+      status: "completed",
+      task: {
+        text: "Run @ 18:00",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T18:00:00.000Z",
+    });
+    const runMiddle = createRunMetadata({
+      runId: "run-middle",
+      status: "completed",
+      task: {
+        text: "Run @ 17:59",
+        file: taskFile,
+        line: 2,
+        index: 1,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:59:00.000Z",
+    });
+    const runOldest = createRunMetadata({
+      runId: "run-oldest",
+      status: "completed",
+      task: {
+        text: "Run @ 17:58",
+        file: taskFile,
+        line: 3,
+        index: 2,
+        source: "roadmap.md",
+      },
+      startedAt: "2026-03-19T17:58:00.000Z",
+    });
+
+    const { dependencies, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [runNewest, runMiddle, runOldest],
+    });
+    vi.mocked(taskVerification.verify).mockResolvedValue(true);
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      all: true,
+      oldestFirst: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledTimes(3);
+    const verifiedTaskTexts = vi.mocked(taskVerification.verify).mock.calls
+      .map(([input]) => (input as { task: Task }).task.text);
+    expect(verifiedTaskTexts).toEqual(["Run @ 17:58", "Run @ 17:59", "Run @ 18:00"]);
+  });
+
   it("stops multi-run reverify on first verification failure", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "roadmap.md");

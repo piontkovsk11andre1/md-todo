@@ -50,8 +50,9 @@ Options:
 | Option | Description |
 |---|---|
 | `--run <id|latest>` | Choose the artifact run to inspect for the completed task to re-verify. Default: `latest`. |
-| `--last <n>` | Re-verify the last `n` completed runs (newest first). |
-| `--all` | Re-verify all completed runs. |
+| `--last <n>` | Re-verify the last `n` completed runs. Default processing order is newest first. |
+| `--all` | Re-verify all completed runs. Default processing order is newest first. |
+| `--oldest-first` | Process selected runs in oldest-first order (applies to `--all` and `--last <n>`). |
 | `--repair-attempts <n>` | Retry repair up to `n` times when verification fails. |
 | `--no-repair` | Disable repair attempts and fail immediately on verification failure. |
 | `--transport <file|arg>` | Prompt transport for verify/repair worker invocations. |
@@ -68,6 +69,7 @@ Examples:
 rundown reverify -- opencode run
 rundown reverify --all -- opencode run
 rundown reverify --last 3 -- opencode run
+rundown reverify --last 3 --oldest-first -- opencode run
 rundown reverify --run latest -- opencode run
 rundown reverify --run run-20260319T222645632Z-04e84d73 --repair-attempts 2 -- opencode run
 rundown reverify --run latest --no-repair --worker opencode run

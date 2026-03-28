@@ -247,6 +247,7 @@ program
   .option("--run <id|latest>", "Choose artifact run id or 'latest'", "latest")
   .option("--last <n>", "Re-verify the last N completed runs")
   .option("--all", "Re-verify all completed runs", false)
+  .option("--oldest-first", "Process selected runs in oldest-first order", false)
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
   .option("--no-repair", "Disable repair even when repair attempts are set")
@@ -260,6 +261,7 @@ program
     const transport = parsePromptTransport(opts.transport as string | undefined);
     const last = parseLastCount(opts.last as string | undefined);
     const all = Boolean(opts.all as boolean | undefined);
+    const oldestFirst = Boolean(opts.oldestFirst as boolean | undefined);
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const noRepair = resolveNoRepairFlag(opts);
     const dryRun = opts.dryRun as boolean;
@@ -278,6 +280,7 @@ program
       runId: targetRun,
       last,
       all,
+      oldestFirst,
       transport,
       repairAttempts,
       noRepair,

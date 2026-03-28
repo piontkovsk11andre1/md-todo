@@ -480,6 +480,101 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("run-20260317T000400000Z-failed"))).toBe(false);
   });
 
+  it("reverify --all --oldest-first --dry-run lists selected runs oldest-first", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000300000Z-newest-completed",
+      status: "completed",
+      startedAt: "2026-03-17T00:03:00.000Z",
+      taskText: "task newest",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000200000Z-middle-completed",
+      status: "reverify-completed",
+      startedAt: "2026-03-17T00:02:00.000Z",
+      taskText: "task middle",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-oldest-completed",
+      status: "completed",
+      startedAt: "2026-03-17T00:01:00.000Z",
+      taskText: "task oldest",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000400000Z-failed",
+      status: "verification-failed",
+      startedAt: "2026-03-17T00:04:00.000Z",
+      taskText: "task failed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--all",
+      "--oldest-first",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("would re-verify 3 completed runs"))).toBe(true);
+    const listedRuns = result.logs
+      .filter((line) => line.includes("run-20260317T"));
+    expect(listedRuns).toHaveLength(3);
+    expect(listedRuns[0]).toContain("run-20260317T000100000Z-oldest-completed");
+    expect(listedRuns[1]).toContain("run-20260317T000200000Z-middle-completed");
+    expect(listedRuns[2]).toContain("run-20260317T000300000Z-newest-completed");
+    expect(result.logs.some((line) => line.includes("run-20260317T000400000Z-failed"))).toBe(false);
+  });
+
+  it("reverify --all --oldest-first processes runs in oldest-first order and keeps failure exit code", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(
+      path.join(workspace, "roadmap.md"),
+      "- [x] task oldest\n- [x] task middle\n- [x] task newest\n",
+      "utf-8",
+    );
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000300000Z-newest-completed",
+      status: "completed",
+      startedAt: "2026-03-17T00:03:00.000Z",
+      taskText: "task newest",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000200000Z-middle-completed",
+      status: "reverify-completed",
+      startedAt: "2026-03-17T00:02:00.000Z",
+      taskText: "task middle",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-oldest-completed",
+      status: "completed",
+      startedAt: "2026-03-17T00:01:00.000Z",
+      taskText: "task oldest",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--all",
+      "--oldest-first",
+      "--no-repair",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('task newest')){console.log('NOT_OK: newest fails');process.exit(0);}console.log('OK');process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
+    const reverifyLines = result.logs.filter((line) => line.includes("Re-verify task:"));
+    expect(reverifyLines).toHaveLength(3);
+    expect(reverifyLines[0]).toContain("task oldest");
+    expect(reverifyLines[1]).toContain("task middle");
+    expect(reverifyLines[2]).toContain("task newest");
+    expect(result.errors.some((line) => line.includes("Re-verify stopped on run-20260317T000300000Z-newest-completed after 2 successful task(s)."))).toBe(true);
+  });
+
   it("reverify --help lists run targeting and repair options", async () => {
     const workspace = makeTempWorkspace();
 
@@ -489,6 +584,7 @@ describe.sequential("CLI integration", () => {
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--run <id|latest> Choose artifact run id or 'latest'");
+    expect(compactHelpOutput).toContain("--oldest-first Process selected runs in oldest-first order");
     expect(compactHelpOutput).toContain("--repair-attempts <n> Max repair attempts on verification failure");
     expect(compactHelpOutput).toContain("--no-repair Disable repair even when repair attempts are set");
   });
