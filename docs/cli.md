@@ -356,6 +356,8 @@ If both are provided, `--worker` takes precedence.
 - `--repair-attempts <n>` — retry repair up to `n` times
 - `--no-repair` — disable repair explicitly
 
+When verification still fails after all configured attempts (including immediate failure with `--no-repair`), rundown prints the most recent validation reason as an error message (`Last validation error: ...`) before exiting with code `2`.
+
 ### Execution mode
 
 - `--mode wait` — start the worker and wait

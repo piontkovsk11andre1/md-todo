@@ -1229,11 +1229,12 @@ describe.sequential("CLI integration", () => {
       "--",
       "node",
       "-e",
-      "process.exit(0)",
+      "console.log('NOT_OK: verify output missing required section');process.exit(0)",
     ], workspace);
 
     expect(result.code).toBe(2);
     expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Last validation error: verify output missing required section"))).toBe(true);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
   });
 

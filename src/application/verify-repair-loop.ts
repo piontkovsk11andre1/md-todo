@@ -162,6 +162,7 @@ export async function runVerifyRepairLoop(
   if (!input.allowRepair) {
     emitRepairOutcome(false, 0);
     emitVerificationEfficiency();
+    emit({ kind: "error", message: "Last validation error: " + (initialFailureReason ?? "Verification failed (no details).") });
     return false;
   }
 
@@ -214,6 +215,8 @@ export async function runVerifyRepairLoop(
 
   emitRepairOutcome(false, attempts);
   emitVerificationEfficiency();
+  const lastReason = cumulativeFailureReasons.at(-1) ?? "Verification failed (no details).";
+  emit({ kind: "error", message: "Last validation error: " + lastReason });
   return false;
 }
 

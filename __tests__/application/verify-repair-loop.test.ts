@@ -121,6 +121,148 @@ describe("verify-repair-loop trace metrics", () => {
   });
 });
 
+describe("verify-repair-loop output", () => {
+  it("does not emit a failure-reason error when verification passes", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => true),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
+      },
+      verificationSidecar: {
+        filePath: vi.fn(() => ""),
+        read: vi.fn(() => "should not be emitted"),
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 2,
+      allowRepair: false,
+      templateVars: {},
+      artifactContext: { runId: "run-5" },
+      trace: false,
+    });
+
+    expect(result).toBe(true);
+    expect(output.emit).not.toHaveBeenCalledWith(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("Last validation error:"),
+    }));
+  });
+
+  it("emits the last failure reason when verification fails without repair", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => false),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
+      },
+      verificationSidecar: {
+        filePath: vi.fn(() => ""),
+        read: vi.fn(() => "schema mismatch on metadata.version"),
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 2,
+      allowRepair: false,
+      templateVars: {},
+      artifactContext: { runId: "run-3" },
+      trace: false,
+    });
+
+    expect(result).toBe(false);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Last validation error: schema mismatch on metadata.version",
+    });
+  });
+
+  it("emits the last failure reason when all repair attempts are exhausted", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const sidecarRead = vi.fn()
+      .mockReturnValueOnce("missing integration test")
+      .mockReturnValueOnce("missing integration test")
+      .mockReturnValueOnce("assertion failed in attempt 1")
+      .mockReturnValueOnce("type mismatch in payload.id");
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => false),
+      },
+      taskRepair: {
+        repair: vi.fn()
+          .mockResolvedValueOnce({ valid: false, attempts: 1 })
+          .mockResolvedValueOnce({ valid: false, attempts: 1 }),
+      },
+      verificationSidecar: {
+        filePath: vi.fn(() => ""),
+        read: sidecarRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 2,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-4" },
+      trace: false,
+    });
+
+    expect(result).toBe(false);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Last validation error: type mismatch in payload.id",
+    });
+  });
+});
+
 function createTask(): Task {
   return {
     text: "Ship release",
