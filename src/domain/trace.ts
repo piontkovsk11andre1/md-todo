@@ -24,7 +24,7 @@ export type TraceEventType =
   | "task.failed"
   | "run.completed";
 
-export type TracePhase = "execute" | "verify" | "repair" | "plan" | "discuss";
+export type TracePhase = "execute" | "verify" | "repair" | "plan" | "discuss" | "rundown-delegate";
 
 export type TraceRunStatus =
   | "running"

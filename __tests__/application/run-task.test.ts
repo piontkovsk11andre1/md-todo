@@ -1456,6 +1456,195 @@ describe("run-task prompt and mode behavior", () => {
     });
   });
 
+  it("prints rundown task text when prompt output is requested", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Selected task is rundown delegate; no worker prompt is rendered.",
+    });
+    expect(events).toContainEqual({
+      kind: "text",
+      text: "rundown: Child.md --verify",
+    });
+  });
+
+  it("reports dry-run details for rundown tasks", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      dryRun: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — would execute rundown task: rundown run Child.md --verify"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("--repair-attempts 0"))).toBe(true);
+  });
+
+  it("reports dry-run delegated command for rundown tasks including forwarded parent flags", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      dryRun: true,
+      transport: "arg",
+      workerCommand: ["opencode", "run"],
+      keepArtifacts: true,
+      hideAgentOutput: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message.includes(
+        "Dry run — would execute rundown task: rundown run Child.md --worker opencode run --transport arg --keep-artifacts --hide-agent-output",
+      ))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message.includes("--no-verify --repair-attempts 0"))).toBe(true);
+  });
+
+  it("reports dry-run delegated command for rundown tasks without forwarding repair attempts when parent disables repair", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      dryRun: true,
+      noRepair: true,
+      repairAttempts: 3,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    const dryRunEvent = events.find((event) =>
+      event.kind === "info"
+      && event.message.startsWith("Dry run — would execute rundown task: rundown run "));
+    expect(dryRunEvent).toBeDefined();
+    expect(dryRunEvent?.kind).toBe("info");
+    if (dryRunEvent?.kind === "info") {
+      expect(dryRunEvent.message).toContain("--no-repair");
+      expect(dryRunEvent.message).not.toContain("--repair-attempts");
+    }
+  });
+
+  it("reports dry-run delegated command for rundown tasks and respects inline flag overrides", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --worker child --transport=file --keep-artifacts --hide-agent-output");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --worker child --transport=file --keep-artifacts --hide-agent-output\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      dryRun: true,
+      transport: "arg",
+      workerCommand: ["opencode", "run"],
+      keepArtifacts: true,
+      hideAgentOutput: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message.includes(
+        "Dry run — would execute rundown task: rundown run Child.md --worker child --transport=file --keep-artifacts --hide-agent-output",
+      ))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message.includes("--no-verify --repair-attempts 0"))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message.includes("--worker opencode run"))).toBe(false);
+  });
+
+  it("reports dry-run delegated command for rundown tasks with legacy --retries normalized", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --no-repair --retries 0");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --no-repair --retries 0\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      dryRun: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    const dryRunEvent = events.find((event) =>
+      event.kind === "info"
+      && event.message.startsWith("Dry run — would execute rundown task: rundown run "));
+    expect(dryRunEvent).toBeDefined();
+    expect(dryRunEvent?.kind).toBe("info");
+    if (dryRunEvent?.kind === "info") {
+      expect(dryRunEvent.message).toContain("--no-repair");
+      expect(dryRunEvent.message).toContain("--repair-attempts 0");
+      expect(dryRunEvent.message).toContain("--no-verify");
+      expect(dryRunEvent.message).not.toContain("--retries");
+    }
+  });
+
   it("keeps tasks unchecked in detached mode and preserves runtime artifacts", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -1513,6 +1702,43 @@ describe("run-task prompt and mode behavior", () => {
       }),
     }));
     expect(fileSystem.readText(taskFile)).toBe("- [x] Build release\n");
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Only verify mode — skipping task execution.",
+    });
+  });
+
+  it("runs only-verify mode for rundown tasks without delegating execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      mode: "tui",
+      onlyVerify: true,
+      verify: false,
+      workerCommand: ["opencode"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).toHaveBeenCalledWith(expect.objectContaining({
+      workerCommand: ["opencode", "run"],
+    }));
+    expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
+      command: ["opencode", "run"],
+      artifactContext: expect.objectContaining({
+        runId: "run-test",
+      }),
+    }));
+    expect(fileSystem.readText(taskFile)).toBe("- [x] rundown: Child.md --verify\n");
     expect(events).toContainEqual({
       kind: "info",
       message: "Only verify mode — skipping task execution.",
@@ -1703,6 +1929,534 @@ describe("run-task prompt and mode behavior", () => {
     expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
     expect(events).toContainEqual({ kind: "text", text: "inline out" });
     expect(events).toContainEqual({ kind: "stderr", text: "inline err" });
+  });
+
+  it("executes rundown tasks via delegate executor and checks the task", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: false,
+      workerCommand: ["opencode", "run"],
+      transport: "arg",
+      keepArtifacts: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).toHaveBeenCalledWith(
+      ["Child.md", "--verify"],
+      path.dirname(path.resolve(taskFile)),
+      expect.objectContaining({
+        artifactContext: expect.anything(),
+        keepArtifacts: true,
+        parentWorkerCommand: ["opencode", "run"],
+        parentTransport: "arg",
+        parentKeepArtifacts: true,
+        parentHideAgentOutput: false,
+        parentVerify: false,
+        parentNoRepair: false,
+        parentRepairAttempts: 0,
+      }),
+    );
+    expect(fileSystem.readText(taskFile)).toBe("- [x] rundown: Child.md --verify\n");
+    expect(events).toContainEqual({ kind: "text", text: "delegated out" });
+    expect(events).toContainEqual({ kind: "stderr", text: "delegated err" });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Delegating to rundown: rundown run Child.md --verify",
+    });
+  });
+
+  it("emits rundown-delegate phase trace events for rundown task execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.started",
+      payload: expect.objectContaining({
+        phase: "rundown-delegate",
+        sequence: 1,
+        command: ["rundown", "run", "Child.md", "--verify"],
+      }),
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.completed",
+      payload: expect.objectContaining({
+        phase: "rundown-delegate",
+        sequence: 1,
+        exit_code: 0,
+        stdout_bytes: Buffer.byteLength("delegated out", "utf8"),
+        stderr_bytes: Buffer.byteLength("delegated err", "utf8"),
+        output_captured: true,
+      }),
+    }));
+  });
+
+  it("normalizes legacy --retries before executing rundown delegate tasks", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --no-repair --retries 0");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --no-repair --retries 0\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).toHaveBeenCalledWith(
+      ["Child.md", "--no-repair", "--repair-attempts", "0"],
+      path.dirname(path.resolve(taskFile)),
+      expect.anything(),
+    );
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === "Delegating to rundown: rundown run Child.md --no-repair --repair-attempts 0")).toBe(true);
+  });
+
+  it("fails with execution-failed when rundown delegation exits non-zero", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 11,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: Child.md --verify\n");
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "execution-failed", preserve: false }),
+    );
+    expect(events).not.toContainEqual({ kind: "text", text: "delegated out" });
+    expect(events).not.toContainEqual({ kind: "stderr", text: "delegated err" });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Delegating to rundown: rundown run Child.md --verify",
+    });
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Rundown task exited with code 11"))).toBe(true);
+  });
+
+  it("fails early when rundown target resolves to the same source file", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: tasks.md --no-verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: tasks.md --no-verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: tasks.md --no-verify\n");
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Rundown task target resolves to the current source file; aborting to avoid infinite recursion.")).toBe(true);
+  });
+
+  it("fails early when rundown target file is missing", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: Missing.md --no-verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Missing.md --no-verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: Missing.md --no-verify\n");
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message.includes("Rundown task target file not found:"))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message.includes("Update the path or create the file before running again."))).toBe(true);
+  });
+
+  it("fails early when rundown task does not provide a target file operand", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown: --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: --verify\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: --verify\n");
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Rundown task requires a target file operand before any flags (example: rundown: Child.md --verify)."
+    )).toBe(true);
+  });
+
+  it("fails early when rundown task args are empty", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createRundownTask(taskFile, "rundown:");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown:\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown:\n");
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Rundown task requires a target file operand before any flags (example: rundown: Child.md --verify)."
+    )).toBe(true);
+  });
+
+  it("runs optional verification after successful rundown delegation and checks the task", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+    dependencies.taskVerification.verify = vi.fn(async () => true);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledTimes(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] rundown: Child.md --verify\n");
+    expect(events.some((event) => event.kind === "info" && event.message === "Running verification...")).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Task checked: rundown: Child.md --verify")).toBe(true);
+  });
+
+  it("passes the full rundown-prefixed task text into verification templates", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "",
+    }));
+    dependencies.taskVerification.verify = vi.fn(async () => true);
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "VERIFY {{task}}";
+      }
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
+      template: "VERIFY {{task}}",
+      task: expect.objectContaining({
+        text: "rundown: Child.md --verify",
+      }),
+    }));
+  });
+
+  it("runs commit and on-complete hook after successful rundown verification", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+    dependencies.taskVerification.verify = vi.fn(async () => true);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      commitAfterComplete: true,
+      onCompleteCommand: "node scripts/after.js",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] rundown: Child.md --verify\n");
+    expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) =>
+      JSON.stringify(args) === JSON.stringify(["commit", "-m", "rundown: complete \"rundown: Child.md --verify\" in tasks.md"])
+    )).toBe(true);
+    expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
+      command: "node scripts/after.js",
+    }));
+    expect(events.some((event) => event.kind === "success" && event.message === "Task checked: rundown: Child.md --verify")).toBe(true);
+  });
+
+  it("fails with verification-failed when rundown verification fails", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      hideAgentOutput: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(2);
+    expect(vi.mocked(dependencies.workerExecutor.executeRundownTask)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dependencies.taskVerification.verify)).toHaveBeenCalledTimes(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: Child.md --verify\n");
+    expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: "verification-failed", preserve: false }),
+    );
+    expect(events.some((event) => event.kind === "error" && event.message === "Verification failed. Task not checked.")).toBe(true);
+  });
+
+  it("runs on-fail hook on rundown execution failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "hook err",
+      })),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 23,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      onFailCommand: "node scripts/handle-fail.js",
+      onCompleteCommand: "node scripts/after.js",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: Child.md --verify\n");
+    expect(processRunner.run).toHaveBeenCalledTimes(1);
+    expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
+      command: "node scripts/handle-fail.js",
+    }));
+    expect(events.some((event) => event.kind === "text" && event.text === "hook out")).toBe(true);
+    expect(events.some((event) => event.kind === "stderr" && event.text === "hook err")).toBe(true);
+  });
+
+  it("runs on-fail hook and skips commit/on-complete on rundown verification failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const task = createRundownTask(taskFile, "rundown: Child.md --verify");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] rundown: Child.md --verify\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    const processRunner: ProcessRunner = {
+      run: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hook out",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated out",
+      stderr: "delegated err",
+    }));
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      commitAfterComplete: true,
+      onCompleteCommand: "node scripts/after.js",
+      onFailCommand: "node scripts/handle-fail.js",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(2);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] rundown: Child.md --verify\n");
+    expect(processRunner.run).toHaveBeenCalledTimes(1);
+    expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
+      command: "node scripts/handle-fail.js",
+    }));
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(false);
   });
 
   it("suppresses inline CLI stdout and stderr when hideAgentOutput is enabled", async () => {
@@ -2427,6 +3181,7 @@ describe("run-task --all mode", () => {
               offsetEnd: t.text.length,
               file: taskFile,
               isInlineCli: true,
+              isRundownTask: false,
               cliCommand: t.cmd,
               depth: 0,
               children: [],
@@ -2441,6 +3196,7 @@ describe("run-task --all mode", () => {
       workerExecutor: {
         runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
         executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       },
       taskVerification: { verify: vi.fn(async () => true) },
       taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
@@ -2571,6 +3327,7 @@ describe("run-task --all mode", () => {
               offsetEnd: t.text.length,
               file: taskFile,
               isInlineCli: true,
+              isRundownTask: false,
               cliCommand: t.cmd,
               depth: 0,
               children: [],
@@ -2585,6 +3342,7 @@ describe("run-task --all mode", () => {
       workerExecutor: {
         runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
         executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       },
       taskVerification: { verify: vi.fn(async () => true) },
       taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
@@ -2630,6 +3388,166 @@ describe("run-task --all mode", () => {
     expect(events.some((e) => e.kind === "success" && e.message.includes("All tasks completed (3 total)"))).toBe(true);
   });
 
+  it("processes rundown tasks sequentially with inline and worker tasks in --all mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const childFile = path.resolve(cwd, "Child.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n- [ ] rundown: Child.md --no-verify\n- [ ] cli: echo done\n",
+      [childFile]: "- [ ] child\n",
+    });
+    const gitClient = createGitClientMock();
+    let selectCallCount = 0;
+    const callOrder: string[] = [];
+
+    const tasks: Task[] = [
+      {
+        text: "Build release",
+        checked: false,
+        index: 0,
+        line: 1,
+        column: 1,
+        offsetStart: 0,
+        offsetEnd: "Build release".length,
+        file: taskFile,
+        isInlineCli: false,
+        isRundownTask: false,
+        depth: 0,
+        children: [],
+        subItems: [],
+      },
+      {
+        text: "rundown: Child.md --no-verify",
+        checked: false,
+        index: 1,
+        line: 2,
+        column: 1,
+        offsetStart: 0,
+        offsetEnd: "rundown: Child.md --no-verify".length,
+        file: taskFile,
+        isInlineCli: false,
+        isRundownTask: true,
+        rundownArgs: "Child.md --no-verify",
+        depth: 0,
+        children: [],
+        subItems: [],
+      },
+      {
+        text: "cli: echo done",
+        checked: false,
+        index: 2,
+        line: 3,
+        column: 1,
+        offsetStart: 0,
+        offsetEnd: "cli: echo done".length,
+        file: taskFile,
+        isInlineCli: true,
+        isRundownTask: false,
+        cliCommand: "echo done",
+        depth: 0,
+        children: [],
+        subItems: [],
+      },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const task = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task,
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async (options: { command: string[] }) => {
+          callOrder.push("worker:" + options.command.join(" "));
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+        executeInlineCli: vi.fn(async (command: string) => {
+          callOrder.push("cli:" + command);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+        executeRundownTask: vi.fn(async (args: string[]) => {
+          callOrder.push("rundown:" + args.join(" "));
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      fileLock: createNoopFileLock(),
+      templateLoader: { load: vi.fn(() => null) },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test",
+          rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
+          cwd,
+          keepArtifacts: false,
+          commandName: "run",
+        })),
+        beginPhase: vi.fn(),
+        completePhase: vi.fn(),
+        finalize: vi.fn(),
+        displayPath: vi.fn(() => ".rundown/runs/run-test"),
+        rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+        listSaved: vi.fn(() => []),
+        listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null),
+        find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0),
+        removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
+      output: { emit: vi.fn() },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(4);
+    expect(callOrder).toEqual([
+      "worker:opencode run",
+      "rundown:Child.md --no-verify",
+      "cli:echo done",
+    ]);
+    expect(fileSystem.readText(taskFile)).toBe(
+      "- [x] Build release\n- [x] rundown: Child.md --no-verify\n- [x] cli: echo done\n",
+    );
+  });
+
   it("stops on first execution failure in --all mode", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -2663,6 +3581,7 @@ describe("run-task --all mode", () => {
               offsetEnd: t.text.length,
               file: taskFile,
               isInlineCli: true,
+              isRundownTask: false,
               cliCommand: t.cmd,
               depth: 0,
               children: [],
@@ -2680,6 +3599,7 @@ describe("run-task --all mode", () => {
           if (_cmd === "fail") return { exitCode: 1, stdout: "", stderr: "error" };
           return { exitCode: 0, stdout: "", stderr: "" };
         }),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       },
       taskVerification: { verify: vi.fn(async () => true) },
       taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
@@ -3060,6 +3980,7 @@ function createDependencies(options: {
     workerExecutor: {
       runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
     },
     taskVerification: {
       verify: vi.fn(async () => true),
@@ -3153,7 +4074,27 @@ function createInlineTask(file: string, text: string): Task {
     offsetEnd: text.length,
     file,
     isInlineCli: true,
+    isRundownTask: false,
     cliCommand: text.replace(/^cli:\s*/i, ""),
+    depth: 0,
+    children: [],
+    subItems: [],
+  };
+}
+
+function createRundownTask(file: string, text: string): Task {
+  return {
+    text,
+    checked: false,
+    index: 0,
+    line: 1,
+    column: 1,
+    offsetStart: 0,
+    offsetEnd: text.length,
+    file,
+    isInlineCli: false,
+    isRundownTask: true,
+    rundownArgs: text.replace(/^rundown:\s*/i, ""),
     depth: 0,
     children: [],
     subItems: [],
@@ -3171,6 +4112,7 @@ function createTask(file: string, text: string): Task {
     offsetEnd: text.length,
     file,
     isInlineCli: false,
+    isRundownTask: false,
     depth: 0,
     children: [],
     subItems: [],

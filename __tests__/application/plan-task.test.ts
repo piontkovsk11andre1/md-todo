@@ -832,6 +832,7 @@ function createDependencies(options: {
   const workerExecutor: PlanTaskDependencies["workerExecutor"] = {
     runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
     executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
   };
 
   const fileSystem: FileSystem = {

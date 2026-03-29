@@ -23,6 +23,7 @@ export type {
   WorkerRunResult,
   WorkerExecutionOptions,
   InlineCliExecutionOptions,
+  RundownTaskExecutionOptions,
   WorkerExecutorPort,
 } from "./worker-executor-port.js";
 export type { TaskVerificationOptions, TaskVerificationPort } from "./task-verification-port.js";

@@ -891,6 +891,7 @@ function createDependencies(options: {
     workerExecutor: {
       runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
     },
     workingDirectory: {
       cwd: vi.fn(() => options.cwd),
@@ -935,6 +936,7 @@ function createTask(file: string, text: string): Task {
     offsetEnd: text.length,
     file,
     isInlineCli: false,
+    isRundownTask: false,
     depth: 0,
     children: [],
     subItems: [],

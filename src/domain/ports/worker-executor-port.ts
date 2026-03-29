@@ -28,11 +28,30 @@ export interface InlineCliExecutionOptions {
   artifactExtra?: Record<string, unknown>;
 }
 
+export interface RundownTaskExecutionOptions {
+  artifactContext?: unknown;
+  keepArtifacts?: boolean;
+  artifactExtra?: Record<string, unknown>;
+  rundownCommand?: string[];
+  parentWorkerCommand?: string[];
+  parentTransport?: string;
+  parentKeepArtifacts?: boolean;
+  parentHideAgentOutput?: boolean;
+  parentVerify?: boolean;
+  parentNoRepair?: boolean;
+  parentRepairAttempts?: number;
+}
+
 export interface WorkerExecutorPort {
   runWorker(options: WorkerExecutionOptions): Promise<WorkerRunResult>;
   executeInlineCli(
     command: string,
     cwd: string,
     options?: InlineCliExecutionOptions,
+  ): Promise<WorkerRunResult>;
+  executeRundownTask(
+    args: string[],
+    cwd: string,
+    options?: RundownTaskExecutionOptions,
   ): Promise<WorkerRunResult>;
 }

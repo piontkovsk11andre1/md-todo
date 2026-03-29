@@ -594,6 +594,47 @@ Example:
 - [ ] cli: npm test
 ```
 
+## Inline rundown delegation tasks
+
+If the selected task begins with `rundown:`, `rundown` delegates execution to a nested `rundown run` call instead of sending the task to the external worker.
+
+Syntax:
+
+```md
+- [ ] rundown: Test.md --optional arg-val
+```
+
+Equivalent delegated command shape:
+
+```bash
+rundown run <file> [args...]
+```
+
+Like `cli:` tasks, delegated `rundown:` tasks run from the directory containing the Markdown file.
+
+Examples:
+
+```md
+- [ ] rundown: docs/child.md
+- [ ] rundown: docs/child.md --no-verify --repair-attempts 0
+- [ ] rundown: docs/child.md --worker opencode run --transport arg
+```
+
+Forwarded flags:
+
+- `--worker <command...>`
+- `--transport <file|arg>`
+- `--keep-artifacts`
+- `--hide-agent-output`
+- verification mode: `--verify` or `--no-verify`
+- repair mode: `--no-repair` or `--repair-attempts <n>`
+
+Forwarding behavior:
+
+- Parent `rundown run` flags are forwarded by default when not already provided inline.
+- Inline `rundown:` args take precedence over forwarded parent flags.
+- Legacy inline `--retries <n>` is accepted as an alias for `--repair-attempts <n>`.
+
 ## Shell guidance
 
 ### PowerShell 5.1

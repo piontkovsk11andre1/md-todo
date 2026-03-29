@@ -2,7 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 
-export type RuntimePhase = "execute" | "verify" | "repair" | "plan" | "discuss" | "inline-cli" | "worker";
+export type RuntimePhase =
+  | "execute"
+  | "verify"
+  | "repair"
+  | "plan"
+  | "discuss"
+  | "inline-cli"
+  | "rundown-delegate"
+  | "worker";
 
 export type RuntimeArtifactStatus =
   | "running"

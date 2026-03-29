@@ -13,7 +13,15 @@ export type ArtifactStoreStatus =
   | "discuss-completed"
   | "discuss-cancelled";
 
-export type ArtifactStorePhase = "execute" | "verify" | "repair" | "plan" | "discuss" | "inline-cli" | "worker";
+export type ArtifactStorePhase =
+  | "execute"
+  | "verify"
+  | "repair"
+  | "plan"
+  | "discuss"
+  | "inline-cli"
+  | "rundown-delegate"
+  | "worker";
 
 export interface ArtifactTaskMetadata {
   text: string;

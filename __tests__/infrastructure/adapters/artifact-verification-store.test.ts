@@ -114,7 +114,10 @@ describe("createArtifactVerificationStore", () => {
       offsetEnd: 14,
       checked: false,
       isInlineCli: false,
+      isRundownTask: false,
       depth: 0,
+      children: [],
+      subItems: [],
     };
     fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
 
@@ -170,7 +173,10 @@ describe("createArtifactVerificationStore", () => {
       offsetEnd: 14,
       checked: false,
       isInlineCli: false,
+      isRundownTask: false,
       depth: 0,
+      children: [],
+      subItems: [],
     };
     fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
 

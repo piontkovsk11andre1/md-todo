@@ -9,6 +9,7 @@ import {
 import type { Task } from "../../src/domain/parser.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
+  const { children, subItems, ...rest } = overrides;
   return {
     text: "Parent task",
     checked: false,
@@ -19,8 +20,11 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     offsetEnd: 0,
     file: "test.md",
     isInlineCli: false,
+    isRundownTask: false,
     depth: 0,
-    ...overrides,
+    ...rest,
+    children: children ?? [],
+    subItems: subItems ?? [],
   };
 }
 

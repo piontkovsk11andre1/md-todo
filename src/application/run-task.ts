@@ -1061,6 +1061,7 @@ export function createRunTask(
       if (requiresWorkerCommand({
         workerCommand,
         isInlineCli: task.isInlineCli,
+        isRundownTask: task.isRundownTask,
         shouldVerify,
         onlyVerify,
       })) {
@@ -1068,7 +1069,7 @@ export function createRunTask(
         return 1;
       }
 
-      if (!onlyVerify && !task.isInlineCli) {
+      if (!onlyVerify && !task.isInlineCli && !task.isRundownTask) {
         if (printPrompt) {
           emit({ kind: "text", text: prompt });
           return 0;
@@ -1089,6 +1090,38 @@ export function createRunTask(
 
       if (!onlyVerify && task.isInlineCli && dryRun) {
         emit({ kind: "info", message: "Dry run — would execute inline CLI: " + task.cliCommand! });
+        return 0;
+      }
+
+      if (!onlyVerify && task.isRundownTask) {
+        const rundownTaskArgs = parseRundownTaskArgs(task.rundownArgs);
+        if (!resolveDelegatedRundownTargetArg(rundownTaskArgs)) {
+          emit({
+            kind: "error",
+            message: "Rundown task requires a target file operand before any flags (example: rundown: Child.md --verify).",
+          });
+          return 1;
+        }
+      }
+
+      if (!onlyVerify && task.isRundownTask && printPrompt) {
+        emit({ kind: "info", message: "Selected task is rundown delegate; no worker prompt is rendered." });
+        emit({ kind: "text", text: "rundown: " + (task.rundownArgs ?? "") });
+        return 0;
+      }
+
+      if (!onlyVerify && task.isRundownTask && dryRun) {
+        const args = parseRundownTaskArgs(task.rundownArgs);
+        const delegatedArgs = buildDelegatedRundownArgs(args, {
+          parentWorkerCommand: workerCommand,
+          parentTransport: transport,
+          parentKeepArtifacts: keepArtifacts,
+          parentHideAgentOutput: hideAgentOutput,
+          parentVerify: verify,
+          parentNoRepair: noRepair,
+          parentRepairAttempts: repairAttempts,
+        });
+        emit({ kind: "info", message: "Dry run — would execute rundown task: rundown run " + delegatedArgs.join(" ") });
         return 0;
       }
 
@@ -1224,6 +1257,135 @@ export function createRunTask(
             emit({ kind: "error", message: "Verification failed. Task not checked." });
             await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
             return await failRun(2, "verification-failed", "Verification failed after inline CLI execution.", 2);
+          }
+        }
+
+        checkTaskUsingFileSystem(task, dependencies.fileSystem);
+        emit({ kind: "success", message: "Task checked: " + task.text });
+        const taskCompletionExtra = await afterTaskComplete(
+          dependencies,
+          task,
+          source,
+          commitAfterComplete,
+          commitMessageTemplate,
+          onCompleteCommand,
+          hideHookOutput,
+        );
+        await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
+        tasksCompleted++;
+        if (!runAll) return 0;
+        resetArtifacts();
+        continue;
+      }
+
+      if (task.isRundownTask) {
+        const rundownTaskCwd = dependencies.pathOperations.dirname(
+          dependencies.pathOperations.resolve(task.file),
+        );
+        const rundownTaskArgs = parseRundownTaskArgs(task.rundownArgs);
+        const delegatedTargetArg = resolveDelegatedRundownTargetArg(rundownTaskArgs);
+        const delegatedTarget = delegatedTargetArg
+          ? dependencies.pathOperations.resolve(rundownTaskCwd, delegatedTargetArg)
+          : null;
+        const sourcePath = dependencies.pathOperations.resolve(task.file);
+        if (delegatedTarget && isSameFilePath(delegatedTarget, sourcePath)) {
+          emit({
+            kind: "error",
+            message: "Rundown task target resolves to the current source file; aborting to avoid infinite recursion.",
+          });
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+          return await failRun(
+            1,
+            "execution-failed",
+            "Rundown task target resolves to the current source file.",
+            1,
+          );
+        }
+        if (
+          delegatedTarget
+          && delegatedTargetArg
+          && !delegatedTargetExists(
+            delegatedTarget,
+            delegatedTargetArg,
+            task.file,
+            dependencies.fileSystem,
+            dependencies.pathOperations,
+          )
+        ) {
+          emit({
+            kind: "error",
+            message: "Rundown task target file not found: " + delegatedTarget
+              + ". Update the path or create the file before running again.",
+          });
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+          return await failRun(
+            1,
+            "execution-failed",
+            "Rundown task target file not found.",
+            1,
+          );
+        }
+        emit({
+          kind: "info",
+          message: "Delegating to rundown: rundown run " + rundownTaskArgs.join(" "),
+        });
+        const rundownTaskPhaseTrace = beginPhaseTrace("rundown-delegate", ["rundown", "run", ...rundownTaskArgs]);
+        const rundownTaskResult = await dependencies.workerExecutor.executeRundownTask(rundownTaskArgs, rundownTaskCwd, {
+          artifactContext,
+          keepArtifacts,
+          artifactExtra: { taskType: "rundown-task" },
+          parentWorkerCommand: workerCommand,
+          parentTransport: transport,
+          parentKeepArtifacts: keepArtifacts,
+          parentHideAgentOutput: hideAgentOutput,
+          parentVerify: verify,
+          parentNoRepair: noRepair,
+          parentRepairAttempts: repairAttempts,
+        });
+        completePhaseTrace(
+          rundownTaskPhaseTrace,
+          rundownTaskResult.exitCode,
+          rundownTaskResult.stdout,
+          rundownTaskResult.stderr,
+          true,
+        );
+
+        emitExecutionWorkerOutput(rundownTaskResult.stdout, rundownTaskResult.stderr);
+
+        if (rundownTaskResult.exitCode !== 0) {
+          emit({ kind: "error", message: "Rundown task exited with code " + rundownTaskResult.exitCode });
+          await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+          return await failRun(
+            1,
+            "execution-failed",
+            "Rundown task exited with a non-zero code.",
+            rundownTaskResult.exitCode,
+          );
+        }
+
+        if (shouldVerify) {
+          const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
+          emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
+          const valid = await runVerification(
+            dependencies,
+            traceWriter,
+            task,
+            fileSource,
+            contextBefore,
+            templates,
+            automationCommand,
+            transport,
+            maxRepairAttempts,
+            allowRepair,
+            templateVarsWithTrace,
+            artifactContext,
+            trace,
+          );
+          completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
+          if (!valid) {
+            emit({ kind: "error", message: "Verification failed. Task not checked." });
+            await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+            return await failRun(2, "verification-failed", "Verification failed after rundown task execution.", 2);
           }
         }
 
@@ -1812,6 +1974,151 @@ function countTraceLines(text: string): number {
   }
 
   return text.split(/\r?\n/).length;
+}
+
+function parseRundownTaskArgs(rundownArgs: string | undefined): string[] {
+  if (!rundownArgs) {
+    return [];
+  }
+
+  return normalizeLegacyRetryArgs(rundownArgs
+    .trim()
+    .split(/\s+/)
+    .filter((value) => value.length > 0));
+}
+
+function buildDelegatedRundownArgs(
+  args: string[],
+  options: {
+    parentWorkerCommand: string[];
+    parentTransport: string;
+    parentKeepArtifacts: boolean;
+    parentHideAgentOutput: boolean;
+    parentVerify: boolean;
+    parentNoRepair: boolean;
+    parentRepairAttempts: number;
+  },
+): string[] {
+  const delegated: string[] = [...args];
+
+  if (!hasLongOption(delegated, "--worker") && options.parentWorkerCommand.length > 0) {
+    delegated.push("--worker", ...options.parentWorkerCommand);
+  }
+
+  if (!hasLongOption(delegated, "--transport") && options.parentTransport.length > 0) {
+    delegated.push("--transport", options.parentTransport);
+  }
+
+  if (!hasLongOption(delegated, "--keep-artifacts") && options.parentKeepArtifacts) {
+    delegated.push("--keep-artifacts");
+  }
+
+  if (!hasLongOption(delegated, "--hide-agent-output") && options.parentHideAgentOutput) {
+    delegated.push("--hide-agent-output");
+  }
+
+  if (!hasLongOptionVariant(delegated, ["--verify", "--no-verify"])) {
+    delegated.push(options.parentVerify ? "--verify" : "--no-verify");
+  }
+
+  if (!hasLongOption(delegated, "--no-repair") && !hasLongOptionVariant(delegated, ["--repair-attempts", "--retries"]) && options.parentNoRepair) {
+    delegated.push("--no-repair");
+  }
+
+  if (
+    !hasLongOptionVariant(delegated, ["--repair-attempts", "--retries"])
+    && !hasLongOption(delegated, "--no-repair")
+    && !options.parentNoRepair
+  ) {
+    const normalizedAttempts = Math.max(0, Math.floor(options.parentRepairAttempts));
+    delegated.push("--repair-attempts", String(normalizedAttempts));
+  }
+
+  return delegated;
+}
+
+function resolveDelegatedRundownTargetArg(args: string[]): string | null {
+  const candidate = args[0];
+  if (!candidate || candidate.startsWith("-")) {
+    return null;
+  }
+
+  return candidate;
+}
+
+function delegatedTargetExists(
+  delegatedTarget: string,
+  delegatedTargetArg: string,
+  taskFile: string,
+  fileSystem: FileSystem,
+  pathOperations: PathOperationsPort,
+): boolean {
+  const candidates = new Set<string>([
+    delegatedTarget,
+    delegatedTarget.replace(/\\/g, "/"),
+    delegatedTarget.replace(/\//g, "\\"),
+  ]);
+
+  if (pathOperations.isAbsolute(delegatedTargetArg)) {
+    candidates.add(delegatedTargetArg);
+  } else {
+    const taskRelativeTarget = pathOperations.join(
+      pathOperations.dirname(taskFile),
+      delegatedTargetArg,
+    );
+    candidates.add(taskRelativeTarget);
+    candidates.add(taskRelativeTarget.replace(/\\/g, "/"));
+    candidates.add(taskRelativeTarget.replace(/\//g, "\\"));
+  }
+
+  for (const candidate of candidates) {
+    if (fileSystem.exists(candidate)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isSameFilePath(left: string, right: string): boolean {
+  if (process.platform === "win32") {
+    return left.toLowerCase() === right.toLowerCase();
+  }
+  return left === right;
+}
+
+function hasLongOption(args: string[], option: string): boolean {
+  return args.some((arg) => arg === option || arg.startsWith(option + "="));
+}
+
+function hasLongOptionVariant(args: string[], options: string[]): boolean {
+  return options.some((option) => hasLongOption(args, option));
+}
+
+function normalizeLegacyRetryArgs(args: string[]): string[] {
+  const normalized: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--retries") {
+      normalized.push("--repair-attempts");
+      const nextArg = args[index + 1];
+      if (typeof nextArg === "string") {
+        normalized.push(nextArg);
+        index += 1;
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--retries=")) {
+      normalized.push("--repair-attempts=" + arg.slice("--retries=".length));
+      continue;
+    }
+
+    normalized.push(arg);
+  }
+
+  return normalized;
 }
 
 function computeTaskContextMetrics(

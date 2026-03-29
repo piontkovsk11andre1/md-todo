@@ -5,6 +5,7 @@ import type {
 } from "../../domain/ports/worker-executor-port.js";
 import type { RuntimeArtifactsContext } from "../runtime-artifacts.js";
 import { executeInlineCli } from "../inline-cli.js";
+import { executeRundownTask } from "../inline-rundown.js";
 import { runWorker } from "../runner.js";
 
 export function createWorkerExecutorAdapter(): WorkerExecutorPort {
@@ -33,6 +34,21 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         artifactContext: options?.artifactContext as RuntimeArtifactsContext | undefined,
         keepArtifacts: options?.keepArtifacts,
         artifactExtra: options?.artifactExtra,
+      });
+    },
+    async executeRundownTask(args, cwd, options): Promise<WorkerRunResult> {
+      return executeRundownTask(args, cwd, {
+        artifactContext: options?.artifactContext as RuntimeArtifactsContext | undefined,
+        keepArtifacts: options?.keepArtifacts,
+        artifactExtra: options?.artifactExtra,
+        rundownCommand: options?.rundownCommand,
+        parentWorkerCommand: options?.parentWorkerCommand,
+        parentTransport: options?.parentTransport,
+        parentKeepArtifacts: options?.parentKeepArtifacts,
+        parentHideAgentOutput: options?.parentHideAgentOutput,
+        parentVerify: options?.parentVerify,
+        parentNoRepair: options?.parentNoRepair,
+        parentRepairAttempts: options?.parentRepairAttempts,
       });
     },
   };

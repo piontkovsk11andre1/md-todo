@@ -210,3 +210,28 @@ rundown plan roadmap.md --force-unlock -- opencode run
 ```
 
 `--force-unlock` and `unlock` only remove stale locks. They do not break locks held by a live process.
+
+## 15. Mixed TODO with `cli:` and `rundown:` tasks
+
+Markdown:
+
+```md
+# Release prep
+
+- [ ] cli: npm test
+- [ ] rundown: docs/release-notes.md --verify --retries 1
+- [ ] Publish release notes
+```
+
+Command:
+
+```bash
+rundown run TODO.md --worker opencode run --verify --retries 2
+```
+
+What happens:
+
+1. `rundown` executes `npm test` directly for the `cli:` task.
+2. For the `rundown:` task, it delegates to `rundown run docs/release-notes.md --verify --retries 1`.
+3. The inline `rundown:` flags override forwarded parent flags when they differ.
+4. After the delegated run succeeds, the parent run verifies/checks that task and continues.

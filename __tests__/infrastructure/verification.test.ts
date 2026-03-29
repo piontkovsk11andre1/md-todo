@@ -25,6 +25,7 @@ function makeTask(file: string): Task {
     offsetEnd: 0,
     file,
     isInlineCli: false,
+    isRundownTask: false,
     depth: 0,
     children: [],
     subItems: [],
@@ -187,6 +188,7 @@ describe("verify", () => {
       offsetEnd: 0,
       file,
       isInlineCli: false,
+      isRundownTask: false,
       depth: 1,
       children: [],
       subItems: [],
@@ -206,7 +208,7 @@ describe("verify", () => {
     });
 
     expect(runWorkerMock).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: "[{\"text\":\"Child\",\"checked\":false,\"index\":3,\"line\":4,\"column\":1,\"offsetStart\":0,\"offsetEnd\":0,\"file\":\"Tasks.md\",\"isInlineCli\":false,\"depth\":1,\"children\":[],\"subItems\":[]}]|[{\"text\":\"Note\",\"line\":5,\"depth\":1}]",
+      prompt: "[{\"text\":\"Child\",\"checked\":false,\"index\":3,\"line\":4,\"column\":1,\"offsetStart\":0,\"offsetEnd\":0,\"file\":\"Tasks.md\",\"isInlineCli\":false,\"isRundownTask\":false,\"depth\":1,\"children\":[],\"subItems\":[]}]|[{\"text\":\"Note\",\"line\":5,\"depth\":1}]",
     }));
   });
 
@@ -223,6 +225,7 @@ describe("verify", () => {
       offsetEnd: 0,
       file,
       isInlineCli: false,
+      isRundownTask: false,
       depth: 1,
       children: [],
       subItems: [],
@@ -246,7 +249,31 @@ describe("verify", () => {
     });
 
     expect(runWorkerMock).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: "[{\"text\":\"Child\",\"checked\":false,\"index\":3,\"line\":4,\"column\":1,\"offsetStart\":0,\"offsetEnd\":0,\"file\":\"Tasks.md\",\"isInlineCli\":false,\"depth\":1,\"children\":[],\"subItems\":[]}]|[{\"text\":\"Note\",\"line\":5,\"depth\":1}]",
+      prompt: "[{\"text\":\"Child\",\"checked\":false,\"index\":3,\"line\":4,\"column\":1,\"offsetStart\":0,\"offsetEnd\":0,\"file\":\"Tasks.md\",\"isInlineCli\":false,\"isRundownTask\":false,\"depth\":1,\"children\":[],\"subItems\":[]}]|[{\"text\":\"Note\",\"line\":5,\"depth\":1}]",
+    }));
+  });
+
+  it("keeps the rundown prefix in {{task}} template values", async () => {
+    const file = "Tasks.md";
+    const task = makeTask(file);
+    task.text = "rundown: Child.md --verify";
+    task.isRundownTask = true;
+    task.rundownArgs = "Child.md --verify";
+    const verificationStore = createVerificationStore();
+
+    runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "OK", stderr: "" });
+
+    await verify({
+      task,
+      source: file,
+      contextBefore: "",
+      template: "{{task}}",
+      command: ["worker"],
+      verificationStore,
+    });
+
+    expect(runWorkerMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "rundown: Child.md --verify",
     }));
   });
 });

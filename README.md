@@ -55,7 +55,7 @@ Think of `rundown` as a runtime for Markdown-defined work.
 1. A Markdown file holds the context and the tasks.
 2. `rundown` finds the next ready unchecked task deterministically.
 3. It builds a prompt from the surrounding context and your repository-local templates.
-4. It sends that work to any CLI-shaped worker or runs an inline `cli:` task directly.
+4. It sends that work to any CLI-shaped worker, runs an inline `cli:` task directly, or delegates a `rundown:` task to a nested `rundown run`.
 5. It verifies the result in a separate pass.
 6. If verification fails, it runs a repair loop.
 7. Only a verified task earns a checked box.
@@ -197,6 +197,7 @@ The selected task is rendered through `.rundown/execute.md` together with the do
 
 Normal tasks go to your worker.
 Tasks that start with `cli:` run directly.
+Tasks that start with `rundown:` delegate to a nested `rundown run <file> [args...]`.
 
 ### 3. Verify
 

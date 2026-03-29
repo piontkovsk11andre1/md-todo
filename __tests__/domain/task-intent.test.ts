@@ -34,4 +34,10 @@ describe("classifyTaskIntent", () => {
     const decision = classifyTaskIntent("Implement API schema validation and verify fixtures");
     expect(decision.intent).toBe("execute-and-verify");
   });
+
+  it("defaults to execute-and-verify for rundown delegate tasks", () => {
+    const decision = classifyTaskIntent("rundown: Test.md --optional arg-val");
+    expect(decision.intent).toBe("execute-and-verify");
+    expect(decision.reason).toBe("default");
+  });
 });
