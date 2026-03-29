@@ -56,6 +56,40 @@ The dependency direction is strict:
 
 `src/application/*` should not import `src/infrastructure/*` directly. Infrastructure dependencies must flow through injected ports from `createApp(...)`.
 
+## Config directory resolution and fallback
+
+`rundown` resolves the effective configuration directory as `.rundown/`.
+
+Resolution order:
+
+1. If `--config-dir <path>` is provided, that path is used directly (no discovery walk).
+2. Otherwise, discovery starts from the command working directory (or source-file directory for source-scoped flows).
+3. At each step, check `<current-dir>/.rundown/`; if it exists, stop immediately and use it (the first match wins).
+4. If not found, move to the parent directory and repeat.
+5. Stop when the filesystem root is reached; if no `.rundown/` was found, discovery returns `undefined`.
+
+When discovery returns `undefined`, behavior is consumer-specific:
+
+- Template consumers (`run`, `discuss`, `plan`, `reverify`) fall back to built-in templates.
+- Default vars-file lookup is treated as optional and skipped unless an explicit vars file was requested.
+- Runtime artifact and global log writers create `<cwd>/.rundown/` lazily when they need to persist files.
+- `init` does not rely on discovery; it creates `.rundown/` in the local working directory unless an explicit config directory is provided.
+- Invalid explicit `--config-dir` values are fatal and return a non-zero exit code.
+
+## Lockfile location strategy (decision)
+
+Lockfiles intentionally remain **source-relative**:
+
+- canonical lock path: `<source-dir>/.rundown/<basename>.lock`
+
+Rationale for this decision:
+
+- Lock scope is per Markdown source file, so colocating lock state with that source preserves the scope directly.
+- This avoids basename collisions that would occur in a shared `<configDir>/` lock namespace when different directories contain files with the same name.
+- It keeps stale-lock recovery predictable (`rundown unlock <source>` always maps to that source's local lock path).
+
+As a result, upward config discovery and `--config-dir` affect templates, vars, runs, and logs, but do **not** relocate per-source lockfiles.
+
 ## Sources
 
 `rundown` can scan:

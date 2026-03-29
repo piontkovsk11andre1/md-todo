@@ -1,8 +1,8 @@
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
   ArtifactStore,
+  ConfigDirResult,
   DirectoryOpenerPort,
-  WorkingDirectoryPort,
 } from "../domain/ports/index.js";
 
 export interface SavedRuntimeArtifactRun {
@@ -30,7 +30,7 @@ export interface SavedRuntimeArtifactRun {
 export interface ManageArtifactsDependencies {
   artifactStore: ArtifactStore;
   directoryOpener: DirectoryOpenerPort;
-  workingDirectory: WorkingDirectoryPort;
+  configDir: ConfigDirResult | undefined;
   output: ApplicationOutputPort;
 }
 
@@ -39,7 +39,7 @@ export interface ManageArtifactsOptions {
   json: boolean;
   failed: boolean;
   open: string;
-  cwd?: string;
+  configDir?: string;
 }
 
 export function createManageArtifacts(
@@ -52,7 +52,7 @@ export function createManageArtifacts(
     const shouldPrintJson = options.json;
     const onlyFailed = options.failed;
     const runToOpen = options.open;
-    const cwd = options.cwd ?? dependencies.workingDirectory.cwd();
+    const artifactBaseDir = options.configDir ?? dependencies.configDir?.configDir;
 
     if (shouldClean && (shouldPrintJson || runToOpen)) {
       emit({ kind: "error", message: "--clean cannot be combined with --json or --open." });
@@ -66,8 +66,8 @@ export function createManageArtifacts(
 
     if (runToOpen) {
       const run = runToOpen === "latest"
-        ? dependencies.artifactStore.latest(cwd)
-        : dependencies.artifactStore.find(runToOpen, cwd);
+        ? dependencies.artifactStore.latest(artifactBaseDir)
+        : dependencies.artifactStore.find(runToOpen, artifactBaseDir);
       if (!run) {
         emit({ kind: "error", message: "No saved runtime artifact run found for: " + runToOpen });
         return 3;
@@ -80,8 +80,8 @@ export function createManageArtifacts(
 
     if (shouldClean) {
       const removed = onlyFailed
-        ? dependencies.artifactStore.removeFailed(cwd)
-        : dependencies.artifactStore.removeSaved(cwd);
+        ? dependencies.artifactStore.removeFailed(artifactBaseDir)
+        : dependencies.artifactStore.removeSaved(artifactBaseDir);
       if (removed === 0) {
         emit({ kind: "info", message: onlyFailed ? "No failed runtime artifacts found." : "No saved runtime artifacts found." });
         return 0;
@@ -99,8 +99,8 @@ export function createManageArtifacts(
     }
 
     const runs = onlyFailed
-      ? dependencies.artifactStore.listFailed(cwd)
-      : dependencies.artifactStore.listSaved(cwd);
+      ? dependencies.artifactStore.listFailed(artifactBaseDir)
+      : dependencies.artifactStore.listSaved(artifactBaseDir);
 
     if (runs.length === 0) {
       emit({ kind: "info", message: onlyFailed ? "No failed runtime artifacts found." : "No saved runtime artifacts found." });

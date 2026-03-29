@@ -299,7 +299,7 @@ describe("verify-repair-loop output", () => {
       },
       keepArtifacts: true,
     });
-    const verificationStore = createArtifactVerificationStore(root);
+    const verificationStore = createArtifactVerificationStore(path.join(root, ".rundown"));
     const output = {
       emit: vi.fn(),
     };
@@ -364,7 +364,7 @@ describe("verify-repair-loop output", () => {
       },
       keepArtifacts: true,
     });
-    const verificationStore = createArtifactVerificationStore(root);
+    const verificationStore = createArtifactVerificationStore(path.join(root, ".rundown"));
 
     const result = await runVerifyRepairLoop({
       taskVerification: {
@@ -410,7 +410,7 @@ describe("verify-repair-loop output", () => {
     const task = createTask(path.join(root, "tasks.md"));
     fs.writeFileSync(task.file, "- [ ] Ship release\n", "utf-8");
 
-    const verificationStore = createArtifactVerificationStore(root);
+    const verificationStore = createArtifactVerificationStore(path.join(root, ".rundown"));
     const output = {
       emit: vi.fn(),
     };

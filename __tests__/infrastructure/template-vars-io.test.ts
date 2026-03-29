@@ -52,6 +52,20 @@ describe("loadTemplateVarsFile", () => {
     expect(loadTemplateVarsFile("vars.json", dir)).toEqual({ release: "stable" });
   });
 
+  it("resolves default .rundown/vars.json using the resolved config dir", () => {
+    const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-config-"));
+    tempDirs.push(configRoot);
+    const configDir = path.join(configRoot, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const varsFile = path.join(configDir, "vars.json");
+    fs.writeFileSync(varsFile, JSON.stringify({ team: "platform" }), "utf-8");
+
+    const cwd = path.join(configRoot, "nested", "repo");
+    fs.mkdirSync(cwd, { recursive: true });
+
+    expect(loadTemplateVarsFile(".rundown/vars.json", cwd, configDir)).toEqual({ team: "platform" });
+  });
+
   it("rejects malformed JSON input", () => {
     const { file } = writeTempVarsFile("{not valid json");
 

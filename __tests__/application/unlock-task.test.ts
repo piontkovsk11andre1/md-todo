@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import path from "node:path";
 import { createUnlockTask, type UnlockTaskDependencies } from "../../src/application/unlock-task.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/index.js";
+import { lockfilePathFor } from "../../src/infrastructure/file-lock.js";
 
 describe("unlock-task", () => {
   it("returns 3 when lockfile does not exist", async () => {
@@ -36,9 +37,24 @@ describe("unlock-task", () => {
     expect(vi.mocked(dependencies.fileLock.forceRelease)).toHaveBeenCalledTimes(1);
     expect(events.some((event) => event.kind === "success" && event.message.includes("Released stale source lock"))).toBe(true);
   });
+
+  it("derives lock path using shared lock path strategy", async () => {
+    const { dependencies } = createDependencies({ lockfileExists: true, activeLock: false });
+    const unlockTask = createUnlockTask(dependencies);
+
+    const code = await unlockTask({ source: path.join("nested", "tasks.md") });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.fileSystem.exists)).toHaveBeenCalledWith(
+      lockfilePathFor(path.resolve("nested", "tasks.md")),
+    );
+  });
 });
 
-function createDependencies(options: { lockfileExists: boolean; activeLock: boolean }): {
+function createDependencies(options: {
+  lockfileExists: boolean;
+  activeLock: boolean;
+}): {
   dependencies: UnlockTaskDependencies;
   events: ApplicationOutputEvent[];
 } {
@@ -63,11 +79,11 @@ function createDependencies(options: { lockfileExists: boolean; activeLock: bool
       rm: vi.fn(),
     },
     pathOperations: {
-      join: (...parts) => path.join(...parts),
-      resolve: (...parts) => path.resolve(...parts),
-      dirname: (filePath) => path.dirname(filePath),
-      relative: (from, to) => path.relative(from, to),
-      isAbsolute: (filePath) => path.isAbsolute(filePath),
+      join: vi.fn((...parts) => path.join(...parts)),
+      resolve: vi.fn((...parts) => path.resolve(...parts)),
+      dirname: vi.fn((filePath) => path.dirname(filePath)),
+      relative: vi.fn((from, to) => path.relative(from, to)),
+      isAbsolute: vi.fn((filePath) => path.isAbsolute(filePath)),
     },
     output: {
       emit: (event) => events.push(event),

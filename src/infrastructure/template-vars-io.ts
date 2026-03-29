@@ -1,11 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type ExtraTemplateVars } from "../domain/template-vars.js";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 
 const TEMPLATE_VAR_KEY = /^[A-Za-z_]\w*$/;
+const DEFAULT_VARS_FILE_NAME = "vars.json";
 
-export function loadTemplateVarsFile(filePath: string, cwd: string = process.cwd()): ExtraTemplateVars {
-  const resolvedPath = path.resolve(cwd, filePath);
+function resolveTemplateVarsPath(filePath: string, cwd: string, configDir?: string): string {
+  const defaultRelativePath = path.join(CONFIG_DIR_NAME, DEFAULT_VARS_FILE_NAME);
+  const defaultPathFromCwd = path.resolve(cwd, defaultRelativePath);
+  const resolvedRequestedPath = path.resolve(cwd, filePath);
+  if (configDir && resolvedRequestedPath === defaultPathFromCwd) {
+    return path.join(configDir, DEFAULT_VARS_FILE_NAME);
+  }
+
+  return resolvedRequestedPath;
+}
+
+export function loadTemplateVarsFile(
+  filePath: string,
+  cwd: string = process.cwd(),
+  configDir?: string,
+): ExtraTemplateVars {
+  const resolvedPath = resolveTemplateVarsPath(filePath, cwd, configDir);
 
   let parsed: unknown;
   try {

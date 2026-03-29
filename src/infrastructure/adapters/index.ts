@@ -15,6 +15,7 @@ export { createTaskRepairAdapter } from "./task-repair-adapter.js";
 export { createWorkingDirectoryAdapter } from "./working-directory-adapter.js";
 export { createDirectoryOpenerAdapter } from "./directory-opener-adapter.js";
 export { createNodePathOperationsAdapter } from "./node-path-operations-adapter.js";
+export { createConfigDirAdapter } from "./config-dir-adapter.js";
 export { createFsTemplateVarsLoaderAdapter } from "./fs-template-vars-loader-adapter.js";
 export { createJsonlTraceWriter } from "./jsonl-trace-writer.js";
 export { createFanoutTraceWriter } from "./fanout-trace-writer.js";

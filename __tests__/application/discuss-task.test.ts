@@ -216,6 +216,7 @@ describe("discuss-task", () => {
     expect(vi.mocked(dependencies.templateVarsLoader.load)).toHaveBeenCalledWith(
       ".rundown/vars.json",
       cwd,
+      path.join(cwd, ".rundown"),
     );
     expect(events).toContainEqual({ kind: "text", text: "Team: platform" });
   });
@@ -911,6 +912,10 @@ function createDependencies(options: {
       load: vi.fn(() => ({})),
     },
     traceWriter,
+    configDir: {
+      configDir: path.join(options.cwd, ".rundown"),
+      isExplicit: false,
+    },
     createTraceWriter: vi.fn(() => traceWriter),
     output: {
       emit: (event) => {

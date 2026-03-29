@@ -21,6 +21,7 @@ import type {
   ArtifactRunContext,
   ArtifactStore,
   FileSystem,
+  ConfigDirResult,
   PathOperationsPort,
   ProcessRunMode,
   PromptTransport as PortPromptTransport,
@@ -67,6 +68,7 @@ export interface DiscussTaskDependencies {
   pathOperations: PathOperationsPort;
   templateVarsLoader: TemplateVarsLoaderPort;
   traceWriter: TraceWriterPort;
+  configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
 }
@@ -103,10 +105,17 @@ export function createDiscussTask(
       workerCommand,
     } = options;
 
-    const varsFilePath = resolveTemplateVarsFilePath(varsFileOption);
+    const varsFilePath = resolveTemplateVarsFilePath(
+      varsFileOption,
+      dependencies.configDir?.configDir,
+    );
     const cwd = dependencies.workingDirectory.cwd();
     const fileTemplateVars = varsFilePath
-      ? dependencies.templateVarsLoader.load(varsFilePath, cwd)
+      ? dependencies.templateVarsLoader.load(
+        varsFilePath,
+        cwd,
+        dependencies.configDir?.configDir,
+      )
       : {};
     const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs);
     const extraTemplateVars: ExtraTemplateVars = {
@@ -166,7 +175,7 @@ export function createDiscussTask(
 
       const taskContext = resolveTaskContext(selectedTask);
       const templates = loadProjectTemplatesFromPorts(
-        cwd,
+        dependencies.configDir,
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
@@ -203,6 +212,7 @@ export function createDiscussTask(
 
       const artifactContext = dependencies.artifactStore.createContext({
         cwd,
+        configDir: dependencies.configDir?.configDir,
         commandName: "discuss",
         workerCommand,
         mode: "tui",
@@ -240,6 +250,7 @@ export function createDiscussTask(
         trace: options.trace,
         captureOutput: options.keepArtifacts,
         cwd,
+        configDir: dependencies.configDir?.configDir,
         artifactContext,
         artifactPhase: "discuss",
       });
@@ -346,11 +357,17 @@ function renderDiscussPrompt(
 }
 
 function loadProjectTemplatesFromPorts(
-  cwd: string,
+  configDir: ConfigDirResult | undefined,
   templateLoader: TemplateLoader,
   pathOperations: PathOperationsPort,
 ): ProjectTemplates {
-  const dir = pathOperations.join(cwd, ".rundown");
+  if (!configDir) {
+    return {
+      discuss: DEFAULT_DISCUSS_TEMPLATE,
+    };
+  }
+
+  const dir = configDir.configDir;
   return {
     discuss: templateLoader.load(pathOperations.join(dir, "discuss.md")) ?? DEFAULT_DISCUSS_TEMPLATE,
   };

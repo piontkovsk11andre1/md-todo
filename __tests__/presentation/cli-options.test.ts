@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 type RunTaskCall = Record<string, unknown>;
 
@@ -8,6 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("../../src/create-app.js");
+  vi.doUnmock("../../src/infrastructure/adapters/config-dir-adapter.js");
   vi.doUnmock("../../src/infrastructure/adapters/global-output-log-writer.js");
 });
 
@@ -343,6 +347,138 @@ describe("CLI run option normalization", () => {
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("accepts an explicit --config-dir when it exists and is a directory", async () => {
+    const runTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-dir-"));
+    const configDir = path.join(tempRoot, ".rundown-custom");
+    fs.mkdirSync(configDir, { recursive: true });
+
+    try {
+      const call = await invokeRunAndCaptureCall([
+        "--config-dir",
+        configDir,
+        "run",
+        "tasks.md",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(call.source).toBe("tasks.md");
+      expect(call.workerCommand).toEqual(["opencode", "run"]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when --config-dir does not exist", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const missingPath = path.join(os.tmpdir(), `rundown-missing-config-dir-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+    const exitCode = await invokeRunAndCaptureExitCode([
+      "--config-dir",
+      missingPath,
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(exitCode).toBe(1);
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --config-dir value"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Directory does not exist"));
+  });
+
+  it("logs a CLI error and exits when --config-dir is not a directory", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-file-"));
+    const configFile = path.join(tempRoot, "not-a-directory.txt");
+    fs.writeFileSync(configFile, "x", "utf8");
+
+    try {
+      await invokeRunAndExpectExit([
+        "--config-dir",
+        configFile,
+        "run",
+        "tasks.md",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(runTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --config-dir value"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Path is not a directory"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("uses explicit --config-dir verbatim and skips discovery", async () => {
+    const runTask = vi.fn(async () => 0);
+    const createApp = vi.fn(() => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }));
+    const resolve = vi.fn(() => ({
+      configDir: "/should-not-be-used/.rundown",
+      isExplicit: false,
+    }));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-explicit-config-dir-"));
+    const configDir = path.join(tempRoot, ".rundown-custom");
+    fs.mkdirSync(configDir, { recursive: true });
+    const previousEnv = captureEnv();
+
+    process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+    process.env.RUNDOWN_TEST_MODE = "1";
+
+    vi.doMock("../../src/create-app.js", () => ({ createApp }));
+    vi.doMock("../../src/infrastructure/adapters/config-dir-adapter.js", () => ({
+      createConfigDirAdapter: () => ({ resolve }),
+    }));
+
+    try {
+      const { parseCliArgs } = await import("../../src/presentation/cli.js");
+      await parseCliArgs([
+        "--config-dir",
+        configDir,
+        "run",
+        "tasks.md",
+        "--worker",
+        "opencode",
+        "run",
+      ]);
+    } catch (error) {
+      const message = String(error);
+      if (!/CLI exited with code \d+/.test(message)) {
+        throw error;
+      }
+    } finally {
+      restoreEnv(previousEnv);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(createApp).toHaveBeenCalledWith(expect.objectContaining({
+      ports: expect.objectContaining({
+        configDir: {
+          configDir,
+          isExplicit: true,
+        },
+      }),
+    }));
+    expect(runTask).toHaveBeenCalledTimes(1);
   });
 
   it("logs a CLI error and exits with code 1 on invalid mode", async () => {
@@ -1357,6 +1493,44 @@ async function invokeRunAndExpectExit(args: string[], runTask: ReturnType<typeof
     const message = String(error);
     if (/CLI exited with code \d+/.test(message)) {
       return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+async function invokeRunAndCaptureExitCode(args: string[], runTask: ReturnType<typeof vi.fn>): Promise<number> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    const match = /CLI exited with code (\d+)/.exec(message);
+    if (match) {
+      return Number(match[1]);
+    }
+    if (/process\.exit unexpectedly called/.test(message)) {
+      return 1;
     }
     throw error;
   } finally {

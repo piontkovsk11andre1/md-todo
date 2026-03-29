@@ -1,6 +1,10 @@
-import path from "node:path";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
-import type { FileLock, FileSystem, PathOperationsPort } from "../domain/ports/index.js";
+import type {
+  FileSystem,
+  FileLock,
+  PathOperationsPort,
+} from "../domain/ports/index.js";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 
 export interface UnlockTaskDependencies {
   fileLock: FileLock;
@@ -21,8 +25,8 @@ export function createUnlockTask(
   return async function unlockTask(options: UnlockTaskOptions): Promise<number> {
     const sourcePath = dependencies.pathOperations.resolve(options.source);
     const sourceDirectory = dependencies.pathOperations.dirname(sourcePath);
-    const sourceName = path.basename(sourcePath);
-    const lockPath = dependencies.pathOperations.join(sourceDirectory, ".rundown", `${sourceName}.lock`);
+    const sourceName = basenameFromPath(sourcePath);
+    const lockPath = dependencies.pathOperations.join(sourceDirectory, CONFIG_DIR_NAME, `${sourceName}.lock`);
 
     if (!dependencies.fileSystem.exists(lockPath)) {
       emit({ kind: "info", message: "No lockfile found for source: " + sourcePath });
@@ -41,4 +45,9 @@ export function createUnlockTask(
     emit({ kind: "success", message: "Released stale source lock: " + sourcePath });
     return 0;
   };
+}
+
+function basenameFromPath(filePath: string): string {
+  const parts = filePath.split(/[/\\]+/);
+  return parts[parts.length - 1] ?? filePath;
 }

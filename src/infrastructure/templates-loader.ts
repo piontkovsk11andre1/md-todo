@@ -24,8 +24,6 @@ export interface ProjectTemplates {
   trace: string;
 }
 
-const CONFIG_DIR = ".rundown";
-
 /**
  * Load templates from the project directory, falling back to built-in defaults.
  *
@@ -37,16 +35,25 @@ const CONFIG_DIR = ".rundown";
  *   .rundown/plan.md
  *   .rundown/trace.md
  */
-export function loadProjectTemplates(cwd: string = process.cwd()): ProjectTemplates {
-  const dir = path.join(cwd, CONFIG_DIR);
+export function loadProjectTemplates(configDir?: string): ProjectTemplates {
+  if (!configDir) {
+    return {
+      task: DEFAULT_TASK_TEMPLATE,
+      discuss: DEFAULT_DISCUSS_TEMPLATE,
+      verify: DEFAULT_VERIFY_TEMPLATE,
+      repair: DEFAULT_REPAIR_TEMPLATE,
+      plan: DEFAULT_PLAN_TEMPLATE,
+      trace: DEFAULT_TRACE_TEMPLATE,
+    };
+  }
 
   return {
-    task: loadFile(path.join(dir, "execute.md")) ?? DEFAULT_TASK_TEMPLATE,
-    discuss: loadFile(path.join(dir, "discuss.md")) ?? DEFAULT_DISCUSS_TEMPLATE,
-    verify: loadFile(path.join(dir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
-    repair: loadFile(path.join(dir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
-    plan: loadFile(path.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
-    trace: loadFile(path.join(dir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,
+    task: loadFile(path.join(configDir, "execute.md")) ?? DEFAULT_TASK_TEMPLATE,
+    discuss: loadFile(path.join(configDir, "discuss.md")) ?? DEFAULT_DISCUSS_TEMPLATE,
+    verify: loadFile(path.join(configDir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
+    repair: loadFile(path.join(configDir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
+    plan: loadFile(path.join(configDir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
+    trace: loadFile(path.join(configDir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,
   };
 }
 

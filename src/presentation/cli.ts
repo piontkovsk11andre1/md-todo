@@ -2,13 +2,17 @@ import { Command } from "commander";
 import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { createApp } from "../create-app.js";
+import type { ConfigDirResult } from "../domain/ports/index.js";
+import { createConfigDirAdapter } from "../infrastructure/adapters/config-dir-adapter.js";
 import { createNodeFileSystem } from "../infrastructure/adapters/fs-file-system.js";
 import { createGlobalOutputLogWriter } from "../infrastructure/adapters/global-output-log-writer.js";
 import { globalOutputLogFilePath } from "../infrastructure/runtime-artifacts.js";
 import { createLoggedOutputPort } from "./logged-output-port.js";
 import type { LoggedOutputContext } from "./logged-output-port.js";
 import { cliOutputPort } from "./output-port.js";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import fs from "node:fs";
+import path from "node:path";
 import { randomBytes } from "node:crypto";
 import pc from "picocolors";
 
@@ -20,6 +24,7 @@ const SORT_MODES: readonly SortMode[] = ["name-sort", "none", "old-first", "new-
 const REVERT_METHODS = ["revert", "reset"] as const;
 const EXIT_TEST_MODE_ENV = "RUNDOWN_TEST_MODE";
 const DEFAULT_PLAN_SCAN_COUNT = 1;
+const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
 
 class CliExitSignal extends Error {
   readonly code: number;
@@ -46,6 +51,7 @@ function createSessionId(): string {
 
 let workerFromSeparator: string[] = [];
 let cliInvocationLogState: CliInvocationLogState | undefined;
+let cliInvocationArgv: string[] | undefined;
 
 const program = new Command();
 const cliVersion = readCliVersion();
@@ -135,8 +141,9 @@ function registerLockReleaseSignalHandlers(): void {
 }
 
 function createAppForInvocation(argv: string[]) {
-  const invocationLogState = createCliInvocationLogState(argv);
+  const invocationLogState = cliInvocationLogState ?? createCliInvocationLogState(argv);
   cliInvocationLogState = invocationLogState;
+  const configDirOverride = resolveConfigDirForInvocation(argv);
   const loggedOutputPort = createLoggedOutputPort({
     output: cliOutputPort,
     writer: invocationLogState.writer,
@@ -146,8 +153,48 @@ function createAppForInvocation(argv: string[]) {
   return createApp({
     ports: {
       output: loggedOutputPort,
+      configDir: configDirOverride,
     },
   });
+}
+
+function resolveConfigDirForInvocation(
+  argv?: string[],
+  cwd: string = process.cwd(),
+): ConfigDirResult | undefined {
+  const explicitConfigDir = argv
+    ? resolveExplicitConfigDirFromArgv(argv)
+    : resolveExplicitConfigDirOption();
+  if (explicitConfigDir) {
+    return {
+      configDir: path.resolve(explicitConfigDir),
+      isExplicit: true,
+    };
+  }
+
+  return createConfigDirAdapter().resolve(cwd);
+}
+
+function resolveExplicitConfigDirFromArgv(argv: string[]): string | undefined {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      break;
+    }
+
+    if (token === "--config-dir") {
+      const nextToken = argv[index + 1];
+      return typeof nextToken === "string"
+        ? normalizeOptionalString(nextToken)
+        : undefined;
+    }
+
+    if (token.startsWith("--config-dir=")) {
+      return normalizeOptionalString(token.slice("--config-dir=".length));
+    }
+  }
+
+  return undefined;
 }
 
 type CliActionResult = number | Promise<number>;
@@ -165,7 +212,11 @@ configureCommanderOutputHandlers(program);
 program
   .name("rundown")
   .description("A Markdown-native task runtime for agentic workflows.")
-  .version(cliVersion);
+  .version(cliVersion)
+  .option(
+    "--config-dir <path>",
+    "Explicit path to the .rundown configuration directory (bypasses upward discovery)",
+  );
 program
   .command("run")
   .description("Find the next unchecked TODO and execute it.")
@@ -181,10 +232,10 @@ program
   .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
-  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--trace-only", "Skip task execution and run only trace enrichment on the latest completed artifact run", false)
-  .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .rundown/vars.json)")
+  .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--commit", "Auto-commit checked task file after successful completion", false)
   .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
@@ -261,11 +312,11 @@ program
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered discuss prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
-  .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .rundown/vars.json)")
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--hide-agent-output", "Hide worker stdout/stderr during execution; show only rundown status messages.", false)
-  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring discuss locks", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
@@ -317,8 +368,8 @@ program
   .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered verify prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
-  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
@@ -365,7 +416,7 @@ program
   .option("--method <revert|reset>", "Git undo strategy", "revert")
   .option("--dry-run", "Show what would be reverted without changing git state", false)
   .option("--force", "Bypass clean-worktree and reset contiguous-HEAD checks", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
     const targetRun = normalizeOptionalString(opts.run) ?? "latest";
@@ -413,7 +464,7 @@ program
   }));
 program
   .command("artifacts")
-  .description("List or clean saved runtime artifact runs under .rundown/runs.")
+  .description("List or clean saved runtime artifact runs under <config-dir>/runs.")
   .option("--clean", "Remove all saved runtime artifact runs", false)
   .option("--json", "Print saved runtime artifacts as JSON", false)
   .option("--failed", "Show only failed runtime artifact runs", false)
@@ -451,10 +502,10 @@ program
   .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)
-  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under .rundown/runs", false)
-  .option("--trace", "Enable structured trace output at .rundown/runs/<id>/trace.jsonl", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring plan lock", false)
-  .option("--vars-file [path]", "Load extra template variables from a JSON file (default: .rundown/vars.json)")
+  .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
@@ -494,12 +545,12 @@ program
 program
   .command("unlock")
   .description("Manually release a stale source lockfile.")
-  .argument("<source>", "Markdown source file path used to derive .rundown/<basename>.lock")
+  .argument("<source>", "Markdown source file path used to derive <config-dir>/locks/<basename>.lock")
   .allowUnknownOption(false)
   .action(withCliAction((source: string) => getApp().unlockTask({ source })));
 program
   .command("init")
-  .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair).")
+  .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair). Use --config-dir to control where it is created.")
   .action(withCliAction(() => getApp().initProject()));
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
@@ -627,6 +678,41 @@ function normalizeOptionalString(value: string | string[] | boolean | undefined)
   return value.trim() === "" ? undefined : value;
 }
 
+function resolveExplicitConfigDirOption(): string | undefined {
+  const opts = program.opts<{ configDir?: unknown }>();
+  if (typeof opts.configDir !== "string") {
+    return undefined;
+  }
+
+  return normalizeOptionalString(opts.configDir);
+}
+
+function validateExplicitConfigDirOption(invocationArgv: string[]): void {
+  const configDir = resolveExplicitConfigDirOption();
+  if (!configDir) {
+    return;
+  }
+
+  const resolvedConfigDir = path.resolve(configDir);
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(resolvedConfigDir);
+  } catch {
+    if (allowsMissingExplicitConfigDir(invocationArgv)) {
+      return;
+    }
+    throw new Error(`Invalid --config-dir value: ${configDir}. Directory does not exist: ${resolvedConfigDir}.`);
+  }
+
+  if (!stats.isDirectory()) {
+    throw new Error(`Invalid --config-dir value: ${configDir}. Path is not a directory: ${resolvedConfigDir}.`);
+  }
+}
+
+function allowsMissingExplicitConfigDir(argv: string[]): boolean {
+  return resolveInvocationCommand(argv) === "init";
+}
+
 function resolveVerifyFlag(opts: Record<string, string | string[] | boolean>): boolean {
   const verifyOpt = opts.verify as boolean | undefined;
   if (verifyOpt === false) {
@@ -653,6 +739,11 @@ function withCliAction<Args extends unknown[]>(
 ): (...args: Args) => Promise<void> {
   return async (...args: Args) => {
     try {
+      validateExplicitConfigDirOption(cliInvocationArgv ?? process.argv.slice(2));
+      if (!app) {
+        app = createAppForInvocation(cliInvocationArgv ?? process.argv.slice(2));
+      }
+      getLockReleaseState().app = app;
       const exitCode = await action(...args);
       terminate(exitCode);
     } catch (err) {
@@ -685,11 +776,26 @@ function resolveLogCommandHandler(appInstance: ReturnType<typeof createApp>): Lo
 export async function parseCliArgs(argv: string[]): Promise<void> {
   const rewrittenArgv = rewriteRunallAlias(argv);
   const { rundownArgs, workerFromSeparator: workerCommandArgs } = splitWorkerFromSeparator(rewrittenArgv);
-  app = createAppForInvocation(rewrittenArgv);
-  getLockReleaseState().app = app;
+  app = undefined;
+  cliInvocationArgv = rewrittenArgv;
+  cliInvocationLogState = createCliInvocationLogState(rewrittenArgv);
+  getLockReleaseState().app = undefined;
+  if (shouldInitializeAppBeforeParse(rundownArgs)) {
+    app = createAppForInvocation(rewrittenArgv);
+    getLockReleaseState().app = app;
+  }
   registerLockReleaseSignalHandlers();
   workerFromSeparator = workerCommandArgs;
   await program.parseAsync(rundownArgs, { from: "user" });
+}
+
+function shouldInitializeAppBeforeParse(argv: string[]): boolean {
+  if (argv.length === 0) {
+    return true;
+  }
+
+  const command = resolveInvocationCommand(argv);
+  return command === "rundown";
 }
 
 if (process.env.RUNDOWN_DISABLE_AUTO_PARSE !== "1") {
@@ -712,11 +818,20 @@ function createCliInvocationLogState(argv: string[]): CliInvocationLogState {
     version: cliVersion,
     sessionId: createSessionId(),
   };
+  const resolvedConfigDir = resolveConfigDirPathForInvocation(invocationArgv, context.cwd);
 
   return {
-    writer: createGlobalOutputLogWriter(globalOutputLogFilePath(context.cwd), createNodeFileSystem()),
+    writer: createGlobalOutputLogWriter(
+      globalOutputLogFilePath(resolvedConfigDir),
+      createNodeFileSystem(),
+    ),
     context,
   };
+}
+
+function resolveConfigDirPathForInvocation(argv: string[], cwd: string): string {
+  const resolvedConfigDir = resolveConfigDirForInvocation(argv, cwd)?.configDir;
+  return resolvedConfigDir ?? path.join(cwd, CONFIG_DIR_NAME);
 }
 
 function emitCliFatalError(error: unknown): void {
@@ -822,9 +937,19 @@ function rewriteRunallAlias(argv: string[]): string[] {
 }
 
 function resolveInvocationCommand(argv: string[]): string {
-  for (const token of argv) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
     if (token === "--") {
       break;
+    }
+
+    if (token === "--config-dir") {
+      index += 1;
+      continue;
+    }
+
+    if (token.startsWith("--config-dir=")) {
+      continue;
     }
 
     if (!token.startsWith("-")) {

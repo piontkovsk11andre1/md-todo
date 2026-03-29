@@ -363,6 +363,49 @@ describe("runWorker", () => {
     expect(fs.existsSync(path.join(phaseDir, "metadata.json"))).toBe(true);
   });
 
+  it("writes artifacts under explicit configDir while keeping process cwd", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const { runWorker } = await import("../../src/infrastructure/runner.js");
+    const configDir = path.join(workspace, "config-root", ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+
+    await runWorker({
+      command: ["node", "worker.js"],
+      prompt: "custom config prompt",
+      mode: "wait",
+      transport: "arg",
+      cwd: workspace,
+      configDir,
+      keepArtifacts: true,
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      "node",
+      ["worker.js", "custom config prompt"],
+      { stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false },
+    );
+
+    const runsDir = path.join(configDir, "runs");
+    expect(fs.existsSync(runsDir)).toBe(true);
+    expect(fs.readdirSync(runsDir).length).toBe(1);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "runs"))).toBe(false);
+  });
+
   it("captures and mirrors tui output when captureOutput is enabled", async () => {
     vi.spyOn(os, "platform").mockReturnValue("linux");
     const stdoutWriteSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

@@ -35,6 +35,7 @@ export interface ArtifactRunContext {
   runId: string;
   rootDir: string;
   cwd: string;
+  configDir?: string;
   keepArtifacts: boolean;
   commandName: string;
   workerCommand?: string[];
@@ -71,6 +72,7 @@ export interface ArtifactRunMetadata {
 export interface ArtifactStore {
   createContext(options: {
     cwd?: string;
+    configDir?: string;
     commandName: string;
     workerCommand?: string[];
     mode?: string;
@@ -107,12 +109,12 @@ export interface ArtifactStore {
     options: { status: ArtifactStoreStatus; preserve?: boolean; extra?: Record<string, unknown> },
   ): void;
   displayPath(context: ArtifactRunContext): string;
-  rootDir(cwd?: string): string;
-  listSaved(cwd?: string): ArtifactRunMetadata[];
-  listFailed(cwd?: string): ArtifactRunMetadata[];
-  latest(cwd?: string): ArtifactRunMetadata | null;
-  find(runId: string, cwd?: string): ArtifactRunMetadata | null;
-  removeSaved(cwd?: string): number;
-  removeFailed(cwd?: string): number;
+  rootDir(configDir?: string): string;
+  listSaved(configDir?: string): ArtifactRunMetadata[];
+  listFailed(configDir?: string): ArtifactRunMetadata[];
+  latest(configDir?: string): ArtifactRunMetadata | null;
+  find(runId: string, configDir?: string): ArtifactRunMetadata | null;
+  removeSaved(configDir?: string): number;
+  removeFailed(configDir?: string): number;
   isFailedStatus(status: ArtifactStoreStatus | undefined): boolean;
 }

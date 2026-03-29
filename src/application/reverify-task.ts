@@ -19,6 +19,7 @@ import type {
   ArtifactStoreStatus,
   ArtifactRunMetadata,
   ArtifactStore,
+  ConfigDirResult,
   FileSystem,
   PathOperationsPort,
   PromptTransport,
@@ -65,6 +66,7 @@ export interface ReverifyTaskDependencies {
   // Intentionally no FileLock dependency: reverify reads markdown to resolve context,
   // but does not mutate source files.
   traceWriter: TraceWriterPort;
+  configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: { rootDir: string }) => TraceWriterPort;
   pathOperations: PathOperationsPort;
   templateLoader: TemplateLoader;
@@ -130,6 +132,7 @@ export function createReverifyTask(
     }
 
     const cwd = dependencies.workingDirectory.cwd();
+    const artifactBaseDir = dependencies.configDir?.configDir;
     const reverifyOneRun = async (
       selectedRun: ArtifactRunMetadata,
     ): Promise<{ exitCode: number; status: ArtifactStoreStatus | null }> => {
@@ -183,7 +186,11 @@ export function createReverifyTask(
 
       emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
 
-      const templates = loadProjectTemplates(cwd, dependencies.templateLoader, dependencies.pathOperations);
+      const templates = loadProjectTemplates(
+        dependencies.configDir,
+        dependencies.templateLoader,
+        dependencies.pathOperations,
+      );
       const promptContext = buildReverifyPromptContext(taskContext, templates.verify, trace);
 
       if (printPrompt) {
@@ -215,6 +222,7 @@ export function createReverifyTask(
 
       const artifactContext = dependencies.artifactStore.createContext({
         cwd,
+        configDir: dependencies.configDir?.configDir,
         commandName: "reverify",
         workerCommand: effectiveWorkerCommand,
         mode: "wait",
@@ -296,6 +304,7 @@ export function createReverifyTask(
           repairTemplate: templates.repair,
           workerCommand: effectiveWorkerCommand,
           transport,
+          configDir: dependencies.configDir?.configDir,
           maxRepairAttempts: runBehavior.maxRepairAttempts,
           allowRepair: runBehavior.allowRepair,
           templateVars: promptContext.vars,
@@ -324,7 +333,7 @@ export function createReverifyTask(
       }
     };
 
-    const targetRuns = resolveTargetRuns(dependencies.artifactStore, cwd, {
+    const targetRuns = resolveTargetRuns(dependencies.artifactStore, artifactBaseDir, {
       runId,
       last,
       all,
@@ -388,32 +397,40 @@ export function createReverifyTask(
 }
 
 function loadProjectTemplates(
-  cwd: string,
+  configDir: ConfigDirResult | undefined,
   templateLoader: TemplateLoader,
   pathOperations: PathOperationsPort,
 ): ReverifyTemplates {
+  if (!configDir) {
+    return {
+      verify: DEFAULT_VERIFY_TEMPLATE,
+      repair: DEFAULT_REPAIR_TEMPLATE,
+    };
+  }
+
+  const configRoot = configDir.configDir;
   return {
-    verify: templateLoader.load(pathOperations.join(cwd, ".rundown", "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
-    repair: templateLoader.load(pathOperations.join(cwd, ".rundown", "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
+    verify: templateLoader.load(pathOperations.join(configRoot, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
+    repair: templateLoader.load(pathOperations.join(configRoot, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
   };
 }
 
 function resolveTargetRunMetadata(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
   runId: string,
 ): ArtifactRunMetadata | null {
   if (runId === "latest") {
-    const runs = artifactStore.listSaved(cwd);
+    const runs = artifactStore.listSaved(artifactBaseDir);
     return runs.find((run) => isCompletedRun(run) && hasReverifiableTask(run)) ?? null;
   }
 
-  return artifactStore.find(runId, cwd);
+  return artifactStore.find(runId, artifactBaseDir);
 }
 
 function resolveTargetRuns(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
   options: Pick<ReverifyTaskOptions, "runId" | "last" | "all" | "oldestFirst">,
 ): ArtifactRunMetadata[] {
   const { runId, last, all, oldestFirst } = options;
@@ -421,15 +438,15 @@ function resolveTargetRuns(
 
   if (all) {
     selectedRuns = artifactStore
-      .listSaved(cwd)
+      .listSaved(artifactBaseDir)
       .filter((run) => isCompletedRun(run) && hasReverifiableTask(run));
   } else if (last !== undefined) {
     selectedRuns = artifactStore
-      .listSaved(cwd)
+      .listSaved(artifactBaseDir)
       .filter((run) => isCompletedRun(run) && hasReverifiableTask(run))
       .slice(0, last);
   } else {
-    const selectedRun = resolveTargetRunMetadata(artifactStore, cwd, runId);
+    const selectedRun = resolveTargetRunMetadata(artifactStore, artifactBaseDir, runId);
     selectedRuns = selectedRun ? [selectedRun] : [];
   }
 

@@ -48,7 +48,7 @@ describe("createArtifactVerificationStore", () => {
       verificationResult: "  current failure  ",
     }, null, 2));
 
-    const store = createArtifactVerificationStore(root);
+    const store = createArtifactVerificationStore(path.join(root, ".rundown"));
 
     expect(store.read(task as never)).toBe("current failure");
 
@@ -74,7 +74,7 @@ describe("createArtifactVerificationStore", () => {
       index: 0,
     };
 
-    const store = createArtifactVerificationStore(root);
+    const store = createArtifactVerificationStore(path.join(root, ".rundown"));
 
     expect(store.read(task as never)).toBeNull();
     expect(() => store.write(task as never, "missing context")).not.toThrow();
@@ -91,7 +91,7 @@ describe("createArtifactVerificationStore", () => {
     };
     fs.writeFileSync(task.file, "- [ ] Task\n", "utf-8");
 
-    const store = createArtifactVerificationStore(root);
+    const store = createArtifactVerificationStore(path.join(root, ".rundown"));
 
     store.write(task as never, "  missing schema field  ");
     expect(store.read(task as never)).toBe("missing schema field");
@@ -148,7 +148,7 @@ describe("createArtifactVerificationStore", () => {
       outputCaptured: true,
     });
 
-    const store = createArtifactVerificationStore(root);
+    const store = createArtifactVerificationStore(path.join(root, ".rundown"));
     store.write(task as never, "missing test coverage");
 
     expect(store.read(task as never)).toBe("missing test coverage");
@@ -207,7 +207,7 @@ describe("createArtifactVerificationStore", () => {
       outputCaptured: true,
     });
 
-    const store = createArtifactVerificationStore(root);
+    const store = createArtifactVerificationStore(path.join(root, ".rundown"));
     store.write(task as never, "schema mismatch");
 
     finalizeRuntimeArtifacts(artifactContext, { status: "verification-failed", preserve: true });

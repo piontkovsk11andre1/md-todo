@@ -159,6 +159,39 @@ describe("commitCheckedTask", () => {
     expect(message).toBe('rundown: complete "Deploy" in docs/tasks/sprint.md');
   });
 
+  it("excludes .rundown artifacts relative to repo root when cwd is nested", async () => {
+    const dir = makeTempDir();
+    gitInit(dir);
+
+    const nestedCwd = path.join(dir, "packages", "app");
+    fs.mkdirSync(nestedCwd, { recursive: true });
+
+    const filePath = path.join(nestedCwd, "tasks.md");
+    fs.writeFileSync(filePath, "- [ ] Task\n", "utf-8");
+    execFileSync("git", ["add", "."], { cwd: dir, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: dir, stdio: "ignore" });
+
+    fs.writeFileSync(filePath, "- [x] Task\n", "utf-8");
+    fs.mkdirSync(path.join(dir, ".rundown", "logs"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".rundown", "logs", "run.log"), "log\n", "utf-8");
+
+    await commitCheckedTask({
+      task: "Task",
+      file: filePath,
+      line: 1,
+      index: 0,
+      cwd: nestedCwd,
+    });
+
+    const changedFiles = execFileSync("git", ["show", "--name-only", "--pretty=", "HEAD"], {
+      cwd: dir,
+      encoding: "utf-8",
+    }).trim();
+
+    expect(changedFiles).toContain("packages/app/tasks.md");
+    expect(changedFiles).not.toContain(".rundown/logs/run.log");
+  });
+
   it("throws when there are no changes to commit", async () => {
     const dir = makeTempDir();
     gitInit(dir);

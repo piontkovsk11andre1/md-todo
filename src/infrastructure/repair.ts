@@ -29,6 +29,7 @@ export interface RepairOptions {
   transport?: PromptTransport;
   trace?: boolean;
   cwd?: string;
+  configDir?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
 }
@@ -80,6 +81,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       transport: options.transport ?? "file",
       trace: options.trace,
       cwd: options.cwd,
+      configDir: options.configDir,
       artifactContext: options.artifactContext,
       artifactPhase: "repair",
       artifactExtra: { attempt: attempts },
@@ -97,6 +99,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       transport: options.transport,
       trace: options.trace,
       cwd: options.cwd,
+      configDir: options.configDir,
       templateVars: options.templateVars,
       artifactContext: options.artifactContext,
     });

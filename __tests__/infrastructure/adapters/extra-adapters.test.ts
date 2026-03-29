@@ -19,9 +19,13 @@ import { createDirectoryOpenerAdapter } from "../../../src/infrastructure/adapte
 describe("extra infrastructure adapters", () => {
   it("template vars loader adapter delegates to loadTemplateVarsFile", () => {
     const adapter = createFsTemplateVarsLoaderAdapter();
-    const result = adapter.load(".rundown/vars.json", "/repo");
+    const result = adapter.load(".rundown/vars.json", "/repo", "/repo/.rundown");
 
-    expect(loadTemplateVarsFileMock).toHaveBeenCalledWith(".rundown/vars.json", "/repo");
+    expect(loadTemplateVarsFileMock).toHaveBeenCalledWith(
+      ".rundown/vars.json",
+      "/repo",
+      "/repo/.rundown",
+    );
     expect(result).toEqual({ branch: "main" });
   });
 

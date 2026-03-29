@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import {
   DEFAULT_TEMPLATE_VARS_FILE,
   parseCliTemplateVars,
@@ -35,6 +36,11 @@ describe("parseCliTemplateVars", () => {
 describe("resolveTemplateVarsFilePath", () => {
   it("uses the default vars file when --vars-file has no path", () => {
     expect(resolveTemplateVarsFilePath(true)).toBe(DEFAULT_TEMPLATE_VARS_FILE);
+  });
+
+  it("resolves default vars file against config dir when provided", () => {
+    const configDir = path.join(path.sep, "workspace", ".rundown");
+    expect(resolveTemplateVarsFilePath(true, configDir)).toBe(path.join(configDir, "vars.json"));
   });
 
   it("uses an explicit vars file path when provided", () => {

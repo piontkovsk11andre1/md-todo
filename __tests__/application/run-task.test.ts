@@ -36,6 +36,9 @@ describe("run-task commit behavior", () => {
         if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
           return "true";
         }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
         if (args[0] === "rev-parse" && args[1] === "HEAD") {
           return "abc123def";
         }
@@ -55,42 +58,44 @@ describe("run-task commit behavior", () => {
     expect(code).toBe(0);
     expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, [
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["rev-parse", "--show-toplevel"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
       "status",
       "--porcelain",
       "--",
-      ".",
-      ":(exclude).rundown/runs/**",
-      ":(exclude).rundown/logs/**",
-      ":(exclude).rundown/*.lock",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      3,
+      4,
       ["rev-parse", "--is-inside-work-tree"],
       cwd,
     );
+    expect(gitClient.run).toHaveBeenNthCalledWith(5, ["rev-parse", "--show-toplevel"], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      4,
+      6,
       [
         "add",
         "-A",
         "--",
-        ".",
-        ":(exclude).rundown/runs/**",
-        ":(exclude).rundown/logs/**",
-        ":(exclude).rundown/*.lock",
+        ":/",
+        ":(top,exclude).rundown/runs/**",
+        ":(top,exclude).rundown/logs/**",
+        ":(top,exclude).rundown/*.lock",
         ":(glob,exclude)**/.rundown/*.lock",
       ],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      5,
+      7,
       ["commit", "-m", "rundown: complete \"cli: echo hello\" in tasks.md"],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      6,
+      8,
       ["rev-parse", "HEAD"],
       cwd,
     );
@@ -120,6 +125,9 @@ describe("run-task commit behavior", () => {
         if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
           return "true";
         }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
         if (args[0] === "rev-parse" && args[1] === "HEAD") {
           return "def456abc";
         }
@@ -138,42 +146,44 @@ describe("run-task commit behavior", () => {
     }));
 
     expect(code).toBe(0);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, [
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["rev-parse", "--show-toplevel"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
       "status",
       "--porcelain",
       "--",
-      ".",
-      ":(exclude).rundown/runs/**",
-      ":(exclude).rundown/logs/**",
-      ":(exclude).rundown/*.lock",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      3,
+      4,
       ["rev-parse", "--is-inside-work-tree"],
       cwd,
     );
+    expect(gitClient.run).toHaveBeenNthCalledWith(5, ["rev-parse", "--show-toplevel"], cwd);
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      4,
+      6,
       [
         "add",
         "-A",
         "--",
-        ".",
-        ":(exclude).rundown/runs/**",
-        ":(exclude).rundown/logs/**",
-        ":(exclude).rundown/*.lock",
+        ":/",
+        ":(top,exclude).rundown/runs/**",
+        ":(top,exclude).rundown/logs/**",
+        ":(top,exclude).rundown/*.lock",
         ":(glob,exclude)**/.rundown/*.lock",
       ],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      5,
+      7,
       ["commit", "-m", "done: cli: echo ship @ docs/roadmap.md"],
       cwd,
     );
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      6,
+      8,
       ["rev-parse", "HEAD"],
       cwd,
     );
@@ -189,6 +199,65 @@ describe("run-task commit behavior", () => {
       }),
     );
     expect(events.some((event) => event.kind === "success" && event.message === "Committed: done: cli: echo ship @ docs/roadmap.md")).toBe(true);
+  });
+
+  it("keeps git artifact excludes effective when configDir is discovered in a parent directory", async () => {
+    const repoRoot = "/workspace";
+    const cwd = path.join(repoRoot, "packages", "app");
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return repoRoot;
+        }
+        if (args[0] === "rev-parse" && args[1] === "HEAD") {
+          return "abc123def";
+        }
+        return "";
+      }),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.configDir = {
+      configDir: path.join(repoRoot, ".rundown"),
+      isExplicit: false,
+    };
+
+    const runTask = createRunTask(dependencies);
+
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      commitAfterComplete: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
+      "status",
+      "--porcelain",
+      "--",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
+      ":(glob,exclude)**/.rundown/*.lock",
+    ], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(6, [
+      "add",
+      "-A",
+      "--",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
+      ":(glob,exclude)**/.rundown/*.lock",
+    ], cwd);
   });
 
   it("does not persist commit metadata when --commit is not enabled", async () => {
@@ -340,6 +409,9 @@ describe("run-task commit behavior", () => {
     });
     const gitClient: GitClient = {
       run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
         if (args[0] === "rev-parse") {
           return "true";
         }
@@ -362,16 +434,17 @@ describe("run-task commit behavior", () => {
     expect(code).toBe(1);
     expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
     expect(events.some((event) => event.kind === "error" && event.message.includes("working directory is not clean"))).toBe(true);
-    expect(gitClient.run).toHaveBeenCalledTimes(2);
+    expect(gitClient.run).toHaveBeenCalledTimes(3);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, [
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["rev-parse", "--show-toplevel"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
       "status",
       "--porcelain",
       "--",
-      ".",
-      ":(exclude).rundown/runs/**",
-      ":(exclude).rundown/logs/**",
-      ":(exclude).rundown/*.lock",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "add")).toBe(false);
@@ -413,10 +486,10 @@ describe("run-task commit behavior", () => {
         "status",
         "--porcelain",
         "--",
-        ".",
-        ":(exclude).rundown/runs/**",
-        ":(exclude).rundown/logs/**",
-        ":(exclude).rundown/*.lock",
+        ":/",
+        ":(top,exclude).rundown/runs/**",
+        ":(top,exclude).rundown/logs/**",
+        ":(top,exclude).rundown/*.lock",
         ":(glob,exclude)**/.rundown/*.lock",
       ])
     )).toBe(false);
@@ -3014,16 +3087,14 @@ describe("run-task exit code behavior with completion side effects", () => {
 
     expect(code).toBe(1);
     expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
-    expect(gitClient.run).toHaveBeenCalledTimes(2);
+    expect(gitClient.run).toHaveBeenCalledTimes(3);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, [
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["rev-parse", "--show-toplevel"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
       "status",
       "--porcelain",
       "--",
-      ".",
-      ":(exclude).rundown/runs/**",
-      ":(exclude).rundown/logs/**",
-      ":(exclude).rundown/*.lock",
+      ":/",
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(processRunner.run).not.toHaveBeenCalled();
@@ -3059,16 +3130,14 @@ describe("run-task exit code behavior with completion side effects", () => {
 
     expect(code).toBe(2);
     expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
-    expect(gitClient.run).toHaveBeenCalledTimes(2);
+    expect(gitClient.run).toHaveBeenCalledTimes(3);
     expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], cwd);
-    expect(gitClient.run).toHaveBeenNthCalledWith(2, [
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["rev-parse", "--show-toplevel"], cwd);
+    expect(gitClient.run).toHaveBeenNthCalledWith(3, [
       "status",
       "--porcelain",
       "--",
-      ".",
-      ":(exclude).rundown/runs/**",
-      ":(exclude).rundown/logs/**",
-      ":(exclude).rundown/*.lock",
+      ":/",
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(processRunner.run).not.toHaveBeenCalled();
@@ -3240,6 +3309,10 @@ describe("run-task --all mode", () => {
         write: vi.fn(),
         flush: vi.fn(),
       },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
+      },
       createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
         write: vi.fn(),
         flush: vi.fn(),
@@ -3365,6 +3438,10 @@ describe("run-task --all mode", () => {
       traceWriter: {
         write: vi.fn(),
         flush: vi.fn(),
+      },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
       },
       createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
         write: vi.fn(),
@@ -3521,6 +3598,10 @@ describe("run-task --all mode", () => {
         write: vi.fn(),
         flush: vi.fn(),
       },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
+      },
       createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
         write: vi.fn(),
         flush: vi.fn(),
@@ -3634,6 +3715,10 @@ describe("run-task --all mode", () => {
       traceWriter: {
         write: vi.fn(),
         flush: vi.fn(),
+      },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
       },
       createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
         write: vi.fn(),
@@ -4011,6 +4096,10 @@ function createDependencies(options: {
     traceWriter: {
       write: vi.fn(),
       flush: vi.fn(),
+    },
+    configDir: {
+      configDir: path.join(options.cwd, ".rundown"),
+      isExplicit: false,
     },
     createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
       write: vi.fn(),

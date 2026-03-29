@@ -3,8 +3,8 @@ import { loadTemplateVarsFile } from "../template-vars-io.js";
 
 export function createFsTemplateVarsLoaderAdapter(): TemplateVarsLoaderPort {
   return {
-    load(filePath, cwd) {
-      return loadTemplateVarsFile(filePath, cwd);
+    load(filePath, cwd, configDir) {
+      return loadTemplateVarsFile(filePath, cwd, configDir);
     },
   };
 }

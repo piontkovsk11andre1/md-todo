@@ -76,6 +76,8 @@ Initialize the repository-local workflow files:
 rundown init
 ```
 
+Runtime commands (`run`, `plan`, `reverify`, etc.) discover `.rundown/` by walking upward from your current directory (or from the source Markdown file location when applicable) until one is found. Use `--config-dir <path>` to bypass discovery and point to an explicit config directory.
+
 This creates:
 
 ```text

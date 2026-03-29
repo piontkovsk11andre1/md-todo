@@ -5,7 +5,6 @@ import type {
   ArtifactRunMetadata,
   ArtifactStore,
   DirectoryOpenerPort,
-  WorkingDirectoryPort,
 } from "../../src/domain/ports/index.js";
 
 describe("manage-artifacts", () => {
@@ -30,7 +29,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: false, failed: false, open: "latest" });
 
     expect(code).toBe(0);
-    expect(artifactStore.latest).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.latest).toHaveBeenCalledWith("/workspace/.rundown");
     expect(directoryOpener.openDirectory).toHaveBeenCalledWith(run.rootDir);
     expect(events).toContainEqual({
       kind: "success",
@@ -44,7 +43,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: false, failed: false, open: "missing-run" });
 
     expect(code).toBe(3);
-    expect(artifactStore.find).toHaveBeenCalledWith("missing-run", "/workspace");
+    expect(artifactStore.find).toHaveBeenCalledWith("missing-run", "/workspace/.rundown");
     expect(directoryOpener.openDirectory).not.toHaveBeenCalled();
     expect(events).toContainEqual({
       kind: "error",
@@ -72,7 +71,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: false, failed: false, open: "run-123" });
 
     expect(code).toBe(0);
-    expect(artifactStore.find).toHaveBeenCalledWith("run-123", "/workspace");
+    expect(artifactStore.find).toHaveBeenCalledWith("run-123", "/workspace/.rundown");
     expect(directoryOpener.openDirectory).toHaveBeenCalledWith(run.rootDir);
     expect(events).toContainEqual({
       kind: "success",
@@ -86,7 +85,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: true, json: false, failed: true, open: "" });
 
     expect(code).toBe(0);
-    expect(artifactStore.removeFailed).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.removeFailed).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "info",
       message: "No failed runtime artifacts found.",
@@ -99,7 +98,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: true, json: false, failed: false, open: "" });
 
     expect(code).toBe(0);
-    expect(artifactStore.removeSaved).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.removeSaved).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "success",
       message: "Removed 2 runtime artifact runs.",
@@ -113,7 +112,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: true, failed: false, open: "" });
 
     expect(code).toBe(0);
-    expect(artifactStore.listSaved).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.listSaved).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "text",
       text: JSON.stringify(runs, null, 2),
@@ -126,7 +125,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: false, failed: false, open: "" });
 
     expect(code).toBe(0);
-    expect(artifactStore.listSaved).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.listSaved).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "info",
       message: "No saved runtime artifacts found.",
@@ -155,7 +154,7 @@ describe("manage-artifacts", () => {
     const code = manageArtifacts({ clean: false, json: false, failed: true, open: "" });
 
     expect(code).toBe(0);
-    expect(artifactStore.listFailed).toHaveBeenCalledWith("/workspace");
+    expect(artifactStore.listFailed).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toEqual([
       {
         kind: "text",
@@ -182,6 +181,7 @@ describe("manage-artifacts", () => {
       rootDir: "/workspace/.rundown/runs/run-defaults",
       relativePath: ".rundown/runs/run-defaults",
       commandName: "plan",
+      keepArtifacts: true,
       startedAt: "2026-03-20T12:00:00.000Z",
     }];
     const { manageArtifacts, events } = createDependencies({ savedRuns: runs });
@@ -221,16 +221,16 @@ function createDependencies(overrides: {
     finalize: vi.fn(),
     displayPath: vi.fn(),
     rootDir: vi.fn(() => "/workspace/.rundown/runs"),
-    listSaved: vi.fn((cwd?: string) => {
-      void cwd;
+    listSaved: vi.fn((configDir?: string) => {
+      void configDir;
       return overrides.savedRuns ?? [];
     }),
-    listFailed: vi.fn((cwd?: string) => {
-      void cwd;
+    listFailed: vi.fn((configDir?: string) => {
+      void configDir;
       return overrides.failedRuns ?? [];
     }),
-    latest: vi.fn((cwd?: string) => {
-      void cwd;
+    latest: vi.fn((configDir?: string) => {
+      void configDir;
       return overrides.latest ?? null;
     }),
     find: vi.fn(() => overrides.foundRun ?? null),
@@ -241,14 +241,14 @@ function createDependencies(overrides: {
   const directoryOpener: DirectoryOpenerPort = {
     openDirectory: vi.fn(),
   };
-  const workingDirectory: WorkingDirectoryPort = {
-    cwd: vi.fn(() => "/workspace"),
-  };
 
   const manageArtifacts = createManageArtifacts({
     artifactStore,
     directoryOpener,
-    workingDirectory,
+    configDir: {
+      configDir: "/workspace/.rundown",
+      isExplicit: false,
+    },
     output: {
       emit(event) {
         events.push(event);
@@ -256,7 +256,7 @@ function createDependencies(overrides: {
     },
   });
 
-  return { manageArtifacts, events, artifactStore, directoryOpener, workingDirectory };
+  return { manageArtifacts, events, artifactStore, directoryOpener };
 }
 
 function createRun(overrides: Partial<ArtifactRunMetadata> = {}): ArtifactRunMetadata {

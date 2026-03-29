@@ -1,5 +1,24 @@
 # CLI
 
+## Global option
+
+`--config-dir <path>` is available on every command.
+
+- If provided, rundown uses that directory as the `.rundown` config root and skips upward discovery.
+- If omitted, rundown discovers `.rundown/` by walking upward from the command start directory until it finds one.
+- If discovery finds nothing, command-specific fallback behavior applies (for example, `init` creates one locally).
+
+Examples:
+
+```bash
+# Monorepo: run from a package, but keep shared rundown config at repo root
+cd packages/api
+rundown --config-dir ../../.rundown run TODO.md -- opencode run
+
+# CI: use a workspace-mounted config outside the repo checkout
+rundown --config-dir /workspace/rundown-config run docs/todos.md --worker opencode run
+```
+
 ## Main commands
 
 ### `rundown run <source>`
@@ -63,7 +82,7 @@ Options:
 | `--print-prompt` | Print rendered discuss prompt and exit `0` without running worker. | off |
 | `--keep-artifacts` | Keep discuss run artifacts under `.rundown/runs/` even on success. | off |
 | `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl` and mirror to `.rundown/logs/trace.jsonl`. | off |
-| `--vars-file [path]` | Load template variables from JSON (default path: `.rundown/vars.json`). | unset |
+| `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
 | `--var <key=value>` | Inject template variables (repeatable). | none |
 | `--hide-agent-output` | Hide worker stdout/stderr while keeping rundown status/lifecycle output visible. | off |
 | `--force-unlock` | Remove stale source lockfile before acquiring discuss lock. Active locks held by live processes are not removed. | off |
@@ -203,7 +222,7 @@ Options:
 | `--print-prompt` | Print the rendered planner prompt and exit `0` without running the worker. | off |
 | `--keep-artifacts` | Preserve runtime artifacts under `.rundown/runs/` even on success. | off |
 | `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl` and mirror them to `.rundown/logs/trace.jsonl`. | off |
-| `--vars-file [path]` | Load template variables from JSON (default path: `.rundown/vars.json`). | unset |
+| `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
 | `--var <key=value>` | Inject template variables (repeatable). | none |
 | `--worker <command...>` | Worker command (preferred on PowerShell). | unset |
 
@@ -246,7 +265,7 @@ rundown plan docs/spec.md --scan-count 2 --worker opencode run
 
 ### `rundown unlock <source>`
 
-Manually remove a stale per-source lockfile (`.rundown/<basename>.lock`) for a Markdown source.
+Manually remove a stale per-source lockfile (`<source-dir>/.rundown/<basename>.lock`) for a Markdown source.
 
 `unlock` is a safety command for lock recovery. It only removes locks that are not owned by a currently running process.
 
@@ -301,7 +320,7 @@ In this example, `Confirm target branch` is a non-checkable detail item, and the
 
 ### `rundown artifacts`
 
-Inspect or clean saved runtime artifact folders under `.rundown/runs/`.
+Inspect or clean saved runtime artifact folders under `<config-dir>/runs/`.
 
 Options:
 
@@ -361,6 +380,11 @@ rundown log --json
 - Lock path: `<source-dir>/.rundown/<basename>.lock`
 - Lock payload: JSON metadata with holder `pid`, command name, start time, and source path
 
+Lock location strategy:
+
+- Lockfiles remain source-relative even when `--config-dir` points elsewhere or config discovery resolves to a parent directory.
+- `--config-dir` does not move lockfiles; it only controls configuration/template/vars/artifact/log roots.
+
 Lock scope by command:
 
 - `run`: acquires before task-selection reads and holds through the full task lifecycle, including `--all` loops, verification/repair, checkbox updates, and `--on-complete`/`--on-fail` hooks.
@@ -387,9 +411,9 @@ Stale lock recovery:
 
 ## Global output log (JSONL)
 
-`rundown` also defines a process-wide append-only JSONL stream at `.rundown/logs/output.jsonl`.
+`rundown` also defines a process-wide append-only JSONL stream at `<config-dir>/logs/output.jsonl`.
 
-When `--trace` is enabled on `run`, `discuss`, `reverify`, or `plan`, each artifact trace event (including LLM/worker-derived stages such as `agent.signals`, `agent.thinking`, and `analysis.summary`) is also appended to `.rundown/logs/trace.jsonl` as a cumulative stream.
+When `--trace` is enabled on `run`, `discuss`, `reverify`, or `plan`, each artifact trace event (including LLM/worker-derived stages such as `agent.signals`, `agent.thinking`, and `analysis.summary`) is also appended to `<config-dir>/logs/trace.jsonl` as a cumulative stream.
 
 Promtail note: configure this file as a scrape target to ingest a single cumulative CLI output stream across all runs.
 
@@ -471,13 +495,13 @@ When verification still fails after all configured attempts (including immediate
 
 - `--var key=value` — inject a template variable
 - `--vars-file path/to/file.json` — load template variables from JSON
-- `--vars-file` — load `.rundown/vars.json`
+- `--vars-file` — load `<config-dir>/vars.json`
 
 Direct `--var` entries override values loaded from `--vars-file`.
 
 ### Artifacts
 
-- `--keep-artifacts` — keep the run folder under `.rundown/runs/`
+- `--keep-artifacts` — keep the run folder under `<config-dir>/runs/`
 
 ### Planning
 

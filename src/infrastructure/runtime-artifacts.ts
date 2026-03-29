@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 
 export type RuntimePhase =
   | "execute"
@@ -39,6 +40,7 @@ export interface RuntimeArtifactsContext {
   readonly runId: string;
   readonly rootDir: string;
   readonly cwd: string;
+  readonly configDir: string;
   readonly keepArtifacts: boolean;
   readonly commandName: string;
   readonly workerCommand?: string[];
@@ -138,10 +140,11 @@ export interface FinalizeRuntimeArtifactsOptions {
   extra?: Record<string, unknown>;
 }
 
-export const GLOBAL_OUTPUT_LOG_RELATIVE_PATH = ".rundown/logs/output.jsonl";
+export const GLOBAL_OUTPUT_LOG_RELATIVE_PATH = "logs/output.jsonl";
 
 export function createRuntimeArtifactsContext(options: {
   cwd?: string;
+  configDir?: string;
   commandName: string;
   workerCommand?: string[];
   mode?: string;
@@ -151,7 +154,8 @@ export function createRuntimeArtifactsContext(options: {
   keepArtifacts?: boolean;
 }): RuntimeArtifactsContext {
   const cwd = options.cwd ?? process.cwd();
-  const rootBase = path.join(cwd, ".rundown", "runs");
+  const configDir = options.configDir ?? resolveRuntimeConfigDir(cwd);
+  const rootBase = path.join(configDir, "runs");
   fs.mkdirSync(rootBase, { recursive: true });
 
   const runId = buildRunId();
@@ -162,6 +166,7 @@ export function createRuntimeArtifactsContext(options: {
     runId,
     rootDir,
     cwd,
+    configDir,
     keepArtifacts: options.keepArtifacts ?? false,
     commandName: options.commandName,
     workerCommand: options.workerCommand,
@@ -187,16 +192,25 @@ export function createRuntimeArtifactsContext(options: {
   return context;
 }
 
-export function runtimeArtifactsRootDir(cwd: string = process.cwd()): string {
-  return path.join(cwd, ".rundown", "runs");
+export function runtimeArtifactsRootDir(
+  startDir: string = process.cwd(),
+): string {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return path.join(configDir, "runs");
 }
 
-export function globalOutputLogFilePath(cwd: string = process.cwd()): string {
-  return path.join(cwd, ".rundown", "logs", "output.jsonl");
+export function globalOutputLogFilePath(
+  startDir: string = process.cwd(),
+): string {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return path.join(configDir, GLOBAL_OUTPUT_LOG_RELATIVE_PATH);
 }
 
-export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRuntimeArtifactRun[] {
-  const rootDir = runtimeArtifactsRootDir(cwd);
+export function listSavedRuntimeArtifacts(
+  startDir: string = process.cwd(),
+): SavedRuntimeArtifactRun[] {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  const rootDir = runtimeArtifactsRootDir(configDir);
   if (!fs.existsSync(rootDir)) {
     return [];
   }
@@ -217,7 +231,7 @@ export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRun
       runs.push({
         runId: entry.name,
         rootDir: runDir,
-        relativePath: path.relative(cwd, runDir).split(path.sep).join("/"),
+        relativePath: path.relative(path.dirname(configDir), runDir).split(path.sep).join("/"),
         commandName: "unknown",
         workerCommand: undefined,
         mode: undefined,
@@ -236,7 +250,7 @@ export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRun
     runs.push({
       runId: metadata.runId,
       rootDir: runDir,
-      relativePath: path.relative(cwd, runDir).split(path.sep).join("/"),
+      relativePath: path.relative(path.dirname(configDir), runDir).split(path.sep).join("/"),
       commandName: metadata.commandName,
       workerCommand: metadata.workerCommand,
       mode: metadata.mode,
@@ -255,19 +269,26 @@ export function listSavedRuntimeArtifacts(cwd: string = process.cwd()): SavedRun
   return runs;
 }
 
-export function listFailedRuntimeArtifacts(cwd: string = process.cwd()): SavedRuntimeArtifactRun[] {
-  return listSavedRuntimeArtifacts(cwd).filter((run) => isFailedRuntimeArtifactStatus(run.status));
+export function listFailedRuntimeArtifacts(
+  startDir: string = process.cwd(),
+): SavedRuntimeArtifactRun[] {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return listSavedRuntimeArtifacts(configDir).filter((run) => isFailedRuntimeArtifactStatus(run.status));
 }
 
-export function latestSavedRuntimeArtifact(cwd: string = process.cwd()): SavedRuntimeArtifactRun | null {
-  return listSavedRuntimeArtifacts(cwd)[0] ?? null;
+export function latestSavedRuntimeArtifact(
+  startDir: string = process.cwd(),
+): SavedRuntimeArtifactRun | null {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return listSavedRuntimeArtifacts(configDir)[0] ?? null;
 }
 
 export function findSavedRuntimeArtifact(
   runId: string,
-  cwd: string = process.cwd(),
+  startDir: string = process.cwd(),
 ): SavedRuntimeArtifactRun | null {
-  const runs = listSavedRuntimeArtifacts(cwd);
+  const configDir = resolveRuntimeConfigDir(startDir);
+  const runs = listSavedRuntimeArtifacts(configDir);
   const exact = runs.find((run) => run.runId === runId);
   if (exact) {
     return exact;
@@ -281,24 +302,30 @@ export function findSavedRuntimeArtifact(
   return null;
 }
 
-export function removeSavedRuntimeArtifacts(cwd: string = process.cwd()): number {
-  return removeRuntimeArtifactsMatching(() => true, cwd);
+export function removeSavedRuntimeArtifacts(
+  startDir: string = process.cwd(),
+): number {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return removeRuntimeArtifactsMatching(() => true, configDir);
 }
 
-export function removeFailedRuntimeArtifacts(cwd: string = process.cwd()): number {
-  return removeRuntimeArtifactsMatching((run) => isFailedRuntimeArtifactStatus(run.status), cwd);
+export function removeFailedRuntimeArtifacts(
+  startDir: string = process.cwd(),
+): number {
+  const configDir = resolveRuntimeConfigDir(startDir);
+  return removeRuntimeArtifactsMatching((run) => isFailedRuntimeArtifactStatus(run.status), configDir);
 }
 
 function removeRuntimeArtifactsMatching(
   predicate: (run: SavedRuntimeArtifactRun) => boolean,
-  cwd: string,
+  configDir: string,
 ): number {
-  const rootDir = runtimeArtifactsRootDir(cwd);
+  const rootDir = runtimeArtifactsRootDir(configDir);
   if (!fs.existsSync(rootDir)) {
     return 0;
   }
 
-  const runs = listSavedRuntimeArtifacts(cwd);
+  const runs = listSavedRuntimeArtifacts(configDir);
   let removed = 0;
   for (const run of runs) {
     if (!predicate(run)) {
@@ -512,4 +539,11 @@ function isEnoentError(error: unknown): boolean {
 function ensureParentDir(filePath: string): void {
   const parentDir = path.dirname(filePath);
   fs.mkdirSync(parentDir, { recursive: true });
+}
+
+function resolveRuntimeConfigDir(startDir: string): string {
+  const resolved = path.resolve(startDir);
+  return path.basename(resolved) === CONFIG_DIR_NAME
+    ? resolved
+    : path.join(resolved, CONFIG_DIR_NAME);
 }

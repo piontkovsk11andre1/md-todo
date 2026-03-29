@@ -55,26 +55,26 @@ export function createFsArtifactStore(): ArtifactStore {
     displayPath(context): string {
       return displayArtifactsPath(context as RuntimeArtifactsContext);
     },
-    rootDir(cwd): string {
-      return runtimeArtifactsRootDir(cwd);
+    rootDir(configDir): string {
+      return runtimeArtifactsRootDir(configDir);
     },
-    listSaved(cwd): ArtifactRunMetadata[] {
-      return listSavedRuntimeArtifacts(cwd);
+    listSaved(configDir): ArtifactRunMetadata[] {
+      return listSavedRuntimeArtifacts(configDir);
     },
-    listFailed(cwd): ArtifactRunMetadata[] {
-      return listFailedRuntimeArtifacts(cwd);
+    listFailed(configDir): ArtifactRunMetadata[] {
+      return listFailedRuntimeArtifacts(configDir);
     },
-    latest(cwd): ArtifactRunMetadata | null {
-      return latestSavedRuntimeArtifact(cwd);
+    latest(configDir): ArtifactRunMetadata | null {
+      return latestSavedRuntimeArtifact(configDir);
     },
-    find(runId, cwd): ArtifactRunMetadata | null {
-      return findSavedRuntimeArtifact(runId, cwd);
+    find(runId, configDir): ArtifactRunMetadata | null {
+      return findSavedRuntimeArtifact(runId, configDir);
     },
-    removeSaved(cwd): number {
-      return removeSavedRuntimeArtifacts(cwd);
+    removeSaved(configDir): number {
+      return removeSavedRuntimeArtifacts(configDir);
     },
-    removeFailed(cwd): number {
-      return removeFailedRuntimeArtifacts(cwd);
+    removeFailed(configDir): number {
+      return removeFailedRuntimeArtifacts(configDir);
     },
     isFailedStatus(status: ArtifactStoreStatus | undefined): boolean {
       return isFailedRuntimeArtifactStatus(status);

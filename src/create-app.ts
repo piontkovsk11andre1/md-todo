@@ -16,6 +16,8 @@ import type { ApplicationOutputPort } from "./domain/ports/output-port.js";
 import type {
   ArtifactStore,
   Clock,
+  ConfigDirPort,
+  ConfigDirResult,
   DirectoryOpenerPort,
   FileLock,
   FileSystem,
@@ -35,6 +37,7 @@ import type {
 } from "./domain/ports/index.js";
 import {
   createCrossSpawnProcessRunner,
+  createConfigDirAdapter,
   createDirectoryOpenerAdapter,
   createExecFileGitClient,
   createArtifactVerificationStore,
@@ -55,6 +58,7 @@ import {
   createWorkerExecutorAdapter,
   createWorkingDirectoryAdapter,
 } from "./infrastructure/adapters/index.js";
+import { CONFIG_DIR_NAME } from "./domain/ports/config-dir-port.js";
 
 export type { DiscussTaskOptions };
 
@@ -95,6 +99,8 @@ export type AppUseCaseFactories = {
 export interface AppPorts {
   fileSystem: FileSystem;
   fileLock: FileLock;
+  configDirPort: ConfigDirPort;
+  configDir: ConfigDirResult | undefined;
   processRunner: ProcessRunner;
   gitClient: GitClient;
   templateLoader: TemplateLoader;
@@ -121,8 +127,15 @@ export interface CreateAppDependencies {
 
 function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
   const workingDirectory = overrides.workingDirectory ?? createWorkingDirectoryAdapter();
+  const pathOperations = overrides.pathOperations ?? createNodePathOperationsAdapter();
+  const configDirPort = overrides.configDirPort ?? createConfigDirAdapter();
+  const discoveredConfigDir = overrides.configDir ?? configDirPort.resolve(workingDirectory.cwd());
+  const configDir: ConfigDirResult = discoveredConfigDir ?? {
+    configDir: pathOperations.join(workingDirectory.cwd(), CONFIG_DIR_NAME),
+    isExplicit: false,
+  };
   const verificationStore = overrides.verificationStore
-    ?? createArtifactVerificationStore(workingDirectory.cwd());
+    ?? createArtifactVerificationStore(configDir.configDir);
   const taskVerification = overrides.taskVerification
     ?? createTaskVerificationAdapter(verificationStore);
   const taskRepair = overrides.taskRepair
@@ -131,6 +144,8 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
   return {
     fileSystem: overrides.fileSystem ?? createNodeFileSystem(),
     fileLock: overrides.fileLock ?? createFsFileLock(),
+    configDirPort,
+    configDir,
     processRunner: overrides.processRunner ?? createCrossSpawnProcessRunner(),
     gitClient: overrides.gitClient ?? createExecFileGitClient(),
     templateLoader: overrides.templateLoader ?? createFsTemplateLoader(),
@@ -144,7 +159,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     taskVerification,
     taskRepair,
     workingDirectory,
-    pathOperations: overrides.pathOperations ?? createNodePathOperationsAdapter(),
+    pathOperations,
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
     traceWriter: overrides.traceWriter ?? createNoopTraceWriter(),
     output: overrides.output ?? createNoopOutputPort(),
@@ -184,6 +199,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     templateVarsLoader: ports.templateVarsLoader,
     artifactStore: ports.artifactStore,
     traceWriter: ports.traceWriter,
+    configDir: ports.configDir,
     createTraceWriter: (trace, artifactContext) => {
       if (!trace) {
         return ports.traceWriter;
@@ -212,6 +228,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       templateVarsLoader: ports.templateVarsLoader,
       traceWriter: ports.traceWriter,
+      configDir: ports.configDir,
       createTraceWriter: (trace, artifactContext) => {
         if (!trace) {
           return ports.traceWriter;
@@ -229,6 +246,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       workingDirectory: ports.workingDirectory,
       fileSystem: ports.fileSystem,
       traceWriter: ports.traceWriter,
+      configDir: ports.configDir,
       createTraceWriter: (trace, artifactContext) => {
         if (!trace) {
           return ports.traceWriter;
@@ -243,6 +261,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     revertTask: (ports) => createRevertTask({
       artifactStore: ports.artifactStore,
       gitClient: ports.gitClient,
+      configDir: ports.configDir,
       workingDirectory: ports.workingDirectory,
       fileLock: ports.fileLock,
       fileSystem: ports.fileSystem,
@@ -278,6 +297,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       templateVarsLoader: ports.templateVarsLoader,
       traceWriter: ports.traceWriter,
+      configDir: ports.configDir,
       createTraceWriter: (trace, artifactContext) => {
         if (!trace) {
           return ports.traceWriter;
@@ -289,18 +309,20 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     }),
     logRuns: (ports) => createLogRuns({
       artifactStore: ports.artifactStore,
-      workingDirectory: ports.workingDirectory,
+      configDir: ports.configDir,
       clock: ports.clock,
       output: ports.output,
     }),
     initProject: (ports) => createInitProject({
       fileSystem: ports.fileSystem,
+      configDir: ports.configDir,
+      pathOperations: ports.pathOperations,
       output: ports.output,
     }),
     manageArtifacts: (ports) => createManageArtifacts({
       artifactStore: ports.artifactStore,
       directoryOpener: ports.directoryOpener,
-      workingDirectory: ports.workingDirectory,
+      configDir: ports.configDir,
       output: ports.output,
     }),
   };

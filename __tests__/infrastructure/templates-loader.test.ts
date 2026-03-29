@@ -10,6 +10,7 @@ import {
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_VERIFY_TEMPLATE,
 } from "../../src/domain/defaults.js";
+import { CONFIG_DIR_NAME } from "../../src/domain/ports/config-dir-port.js";
 import { loadProjectTemplates } from "../../src/infrastructure/templates-loader.js";
 
 const tempDirs: string[] = [];
@@ -29,8 +30,7 @@ function makeTempDir(): string {
   return dir;
 }
 
-function writeTemplate(baseDir: string, fileName: string, content: string): void {
-  const configDir = path.join(baseDir, ".rundown");
+function writeTemplate(configDir: string, fileName: string, content: string): void {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, fileName), content, "utf-8");
 }
@@ -38,13 +38,14 @@ function writeTemplate(baseDir: string, fileName: string, content: string): void
 describe("loadProjectTemplates", () => {
   it("loads new execute/verify/repair filenames", () => {
     const cwd = makeTempDir();
-    writeTemplate(cwd, "execute.md", "EXECUTE");
-    writeTemplate(cwd, "discuss.md", "DISCUSS");
-    writeTemplate(cwd, "verify.md", "VERIFY");
-    writeTemplate(cwd, "repair.md", "REPAIR");
-    writeTemplate(cwd, "plan.md", "PLAN");
+    const configDir = path.join(cwd, CONFIG_DIR_NAME);
+    writeTemplate(configDir, "execute.md", "EXECUTE");
+    writeTemplate(configDir, "discuss.md", "DISCUSS");
+    writeTemplate(configDir, "verify.md", "VERIFY");
+    writeTemplate(configDir, "repair.md", "REPAIR");
+    writeTemplate(configDir, "plan.md", "PLAN");
 
-    const templates = loadProjectTemplates(cwd);
+    const templates = loadProjectTemplates(configDir);
 
     expect(templates.task).toBe("EXECUTE");
     expect(templates.discuss).toBe("DISCUSS");
@@ -55,9 +56,9 @@ describe("loadProjectTemplates", () => {
   });
 
   it("falls back to defaults when templates are missing", () => {
-    const cwd = makeTempDir();
+    makeTempDir();
 
-    const templates = loadProjectTemplates(cwd);
+    const templates = loadProjectTemplates();
 
     expect(templates.task).toBe(DEFAULT_TASK_TEMPLATE);
     expect(templates.discuss).toBe(DEFAULT_DISCUSS_TEMPLATE);
@@ -69,11 +70,12 @@ describe("loadProjectTemplates", () => {
 
   it("loads explicit execute/verify/repair files with precedence", () => {
     const cwd = makeTempDir();
-    writeTemplate(cwd, "execute.md", "NEW EXECUTE");
-    writeTemplate(cwd, "verify.md", "NEW VERIFY");
-    writeTemplate(cwd, "repair.md", "NEW REPAIR");
+    const configDir = path.join(cwd, CONFIG_DIR_NAME);
+    writeTemplate(configDir, "execute.md", "NEW EXECUTE");
+    writeTemplate(configDir, "verify.md", "NEW VERIFY");
+    writeTemplate(configDir, "repair.md", "NEW REPAIR");
 
-    const templates = loadProjectTemplates(cwd);
+    const templates = loadProjectTemplates(configDir);
 
     expect(templates.task).toBe("NEW EXECUTE");
     expect(templates.discuss).toBe(DEFAULT_DISCUSS_TEMPLATE);
@@ -85,18 +87,20 @@ describe("loadProjectTemplates", () => {
 
   it("loads trace.md when present", () => {
     const cwd = makeTempDir();
-    writeTemplate(cwd, "trace.md", "TRACE");
+    const configDir = path.join(cwd, CONFIG_DIR_NAME);
+    writeTemplate(configDir, "trace.md", "TRACE");
 
-    const templates = loadProjectTemplates(cwd);
+    const templates = loadProjectTemplates(configDir);
 
     expect(templates.trace).toBe("TRACE");
   });
 
   it("loads discuss.md when present", () => {
     const cwd = makeTempDir();
-    writeTemplate(cwd, "discuss.md", "DISCUSS");
+    const configDir = path.join(cwd, CONFIG_DIR_NAME);
+    writeTemplate(configDir, "discuss.md", "DISCUSS");
 
-    const templates = loadProjectTemplates(cwd);
+    const templates = loadProjectTemplates(configDir);
 
     expect(templates.discuss).toBe("DISCUSS");
   });

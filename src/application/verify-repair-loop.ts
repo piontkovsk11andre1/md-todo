@@ -32,6 +32,7 @@ export interface VerifyRepairLoopInput {
   repairTemplate: string;
   workerCommand: string[];
   transport: PromptTransport;
+  configDir?: string;
   maxRepairAttempts: number;
   allowRepair: boolean;
   templateVars: Record<string, unknown>;
@@ -134,6 +135,7 @@ export async function runVerifyRepairLoop(
     command: input.workerCommand,
     mode: "wait",
     transport: input.transport,
+    configDir: input.configDir,
     templateVars: input.templateVars,
     artifactContext: input.artifactContext,
     trace: input.trace,
@@ -186,6 +188,7 @@ export async function runVerifyRepairLoop(
       maxRetries: 1,
       mode: "wait",
       transport: input.transport,
+      configDir: input.configDir,
       templateVars: input.templateVars,
       artifactContext: input.artifactContext,
       trace: input.trace,

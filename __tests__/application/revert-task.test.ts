@@ -248,6 +248,42 @@ describe("revert-task", () => {
     expect(events.some((event) => event.kind === "error" && event.message.includes("Working directory is not clean."))).toBe(true);
   });
 
+  it("keeps git status excludes effective when configDir is discovered in a parent directory", async () => {
+    const repoRoot = "C:/workspace";
+    const cwd = path.join(repoRoot, "packages", "app");
+    const runs: ArtifactRunMetadata[] = [
+      createRunMetadata({ runId: "run-1", status: "completed", commitSha: "abc123" }),
+    ];
+
+    const { revertTask, gitClient } = createDependencies(runs, {
+      cwd,
+      configDir: {
+        configDir: path.join(repoRoot, ".rundown"),
+        isExplicit: false,
+      },
+      gitRun: async (args) => {
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return repoRoot;
+        }
+        return undefined;
+      },
+    });
+
+    const code = await revertTask(createOptions({ dryRun: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(gitClient.run)).toHaveBeenCalledWith([
+      "status",
+      "--porcelain",
+      "--",
+      ":/",
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
+      ":(glob,exclude)**/.rundown/*.lock",
+    ], cwd);
+  });
+
   it("skips clean-worktree check when --force is enabled", async () => {
     const runs: ArtifactRunMetadata[] = [
       createRunMetadata({ runId: "run-1", status: "completed", commitSha: "abc123" }),
@@ -1015,6 +1051,8 @@ describe("revert-task", () => {
 function createDependencies(
   runs: ArtifactRunMetadata[],
   options: {
+    cwd?: string;
+    configDir?: { configDir: string; isExplicit: boolean };
     gitRun?: (args: string[]) => string | undefined | Promise<string | undefined>;
     fileExists?: (filePath: string) => boolean;
     fileLock?: FileLock;
@@ -1025,13 +1063,14 @@ function createDependencies(
   gitClient: GitClient;
   artifactStore: ArtifactStore;
 } {
+  const cwd = options.cwd ?? "/workspace";
   const events: ApplicationOutputEvent[] = [];
 
   const artifactStore: ArtifactStore = {
     createContext: vi.fn(() => ({
       runId: "run-revert",
-      rootDir: "/workspace/.rundown/runs/run-revert",
-      cwd: "/workspace",
+      rootDir: path.join(cwd, ".rundown", "runs", "run-revert"),
+      cwd,
       keepArtifacts: false,
       commandName: "revert",
       mode: "wait",
@@ -1041,7 +1080,7 @@ function createDependencies(
     completePhase: vi.fn(),
     finalize: vi.fn(),
     displayPath: vi.fn(() => ".rundown/runs/run-revert"),
-    rootDir: vi.fn(() => "/workspace/.rundown/runs"),
+    rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
     listSaved: vi.fn(() => runs),
     listFailed: vi.fn(() => []),
     latest: vi.fn(() => runs[0] ?? null),
@@ -1078,8 +1117,9 @@ function createDependencies(
   const dependencies: RevertTaskDependencies = {
     artifactStore,
     gitClient,
+    configDir: options.configDir,
     workingDirectory: {
-      cwd: vi.fn(() => "/workspace"),
+      cwd: vi.fn(() => cwd),
     },
     fileLock: options.fileLock ?? createNoopFileLock(),
     fileSystem: createInMemoryFileSystem({ fileExists: options.fileExists }),

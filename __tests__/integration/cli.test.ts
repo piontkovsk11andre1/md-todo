@@ -607,7 +607,7 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--last <n> Revert the last N completed+committed runs");
     expect(compactHelpOutput).toContain("--method <revert|reset> Git undo strategy");
     expect(compactHelpOutput).toContain("--force Bypass clean-worktree and reset contiguous-HEAD checks");
-    expect(compactHelpOutput).toContain("--keep-artifacts Preserve runtime prompts, logs, and metadata under .rundown/runs");
+    expect(compactHelpOutput).toContain("--keep-artifacts Preserve runtime prompts, logs, and metadata under <config-dir>/runs");
   });
 
   it("revert returns 3 when no completed artifacts exist", async () => {
@@ -1862,6 +1862,24 @@ describe.sequential("CLI integration", () => {
     expect(parsedLines.slice(firstLines.length).some((entry) => entry.command === "list")).toBe(true);
   });
 
+  it("writes global output log under the upward-discovered config dir", async () => {
+    const workspace = makeTempWorkspace();
+    const repoRoot = path.join(workspace, "repo");
+    const projectDir = path.join(repoRoot, "packages", "app");
+    const discoveredConfigDir = path.join(repoRoot, ".rundown");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(discoveredConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");
+
+    const result = await runCli(["next", "tasks.md"], projectDir);
+    expect(result.code).toBe(0);
+
+    const discoveredLogPath = path.join(discoveredConfigDir, "logs", "output.jsonl");
+    const localLogPath = path.join(projectDir, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(discoveredLogPath)).toBe(true);
+    expect(fs.existsSync(localLogPath)).toBe(false);
+  });
+
   it("writes stable single-line JSONL entries suitable for Promtail ingestion", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");
@@ -2334,6 +2352,33 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Dry run — would run"))).toBe(false);
   });
 
+  it("run --config-dir uses templates from the specified directory", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "project");
+    const sharedConfigDir = path.join(workspace, "shared", ".rundown");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(sharedConfigDir, { recursive: true });
+
+    fs.writeFileSync(path.join(projectDir, "TODO.md"), "- [ ] Validate shared config templates\n", "utf-8");
+    fs.writeFileSync(path.join(sharedConfigDir, "execute.md"), "CUSTOM EXECUTE TEMPLATE FROM SHARED CONFIG\n{{TASK_TEXT}}\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "--config-dir",
+      "../shared/.rundown",
+      "TODO.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], projectDir);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("CUSTOM EXECUTE TEMPLATE FROM SHARED CONFIG"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Validate shared config templates"))).toBe(true);
+  });
+
   it("run --help lists Git and completion hook options with clear descriptions", async () => {
     const workspace = makeTempWorkspace();
 
@@ -2357,7 +2402,7 @@ describe.sequential("CLI integration", () => {
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--mode <mode> Discuss execution mode: wait, tui");
     expect(compactHelpOutput).toContain("--print-prompt Print the rendered discuss prompt and exit");
-    expect(compactHelpOutput).toContain("--trace Enable structured trace output at .rundown/runs/<id>/trace.jsonl");
+    expect(compactHelpOutput).toContain("--trace Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl");
     expect(compactHelpOutput).toContain("--force-unlock Break stale source lockfiles before acquiring discuss locks");
   });
 
@@ -3565,6 +3610,17 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--force-unlock");
   });
 
+  it("init --help explains --config-dir creation target", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["init", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("Create a .rundown/ directory with default templates (plan, execute, verify, repair). Use --config-dir to control where it is created.");
+  });
+
   it("unlock --help shows source argument", async () => {
     const workspace = makeTempWorkspace();
 
@@ -4278,6 +4334,22 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "vars.json"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Initialized .rundown/ with default templates."))).toBe(true);
+  });
+
+  it("init --config-dir creates defaults at the explicit target directory", async () => {
+    const workspace = makeTempWorkspace();
+    const customConfigDir = path.join(workspace, "custom");
+
+    const result = await runCli(["init", "--config-dir", "./custom"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(customConfigDir, "execute.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "verify.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "repair.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "trace.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "vars.json"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown"))).toBe(false);
   });
 
   it("init keeps existing files and warns when defaults already exist", async () => {

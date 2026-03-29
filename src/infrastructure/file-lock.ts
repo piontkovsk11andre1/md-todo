@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import { FileLockError, type FileLock, type FileLockHolder, type FileLockMetadata } from "../domain/ports/file-lock.js";
 
 interface LockfilePayload {
@@ -8,8 +9,6 @@ interface LockfilePayload {
   startedAt: string;
   file: string;
 }
-
-const LOCKS_DIRECTORY = ".rundown";
 
 export function createLockfileFileLock(): FileLock {
   const heldLocks = new Map<string, string>();
@@ -96,7 +95,7 @@ export function lockfilePathFor(filePath: string): string {
   const sourcePath = normalizePath(filePath);
   const sourceDirectory = path.dirname(sourcePath);
   const sourceName = path.basename(sourcePath);
-  return path.join(sourceDirectory, LOCKS_DIRECTORY, `${sourceName}.lock`);
+  return path.join(sourceDirectory, CONFIG_DIR_NAME, `${sourceName}.lock`);
 }
 
 function createLockfile(lockPath: string, payload: LockfilePayload): void {

@@ -8,6 +8,7 @@
 
 import { execFile } from "node:child_process";
 import path from "node:path";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 
 export interface CommitTaskOptions {
@@ -26,6 +27,13 @@ export interface CommitTaskOptions {
 }
 
 const DEFAULT_COMMIT_MESSAGE_TEMPLATE = "rundown: complete \"{{task}}\" in {{file}}";
+
+const GIT_ARTIFACT_AND_LOCK_EXCLUDES = [
+  `:(top,exclude)${CONFIG_DIR_NAME}/runs/**`,
+  `:(top,exclude)${CONFIG_DIR_NAME}/logs/**`,
+  `:(top,exclude)${CONFIG_DIR_NAME}/*.lock`,
+  `:(glob,exclude)**/${CONFIG_DIR_NAME}/*.lock`,
+] as const;
 
 /**
  * Check whether the current directory is inside a git repository.
@@ -60,7 +68,7 @@ export async function commitCheckedTask(options: CommitTaskOptions): Promise<str
     { task, file: relativePath, line, index },
   );
 
-  await git(["add", "-A", "--", ".", ":(exclude).rundown/runs/**", ":(exclude).rundown/logs/**"], cwd);
+  await git(["add", "-A", "--", ":/", ...GIT_ARTIFACT_AND_LOCK_EXCLUDES], cwd);
   await git(["commit", "-m", message], cwd);
 
   return message;

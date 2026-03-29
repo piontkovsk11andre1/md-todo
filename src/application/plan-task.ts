@@ -20,6 +20,7 @@ import type {
   ArtifactStoreStatus,
   ArtifactRunContext,
   ArtifactStore,
+  ConfigDirResult,
   FileLock,
   FileSystem,
   PathOperationsPort,
@@ -47,6 +48,7 @@ export interface PlanTaskDependencies {
   templateLoader: TemplateLoader;
   artifactStore: ArtifactStore;
   traceWriter: TraceWriterPort;
+  configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
 }
@@ -117,10 +119,17 @@ export function createPlanTask(
     }
 
     try {
-      const varsFilePath = resolveTemplateVarsFilePath(varsFileOption);
+      const varsFilePath = resolveTemplateVarsFilePath(
+        varsFileOption,
+        dependencies.configDir?.configDir,
+      );
       const cwd = dependencies.workingDirectory.cwd();
       const fileTemplateVars = varsFilePath
-        ? dependencies.templateVarsLoader.load(varsFilePath, cwd)
+        ? dependencies.templateVarsLoader.load(
+          varsFilePath,
+          cwd,
+          dependencies.configDir?.configDir,
+        )
         : {};
       const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs);
       const extraTemplateVars: ExtraTemplateVars = {
@@ -167,7 +176,11 @@ export function createPlanTask(
         return 1;
       }
 
-      const planTemplate = loadPlanTemplateFromPorts(cwd, dependencies.templateLoader, dependencies.pathOperations);
+      const planTemplate = loadPlanTemplateFromPorts(
+        dependencies.configDir,
+        dependencies.templateLoader,
+        dependencies.pathOperations,
+      );
 
       const vars: TemplateVars = {
         ...extraTemplateVars,
@@ -199,6 +212,7 @@ export function createPlanTask(
 
       const artifactContext = dependencies.artifactStore.createContext({
         cwd,
+        configDir: dependencies.configDir?.configDir,
         commandName: "plan",
         workerCommand,
         mode,
@@ -357,6 +371,7 @@ export function createPlanTask(
             transport,
             trace,
             cwd,
+            configDir: dependencies.configDir?.configDir,
             artifactContext,
             artifactPhase: "plan",
             artifactPhaseLabel: buildPlanScanPhaseLabel(scanIndex, scanCount),
@@ -487,11 +502,16 @@ function finalizePlanArtifacts(
 }
 
 function loadPlanTemplateFromPorts(
-  cwd: string,
+  configDir: ConfigDirResult | undefined,
   templateLoader: TemplateLoader,
   pathOperations: PathOperationsPort,
 ): string {
-  return templateLoader.load(pathOperations.join(cwd, ".rundown", "plan.md")) ?? DEFAULT_PLAN_TEMPLATE;
+  if (!configDir) {
+    return DEFAULT_PLAN_TEMPLATE;
+  }
+
+  const configRoot = configDir.configDir;
+  return templateLoader.load(pathOperations.join(configRoot, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE;
 }
 
 function applyPlannerOutput(

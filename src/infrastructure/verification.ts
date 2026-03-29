@@ -65,6 +65,7 @@ export interface VerifyOptions {
   transport?: PromptTransport;
   trace?: boolean;
   cwd?: string;
+  configDir?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
 }
@@ -97,6 +98,7 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
     transport: options.transport ?? "file",
     trace: options.trace,
     cwd: options.cwd,
+    configDir: options.configDir,
     artifactContext: options.artifactContext,
     artifactPhase: "verify",
   });

@@ -14,6 +14,7 @@ export interface TaskRepairOptions {
   transport?: PromptTransport;
   trace?: boolean;
   cwd?: string;
+  configDir?: string;
   templateVars?: Record<string, unknown>;
   artifactContext?: unknown;
 }

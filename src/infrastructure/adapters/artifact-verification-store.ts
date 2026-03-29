@@ -19,14 +19,14 @@ interface RunMetadata {
   status?: string;
 }
 
-export function createArtifactVerificationStore(cwd: string = process.cwd()): VerificationStore {
+export function createArtifactVerificationStore(configDir?: string): VerificationStore {
   const inMemoryResults = new Map<string, string>();
 
   return {
     write(task, content) {
       const key = taskStoreKey(task);
       const normalized = normalizeVerificationResult(content);
-      const metadataPath = findLatestVerifyPhaseMetadataPath(task, cwd, { activeOnly: true });
+      const metadataPath = findLatestVerifyPhaseMetadataPath(task, configDir, { activeOnly: true });
       if (!metadataPath) {
         inMemoryResults.set(key, normalized);
         return;
@@ -49,7 +49,7 @@ export function createArtifactVerificationStore(cwd: string = process.cwd()): Ve
         return inMemory;
       }
 
-      const metadataPath = findLatestVerifyPhaseMetadataPath(task, cwd);
+      const metadataPath = findLatestVerifyPhaseMetadataPath(task, configDir);
       if (!metadataPath) {
         return null;
       }
@@ -74,10 +74,14 @@ export function createArtifactVerificationStore(cwd: string = process.cwd()): Ve
 
 function findLatestVerifyPhaseMetadataPath(
   task: Task,
-  cwd: string,
+  configDir: string | undefined,
   options: { activeOnly?: boolean } = {},
 ): string | null {
-  const runsDir = path.join(cwd, ".rundown", "runs");
+  if (!configDir) {
+    return null;
+  }
+
+  const runsDir = path.join(configDir, "runs");
   if (!fs.existsSync(runsDir)) {
     return null;
   }

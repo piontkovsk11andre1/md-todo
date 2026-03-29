@@ -16,6 +16,7 @@ export interface WorkerExecutionOptions {
   trace?: boolean;
   captureOutput?: boolean;
   cwd: string;
+  configDir?: string;
   artifactContext?: unknown;
   artifactPhase?: "execute" | "verify" | "repair" | "worker" | "plan" | "discuss";
   artifactPhaseLabel?: string;

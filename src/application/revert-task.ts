@@ -1,8 +1,10 @@
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type {
   ArtifactRunMetadata,
   ArtifactStore,
+  ConfigDirResult,
   FileLock,
   FileSystem,
   GitClient,
@@ -13,6 +15,7 @@ import type {
 export interface RevertTaskDependencies {
   artifactStore: ArtifactStore;
   gitClient: GitClient;
+  configDir?: ConfigDirResult;
   workingDirectory: WorkingDirectoryPort;
   fileLock: FileLock;
   fileSystem: FileSystem;
@@ -29,13 +32,6 @@ export interface RevertTaskOptions {
   keepArtifacts: boolean;
   force: boolean;
 }
-
-const GIT_ARTIFACT_AND_LOCK_EXCLUDES = [
-  ":(exclude).rundown/runs/**",
-  ":(exclude).rundown/logs/**",
-  ":(exclude).rundown/*.lock",
-  ":(glob,exclude)**/.rundown/*.lock",
-] as const;
 
 const NO_REVERTABLE_RUNS_BASE_MESSAGE = "No revertable runs found. The original run must be completed with --commit and --keep-artifacts so run.json contains extra.commitSha.";
 const REVERTABLE_LOG_HINT = "See `rundown log --revertable` for eligible runs.";
@@ -71,8 +67,9 @@ export function createRevertTask(
     }
 
     const cwd = dependencies.workingDirectory.cwd();
-    const selectedRuns = resolveTargetRuns(dependencies.artifactStore, cwd, { runId, last, all });
-    const completedRuns = resolveCompletedRuns(dependencies.artifactStore, cwd);
+    const artifactBaseDir = dependencies.configDir?.configDir;
+    const selectedRuns = resolveTargetRuns(dependencies.artifactStore, artifactBaseDir, { runId, last, all });
+    const completedRuns = resolveCompletedRuns(dependencies.artifactStore, artifactBaseDir);
 
     if (selectedRuns.length === 0) {
       if (completedRuns.length > 0) {
@@ -183,7 +180,12 @@ export function createRevertTask(
           message: "--force enabled: skipping clean-worktree precondition check.",
         });
       } else {
-        const isClean = await isWorkingDirectoryClean(dependencies.gitClient, cwd);
+        const isClean = await isWorkingDirectoryClean(
+          dependencies.gitClient,
+          cwd,
+          dependencies.configDir,
+          dependencies.pathOperations,
+        );
         if (!isClean) {
           emit({
             kind: "error",
@@ -406,47 +408,47 @@ function orderOperationsForMethod(
 
 function resolveTargetRunMetadata(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
   runId: string,
 ): ArtifactRunMetadata | null {
   if (runId === "latest") {
-    return resolveRevertableRuns(artifactStore, cwd)[0] ?? null;
+    return resolveRevertableRuns(artifactStore, artifactBaseDir)[0] ?? null;
   }
 
-  return artifactStore.find(runId, cwd);
+  return artifactStore.find(runId, artifactBaseDir);
 }
 
 function resolveTargetRuns(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
   options: Pick<RevertTaskOptions, "runId" | "last" | "all">,
 ): ArtifactRunMetadata[] {
   const { runId, last, all } = options;
 
   if (all) {
-    return resolveRevertableRuns(artifactStore, cwd);
+    return resolveRevertableRuns(artifactStore, artifactBaseDir);
   }
 
   if (last !== undefined) {
-    return resolveRevertableRuns(artifactStore, cwd).slice(0, last);
+    return resolveRevertableRuns(artifactStore, artifactBaseDir).slice(0, last);
   }
 
-  const selectedRun = resolveTargetRunMetadata(artifactStore, cwd, runId);
+  const selectedRun = resolveTargetRunMetadata(artifactStore, artifactBaseDir, runId);
   return selectedRun ? [selectedRun] : [];
 }
 
 function resolveRevertableRuns(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
 ): ArtifactRunMetadata[] {
-  return artifactStore.listSaved(cwd).filter((run) => resolveRevertOperation(run) !== null);
+  return artifactStore.listSaved(artifactBaseDir).filter((run) => resolveRevertOperation(run) !== null);
 }
 
 function resolveCompletedRuns(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
 ): ArtifactRunMetadata[] {
-  return artifactStore.listSaved(cwd).filter((run) => run.status === "completed");
+  return artifactStore.listSaved(artifactBaseDir).filter((run) => run.status === "completed");
 }
 
 function getCommitSha(run: ArtifactRunMetadata): string | null {
@@ -504,12 +506,72 @@ async function isGitRepoWithGitClient(gitClient: GitClient, cwd: string): Promis
   }
 }
 
-async function isWorkingDirectoryClean(gitClient: GitClient, cwd: string): Promise<boolean> {
+async function isWorkingDirectoryClean(
+  gitClient: GitClient,
+  cwd: string,
+  configDir: ConfigDirResult | undefined,
+  pathOperations: PathOperationsPort,
+): Promise<boolean> {
+  const excludes = await resolveGitArtifactAndLockExcludes(
+    gitClient,
+    cwd,
+    configDir,
+    pathOperations,
+  );
   const output = await gitClient.run(
-    ["status", "--porcelain", "--", ".", ...GIT_ARTIFACT_AND_LOCK_EXCLUDES],
+    ["status", "--porcelain", "--", ":/", ...excludes],
     cwd,
   );
   return output.trim().length === 0;
+}
+
+async function resolveGitArtifactAndLockExcludes(
+  gitClient: GitClient,
+  cwd: string,
+  configDir: ConfigDirResult | undefined,
+  pathOperations: PathOperationsPort,
+): Promise<string[]> {
+  const excludes = [`:(glob,exclude)**/${CONFIG_DIR_NAME}/*.lock`];
+  const effectiveConfigDir = configDir?.configDir;
+  if (!effectiveConfigDir) {
+    return excludes;
+  }
+
+  let repoRoot = "";
+  try {
+    repoRoot = (await gitClient.run(["rev-parse", "--show-toplevel"], cwd)).trim();
+  } catch {
+    return excludes;
+  }
+
+  const relativeConfigDir = pathOperations.relative(repoRoot, effectiveConfigDir).replace(/\\/g, "/");
+  if (!isPathInsideRepo(relativeConfigDir)) {
+    return excludes;
+  }
+
+  excludes.unshift(
+    `:(top,exclude)${relativeConfigDir}/runs/**`,
+    `:(top,exclude)${relativeConfigDir}/logs/**`,
+    `:(top,exclude)${relativeConfigDir}/*.lock`,
+  );
+
+  return excludes;
+}
+
+function isPathInsideRepo(relativePath: string): boolean {
+  if (relativePath.length === 0 || relativePath === ".") {
+    return false;
+  }
+
+  if (relativePath === ".." || relativePath.startsWith("../")) {
+    return false;
+  }
+
+  if (relativePath.startsWith("/") || /^[A-Za-z]:\//.test(relativePath)) {
+    return false;
+  }
+
+  return true;
 }
 
 async function validateTargetCommitsExistInHistory(

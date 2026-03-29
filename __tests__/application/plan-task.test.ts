@@ -55,8 +55,14 @@ describe("plan-task", () => {
     }));
 
     expect(code).toBe(0);
-    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith("/workspace/.rundown/plan.md");
-    expect(vi.mocked(dependencies.templateVarsLoader.load)).toHaveBeenCalledWith("custom-vars.json", "/workspace");
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(
+      expect.stringMatching(/\.rundown[\\/]plan\.md$/),
+    );
+    expect(vi.mocked(dependencies.templateVarsLoader.load)).toHaveBeenCalledWith(
+      "custom-vars.json",
+      "/workspace",
+      path.join(cwd, ".rundown"),
+    );
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
     expect(prompt).toContain("# Custom Plan Prompt");
     expect(prompt).toContain("Task: Roadmap");
@@ -898,6 +904,10 @@ function createDependencies(options: {
     traceWriter: {
       write: vi.fn(),
       flush: vi.fn(),
+    },
+    configDir: {
+      configDir: path.join(options.cwd, ".rundown"),
+      isExplicit: false,
     },
     createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
       write: vi.fn(),

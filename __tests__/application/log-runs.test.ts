@@ -6,7 +6,6 @@ import type {
   ArtifactRunMetadata,
   ArtifactStore,
   Clock,
-  WorkingDirectoryPort,
 } from "../../src/domain/ports/index.js";
 
 describe("log-runs", () => {
@@ -258,7 +257,6 @@ function createDependencies(options: {
   logRuns: ReturnType<typeof createLogRuns>;
   events: ApplicationOutputEvent[];
   artifactStore: ArtifactStore;
-  workingDirectory: WorkingDirectoryPort;
   clock: Clock;
 } {
   const events: ApplicationOutputEvent[] = [];
@@ -281,10 +279,6 @@ function createDependencies(options: {
     isFailedStatus: vi.fn(() => false),
   };
 
-  const workingDirectory: WorkingDirectoryPort = {
-    cwd: vi.fn(() => "/workspace"),
-  };
-
   const clock: Clock = {
     now: vi.fn(() => now),
     nowIsoString: vi.fn(() => nowIso),
@@ -292,7 +286,7 @@ function createDependencies(options: {
 
   const logRuns = createLogRuns({
     artifactStore,
-    workingDirectory,
+    configDir: undefined,
     clock,
     output: {
       emit(event) {
@@ -301,7 +295,7 @@ function createDependencies(options: {
     },
   });
 
-  return { logRuns, events, artifactStore, workingDirectory, clock };
+  return { logRuns, events, artifactStore, clock };
 }
 
 function createRun(overrides: Partial<ArtifactRunMetadata> = {}): ArtifactRunMetadata {

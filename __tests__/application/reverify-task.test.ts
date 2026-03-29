@@ -1364,6 +1364,58 @@ describe("reverify-task", () => {
     expect(prompt).toContain("\"text\":\"Extra note\"");
   });
 
+  it("loads verify/repair templates from resolved config dir", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const resolvedConfigDir = path.join(cwd, "nested", ".rundown");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-completed",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const { dependencies } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+    });
+    dependencies.configDir = {
+      configDir: resolvedConfigDir,
+      isExplicit: true,
+    };
+
+    const verifyTemplatePath = path.join(resolvedConfigDir, "verify.md");
+    const repairTemplatePath = path.join(resolvedConfigDir, "repair.md");
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath === verifyTemplatePath) {
+        return "Verify template";
+      }
+      if (templatePath === repairTemplatePath) {
+        return "Repair template";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(verifyTemplatePath);
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(repairTemplatePath);
+  });
+
   it("resolves relative task file metadata and falls back to a unique text match", async () => {
     const cwd = "/workspace";
     const absoluteTaskFile = path.resolve(cwd, "roadmap.md");
@@ -1546,6 +1598,10 @@ function createDependencies(options: {
     traceWriter: {
       write: vi.fn(),
       flush: vi.fn(),
+    },
+    configDir: {
+      configDir: path.join(options.cwd, ".rundown"),
+      isExplicit: false,
     },
     createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
       write: vi.fn(),

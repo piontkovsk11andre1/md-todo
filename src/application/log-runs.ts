@@ -3,7 +3,7 @@ import type {
   ArtifactRunMetadata,
   ArtifactStore,
   Clock,
-  WorkingDirectoryPort,
+  ConfigDirResult,
 } from "../domain/ports/index.js";
 import pc from "picocolors";
 import { formatRelativeTimestamp } from "../domain/relative-time.js";
@@ -11,7 +11,7 @@ import { toCompactRunId } from "../domain/run-id.js";
 
 export interface LogRunsDependencies {
   artifactStore: ArtifactStore;
-  workingDirectory: WorkingDirectoryPort;
+  configDir: ConfigDirResult | undefined;
   clock: Clock;
   output: ApplicationOutputPort;
 }
@@ -21,7 +21,6 @@ export interface LogRunsOptions {
   commandName?: string;
   limit?: number;
   json: boolean;
-  cwd?: string;
 }
 
 interface LogRunEntry {
@@ -45,11 +44,11 @@ export function createLogRuns(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return function logRuns(options: LogRunsOptions): number {
-    const cwd = options.cwd ?? dependencies.workingDirectory.cwd();
+    const artifactBaseDir = dependencies.configDir?.configDir;
     const normalizedCommandFilter = normalizeOptionalLower(options.commandName);
     const now = dependencies.clock.now();
     const runs = dependencies.artifactStore
-      .listSaved(cwd)
+      .listSaved(artifactBaseDir)
       .filter((run) => run.status === "completed")
       .filter((run) => {
         if (!normalizedCommandFilter) {

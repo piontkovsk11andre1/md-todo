@@ -22,6 +22,7 @@ import {
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
+import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import {
   createAnalysisSummaryEvent,
   createAgentSignalsEvent,
@@ -61,6 +62,7 @@ import type {
   TaskSelectionResult as PortTaskSelectionResult,
   TaskSelectorPort,
   TaskVerificationPort,
+  ConfigDirResult,
   TemplateLoader,
   TemplateVarsLoaderPort,
   TraceWriterPort,
@@ -131,6 +133,7 @@ export interface RunTaskDependencies {
   pathOperations: PathOperationsPort;
   templateVarsLoader: TemplateVarsLoaderPort;
   traceWriter: TraceWriterPort;
+  configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
 }
@@ -232,9 +235,16 @@ export function createRunTask(
     const allowRepair = runBehavior.allowRepair;
     const maxRepairAttempts = runBehavior.maxRepairAttempts;
 
-    const varsFilePath = resolveTemplateVarsFilePath(varsFileOption);
+    const varsFilePath = resolveTemplateVarsFilePath(
+      varsFileOption,
+      dependencies.configDir?.configDir,
+    );
     const fileTemplateVars = varsFilePath
-      ? dependencies.templateVarsLoader.load(varsFilePath, dependencies.workingDirectory.cwd())
+      ? dependencies.templateVarsLoader.load(
+        varsFilePath,
+        dependencies.workingDirectory.cwd(),
+        dependencies.configDir?.configDir,
+      )
       : {};
     const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs);
     const extraTemplateVars: ExtraTemplateVars = {
@@ -636,6 +646,7 @@ export function createRunTask(
           transport,
           trace: false,
           cwd: dependencies.workingDirectory.cwd(),
+          configDir: dependencies.configDir?.configDir,
           artifactContext,
           artifactPhase: "worker",
           artifactExtra: {
@@ -728,7 +739,8 @@ export function createRunTask(
       workerCommand: string[];
     }): Promise<number> {
       const cwd = dependencies.workingDirectory.cwd();
-      const selectedRun = resolveLatestCompletedRun(dependencies.artifactStore, cwd);
+      const artifactBaseDir = dependencies.configDir?.configDir;
+      const selectedRun = resolveLatestCompletedRun(dependencies.artifactStore, artifactBaseDir);
       if (!selectedRun) {
         emit({ kind: "error", message: "No saved runtime artifact run found for: latest completed" });
         return 3;
@@ -763,7 +775,7 @@ export function createRunTask(
       }
 
       const templates = loadProjectTemplatesFromPorts(
-        cwd,
+        dependencies.configDir,
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
@@ -845,6 +857,7 @@ export function createRunTask(
           transport: enrichmentOptions.transport,
           trace: false,
           cwd,
+          configDir: dependencies.configDir?.configDir,
         });
 
         traceWriter.write(createPhaseCompletedEvent({
@@ -979,7 +992,12 @@ export function createRunTask(
         if (!inGitRepo) {
           emit({ kind: "warn", message: "--commit: not inside a git repository, skipping." });
         } else {
-          const isClean = await isWorkingDirectoryClean(dependencies.gitClient, cwd);
+          const isClean = await isWorkingDirectoryClean(
+            dependencies.gitClient,
+            cwd,
+            dependencies.configDir,
+            dependencies.pathOperations,
+          );
           if (!isClean) {
             emit({
               kind: "error",
@@ -1023,7 +1041,7 @@ export function createRunTask(
       }
 
       const templates = loadProjectTemplatesFromPorts(
-        dependencies.workingDirectory.cwd(),
+        dependencies.configDir,
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
@@ -1127,6 +1145,7 @@ export function createRunTask(
 
       artifactContext = dependencies.artifactStore.createContext({
           cwd: dependencies.workingDirectory.cwd(),
+          configDir: dependencies.configDir?.configDir,
           commandName: "run",
           workerCommand: onlyVerify ? automationCommand : workerCommand,
         mode,
@@ -1417,6 +1436,7 @@ export function createRunTask(
         transport,
         trace,
         cwd: dependencies.workingDirectory.cwd(),
+        configDir: dependencies.configDir?.configDir,
         artifactContext,
         artifactPhase: "execute",
       });
@@ -1540,6 +1560,7 @@ async function runVerification(
     repairTemplate: templates.repair,
     workerCommand,
     transport,
+    configDir: dependencies.configDir?.configDir,
     maxRepairAttempts,
     allowRepair,
     templateVars: extraTemplateVars,
@@ -1600,7 +1621,14 @@ async function afterTaskComplete(
         emit({ kind: "warn", message: "--commit: not inside a git repository, skipping." });
       } else {
         const message = buildCommitMessage(task, cwd, commitMessageTemplate, dependencies.pathOperations);
-        await commitCheckedTaskWithGitClient(dependencies.gitClient, task, cwd, message);
+        await commitCheckedTaskWithGitClient(
+          dependencies.gitClient,
+          task,
+          cwd,
+          message,
+          dependencies.configDir,
+          dependencies.pathOperations,
+        );
         const commitSha = (await dependencies.gitClient.run(["rev-parse", "HEAD"], cwd)).trim();
         artifactExtra = {
           commitSha,
@@ -1676,19 +1704,23 @@ export function finalizeRunArtifacts(
 
 const DEFAULT_COMMIT_MESSAGE_TEMPLATE = "rundown: complete \"{{task}}\" in {{file}}";
 
-const GIT_ARTIFACT_AND_LOCK_EXCLUDES = [
-  ":(exclude).rundown/runs/**",
-  ":(exclude).rundown/logs/**",
-  ":(exclude).rundown/*.lock",
-  ":(glob,exclude)**/.rundown/*.lock",
-] as const;
-
 function loadProjectTemplatesFromPorts(
-  cwd: string,
+  configDir: ConfigDirResult | undefined,
   templateLoader: TemplateLoader,
   pathOperations: PathOperationsPort,
 ): ProjectTemplates {
-  const dir = pathOperations.join(cwd, ".rundown");
+  if (!configDir) {
+    return {
+      task: DEFAULT_TASK_TEMPLATE,
+      discuss: DEFAULT_DISCUSS_TEMPLATE,
+      verify: DEFAULT_VERIFY_TEMPLATE,
+      repair: DEFAULT_REPAIR_TEMPLATE,
+      plan: DEFAULT_PLAN_TEMPLATE,
+      trace: DEFAULT_TRACE_TEMPLATE,
+    };
+  }
+
+  const dir = configDir.configDir;
   return {
     task: templateLoader.load(pathOperations.join(dir, "execute.md")) ?? DEFAULT_TASK_TEMPLATE,
     discuss: templateLoader.load(pathOperations.join(dir, "discuss.md")) ?? DEFAULT_DISCUSS_TEMPLATE,
@@ -2225,9 +2257,15 @@ async function isGitRepoWithGitClient(gitClient: GitClient, cwd: string): Promis
   }
 }
 
-async function isWorkingDirectoryClean(gitClient: GitClient, cwd: string): Promise<boolean> {
+async function isWorkingDirectoryClean(
+  gitClient: GitClient,
+  cwd: string,
+  configDir: ConfigDirResult | undefined,
+  pathOperations: PathOperationsPort,
+): Promise<boolean> {
+  const excludes = await resolveGitArtifactAndLockExcludes(gitClient, cwd, configDir, pathOperations);
   const output = await gitClient.run(
-    ["status", "--porcelain", "--", ".", ...GIT_ARTIFACT_AND_LOCK_EXCLUDES],
+    ["status", "--porcelain", "--", ":/", ...excludes],
     cwd,
   );
   return output.trim().length === 0;
@@ -2238,10 +2276,62 @@ async function commitCheckedTaskWithGitClient(
   task: Task,
   cwd: string,
   message: string,
+  configDir: ConfigDirResult | undefined,
+  pathOperations: PathOperationsPort,
 ): Promise<void> {
+  const excludes = await resolveGitArtifactAndLockExcludes(gitClient, cwd, configDir, pathOperations);
   // Stage full worktree output for the task, but skip transient runtime artifacts.
-  await gitClient.run(["add", "-A", "--", ".", ...GIT_ARTIFACT_AND_LOCK_EXCLUDES], cwd);
+  await gitClient.run(["add", "-A", "--", ":/", ...excludes], cwd);
   await gitClient.run(["commit", "-m", message], cwd);
+}
+
+async function resolveGitArtifactAndLockExcludes(
+  gitClient: GitClient,
+  cwd: string,
+  configDir: ConfigDirResult | undefined,
+  pathOperations: PathOperationsPort,
+): Promise<string[]> {
+  const excludes = [`:(glob,exclude)**/${CONFIG_DIR_NAME}/*.lock`];
+  const effectiveConfigDir = configDir?.configDir;
+  if (!effectiveConfigDir) {
+    return excludes;
+  }
+
+  let repoRoot = "";
+  try {
+    repoRoot = (await gitClient.run(["rev-parse", "--show-toplevel"], cwd)).trim();
+  } catch {
+    return excludes;
+  }
+
+  const relativeConfigDir = pathOperations.relative(repoRoot, effectiveConfigDir).replace(/\\/g, "/");
+  if (!isPathInsideRepo(relativeConfigDir)) {
+    return excludes;
+  }
+
+  excludes.unshift(
+    `:(top,exclude)${relativeConfigDir}/runs/**`,
+    `:(top,exclude)${relativeConfigDir}/logs/**`,
+    `:(top,exclude)${relativeConfigDir}/*.lock`,
+  );
+
+  return excludes;
+}
+
+function isPathInsideRepo(relativePath: string): boolean {
+  if (relativePath.length === 0 || relativePath === ".") {
+    return false;
+  }
+
+  if (relativePath === ".." || relativePath.startsWith("../")) {
+    return false;
+  }
+
+  if (relativePath.startsWith("/") || /^[A-Za-z]:\//.test(relativePath)) {
+    return false;
+  }
+
+  return true;
 }
 
 function buildCommitMessage(
@@ -2309,9 +2399,9 @@ function formatTaskLabel(task: Task): string {
 
 function resolveLatestCompletedRun(
   artifactStore: ArtifactStore,
-  cwd: string,
+  artifactBaseDir: string | undefined,
 ): ArtifactRunMetadata | null {
-  const runs = artifactStore.listSaved(cwd);
+  const runs = artifactStore.listSaved(artifactBaseDir);
   return runs.find((run) => isCompletedArtifactRun(run) && hasReverifiableTask(run)) ?? null;
 }
 

@@ -44,6 +44,8 @@ export interface RunnerOptions {
   captureOutput?: boolean;
   /** Working directory for the command. */
   cwd?: string;
+  /** Resolved .rundown directory for runtime artifacts. */
+  configDir?: string;
   /** Optional shared runtime artifact context. */
   artifactContext?: RuntimeArtifactsContext;
   /** The phase name for persisted runtime artifacts. */
@@ -72,6 +74,7 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
   const mode = options.mode ?? "wait";
   const transport = options.transport ?? "file";
   const cwd = options.cwd ?? process.cwd();
+  const configDir = options.configDir;
   let ownedArtifactContext: RuntimeArtifactsContext | null = null;
   let artifactContext: RuntimeArtifactsContext;
 
@@ -80,6 +83,7 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
   } else {
     ownedArtifactContext = createRuntimeArtifactsContext({
       cwd,
+      configDir,
       commandName: "worker",
       workerCommand: options.command,
       mode,
