@@ -290,7 +290,7 @@ export function createReverifyTask(
       };
 
       try {
-        const valid = await runVerifyRepairLoop({
+        const verificationResult = await runVerifyRepairLoop({
           taskVerification: dependencies.taskVerification,
           taskRepair: dependencies.taskRepair,
           verificationStore: dependencies.verificationStore,
@@ -312,8 +312,11 @@ export function createReverifyTask(
           trace,
         });
 
-        if (!valid) {
-          emit({ kind: "error", message: "Verification failed after all repair attempts." });
+        if (!verificationResult.valid) {
+          const message = verificationResult.failureReason
+            ? "Verification failed after all repair attempts.\n" + verificationResult.failureReason
+            : "Verification failed after all repair attempts.";
+          emit({ kind: "error", message });
           return finalizeAndReturn(2, "reverify-failed");
         }
 

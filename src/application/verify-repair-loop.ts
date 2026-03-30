@@ -40,10 +40,15 @@ export interface VerifyRepairLoopInput {
   trace: boolean;
 }
 
+export interface VerifyRepairLoopResult {
+  valid: boolean;
+  failureReason: string | null;
+}
+
 export async function runVerifyRepairLoop(
   dependencies: VerifyRepairLoopDependencies,
   input: VerifyRepairLoopInput,
-): Promise<boolean> {
+): Promise<VerifyRepairLoopResult> {
   const emit = dependencies.output.emit.bind(dependencies.output);
   const runId = resolveTraceRunId(input.artifactContext);
   const emitVerificationResult = (valid: boolean, attemptNumber: number): void => {
@@ -158,17 +163,22 @@ export async function runVerifyRepairLoop(
     dependencies.verificationStore.remove(input.task);
     emitVerificationEfficiency();
     emit({ kind: "success", message: "Verification passed." });
-    return true;
+    return { valid: true, failureReason: null };
   }
 
   if (!input.allowRepair) {
+    const failureReason = cumulativeFailureReasons.at(-1) ?? initialFailureReason;
     emitRepairOutcome(false, 0);
     emitVerificationEfficiency();
-    emit({ kind: "error", message: "Last validation error: " + (initialFailureReason ?? "Verification failed (no details).") });
-    return false;
+    emit({ kind: "error", message: "Last validation error: " + (failureReason ?? "Verification failed (no details).") });
+    return { valid: false, failureReason };
   }
 
-  emit({ kind: "warn", message: "Verification failed. Running repair (" + input.maxRepairAttempts + " attempt(s))..." });
+  const repairWarningReason = initialFailureReason ?? "Verification failed (no details).";
+  emit({
+    kind: "warn",
+    message: "Verification failed: " + repairWarningReason + ". Running repair (" + input.maxRepairAttempts + " attempt(s))...",
+  });
   let attempts = 0;
   let previousFailure = dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
 
@@ -210,17 +220,22 @@ export async function runVerifyRepairLoop(
       dependencies.verificationStore.remove(input.task);
       emitVerificationEfficiency();
       emit({ kind: "success", message: "Repair succeeded after " + attempts + " attempt(s)." });
-      return true;
+      return { valid: true, failureReason: null };
     }
+
+    emit({
+      kind: "warn",
+      message: "Repair attempt " + attempts + " failed: " + (repairFailureReason ?? "Verification failed (no details)."),
+    });
 
     previousFailure = repairFailureReason ?? "Verification failed (no details).";
   }
 
   emitRepairOutcome(false, attempts);
   emitVerificationEfficiency();
-  const lastReason = cumulativeFailureReasons.at(-1) ?? "Verification failed (no details).";
-  emit({ kind: "error", message: "Last validation error: " + lastReason });
-  return false;
+  const failureReason = cumulativeFailureReasons.at(-1) ?? initialFailureReason;
+  emit({ kind: "error", message: "Last validation error: " + (failureReason ?? "Verification failed (no details).") });
+  return { valid: false, failureReason };
 }
 
 function resolveTraceRunId(artifactContext: ArtifactContext): string | null {

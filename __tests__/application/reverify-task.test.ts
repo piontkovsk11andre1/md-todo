@@ -903,7 +903,7 @@ describe("reverify-task", () => {
         source: "roadmap.md",
       },
     });
-    const { dependencies, artifactStore, taskVerification, taskRepair, verificationStore } = createDependencies({
+    const { dependencies, events, artifactStore, taskVerification, taskRepair, verificationStore } = createDependencies({
       cwd,
       fileSystem,
       runs: [completedRun],
@@ -921,6 +921,9 @@ describe("reverify-task", () => {
       expect.anything(),
       expect.objectContaining({ status: "reverify-failed", preserve: false }),
     );
+    expect(events.some((event) => event.kind === "error" && event.message
+      === "Verification failed after all repair attempts.\nVerification failed (no details)."))
+      .toBe(true);
   });
 
   it("returns 3 when no completed saved run can be resolved", async () => {

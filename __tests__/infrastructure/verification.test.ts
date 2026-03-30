@@ -90,6 +90,28 @@ describe("verify", () => {
     expect(verificationStore.write).toHaveBeenCalledWith(task, "validation failed");
   });
 
+  it("uses non-zero exit fallback when verifier returns no stdout/stderr", async () => {
+    const file = "Tasks.md";
+    const task = makeTask(file);
+    const verificationStore = createVerificationStore();
+
+    runWorkerMock.mockResolvedValue({ exitCode: 7, stdout: "", stderr: "" });
+
+    const valid = await verify({
+      task,
+      source: file,
+      contextBefore: "",
+      template: "{{task}}",
+      command: ["worker"],
+      verificationStore,
+      mode: "wait",
+      transport: "file",
+    });
+
+    expect(valid).toBe(false);
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "Verification worker exited with code 7.");
+  });
+
   it("accepts case-insensitive OK on successful verifier exit", async () => {
     const file = "Tasks.md";
     const task = makeTask(file);

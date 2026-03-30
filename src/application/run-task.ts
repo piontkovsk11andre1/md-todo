@@ -43,7 +43,7 @@ import {
   type AnalysisSummaryPayload,
 } from "../domain/trace.js";
 import { parseWorkerOutput } from "../domain/worker-output-parser.js";
-import { runVerifyRepairLoop } from "./verify-repair-loop.js";
+import { runVerifyRepairLoop, type VerifyRepairLoopResult } from "./verify-repair-loop.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type {
   ArtifactRunContext,
@@ -1181,7 +1181,7 @@ export function createRunTask(
 
         const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
         emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-        const valid = await runVerification(
+        const { valid, failureReason } = await runVerification(
           dependencies,
           traceWriter,
           task,
@@ -1198,7 +1198,10 @@ export function createRunTask(
         );
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
-          emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
+          const verificationFailureMessage = failureReason
+            ? "Verification failed after all repair attempts. Task not checked.\n" + failureReason
+            : "Verification failed after all repair attempts. Task not checked.";
+          emit({ kind: "error", message: verificationFailureMessage });
           await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
           return await failRun(2, "verification-failed", "Verification failed after all repair attempts.", 2);
         }
@@ -1256,7 +1259,7 @@ export function createRunTask(
         if (shouldVerify) {
           const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
           emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-          const valid = await runVerification(
+          const { valid, failureReason } = await runVerification(
             dependencies,
             traceWriter,
             task,
@@ -1273,7 +1276,10 @@ export function createRunTask(
           );
           completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
           if (!valid) {
-            emit({ kind: "error", message: "Verification failed. Task not checked." });
+            const verificationFailureMessage = failureReason
+              ? "Verification failed. Task not checked.\n" + failureReason
+              : "Verification failed. Task not checked.";
+            emit({ kind: "error", message: verificationFailureMessage });
             await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
             return await failRun(2, "verification-failed", "Verification failed after inline CLI execution.", 2);
           }
@@ -1385,7 +1391,7 @@ export function createRunTask(
         if (shouldVerify) {
           const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
           emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-          const valid = await runVerification(
+          const { valid, failureReason } = await runVerification(
             dependencies,
             traceWriter,
             task,
@@ -1402,7 +1408,10 @@ export function createRunTask(
           );
           completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
           if (!valid) {
-            emit({ kind: "error", message: "Verification failed. Task not checked." });
+            const verificationFailureMessage = failureReason
+              ? "Verification failed. Task not checked.\n" + failureReason
+              : "Verification failed. Task not checked.";
+            emit({ kind: "error", message: verificationFailureMessage });
             await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
             return await failRun(2, "verification-failed", "Verification failed after rundown task execution.", 2);
           }
@@ -1466,7 +1475,7 @@ export function createRunTask(
       if (shouldVerify) {
         const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
         emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-        const valid = await runVerification(
+        const { valid, failureReason } = await runVerification(
           dependencies,
           traceWriter,
           task,
@@ -1483,7 +1492,10 @@ export function createRunTask(
         );
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
-          emit({ kind: "error", message: "Verification failed after all repair attempts. Task not checked." });
+          const verificationFailureMessage = failureReason
+            ? "Verification failed after all repair attempts. Task not checked.\n" + failureReason
+            : "Verification failed after all repair attempts. Task not checked.";
+          emit({ kind: "error", message: verificationFailureMessage });
           await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
           return await failRun(2, "verification-failed", "Verification failed after all repair attempts.", 2);
         }
@@ -1545,7 +1557,7 @@ async function runVerification(
   extraTemplateVars: ExtraTemplateVars,
   artifactContext: ArtifactContext,
   trace: boolean,
-): Promise<boolean> {
+): Promise<VerifyRepairLoopResult> {
   return runVerifyRepairLoop({
     taskVerification: dependencies.taskVerification,
     taskRepair: dependencies.taskRepair,

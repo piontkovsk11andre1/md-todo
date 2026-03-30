@@ -573,6 +573,8 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(2);
     expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
+    const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
+    expect(stderrOutput.includes("newest fails")).toBe(true);
     const reverifyLines = result.logs.filter((line) => line.includes("Re-verify task:"));
     expect(reverifyLines).toHaveLength(3);
     expect(reverifyLines[0]).toContain("task oldest");
@@ -1261,6 +1263,8 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(2);
     expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
     expect(result.errors.some((line) => line.includes("Last validation error: verify output missing required section"))).toBe(true);
+    const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
+    expect(stderrOutput.includes("verify output missing required section")).toBe(true);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Write docs\n");
   });
 
@@ -1286,6 +1290,31 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Re-verification passed."))).toBe(true);
+  });
+
+  it("reverify surfaces verification reason after failed repair attempts", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK: still failing after repair');process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Last validation error: still failing after repair"))).toBe(true);
+    const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
+    expect(stderrOutput.includes("still failing after repair")).toBe(true);
   });
 
   it("reverify keeps checked and unchecked checkbox states unchanged on failure", async () => {
@@ -1532,7 +1561,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Verification failed. Running repair (1 attempt(s))..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Verification failed:") && line.includes("Running repair (1 attempt(s))..."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
     expect(result.logs).not.toContain("worker stdout\n");
@@ -3296,6 +3325,53 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
     expect(result.logs.some((line) => line.includes("hook-ran"))).toBe(false);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: echo hello");
+  });
+
+  it("run surfaces verification reason after failed repair attempts", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Repair the selected task')){process.exit(0);}if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK: release validation still failing');process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts. Task not checked."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Last validation error: release validation still failing"))).toBe(true);
+    const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
+    expect(stderrOutput.includes("release validation still failing")).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] Write docs");
+  });
+
+  it("run surfaces the no-details verification sentinel in end-to-end console output", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-repair",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK:   ');process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts. Task not checked."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Verification failed (no details)."))).toBe(true);
+    const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
+    expect(stderrOutput.includes("Verification failed (no details).")).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] Write docs");
   });
 
   it("run forwards --commit-message template when used with --commit", async () => {

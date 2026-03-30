@@ -469,7 +469,13 @@ If both are provided, `--worker` takes precedence.
 - `--repair-attempts <n>` — retry repair up to `n` times
 - `--no-repair` — disable repair explicitly
 
-When verification still fails after all configured attempts (including immediate failure with `--no-repair`), rundown prints the most recent validation reason as an error message (`Last validation error: ...`) before exiting with code `2`.
+When verification fails, rundown surfaces the failure reason in user-visible output at each stage:
+
+- Initial failure before repair: `Verification failed: <reason>. Running repair (N attempt(s))...`
+- After each failed repair attempt: `Repair attempt N failed: <reason>`
+- Final failure (including immediate `--no-repair`): `Last validation error: <reason>`
+
+If the worker does not provide details, rundown prints fallback reasons (for example `Verification worker exited with code N.` or `Verification failed (no details).`).
 
 ### Execution mode
 
@@ -696,7 +702,7 @@ rundown run roadmap.md --mode tui -- opencode
 
 - `0` — command completed successfully
 - `1` — execution error
-- `2` — validation failed
+- `2` — validation failed (stderr includes the surfaced verification failure reason)
 - `3` — no actionable target
 
 `rundown unlock` follows the same contract:

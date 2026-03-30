@@ -2425,6 +2425,7 @@ describe("run-task prompt and mode behavior", () => {
       stderr: "delegated err",
     }));
     dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "rundown child output did not match expected format");
 
     const runTask = createRunTask(dependencies);
     const code = await runTask(createOptions({
@@ -2442,7 +2443,10 @@ describe("run-task prompt and mode behavior", () => {
       expect.anything(),
       expect.objectContaining({ status: "verification-failed", preserve: false }),
     );
-    expect(events.some((event) => event.kind === "error" && event.message === "Verification failed. Task not checked.")).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\nrundown child output did not match expected format"
+    )).toBe(true);
   });
 
   it("runs on-fail hook on rundown execution failure", async () => {
@@ -2505,13 +2509,14 @@ describe("run-task prompt and mode behavior", () => {
         stderr: "",
       })),
     };
-    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
     dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
       exitCode: 0,
       stdout: "delegated out",
       stderr: "delegated err",
     }));
     dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "rundown delegated task left unchecked subtasks");
 
     const runTask = createRunTask(dependencies);
     const code = await runTask(createOptions({
@@ -2530,6 +2535,10 @@ describe("run-task prompt and mode behavior", () => {
       command: "node scripts/handle-fail.js",
     }));
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(false);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\nrundown delegated task left unchecked subtasks"
+    )).toBe(true);
   });
 
   it("suppresses inline CLI stdout and stderr when hideAgentOutput is enabled", async () => {
@@ -2618,7 +2627,7 @@ describe("run-task prompt and mode behavior", () => {
     expect(events).not.toContainEqual({ kind: "text", text: "worker out" });
     expect(events).not.toContainEqual({ kind: "stderr", text: "worker err" });
     expect(events.some((event) => event.kind === "info" && event.message === "Running verification...")).toBe(true);
-    expect(events.some((event) => event.kind === "warn" && event.message.includes("Verification failed. Running repair"))).toBe(true);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("Verification failed:") && event.message.includes("Running repair"))).toBe(true);
     expect(events.some((event) => event.kind === "success" && event.message === "Repair succeeded after 1 attempt(s).")).toBe(true);
     expect(events.some((event) => event.kind === "success" && event.message === "Task checked: Build release")).toBe(true);
   });
@@ -3115,8 +3124,9 @@ describe("run-task exit code behavior with completion side effects", () => {
         stderr: "",
       })),
     };
-    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
     dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "missing changelog entry for release");
 
     const runTask = createRunTask(dependencies);
 
@@ -3141,6 +3151,68 @@ describe("run-task exit code behavior with completion side effects", () => {
       ":(glob,exclude)**/.rundown/*.lock",
     ], cwd);
     expect(processRunner.run).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\nmissing changelog entry for release"
+    )).toBe(true);
+  });
+
+  it("surfaces non-zero verification fallback reason in console error output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "Verification worker exited with code 7.");
+
+    const runTask = createRunTask(dependencies);
+
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      workerCommand: ["opencode", "run"],
+      noRepair: true,
+      repairAttempts: 0,
+    }));
+
+    expect(code).toBe(2);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\nVerification worker exited with code 7."
+    )).toBe(true);
+  });
+
+  it("surfaces the no-details verification sentinel unchanged in console error output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "Verification failed (no details).");
+
+    const runTask = createRunTask(dependencies);
+
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      workerCommand: ["opencode", "run"],
+      noRepair: true,
+      repairAttempts: 0,
+    }));
+
+    expect(code).toBe(2);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\nVerification failed (no details)."
+    )).toBe(true);
   });
 });
 
@@ -3179,8 +3251,9 @@ describe("run-task lock release on error", () => {
       [taskFile]: "- [ ] Build release\n",
     });
     const gitClient = createGitClientMock();
-    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
     dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "release checklist item remained incomplete");
 
     const runTask = createRunTask(dependencies);
     const code = await runTask(createOptions({
@@ -3191,6 +3264,10 @@ describe("run-task lock release on error", () => {
 
     expect(code).toBe(2);
     expect(dependencies.fileLock.releaseAll).toHaveBeenCalledTimes(1);
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed after all repair attempts. Task not checked.\nrelease checklist item remained incomplete"
+    )).toBe(true);
   });
 
   it("releases locks when worker execution throws unexpectedly", async () => {
@@ -3854,8 +3931,9 @@ describe("run-task --on-fail hook", () => {
         stderr: "",
       })),
     };
-    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient, processRunner });
     dependencies.taskVerification.verify = vi.fn(async () => false);
+    dependencies.verificationStore.read = vi.fn(() => "cli output missing expected success marker");
 
     const runTask = createRunTask(dependencies);
     const code = await runTask(createOptions({
@@ -3870,6 +3948,10 @@ describe("run-task --on-fail hook", () => {
     expect(processRunner.run).toHaveBeenCalledWith(expect.objectContaining({
       command: "node scripts/handle-fail.js",
     }));
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message === "Verification failed. Task not checked.\ncli output missing expected success marker"
+    )).toBe(true);
   });
 
   it("does not run on-fail hook on success", async () => {

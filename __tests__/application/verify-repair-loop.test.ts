@@ -58,7 +58,10 @@ describe("verify-repair-loop trace metrics", () => {
       trace: true,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      failureReason: null,
+    });
     expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
       event_type: "verification.efficiency",
       payload: {
@@ -116,7 +119,10 @@ describe("verify-repair-loop trace metrics", () => {
       trace: true,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      failureReason: null,
+    });
     expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
       event_type: "verification.efficiency",
       payload: expect.objectContaining({
@@ -177,7 +183,10 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      failureReason: null,
+    });
     expect(output.emit).not.toHaveBeenCalledWith(expect.objectContaining({
       kind: "error",
       message: expect.stringContaining("Last validation error:"),
@@ -221,7 +230,10 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(false);
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "schema mismatch on metadata.version",
+    });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Last validation error: schema mismatch on metadata.version",
@@ -273,10 +285,89 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(false);
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "type mismatch in payload.id",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Verification failed: missing integration test. Running repair (2 attempt(s))...",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 1 failed: assertion failed in attempt 1",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 2 failed: type mismatch in payload.id",
+    });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Last validation error: type mismatch in payload.id",
+    });
+  });
+
+  it("emits per-attempt failure reasons for each failed repair before success", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("missing integration test")
+      .mockReturnValueOnce("missing integration test")
+      .mockReturnValueOnce("attempt 1 failed: lint errors")
+      .mockReturnValueOnce("attempt 2 failed: type mismatch");
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => false),
+      },
+      taskRepair: {
+        repair: vi.fn()
+          .mockResolvedValueOnce({ valid: false, attempts: 1 })
+          .mockResolvedValueOnce({ valid: false, attempts: 1 })
+          .mockResolvedValueOnce({ valid: true, attempts: 1 }),
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerCommand: ["opencode", "run"],
+      transport: "file",
+      maxRepairAttempts: 3,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-6" },
+      trace: false,
+    });
+
+    expect(result).toEqual({
+      valid: true,
+      failureReason: null,
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 1 failed: attempt 1 failed: lint errors",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 2 failed: attempt 2 failed: type mismatch",
+    });
+    expect(output.emit).not.toHaveBeenCalledWith({
+      kind: "warn",
+      message: expect.stringContaining("Repair attempt 3 failed:"),
     });
   });
 
@@ -338,7 +429,18 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(false);
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "type mismatch in payload.id",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Verification failed: missing integration test. Running repair (1 attempt(s))...",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 1 failed: type mismatch in payload.id",
+    });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Last validation error: type mismatch in payload.id",
@@ -399,7 +501,10 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(true);
+    expect(result).toEqual({
+      valid: true,
+      failureReason: null,
+    });
     expect(verificationStore.read(task)).toBe("OK");
   });
 
@@ -453,8 +558,19 @@ describe("verify-repair-loop output", () => {
       trace: false,
     });
 
-    expect(result).toBe(false);
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "still failing post-repair",
+    });
     expect(repairReadReasons).toEqual(["missing migration rollback"]);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Verification failed: missing migration rollback. Running repair (1 attempt(s))...",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "warn",
+      message: "Repair attempt 1 failed: still failing post-repair",
+    });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Last validation error: still failing post-repair",
