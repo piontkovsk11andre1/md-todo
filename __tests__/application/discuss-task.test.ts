@@ -11,6 +11,7 @@ import type { Task } from "../../src/domain/parser.js";
 import type {
   ApplicationOutputEvent,
   ArtifactStore,
+  CommandExecutor,
   FileLock,
   FileSystem,
   TemplateLoader,
@@ -27,7 +28,7 @@ describe("discuss-task", () => {
       [taskFile]: "- [ ] Refine rollout scope\n",
       [notesFile]: "- [ ] Another task\n",
     });
-    const { dependencies } = createDependencies({
+    const { dependencies, events } = createDependencies({
       cwd,
       task,
       source: "- [ ] Refine rollout scope\n",
@@ -147,6 +148,179 @@ describe("discuss-task", () => {
     expect(events).toContainEqual({ kind: "text", text: "Discuss prompt for: Refine rollout scope" });
   });
 
+  it("expands cli blocks in rendered discuss prompt before printing", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "```cli\necho hello\n```";
+      }
+      return null;
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    dependencies.cliBlockExecutor = cliBlockExecutor;
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(events).toContainEqual({
+      kind: "text",
+      text: "<command>echo hello</command>\n<output>\nhello\n\n</output>",
+    });
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+  });
+
+  it("passes exec timeout to cli block expansion in discuss prompt", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "```cli\necho hello\n```";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+  });
+
+  it("skips cli block expansion when ignoreCliBlock is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "```cli\necho hello\n```";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+      ignoreCliBlock: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "text",
+      text: "```cli\necho hello\n```",
+    });
+  });
+
+  it("emits an error and aborts when discuss template cli block fails", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 9,
+        stdout: "",
+        stderr: "template failed",
+      })),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "```cli\necho hello\n```";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: "`cli` fenced command failed in discuss template (exit 9): echo hello. Aborting run.",
+    }));
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+  });
+
   it("includes user-supplied --var values in rendered discuss prompt", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -247,6 +421,44 @@ describe("discuss-task", () => {
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — would discuss with: opencode run"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt length:"))).toBe(true);
+  });
+
+  it("dry-run skips cli block expansion and reports skipped block count", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "```cli\necho hello\n```";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Dry run — skipped `cli` fenced block execution; would execute 1 block.",
+    });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — would discuss with: opencode run"))).toBe(true);
   });
 
   it("dry-run prints resolved task info without launching worker", async () => {
@@ -847,9 +1059,17 @@ function createDependencies(options: {
   source: string;
   contextBefore: string;
   fileSystem: FileSystem;
+  cliBlockExecutor?: CommandExecutor;
 }): { dependencies: DiscussTaskDependencies; events: ApplicationOutputEvent[] } {
   const events: ApplicationOutputEvent[] = [];
   const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
+  const cliBlockExecutor: CommandExecutor = options.cliBlockExecutor ?? {
+    execute: vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    })),
+  };
   const traceWriter: TraceWriterPort = {
     write: vi.fn(),
     flush: vi.fn(),
@@ -913,6 +1133,7 @@ function createDependencies(options: {
     },
     workerConfigPort: { load: vi.fn(() => undefined) },
     traceWriter,
+    cliBlockExecutor,
     configDir: {
       configDir: path.join(options.cwd, ".rundown"),
       isExplicit: false,
@@ -987,6 +1208,8 @@ function createOptions(overrides: Partial<DiscussTaskOptions>): DiscussTaskOptio
     hideAgentOutput: false,
     trace: false,
     forceUnlock: false,
+    ignoreCliBlock: false,
+    cliBlockTimeoutMs: undefined,
     ...overrides,
   };
 }

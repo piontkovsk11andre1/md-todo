@@ -1,5 +1,7 @@
 import type { Task } from "../domain/parser.js";
 import type {
+  CommandExecutionOptions,
+  CommandExecutor,
   PromptTransport,
   TaskRepairPort,
   TaskVerificationPort,
@@ -38,6 +40,9 @@ export interface VerifyRepairLoopInput {
   templateVars: Record<string, unknown>;
   artifactContext: ArtifactContext;
   trace: boolean;
+  cliBlockExecutor?: CommandExecutor;
+  cliExecutionOptions?: CommandExecutionOptions;
+  cliExpansionEnabled?: boolean;
 }
 
 export interface VerifyRepairLoopResult {
@@ -144,6 +149,9 @@ export async function runVerifyRepairLoop(
     templateVars: input.templateVars,
     artifactContext: input.artifactContext,
     trace: input.trace,
+    cliBlockExecutor: input.cliBlockExecutor,
+    cliExecutionOptions: input.cliExecutionOptions,
+    cliExpansionEnabled: input.cliExpansionEnabled,
   });
   verificationDurationMs += Math.max(0, Date.now() - initialVerificationStartedAt);
   verifyAttempts += 1;
@@ -202,6 +210,9 @@ export async function runVerifyRepairLoop(
       templateVars: input.templateVars,
       artifactContext: input.artifactContext,
       trace: input.trace,
+      cliBlockExecutor: input.cliBlockExecutor,
+      cliExecutionOptions: input.cliExecutionOptions,
+      cliExpansionEnabled: input.cliExpansionEnabled,
     });
     executionDurationMs += Math.max(0, Date.now() - repairStartedAt);
 

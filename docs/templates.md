@@ -203,3 +203,61 @@ Verification is intentionally strict.
 Anything else means the task remains unchecked.
 
 This keeps completion logic explicit and inspectable.
+
+## Command-output blocks
+
+You can place `cli` fenced blocks in both task source Markdown files and `.rundown/` templates.
+
+Syntax:
+
+````md
+```cli
+cat README.md
+git status --short
+```
+````
+
+Each non-empty, non-comment line is treated as one shell command.
+
+### Execution model
+
+When command execution is enabled, rundown expands each `cli` block into XML before sending prompts to workers.
+
+Source files are expanded before task parsing; templates are expanded after template variables are rendered.
+
+Expanded form:
+
+````md
+<command>cat README.md</command>
+<output>
+...command output...
+</output>
+
+<command>git status --short</command>
+<output>
+...command output...
+</output>
+````
+
+On command failure, the command tag includes an `exit_code` attribute and output contains stderr:
+
+````md
+<command exit_code="1">git show does-not-exist</command>
+<output>
+fatal: ambiguous argument 'does-not-exist': unknown revision or path not in the working tree.
+</output>
+````
+
+### CLI flags
+
+- `--ignore-cli-block` skips `cli` block execution entirely and leaves the fenced blocks unexpanded.
+- `--cli-block-timeout <ms>` sets per-command timeout in milliseconds (default `30000`; `0` disables timeout).
+
+### Shell behavior
+
+`cli` commands run via Node `spawn(command, { shell: true })`, so execution uses the OS default shell:
+
+- Unix-like systems use `/bin/sh`.
+- Windows uses `%ComSpec%` (typically `cmd.exe`).
+
+Write commands with this in mind if your templates or task sources must run cross-platform.

@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import pc from "picocolors";
+import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../domain/ports/command-executor.js";
 
 const RUNNER_MODES: readonly ProcessRunMode[] = ["wait", "tui", "detached"];
 const PLANNER_MODES: readonly ProcessRunMode[] = ["wait"];
@@ -248,6 +249,12 @@ program
   .option("--clean", "Shorthand for --redo --reset-after", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring run locks", false)
   .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
   .allowUnknownOption(false)
   .action(withCliAction(async (source: string, opts: Record<string, string | string[] | boolean>) => {
     const mode = parseRunnerMode(opts.mode as string | undefined, RUNNER_MODES);
@@ -281,6 +288,8 @@ program
     const redo = Boolean(opts.redo as boolean | undefined) || clean;
     const resetAfter = Boolean(opts.resetAfter as boolean | undefined) || clean;
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
+    const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
+    const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     return getApp().runTask({
       source,
       mode,
@@ -309,6 +318,8 @@ program
       resetAfter,
       clean,
       forceUnlock,
+      cliBlockTimeoutMs,
+      ignoreCliBlock,
     });
   }));
 
@@ -328,6 +339,12 @@ program
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring discuss locks", false)
   .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
   .allowUnknownOption(false)
   .action(withCliAction(async (source: string, opts: Record<string, string | string[] | boolean>) => {
     const mode = parseRunnerMode(opts.mode as string | undefined, DISCUSS_MODES);
@@ -341,6 +358,8 @@ program
     const hideAgentOutput = Boolean(opts.hideAgentOutput as boolean | undefined);
     const trace = Boolean(opts.trace as boolean | undefined);
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
+    const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
+    const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
 
     const workerCommand = Array.isArray(opts.worker)
       ? opts.worker
@@ -362,6 +381,8 @@ program
       hideAgentOutput,
       trace,
       forceUnlock,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
     });
   }));
 
@@ -380,6 +401,12 @@ program
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
   .allowUnknownOption(false)
   .action(withCliAction((opts: Record<string, string | string[] | boolean>) => {
     const transport = parsePromptTransport(opts.transport as string | undefined);
@@ -393,6 +420,8 @@ program
     const keepArtifacts = opts.keepArtifacts as boolean;
     const trace = opts.trace as boolean;
     const targetRun = normalizeOptionalString(opts.run) ?? "latest";
+    const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
+    const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
 
     const workerCommand = Array.isArray(opts.worker)
       ? opts.worker
@@ -413,6 +442,8 @@ program
       keepArtifacts,
       workerCommand,
       trace,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
     });
   }));
 
@@ -517,6 +548,12 @@ program
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
   .allowUnknownOption(false)
   .action(withCliAction((markdownFiles: string[], opts: Record<string, string | string[] | boolean>) => {
     const markdownFile = resolvePlanMarkdownFile(markdownFiles);
@@ -528,6 +565,8 @@ program
     const keepArtifacts = opts.keepArtifacts as boolean;
     const trace = opts.trace as boolean;
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
+    const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
+    const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
 
@@ -546,6 +585,8 @@ program
       keepArtifacts,
       trace,
       forceUnlock,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
       varsFileOption,
       cliTemplateVarArgs,
       workerCommand,
@@ -670,6 +711,20 @@ function parseLimitCount(value: string | undefined): number | undefined {
   return parsed;
 }
 
+function parseCliBlockTimeout(value: string | undefined): number {
+  const raw = value ?? String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS);
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`Invalid --cli-block-timeout value: ${raw}. Must be a non-negative integer.`);
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid --cli-block-timeout value: ${raw}. Must be a safe non-negative integer.`);
+  }
+
+  return parsed;
+}
+
 function parseRevertMethod(value: string | undefined): "revert" | "reset" {
   const method = (value ?? "revert") as (typeof REVERT_METHODS)[number];
   if (!REVERT_METHODS.includes(method)) {
@@ -741,6 +796,11 @@ function resolveNoRepairFlag(opts: Record<string, string | string[] | boolean>):
 
   const noRepairOpt = opts.noRepair as boolean | undefined;
   return noRepairOpt === true;
+}
+
+function resolveIgnoreCliBlockFlag(opts: Record<string, string | string[] | boolean>): boolean {
+  const ignoreCliBlockOpt = opts.ignoreCliBlock as boolean | undefined;
+  return ignoreCliBlockOpt === true;
 }
 
 function withCliAction<Args extends unknown[]>(

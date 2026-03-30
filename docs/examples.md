@@ -292,3 +292,48 @@ How model selection resolves:
 2. Tasks under `- profile: fast` override frontmatter and run with `--model gpt-5.3-codex`.
 3. Tasks under `- check:` are verify-only tasks.
 4. A CLI worker still overrides all config/profile layers when provided.
+
+## 17. Command-output blocks (`cli` fenced blocks)
+
+Use fenced `cli` blocks in Markdown or templates when you want `rundown` to execute commands and inject their output into the worker prompt.
+
+Cat a file for context:
+
+```md
+- [ ] Investigate failing test
+
+  ```cli
+  cat src/auth/token.ts
+  ```
+```
+
+Query a database for live context:
+
+```md
+- [ ] Verify user seed data looks correct
+
+  ```cli
+  sql -m "SELECT id, email, created_at FROM users ORDER BY id DESC LIMIT 5"
+  ```
+```
+
+Run a linter and include diagnostics in the prompt:
+
+```md
+- [ ] Fix lint issues in API handlers
+
+  ```cli
+  npm run lint -- src/api
+  ```
+```
+
+Run command:
+
+```bash
+rundown run TODO.md -- opencode run
+```
+
+Useful flags:
+
+- `--ignore-cli-block` keeps `cli` blocks unexpanded (safe for review and dry inspection).
+- `--cli-block-timeout 60000` increases command timeout to 60 seconds.

@@ -2147,6 +2147,294 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(childPath, "utf-8")).toContain("- [ ] cli:");
   });
 
+  it("run --print-prompt executes cli fenced blocks and prints expanded output", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "echo cli-block-output",
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("<command>echo cli-block-output</command>")).toBe(true);
+    expect(combinedOutput.includes("cli-block-output")).toBe(true);
+  });
+
+  it("run annotates timed-out cli fenced block output", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "node -e \"setTimeout(function () {}, 2000)\"",
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--cli-block-timeout",
+      "50",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes('<command exit_code="timeout">node -e &quot;setTimeout(function () {}, 2000)&quot;</command>')).toBe(true);
+    expect(combinedOutput.includes("ERROR: command timed out")).toBe(true);
+    expect(combinedOutput.includes("Command timed out after 50ms.")).toBe(true);
+  });
+
+  it("run executes cli fenced blocks before worker and worker receives expanded prompt", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "echo cli-block-output",
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');process.stdout.write(prompt);",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("<command>echo cli-block-output</command>")).toBe(true);
+    expect(combinedOutput.includes("cli-block-output")).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] Draft release plan");
+  });
+
+  it("run --keep-artifacts writes cli fenced block stdout/stderr files", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "echo cli-block-artifacts",
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const latestRun = findSavedRunByCommand(workspace, "run");
+    expect(latestRun).not.toBeNull();
+
+    const runDir = path.join(workspace, ".rundown", "runs", latestRun!.runId);
+    const cliSourcePhaseDir = fs.readdirSync(runDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(runDir, entry.name))
+      .find((phaseDir) => {
+        const metadataPath = path.join(phaseDir, "metadata.json");
+        if (!fs.existsSync(metadataPath)) {
+          return false;
+        }
+
+        const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as {
+          phaseLabel?: unknown;
+          extra?: { cliBlockCommand?: unknown };
+        };
+        return metadata.phaseLabel === "cli-source"
+          && metadata.extra?.cliBlockCommand === "echo cli-block-artifacts";
+      });
+
+    expect(cliSourcePhaseDir).toBeDefined();
+    expect(fs.readFileSync(path.join(cliSourcePhaseDir!, "cli-block-1-stdout.txt"), "utf-8").trim()).toBe("cli-block-artifacts");
+    expect(fs.readFileSync(path.join(cliSourcePhaseDir!, "cli-block-1-stderr.txt"), "utf-8")).toBe("");
+  });
+
+  it("run --dry-run skips cli fenced block execution and reports skipped block count", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "cli-block-dry-run.txt");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        `node -e \"require('node:fs').writeFileSync(${JSON.stringify(markerPath)},'1')\"`,
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+    const normalizedOutput = stripAnsi(combinedOutput).replace(/\s+/g, " ");
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(normalizedOutput).toMatch(/Dry run .+ skipped `cli` fenced block execution; would execute \d+ blocks?\./);
+  });
+
+  it("run --ignore-cli-block leaves cli fenced blocks unexpanded", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "cli-block-ran.txt");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        `node -e \"require('node:fs').writeFileSync(${JSON.stringify(markerPath)},'1')\"`,
+        "```",
+        "",
+        "- [ ] Draft release plan",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--ignore-cli-block",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(result.logs.some((line) => line.includes("```cli"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("<command>"))).toBe(false);
+  });
+
+  it("run --ignore-cli-block still executes inline CLI tasks", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const fencedMarkerName = "fenced-skipped.txt";
+    const inlineMarkerName = "inline-ran.txt";
+    const fencedMarkerPath = path.join(workspace, fencedMarkerName);
+    const inlineMarkerPath = path.join(workspace, inlineMarkerName);
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        `node -e "require('node:fs').writeFileSync('${fencedMarkerName}','1')"`,
+        "```",
+        "",
+        `- [ ] cli: node -e "require('node:fs').writeFileSync('${inlineMarkerName}','1')"`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--ignore-cli-block",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(fencedMarkerPath)).toBe(false);
+    expect(fs.existsSync(inlineMarkerPath)).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node -e"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: node -e");
+  });
+
   it("run executes a rundown delegate task and checks the parent task", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -2408,6 +2696,53 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Validate shared config templates"))).toBe(true);
   });
 
+  it("run expands cli blocks in custom templates after template variable substitution", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "project");
+    const sharedConfigDir = path.join(workspace, "shared", ".rundown");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(sharedConfigDir, { recursive: true });
+
+    fs.writeFileSync(path.join(projectDir, "TODO.md"), "- [ ] Verify cli template var expansion\n", "utf-8");
+    fs.writeFileSync(
+      path.join(sharedConfigDir, "execute.md"),
+      [
+        "CUSTOM TEMPLATE",
+        "```cli",
+        "node -e \"process.stdout.write('FILE_VAR=' + process.argv[1])\" \"{{file}}\"",
+        "```",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "--config-dir",
+      "../shared/.rundown",
+      "TODO.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], projectDir);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("CUSTOM TEMPLATE")).toBe(true);
+    expect(combinedOutput.includes("<command>node -e")).toBe(true);
+    expect(combinedOutput.includes("FILE_VAR=")).toBe(true);
+    expect(combinedOutput.includes("FILE_VAR={{file}}")).toBe(false);
+    expect(combinedOutput.includes("{{file}}")).toBe(false);
+  });
+
   it("run --help lists Git and completion hook options with clear descriptions", async () => {
     const workspace = makeTempWorkspace();
 
@@ -2620,6 +2955,41 @@ describe.sequential("CLI integration", () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(result.errors.some((line) => line.includes("Discussion exited with code 7"))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toContain("- [ ] First pending task");
+  });
+
+  it("discuss --print-prompt expands cli blocks in discuss templates", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Discuss rollout plan\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "discuss.md"),
+      [
+        "CUSTOM DISCUSS TEMPLATE",
+        "```cli",
+        "echo discuss-cli-block-output",
+        "```",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "discuss",
+      "roadmap.md",
+      "--print-prompt",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("CUSTOM DISCUSS TEMPLATE")).toBe(true);
+    expect(combinedOutput.includes("<command>echo discuss-cli-block-output</command>")).toBe(true);
+    expect(combinedOutput.includes("discuss-cli-block-output")).toBe(true);
   });
 
   it("run passes parsed Git and hook options to the application layer", async () => {
@@ -4059,6 +4429,44 @@ describe.sequential("CLI integration", () => {
     ).toBe(true);
     expect(result.logs.some((line) => line.includes("Dry run — would plan: opencode run"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
+  });
+
+  it("plan --print-prompt expands cli blocks in plan templates", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "# Roadmap\n\nBreak down migration.\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "plan.md"),
+      [
+        "CUSTOM PLAN TEMPLATE",
+        "```cli",
+        "echo plan-cli-block-output",
+        "```",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("CUSTOM PLAN TEMPLATE")).toBe(true);
+    expect(combinedOutput.includes("<command>echo plan-cli-block-output</command>")).toBe(true);
+    expect(combinedOutput.includes("plan-cli-block-output")).toBe(true);
   });
 
   it("plan converges for a document with no existing TODO items", async () => {

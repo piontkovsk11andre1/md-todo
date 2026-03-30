@@ -1,4 +1,5 @@
 import { DEFAULT_PLAN_TEMPLATE, getTraceInstructions } from "../domain/defaults.js";
+import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { parseTasks } from "../domain/parser.js";
 import { insertPlannerTodos } from "../domain/planner.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
@@ -21,6 +22,8 @@ import type {
   ArtifactStoreStatus,
   ArtifactRunContext,
   ArtifactStore,
+  CommandExecutionOptions,
+  CommandExecutor,
   ConfigDirResult,
   FileLock,
   FileSystem,
@@ -40,9 +43,23 @@ export type PromptTransport = "file" | "arg";
 type ArtifactContext = ArtifactRunContext;
 type PlanConvergenceOutcome = "converged" | "scan-cap-reached";
 
+class TemplateCliBlockExecutionError extends Error {
+  readonly templateLabel: string;
+  readonly command: string;
+  readonly exitCode: number | null;
+
+  constructor(templateLabel: string, command: string, exitCode: number | null) {
+    super("Template cli block execution failed");
+    this.templateLabel = templateLabel;
+    this.command = command;
+    this.exitCode = exitCode;
+  }
+}
+
 export interface PlanTaskDependencies {
   workerExecutor: WorkerExecutorPort;
   workingDirectory: WorkingDirectoryPort;
+  cliBlockExecutor: CommandExecutor;
   fileSystem: FileSystem;
   fileLock: FileLock;
   pathOperations: PathOperationsPort;
@@ -69,6 +86,8 @@ export interface PlanTaskOptions {
   workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
 }
 
 const OPENCODE_CONTINUATION_ARG_PATTERN = /^--(?:continue|resume|session|thread|conversation)(?:=|$)/i;
@@ -77,6 +96,7 @@ export function createPlanTask(
   dependencies: PlanTaskDependencies,
 ): (options: PlanTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const cliBlockExecutor = dependencies.cliBlockExecutor;
 
   return async function planTask(options: PlanTaskOptions): Promise<number> {
     const {
@@ -92,7 +112,53 @@ export function createPlanTask(
       workerCommand,
       trace,
       forceUnlock,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
     } = options;
+    const cliExecutionOptions = cliBlockTimeoutMs === undefined
+      ? undefined
+      : { timeoutMs: cliBlockTimeoutMs };
+    const withCommandExecutionHandler = (
+      executionOptions: CommandExecutionOptions | undefined,
+      handler: ((execution: {
+        command: string;
+        exitCode: number | null;
+        stdoutLength: number;
+        stderrLength: number;
+        durationMs: number;
+      }) => void | Promise<void>) | undefined,
+    ): CommandExecutionOptions | undefined => {
+      if (!handler) {
+        return executionOptions;
+      }
+
+      const existingHandler = executionOptions?.onCommandExecuted;
+
+      return {
+        ...(executionOptions ?? {}),
+        onCommandExecuted: async (execution): Promise<void> => {
+          await existingHandler?.(execution);
+          await handler(execution);
+        },
+      };
+    };
+    const templateCliFailureHandler = (templateLabel: string) => (execution: {
+      command: string;
+      exitCode: number | null;
+      stdoutLength: number;
+      stderrLength: number;
+      durationMs: number;
+    }): void => {
+      if (typeof execution.exitCode === "number" && execution.exitCode === 0) {
+        return;
+      }
+
+      throw new TemplateCliBlockExecutionError(templateLabel, execution.command, execution.exitCode);
+    };
+    const cliExecutionOptionsWithTemplateFailureAbort = withCommandExecutionHandler(
+      cliExecutionOptions,
+      templateCliFailureHandler("plan template"),
+    );
 
     if (forceUnlock) {
       if (!dependencies.fileLock.isLocked(source)) {
@@ -209,7 +275,36 @@ export function createPlanTask(
         hasExistingTodos: hasExistingTodos ? "true" : "false",
       };
 
-      const prompt = renderTemplate(planTemplate, vars);
+      const renderedPrompt = renderTemplate(planTemplate, vars);
+      const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
+      const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
+      let prompt = renderedPrompt;
+      if (!ignoreCliBlock && !dryRunSuppressesCliExpansion) {
+        try {
+          prompt = await expandCliBlocks(
+            renderedPrompt,
+            cliBlockExecutor,
+            cwd,
+            cliExecutionOptionsWithTemplateFailureAbort,
+          );
+        } catch (error) {
+          if (error instanceof TemplateCliBlockExecutionError) {
+            const exitCodeLabel = error.exitCode === null ? "unknown" : String(error.exitCode);
+            emit({
+              kind: "error",
+              message: "`cli` fenced command failed in "
+                + error.templateLabel
+                + " (exit "
+                + exitCodeLabel
+                + "): "
+                + error.command
+                + ". Aborting run.",
+            });
+            return 1;
+          }
+          throw error;
+        }
+      }
 
       if (printPrompt) {
         emit({ kind: "text", text: buildPlanScanPrompt(prompt, documentSource, 1, scanCount) });
@@ -217,6 +312,16 @@ export function createPlanTask(
       }
 
       if (dryRun) {
+        if (dryRunSuppressesCliExpansion && !ignoreCliBlock) {
+          emit({
+            kind: "info",
+            message: "Dry run — skipped `cli` fenced block execution; would execute "
+              + promptCliBlockCount
+              + " block"
+              + (promptCliBlockCount === 1 ? "" : "s")
+              + ".",
+          });
+        }
         emit({ kind: "info", message: "Dry run — would plan: " + resolvedWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Scan count: " + scanCount });
         emit({ kind: "info", message: "Prompt length: " + buildPlanScanPrompt(prompt, documentSource, 1, scanCount).length + " chars" });

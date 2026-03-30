@@ -1,6 +1,7 @@
 import type { SortMode } from "../domain/sorting.js";
 import type { Task } from "../domain/parser.js";
 import { DEFAULT_DISCUSS_TEMPLATE } from "../domain/defaults.js";
+import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import {
   buildTaskHierarchyTemplateVars,
   renderTemplate,
@@ -21,6 +22,8 @@ import type { FileLock } from "../domain/ports/file-lock.js";
 import type {
   ArtifactRunContext,
   ArtifactStore,
+  CommandExecutionOptions,
+  CommandExecutor,
   FileSystem,
   ConfigDirResult,
   PathOperationsPort,
@@ -56,6 +59,19 @@ interface CheckboxStateSnapshot {
   orderedStates: boolean[];
 }
 
+class TemplateCliBlockExecutionError extends Error {
+  readonly templateLabel: string;
+  readonly command: string;
+  readonly exitCode: number | null;
+
+  constructor(templateLabel: string, command: string, exitCode: number | null) {
+    super("Template cli block execution failed");
+    this.templateLabel = templateLabel;
+    this.command = command;
+    this.exitCode = exitCode;
+  }
+}
+
 type TaskSelectionResult = PortTaskSelectionResult;
 
 export interface DiscussTaskDependencies {
@@ -71,6 +87,7 @@ export interface DiscussTaskDependencies {
   templateVarsLoader: TemplateVarsLoaderPort;
   workerConfigPort: WorkerConfigPort;
   traceWriter: TraceWriterPort;
+  cliBlockExecutor: CommandExecutor;
   configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
@@ -90,12 +107,15 @@ export interface DiscussTaskOptions {
   hideAgentOutput: boolean;
   trace: boolean;
   forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
 }
 
 export function createDiscussTask(
   dependencies: DiscussTaskDependencies,
 ): (options: DiscussTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const cliBlockExecutor = dependencies.cliBlockExecutor;
 
   return async function discussTask(options: DiscussTaskOptions): Promise<number> {
     const {
@@ -106,7 +126,52 @@ export function createDiscussTask(
       varsFileOption,
       cliTemplateVarArgs,
       workerCommand,
+      cliBlockTimeoutMs,
     } = options;
+    const cliExecutionOptions = cliBlockTimeoutMs === undefined
+      ? undefined
+      : { timeoutMs: cliBlockTimeoutMs };
+    const withCommandExecutionHandler = (
+      executionOptions: CommandExecutionOptions | undefined,
+      handler: ((execution: {
+        command: string;
+        exitCode: number | null;
+        stdoutLength: number;
+        stderrLength: number;
+        durationMs: number;
+      }) => void | Promise<void>) | undefined,
+    ): CommandExecutionOptions | undefined => {
+      if (!handler) {
+        return executionOptions;
+      }
+
+      const existingHandler = executionOptions?.onCommandExecuted;
+
+      return {
+        ...(executionOptions ?? {}),
+        onCommandExecuted: async (execution): Promise<void> => {
+          await existingHandler?.(execution);
+          await handler(execution);
+        },
+      };
+    };
+    const templateCliFailureHandler = (templateLabel: string) => (execution: {
+      command: string;
+      exitCode: number | null;
+      stdoutLength: number;
+      stderrLength: number;
+      durationMs: number;
+    }): void => {
+      if (typeof execution.exitCode === "number" && execution.exitCode === 0) {
+        return;
+      }
+
+      throw new TemplateCliBlockExecutionError(templateLabel, execution.command, execution.exitCode);
+    };
+    const cliExecutionOptionsWithTemplateFailureAbort = withCommandExecutionHandler(
+      cliExecutionOptions,
+      templateCliFailureHandler("discuss template"),
+    );
 
     const varsFilePath = resolveTemplateVarsFilePath(
       varsFileOption,
@@ -193,7 +258,36 @@ export function createDiscussTask(
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
-      const prompt = renderDiscussPrompt(templates.discuss, taskContext, extraTemplateVars);
+      const renderedPrompt = renderDiscussPrompt(templates.discuss, taskContext, extraTemplateVars);
+      const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
+      const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
+      let prompt = renderedPrompt;
+      if (!options.ignoreCliBlock && !dryRunSuppressesCliExpansion) {
+        try {
+          prompt = await expandCliBlocks(
+            renderedPrompt,
+            cliBlockExecutor,
+            cwd,
+            cliExecutionOptionsWithTemplateFailureAbort,
+          );
+        } catch (error) {
+          if (error instanceof TemplateCliBlockExecutionError) {
+            const exitCodeLabel = error.exitCode === null ? "unknown" : String(error.exitCode);
+            emit({
+              kind: "error",
+              message: "`cli` fenced command failed in "
+                + error.templateLabel
+                + " (exit "
+                + exitCodeLabel
+                + "): "
+                + error.command
+                + ". Aborting run.",
+            });
+            return 1;
+          }
+          throw error;
+        }
+      }
 
       emit({ kind: "info", message: "Next task: " + formatTaskLabel(taskContext.task) });
 
@@ -203,6 +297,16 @@ export function createDiscussTask(
       }
 
       if (dryRun) {
+        if (dryRunSuppressesCliExpansion && !options.ignoreCliBlock) {
+          emit({
+            kind: "info",
+            message: "Dry run — skipped `cli` fenced block execution; would execute "
+              + promptCliBlockCount
+              + " block"
+              + (promptCliBlockCount === 1 ? "" : "s")
+              + ".",
+          });
+        }
         emit({ kind: "info", message: "Dry run — would discuss with: " + resolvedWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
         return 0;

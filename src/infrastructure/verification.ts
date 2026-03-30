@@ -6,6 +6,8 @@
 
 import type { Task } from "../domain/parser.js";
 import type { VerificationStore } from "../domain/ports/verification-store.js";
+import type { CommandExecutionOptions, CommandExecutor } from "../domain/ports/command-executor.js";
+import { expandCliBlocks } from "../domain/cli-block.js";
 import {
   buildTaskHierarchyTemplateVars,
   renderTemplate,
@@ -14,6 +16,7 @@ import {
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
+import { createCliBlockExecutor } from "./cli-block-executor.js";
 
 interface VerificationResult {
   ok: boolean;
@@ -68,6 +71,9 @@ export interface VerifyOptions {
   configDir?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
+  cliBlockExecutor?: CommandExecutor;
+  cliExecutionOptions?: CommandExecutionOptions;
+  cliExpansionEnabled?: boolean;
 }
 
 /**
@@ -87,7 +93,27 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
     ...buildTaskHierarchyTemplateVars(options.task),
   };
 
-  const prompt = renderTemplate(options.template, vars);
+  const renderedPrompt = renderTemplate(options.template, vars);
+  const cliExpansionOptions = options.artifactContext?.keepArtifacts
+    ? {
+      ...options.cliExecutionOptions,
+      artifactContext: options.artifactContext,
+      artifactPhase: "verify" as const,
+      artifactPhaseLabel: "cli-verify-template",
+      artifactExtra: {
+        promptType: "verify-template",
+        ...(options.cliExecutionOptions?.artifactExtra ?? {}),
+      },
+    }
+    : options.cliExecutionOptions;
+  const prompt = options.cliExpansionEnabled === false
+    ? renderedPrompt
+    : await expandCliBlocks(
+      renderedPrompt,
+      options.cliBlockExecutor ?? createCliBlockExecutor(),
+      options.cwd ?? process.cwd(),
+      cliExpansionOptions,
+    );
 
   options.verificationStore.remove(options.task);
 

@@ -19,6 +19,7 @@ export interface RundownTaskOptions {
   parentTransport?: string;
   parentKeepArtifacts?: boolean;
   parentHideAgentOutput?: boolean;
+  parentIgnoreCliBlock?: boolean;
   parentVerify?: boolean;
   parentNoRepair?: boolean;
   parentRepairAttempts?: number;
@@ -128,6 +129,7 @@ function buildForwardedRunArgs(args: string[], options: RundownTaskOptions | und
   const hasTransportOverride = hasLongOption(forwarded, "--transport");
   const hasKeepArtifactsOverride = hasLongOption(forwarded, "--keep-artifacts");
   const hasHideAgentOutputOverride = hasLongOption(forwarded, "--hide-agent-output");
+  const hasIgnoreCliBlockOverride = hasLongOption(forwarded, "--ignore-cli-block");
   const hasVerifyOverride = hasLongOptionVariant(forwarded, ["--verify", "--no-verify"]);
   const hasNoRepairOverride = hasLongOption(forwarded, "--no-repair");
   const hasRepairAttemptsOverride = hasLongOptionVariant(forwarded, ["--repair-attempts", "--retries"]);
@@ -146,6 +148,10 @@ function buildForwardedRunArgs(args: string[], options: RundownTaskOptions | und
 
   if (!hasHideAgentOutputOverride && options?.parentHideAgentOutput) {
     forwarded.push("--hide-agent-output");
+  }
+
+  if (!hasIgnoreCliBlockOverride && options?.parentIgnoreCliBlock) {
+    forwarded.push("--ignore-cli-block");
   }
 
   if (!hasVerifyOverride && typeof options?.parentVerify === "boolean") {

@@ -15,6 +15,7 @@ import {
 import type { ApplicationOutputPort } from "./domain/ports/output-port.js";
 import type {
   ArtifactStore,
+  CommandExecutor,
   Clock,
   ConfigDirPort,
   ConfigDirResult,
@@ -47,6 +48,7 @@ import {
   createFsTemplateLoader,
   createFsTemplateVarsLoaderAdapter,
   createFanoutTraceWriter,
+  createCliBlockExecutor,
   createJsonlTraceWriter,
   createNodeFileSystem,
   createNoopTraceWriter,
@@ -92,6 +94,8 @@ export interface PlanTaskCommandOptions {
   workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
 }
 
 export type AppUseCaseFactories = {
@@ -120,6 +124,7 @@ export interface AppPorts {
   workerConfigPort: WorkerConfigPort;
   templateVarsLoader: TemplateVarsLoaderPort;
   traceWriter: TraceWriterPort;
+  cliBlockExecutor: CommandExecutor;
   output: ApplicationOutputPort;
 }
 
@@ -166,6 +171,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     workerConfigPort: overrides.workerConfigPort ?? createWorkerConfigAdapter(),
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
     traceWriter: overrides.traceWriter ?? createNoopTraceWriter(),
+    cliBlockExecutor: overrides.cliBlockExecutor ?? createCliBlockExecutor(),
     output: overrides.output ?? createNoopOutputPort(),
   };
 }
@@ -196,6 +202,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
   const planTaskUseCase = (ports: AppPorts) => createPlanTask({
     workerExecutor: ports.workerExecutor,
     workingDirectory: ports.workingDirectory,
+    cliBlockExecutor: ports.cliBlockExecutor,
     fileSystem: ports.fileSystem,
     fileLock: ports.fileLock,
     templateLoader: ports.templateLoader,
@@ -234,6 +241,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       templateVarsLoader: ports.templateVarsLoader,
       workerConfigPort: ports.workerConfigPort,
       traceWriter: ports.traceWriter,
+      cliBlockExecutor: ports.cliBlockExecutor,
       configDir: ports.configDir,
       createTraceWriter: (trace, artifactContext) => {
         if (!trace) {
@@ -262,6 +270,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       },
       templateLoader: ports.templateLoader,
       workerConfigPort: ports.workerConfigPort,
+      cliBlockExecutor: ports.cliBlockExecutor,
       pathOperations: ports.pathOperations,
       output: ports.output,
     }),
@@ -305,6 +314,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       templateVarsLoader: ports.templateVarsLoader,
       workerConfigPort: ports.workerConfigPort,
       traceWriter: ports.traceWriter,
+      cliBlockExecutor: ports.cliBlockExecutor,
       configDir: ports.configDir,
       createTraceWriter: (trace, artifactContext) => {
         if (!trace) {

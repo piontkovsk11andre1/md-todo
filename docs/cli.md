@@ -89,6 +89,8 @@ Options:
 | `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl` and mirror to `.rundown/logs/trace.jsonl`. | off |
 | `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
 | `--var <key=value>` | Inject template variables (repeatable). | none |
+| `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. | off |
+| `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). | `30000` |
 | `--hide-agent-output` | Hide worker stdout/stderr while keeping rundown status/lifecycle output visible. | off |
 | `--force-unlock` | Remove stale source lockfile before acquiring discuss lock. Active locks held by live processes are not removed. | off |
 | `--worker <command...>` | Worker command (preferred on PowerShell). | unset |
@@ -130,6 +132,8 @@ Options:
 | `--print-prompt` | Print the rendered verify prompt and exit `0` without running the worker. |
 | `--dry-run` | Resolve the target task, render the verify prompt, print planned execution, and exit `0`. |
 | `--keep-artifacts` | Keep the reverify run folder under `.rundown/runs/`. |
+| `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. |
+| `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). Default: `30000`. |
 
 Note: `--print-prompt` is only supported for single-run reverify. Combining it with `--all` or `--last` returns exit code `1`.
 
@@ -231,6 +235,8 @@ Options:
 | `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl` and mirror them to `.rundown/logs/trace.jsonl`. | off |
 | `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
 | `--var <key=value>` | Inject template variables (repeatable). | none |
+| `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. | off |
+| `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). | `30000` |
 | `--worker <command...>` | Worker command (preferred on PowerShell). | unset |
 
 Worker resolution:
@@ -514,6 +520,13 @@ If the worker does not provide details, rundown prints fallback reasons (for exa
 
 `file` is the default and is usually the right choice.
 
+### Command-output block expansion
+
+- `--ignore-cli-block` — skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
+- `--cli-block-timeout <ms>` — per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
+
+These options apply to `run`, `discuss`, `plan`, and `reverify`.
+
 ### Sorting
 
 - `--sort name-sort`
@@ -650,6 +663,8 @@ Behavior notes:
 - For `reverify`, `--print-prompt` and `--dry-run` target the verify prompt for the resolved historical task.
 - For `reverify --all` or `reverify --last <n>`, `--print-prompt` is not supported and returns exit code `1`; use `--dry-run` to inspect all selected runs.
 - For `plan`, both flags apply to the planner prompt.
+- Fenced `cli` blocks run during `--print-prompt` so printed prompts match worker-visible prompts (unless `--ignore-cli-block` is set).
+- Fenced `cli` blocks do not run during `--dry-run`; prompts remain unexpanded.
 - For inline `cli:` tasks on `run`, `--print-prompt` prints the inline command and exits without executing it.
 - Worker command validation still applies before execution for flows that require a worker command. Invalid or missing worker command input can still return exit code `1`.
 - If no CLI worker is provided and no worker is resolvable from config, the command exits `1` with guidance to configure `.rundown/config.json`.

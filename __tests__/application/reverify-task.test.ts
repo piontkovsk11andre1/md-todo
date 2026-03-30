@@ -10,6 +10,7 @@ import type {
   ArtifactRunMetadata,
   ArtifactStoreStatus,
   ArtifactStore,
+  CommandExecutor,
   FileSystem,
   TaskRepairResult,
   VerificationStore,
@@ -92,6 +93,63 @@ describe("reverify-task", () => {
     expect(vi.mocked(verificationStore.remove)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run - would run verification with: opencode run"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt length:"))).toBe(true);
+  });
+
+  it("dry-run skips cli block expansion and reports skipped block count", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "# Roadmap\n- [x] Build release\n",
+    });
+
+    const completedRun = createRunMetadata({
+      runId: "run-completed",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 2,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho from-verify\n```";
+      }
+
+      if (filePath.endsWith(path.join(".rundown", "repair.md"))) {
+        return "```cli\necho from-repair\n```";
+      }
+
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({ runId: "latest", dryRun: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Dry run — skipped `cli` fenced block execution; would execute 2 blocks.",
+    });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run - would run verification with: opencode run"))).toBe(true);
   });
 
   it("re-verifies all completed runs and emits a success summary", async () => {
@@ -1670,6 +1728,318 @@ describe("reverify-task", () => {
     expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(repairTemplatePath);
   });
 
+  it("expands cli fenced blocks in print-prompt output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-cli-print",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cli output",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho {{task}}\n```";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      printPrompt: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).not.toHaveBeenCalled();
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo Build release",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("<command>echo Build release</command>");
+  });
+
+  it("passes exec timeout to cli block expansion in reverify prompts", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-cli-timeout",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "expanded",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho verify-{{task}}\n```";
+      }
+      if (templatePath.endsWith(path.join(".rundown", "repair.md"))) {
+        return "```cli\necho repair-{{task}}\n```";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      printPrompt: true,
+      workerCommand: ["opencode", "run"],
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo verify-Build release",
+      cwd,
+      expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+  });
+
+  it("expands cli fenced blocks in verify and repair templates before verify-repair loop", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-cli-verify-repair",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async (command: string) => ({
+        exitCode: 0,
+        stdout: `expanded:${command}`,
+        stderr: "",
+      })),
+    };
+    const { dependencies, taskVerification, taskRepair } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+    vi.mocked(taskVerification.verify).mockResolvedValue(false);
+    vi.mocked(taskRepair.repair).mockResolvedValue({
+      valid: true,
+      attempts: 1,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho verify-{{task}}\n```";
+      }
+      if (templatePath.endsWith(path.join(".rundown", "repair.md"))) {
+        return "```cli\necho repair-{{task}}\n```";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      repairAttempts: 1,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo verify-Build release",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo repair-Build release",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(vi.mocked(taskRepair.repair)).toHaveBeenCalledWith(expect.objectContaining({
+      verifyTemplate: "<command>echo verify-Build release</command>\n<output>\nexpanded:echo verify-Build release\n</output>",
+      repairTemplate: "<command>echo repair-Build release</command>\n<output>\nexpanded:echo repair-Build release\n</output>",
+      templateVars: {},
+    }));
+  });
+
+  it("skips cli block expansion when ignoreCliBlock is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-cli-skip",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "expanded",
+        stderr: "",
+      })),
+    };
+
+    const { dependencies, events, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho verify-{{task}}\n```";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      printPrompt: true,
+      ignoreCliBlock: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(taskVerification.verify)).not.toHaveBeenCalled();
+    expect(vi.mocked(cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("```cli\necho verify-Build release\n```");
+  });
+
+  it("emits an error and aborts when verify template cli block fails", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const completedRun = createRunMetadata({
+      runId: "run-cli-template-fail",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 1,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async (command: string) => {
+        if (command === "echo verify-Build release") {
+          return {
+            exitCode: 8,
+            stdout: "",
+            stderr: "verify template failed",
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      }),
+    };
+    const { dependencies, events, taskVerification } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return "```cli\necho verify-{{task}}\n```";
+      }
+      if (templatePath.endsWith(path.join(".rundown", "repair.md"))) {
+        return "```cli\necho repair-{{task}}\n```";
+      }
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(taskVerification.verify)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "error",
+      message: "`cli` fenced command failed in verification/repair template (exit 8): echo verify-Build release. Aborting run.",
+    });
+  });
+
   it("resolves relative task file metadata and falls back to a unique text match", async () => {
     const cwd = "/workspace";
     const absoluteTaskFile = path.resolve(cwd, "roadmap.md");
@@ -1786,6 +2156,7 @@ function createDependencies(options: {
   cwd: string;
   fileSystem: FileSystem;
   runs: ArtifactRunMetadata[];
+  cliBlockExecutor?: CommandExecutor;
 }): {
   dependencies: ReverifyTaskDependencies;
   events: ApplicationOutputEvent[];
@@ -1842,6 +2213,13 @@ function createDependencies(options: {
   };
 
   const workerConfigPort: WorkerConfigPort = { load: vi.fn(() => undefined) };
+  const cliBlockExecutor: CommandExecutor = options.cliBlockExecutor ?? {
+    execute: vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    })),
+  };
 
   const dependencies: ReverifyTaskDependencies = {
     artifactStore,
@@ -1880,6 +2258,7 @@ function createDependencies(options: {
         events.push(event);
       },
     },
+    cliBlockExecutor,
   };
 
   return {
@@ -1956,6 +2335,8 @@ function createOptions(overrides: Partial<ReverifyTaskOptions>): ReverifyTaskOpt
     keepArtifacts: false,
     workerCommand: [],
     trace: false,
+    ignoreCliBlock: false,
+    cliBlockTimeoutMs: undefined,
     ...overrides,
   };
 }

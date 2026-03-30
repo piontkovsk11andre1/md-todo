@@ -16,6 +16,7 @@ import type {
   ApplicationOutputEvent,
   ApplicationOutputPort,
   ArtifactStore,
+  CommandExecutor,
   FileLock,
   FileSystem,
   GitClient,
@@ -781,8 +782,9 @@ describe("run-task trace enrichment", () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const task = createTask(taskFile, "Build release");
+    task.line = 2;
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [ ] Build release\n",
+      [taskFile]: "abc\n- [ ] Build release\n",
     });
     const gitClient: GitClient = {
       run: vi.fn(async (args: string[]) => {
@@ -804,7 +806,7 @@ describe("run-task trace enrichment", () => {
     dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
     vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
       task,
-      source: "tasks.md",
+      source: fileSystem.readText(taskFile),
       contextBefore: "abc",
     });
     vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
@@ -875,8 +877,9 @@ describe("run-task trace enrichment", () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const task = createTask(taskFile, "Build release");
+    task.line = 3;
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [ ] Build release\n- [ ] Follow-up\n",
+      [taskFile]: "Intro\nNotes\n- [ ] Build release\n- [ ] Follow-up\n",
     });
     const gitClient: GitClient = {
       run: vi.fn(async (args: string[]) => {
@@ -898,7 +901,7 @@ describe("run-task trace enrichment", () => {
     dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
     vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
       task,
-      source: "tasks.md",
+      source: fileSystem.readText(taskFile),
       contextBefore: "Intro\nNotes",
     });
     dependencies.workerExecutor.runWorker = vi.fn()
@@ -1441,6 +1444,62 @@ describe("run-task prompt and mode behavior", () => {
     expect(code).toBe(0);
     expect(dependencies.fileLock.isLocked).toHaveBeenCalledWith(taskFile);
     expect(dependencies.fileLock.forceRelease).not.toHaveBeenCalled();
+  });
+
+  it("emits cli_block.executed events for expanded cli blocks", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cli-output",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "```cli\necho hello\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "cli_block.executed",
+      payload: {
+        command: "echo hello",
+        exit_code: 0,
+        stdout_length: "cli-output".length,
+        stderr_length: 0,
+        duration_ms: expect.any(Number),
+      },
+    }));
   });
 
   it("rejects --only-verify when combined with reset flags", async () => {
@@ -2053,6 +2112,60 @@ describe("run-task prompt and mode behavior", () => {
     expect(events.some((event) => event.kind === "text" && event.text.includes("Build release"))).toBe(true);
   });
 
+  it("expands cli blocks before printing the rendered worker prompt", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cli output",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "Task: {{task}}\n```cli\necho from-template\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      printPrompt: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo from-template",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "text",
+      text: "Task: Build release\n<command>echo from-template</command>\n<output>\ncli output\n</output>",
+    });
+  });
+
   it("exposes children and subItems JSON in rendered prompts", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -2173,6 +2286,65 @@ describe("run-task prompt and mode behavior", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt length:"))).toBe(true);
   });
 
+  it("dry-run skips cli fenced block execution and reports skipped block count", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "docs", "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    task.line = 4;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "```cli",
+        "echo from-source",
+        "```",
+        "- [ ] Build release",
+        "",
+      ].join("\n"),
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "source output",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: fileSystem.readText(taskFile),
+      contextBefore: "",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "Task: {{task}}\n```cli\necho from-template\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "docs/tasks.md",
+      verify: false,
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Dry run — skipped `cli` fenced block execution; would execute 2 blocks.",
+    });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — would run: opencode run"))).toBe(true);
+  });
+
   it("prints inline CLI text when prompt output is requested", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -2276,6 +2448,7 @@ describe("run-task prompt and mode behavior", () => {
       workerCommand: ["opencode", "run"],
       keepArtifacts: true,
       hideAgentOutput: true,
+      ignoreCliBlock: true,
     }));
 
     expect(code).toBe(0);
@@ -2284,7 +2457,7 @@ describe("run-task prompt and mode behavior", () => {
     expect(events.some((event) =>
       event.kind === "info"
       && event.message.includes(
-        "Dry run — would execute rundown task: rundown run Child.md --worker opencode run --transport arg --keep-artifacts --hide-agent-output",
+        "Dry run — would execute rundown task: rundown run Child.md --worker opencode run --transport arg --keep-artifacts --hide-agent-output --ignore-cli-block",
       ))).toBe(true);
     expect(events.some((event) =>
       event.kind === "info"
@@ -2717,6 +2890,7 @@ describe("run-task prompt and mode behavior", () => {
         parentTransport: "arg",
         parentKeepArtifacts: true,
         parentHideAgentOutput: false,
+        parentIgnoreCliBlock: false,
         parentVerify: false,
         parentNoRepair: false,
         parentRepairAttempts: 0,
@@ -5510,6 +5684,444 @@ describe("run-task --on-fail hook", () => {
   });
 });
 
+describe("run-task cli fenced block timeout", () => {
+  it("passes cliBlockTimeoutMs into cli fenced-block execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello from cli block",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "Task: {{task}}\n```cli\necho hello\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("<command>echo hello</command>"),
+    }));
+  });
+
+  it("passes cli block executor and timeout to verification and repair prompts", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cli-output",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("verify.md")) {
+        return "```cli\necho verify\n```";
+      }
+      if (filePath.endsWith("repair.md")) {
+        return "```cli\necho repair\n```";
+      }
+      return null;
+    });
+    vi.mocked(dependencies.taskVerification.verify).mockResolvedValue(false);
+    vi.mocked(dependencies.taskRepair.repair).mockResolvedValue({ valid: true, attempts: 1 });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: true,
+      noRepair: false,
+      repairAttempts: 1,
+      workerCommand: ["opencode", "run"],
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.taskVerification.verify).toHaveBeenCalledWith(expect.objectContaining({
+      cliBlockExecutor,
+      cliExecutionOptions: expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    }));
+    expect(dependencies.taskRepair.repair).toHaveBeenCalledWith(expect.objectContaining({
+      cliBlockExecutor,
+      cliExecutionOptions: expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    }));
+  });
+
+  it("passes artifact logging options to cli block expansion when artifacts are kept", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cli-output",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "Task: {{task}}\n```cli\necho hello\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      keepArtifacts: true,
+      workerCommand: ["opencode", "run"],
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        timeoutMs: 1234,
+        artifactContext: expect.objectContaining({ runId: "run-test" }),
+        artifactPhase: "worker",
+        artifactPhaseLabel: "cli-task-template",
+        artifactExtra: { promptType: "task-template" },
+      }),
+    );
+  });
+
+  it("expands source cli fenced blocks before downstream prompt rendering", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "docs", "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    task.line = 4;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "```cli",
+        "echo from-source",
+        "```",
+        "- [ ] Build release",
+        "",
+      ].join("\n"),
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "source output",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: fileSystem.readText(taskFile),
+      contextBefore: "",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "CTX={{context}}\nSRC={{source}}\nTASK={{task}}";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "docs/tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "echo from-source",
+      path.resolve(cwd, "docs"),
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("SRC=<command>echo from-source</command>"),
+    }));
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("CTX=<command>echo from-source</command>"),
+    }));
+  });
+
+  it("warns on failed source cli fenced block execution but continues", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "docs", "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    task.line = 4;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "```cli",
+        "echo from-source",
+        "```",
+        "- [ ] Build release",
+        "",
+      ].join("\n"),
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async (command: string) => {
+        if (command === "echo from-source") {
+          return {
+            exitCode: 2,
+            stdout: "",
+            stderr: "source failed",
+          };
+        }
+
+        if (command === "echo from-template") {
+          return {
+            exitCode: 0,
+            stdout: "template ok\n",
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      }),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: fileSystem.readText(taskFile),
+      contextBefore: "",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "SRC={{source}}\n```cli\necho from-template\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "docs/tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "warn",
+      message: expect.stringContaining("`cli` fenced command failed in source markdown (exit 2): echo from-source."),
+    }));
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("echo from-template"))).toBe(false);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("<command exit_code=\"2\">echo from-source</command>"),
+    }));
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("<command>echo from-template</command>"),
+    }));
+  });
+
+  it("emits an error and aborts when template cli fenced block execution fails", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 7,
+        stdout: "",
+        stderr: "template failed",
+      })),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "Task: {{task}}\n```cli\necho from-template\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("source markdown"))).toBe(false);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("`cli` fenced command failed in task template (exit 7): echo from-template. Aborting run."),
+    }));
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+  });
+
+  it("skips cli fenced block expansion when ignoreCliBlock is true", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "docs", "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    task.line = 4;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "```cli",
+        "echo from-source",
+        "```",
+        "- [ ] Build release",
+        "",
+      ].join("\n"),
+    });
+    const gitClient = createGitClientMock();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "source output",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient,
+      cliBlockExecutor,
+    });
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue({
+      task,
+      source: fileSystem.readText(taskFile),
+      contextBefore: "",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("execute.md")) {
+        return "CTX={{context}}\nSRC={{source}}\nTASK={{task}}\n```cli\necho from-template\n```";
+      }
+
+      if (filePath.endsWith("verify.md")) {
+        return "```cli\necho from-verify\n```";
+      }
+
+      if (filePath.endsWith("repair.md")) {
+        return "```cli\necho from-repair\n```";
+      }
+
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "docs/tasks.md",
+      verify: true,
+      repairAttempts: 1,
+      workerCommand: ["opencode", "run"],
+      ignoreCliBlock: true,
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).not.toHaveBeenCalled();
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("SRC=```cli\necho from-source\n```"),
+    }));
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining("```cli\necho from-template\n```"),
+    }));
+    expect(dependencies.taskVerification.verify).toHaveBeenCalledWith(expect.objectContaining({
+      template: "```cli\necho from-verify\n```",
+      cliExpansionEnabled: false,
+      cliExecutionOptions: expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    }));
+  });
+});
+
 function createDependencies(options: {
   cwd: string;
   task: Task;
@@ -5517,6 +6129,7 @@ function createDependencies(options: {
   gitClient: GitClient;
   processRunner?: ProcessRunner;
   workerConfig?: WorkerConfig;
+  cliBlockExecutor?: CommandExecutor;
 }): { dependencies: RunTaskDependencies; events: ApplicationOutputEvent[] } {
   const events: ApplicationOutputEvent[] = [];
   const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
@@ -5527,12 +6140,17 @@ function createDependencies(options: {
   };
 
   const artifactStore: ArtifactStore = {
-    createContext: vi.fn(() => ({
+    createContext: vi.fn((contextOptions: Parameters<ArtifactStore["createContext"]>[0]) => ({
       runId: "run-test",
       rootDir: path.join(options.cwd, ".rundown", "runs", "run-test"),
-      cwd: options.cwd,
-      keepArtifacts: false,
-      commandName: "run",
+      cwd: contextOptions.cwd ?? options.cwd,
+      configDir: contextOptions.configDir,
+      keepArtifacts: contextOptions.keepArtifacts ?? false,
+      commandName: contextOptions.commandName,
+      workerCommand: contextOptions.workerCommand,
+      mode: contextOptions.mode,
+      transport: contextOptions.transport,
+      task: contextOptions.task,
     })),
     beginPhase: vi.fn(),
     completePhase: vi.fn(),
@@ -5615,6 +6233,7 @@ function createDependencies(options: {
         events.push(event);
       },
     },
+    cliBlockExecutor: options.cliBlockExecutor,
   };
 
   return {
@@ -5742,6 +6361,7 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     trace: false,
     traceOnly: false,
     forceUnlock: false,
+    ignoreCliBlock: false,
     ...overrides,
   };
 }

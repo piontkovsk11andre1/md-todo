@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
+import type { CommandExecutor } from "../../src/domain/ports/command-executor.js";
 import type { VerificationStore } from "../../src/domain/ports/verification-store.js";
 
 const { runWorkerMock } = vi.hoisted(() => ({
@@ -296,6 +297,39 @@ describe("verify", () => {
 
     expect(runWorkerMock).toHaveBeenCalledWith(expect.objectContaining({
       prompt: "rundown: Child.md --verify",
+    }));
+  });
+
+  it("expands cli fenced blocks after template rendering", async () => {
+    const file = "Tasks.md";
+    const task = makeTask(file);
+    const verificationStore = createVerificationStore();
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "generated output",
+        stderr: "",
+      })),
+    };
+
+    runWorkerMock.mockResolvedValue({ exitCode: 0, stdout: "OK", stderr: "" });
+
+    const valid = await verify({
+      task,
+      source: file,
+      contextBefore: "",
+      template: "```cli\necho {{task}}\n```",
+      command: ["worker"],
+      verificationStore,
+      cwd: "/repo",
+      cliBlockExecutor,
+      cliExecutionOptions: { timeoutMs: 42 },
+    });
+
+    expect(valid).toBe(true);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith("echo Do the thing", "/repo", { timeoutMs: 42 });
+    expect(runWorkerMock).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "<command>echo Do the thing</command>\n<output>\ngenerated output\n</output>",
     }));
   });
 });

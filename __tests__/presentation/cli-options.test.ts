@@ -35,6 +35,21 @@ describe("CLI run option normalization", () => {
     expect(call.noRepair).toBe(false);
     expect(call.repairAttempts).toBe(1);
     expect(call.forceExecute).toBe(false);
+    expect(call.ignoreCliBlock).toBe(false);
+  });
+
+  it("passes --ignore-cli-block flag to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--ignore-cli-block",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.ignoreCliBlock).toBe(true);
   });
 
   it("passes hide-agent-output option to run task", async () => {
@@ -293,6 +308,67 @@ describe("CLI run option normalization", () => {
     expect(call.forceUnlock).toBe(true);
   });
 
+  it("defaults cli-block-timeout to 30000ms", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(30_000);
+  });
+
+  it("passes explicit cli-block-timeout to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--cli-block-timeout",
+      "1234",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(1234);
+  });
+
+  it("accepts cli-block-timeout of 0 to disable timeout", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--cli-block-timeout",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(0);
+  });
+
+  it("logs a CLI error and exits with code 1 on invalid cli-block-timeout", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--cli-block-timeout",
+      "abc",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --cli-block-timeout value: abc"));
+  });
+
   it("preserves an explicit verify flag", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -388,6 +464,37 @@ describe("CLI run option normalization", () => {
     expect(call.hideAgentOutput).toBe(false);
     expect(call.trace).toBe(false);
     expect(call.forceUnlock).toBe(false);
+    expect(call.ignoreCliBlock).toBe(false);
+    expect(call.cliBlockTimeoutMs).toBe(30_000);
+  });
+
+  it("passes explicit --cli-block-timeout to discuss task", async () => {
+    const discussTask = vi.fn(async () => 0);
+    const call = await invokeDiscussAndCaptureCall([
+      "discuss",
+      "tasks.md",
+      "--cli-block-timeout",
+      "1234",
+      "--worker",
+      "opencode",
+      "run",
+    ], discussTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(1234);
+  });
+
+  it("passes --ignore-cli-block flag to discuss task", async () => {
+    const discussTask = vi.fn(async () => 0);
+    const call = await invokeDiscussAndCaptureCall([
+      "discuss",
+      "tasks.md",
+      "--ignore-cli-block",
+      "--worker",
+      "opencode",
+      "run",
+    ], discussTask);
+
+    expect(call.ignoreCliBlock).toBe(true);
   });
 
   it("collects discuss template vars and flags", async () => {
@@ -731,6 +838,35 @@ describe("CLI reverify option normalization", () => {
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+    expect(call.ignoreCliBlock).toBe(false);
+    expect(call.cliBlockTimeoutMs).toBe(30_000);
+  });
+
+  it("passes explicit --cli-block-timeout to reverify task", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--cli-block-timeout",
+      "1234",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(1234);
+  });
+
+  it("passes --ignore-cli-block flag to reverify task", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--ignore-cli-block",
+      "--worker",
+      "opencode",
+      "run",
+    ], reverifyTask);
+
+    expect(call.ignoreCliBlock).toBe(true);
   });
 
   it("accepts reverify worker commands passed after the separator", async () => {
@@ -1249,6 +1385,37 @@ describe("CLI plan and utility command normalization", () => {
     expect(call.varsFileOption).toBe("custom-vars.json");
     expect(call.cliTemplateVarArgs).toEqual(["env=prod"]);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+    expect(call.ignoreCliBlock).toBe(false);
+    expect(call.cliBlockTimeoutMs).toBe(30_000);
+  });
+
+  it("passes explicit --cli-block-timeout to plan task", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.md",
+      "--cli-block-timeout",
+      "1234",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(call.cliBlockTimeoutMs).toBe(1234);
+  });
+
+  it("passes --ignore-cli-block flag to plan task", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.md",
+      "--ignore-cli-block",
+      "--worker",
+      "opencode",
+      "run",
+    ], planTask);
+
+    expect(call.ignoreCliBlock).toBe(true);
   });
 
   it("parses --oldest-first flag for reverify", async () => {

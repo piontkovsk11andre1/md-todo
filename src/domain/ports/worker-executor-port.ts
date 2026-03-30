@@ -38,6 +38,7 @@ export interface RundownTaskExecutionOptions {
   parentTransport?: string;
   parentKeepArtifacts?: boolean;
   parentHideAgentOutput?: boolean;
+  parentIgnoreCliBlock?: boolean;
   parentVerify?: boolean;
   parentNoRepair?: boolean;
   parentRepairAttempts?: number;

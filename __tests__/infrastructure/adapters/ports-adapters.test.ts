@@ -206,6 +206,8 @@ describe("infrastructure adapters", () => {
     };
     const templateVars = { owner: "cli" };
     const artifactContext = { runId: "run-3" };
+    const cliBlockExecutor = { execute: vi.fn() };
+    const cliExecutionOptions = { timeoutMs: 1234 };
     const result = await adapter.verify({
       task,
       source: "tasks.md",
@@ -217,6 +219,8 @@ describe("infrastructure adapters", () => {
       cwd: "/repo",
       templateVars,
       artifactContext,
+      cliBlockExecutor,
+      cliExecutionOptions,
     });
 
     expect(verifyMock).toHaveBeenCalledTimes(1);
@@ -232,6 +236,8 @@ describe("infrastructure adapters", () => {
       cwd: "/repo",
       templateVars,
       artifactContext,
+      cliBlockExecutor,
+      cliExecutionOptions,
     });
     expect(result).toBe(true);
   });
@@ -262,6 +268,8 @@ describe("infrastructure adapters", () => {
     };
     const templateVars = { owner: "cli" };
     const artifactContext = { runId: "run-4" };
+    const cliBlockExecutor = { execute: vi.fn() };
+    const cliExecutionOptions = { timeoutMs: 5678 };
     const result = await adapter.repair({
       task,
       source: "tasks.md",
@@ -275,6 +283,8 @@ describe("infrastructure adapters", () => {
       cwd: "/repo",
       templateVars,
       artifactContext,
+      cliBlockExecutor,
+      cliExecutionOptions,
     });
 
     expect(repairMock).toHaveBeenCalledTimes(1);
@@ -292,6 +302,8 @@ describe("infrastructure adapters", () => {
       cwd: "/repo",
       templateVars,
       artifactContext,
+      cliBlockExecutor,
+      cliExecutionOptions,
     });
     expect(result).toEqual({ valid: true, attempts: 1 });
   });

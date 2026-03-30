@@ -180,6 +180,7 @@ The behavior behind it is not.
 - It is deterministic: task selection is sorted and predictable.
 - It is verification-first: execution alone never counts as completion.
 - It is template-driven: each repository defines how work should be executed, checked, repaired, and planned.
+- It is context-aware: `cli` fenced blocks can run shell commands and inject `<command>`/`<output>` context directly into prompts.
 - It is inspectable: prompts, logs, metadata, and traces can be preserved as run records.
 - It is operationally useful: tasks can trigger commits, post-success hooks, failure hooks, and historical re-verification.
 
@@ -323,6 +324,8 @@ Useful capabilities that stay out of the way until you need them:
 
 - run all remaining tasks sequentially with `--all`
 - reset checklist state with `--redo` (before run), `--reset-after` (after run), or `--clean` (both)
+- expand `cli` fenced blocks in task markdown and templates, or disable execution with `--ignore-cli-block`
+- set per-command `cli` block timeouts with `--cli-block-timeout <ms>`
 - hide worker stdout/stderr with `--hide-agent-output` (default: off) to show only rundown status messages
 - use interactive sessions with `--mode tui`
 - keep durable prompt handoff on Windows with `--transport file`

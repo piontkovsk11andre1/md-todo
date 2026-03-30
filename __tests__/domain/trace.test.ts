@@ -7,6 +7,7 @@ import {
   createAgentSignalsEvent,
   createAgentThinkingEvent,
   createAgentToolUsageEvent,
+  createCliBlockExecutedEvent,
   createOutputVolumeEvent,
   createPhaseCompletedEvent,
   createPromptMetricsEvent,
@@ -255,6 +256,30 @@ describe("trace event factory functions", () => {
       stderr_bytes: 64,
       stdout_lines: 7,
       stderr_lines: 2,
+    });
+  });
+
+  it("creates cli_block.executed event with schema version and required payload fields", () => {
+    const event = createCliBlockExecutedEvent({
+      timestamp,
+      run_id: "run-123",
+      payload: {
+        command: "cat TestFile.txt",
+        exit_code: 0,
+        stdout_length: 42,
+        stderr_length: 0,
+        duration_ms: 35,
+      },
+    });
+
+    expectCommonTraceFields(event);
+    expect(event.event_type).toBe("cli_block.executed");
+    expect(event.payload).toEqual({
+      command: "cat TestFile.txt",
+      exit_code: 0,
+      stdout_length: 42,
+      stderr_length: 0,
+      duration_ms: 35,
     });
   });
 

@@ -16,6 +16,8 @@ export function createTaskRepairAdapter(verificationStore: VerificationStore): T
         verificationStore,
         templateVars: options.templateVars as ExtraTemplateVars | undefined,
         artifactContext: options.artifactContext as RuntimeArtifactsContext | undefined,
+        cliBlockExecutor: options.cliBlockExecutor,
+        cliExecutionOptions: options.cliExecutionOptions,
       });
     },
   };

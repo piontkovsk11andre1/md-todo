@@ -8,6 +8,7 @@ import {
   DEFAULT_VERIFY_TEMPLATE,
 } from "../domain/defaults.js";
 import { markChecked, resetAllCheckboxes } from "../domain/checkbox.js";
+import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { parseTasks, type Task } from "../domain/parser.js";
 import type { SortMode } from "../domain/sorting.js";
 import { requiresWorkerCommand, resolveRunBehavior } from "../domain/run-options.js";
@@ -28,6 +29,7 @@ import {
   createAgentSignalsEvent,
   createAgentThinkingEvent,
   createAgentToolUsageEvent,
+  createCliBlockExecutedEvent,
   createOutputVolumeEvent,
   createPhaseCompletedEvent,
   createPromptMetricsEvent,
@@ -51,6 +53,8 @@ import type {
   ArtifactRunMetadata,
   ArtifactStoreStatus,
   ArtifactStore,
+  CommandExecutionOptions,
+  CommandExecutor,
   FileSystem,
   FileLock,
   GitClient,
@@ -71,8 +75,9 @@ import type {
    WorkerConfigPort,
    WorkerExecutorPort,
    WorkingDirectoryPort,
- } from "../domain/ports/index.js";
+  } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { createCliBlockExecutor } from "../infrastructure/cli-block-executor.js";
 
 export type RunnerMode = ProcessRunMode;
 export type PromptTransport = PortPromptTransport;
@@ -108,6 +113,19 @@ interface ResolvedTaskContext {
   contextBefore: string;
 }
 
+class TemplateCliBlockExecutionError extends Error {
+  readonly templateLabel: string;
+  readonly command: string;
+  readonly exitCode: number | null;
+
+  constructor(templateLabel: string, command: string, exitCode: number | null) {
+    super("Template cli block execution failed");
+    this.templateLabel = templateLabel;
+    this.command = command;
+    this.exitCode = exitCode;
+  }
+}
+
 export type TaskSelectionResult = PortTaskSelectionResult;
 
 export interface RuntimeTaskMetadata {
@@ -139,6 +157,7 @@ export interface RunTaskDependencies {
   configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
   output: ApplicationOutputPort;
+  cliBlockExecutor?: CommandExecutor;
 }
 
 export interface RunTaskOptions {
@@ -169,12 +188,15 @@ export interface RunTaskOptions {
   trace: boolean;
   traceOnly: boolean;
   forceUnlock: boolean;
+  cliBlockTimeoutMs?: number;
+  ignoreCliBlock: boolean;
 }
 
 export function createRunTask(
   dependencies: RunTaskDependencies,
 ): (options: RunTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const cliBlockExecutor = dependencies.cliBlockExecutor ?? createCliBlockExecutor();
 
   return async function runTask(options: RunTaskOptions): Promise<number> {
       const {
@@ -203,9 +225,16 @@ export function createRunTask(
       onFailCommand,
       hideAgentOutput,
       trace,
-      traceOnly,
-      forceUnlock,
+        traceOnly,
+        forceUnlock,
+        cliBlockTimeoutMs,
+        ignoreCliBlock,
       } = options;
+      const cliExecutionOptions = cliBlockTimeoutMs === undefined
+        ? undefined
+        : { timeoutMs: cliBlockTimeoutMs };
+      const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
+      const cliExpansionEnabled = !ignoreCliBlock && !dryRunSuppressesCliExpansion;
 
       // Suppress only worker-produced execution transcript in terminal output.
       // Artifact/trace capture still records stdout/stderr via phase completion events.
@@ -1106,7 +1135,10 @@ export function createRunTask(
         return 3;
       }
 
-      const { task, source: fileSource, contextBefore } = result;
+      const { task, source: fileSource } = result;
+      const sourceDir = dependencies.pathOperations.dirname(
+        dependencies.pathOperations.resolve(task.file),
+      );
       emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
       const resolvedWorkerCommand = resolveWorkerForInvocation({
         commandName: "run",
@@ -1132,42 +1164,6 @@ export function createRunTask(
         }
       }
 
-      const templates = loadProjectTemplatesFromPorts(
-        dependencies.configDir,
-        dependencies.templateLoader,
-        dependencies.pathOperations,
-      );
-      const templateVarsWithTrace: ExtraTemplateVars = {
-        ...extraTemplateVars,
-        traceInstructions: getTraceInstructions(trace),
-      };
-      const vars: TemplateVars = {
-        ...templateVarsWithTrace,
-        task: task.text,
-        file: task.file,
-        context: contextBefore,
-        taskIndex: task.index,
-        taskLine: task.line,
-        source: fileSource,
-        ...buildTaskHierarchyTemplateVars(task),
-      };
-
-      const prompt = renderTemplate(templates.task, vars);
-      const verificationPrompt = shouldVerify
-        ? renderTemplate(templates.verify, vars)
-        : "";
-
-      if (printPrompt && onlyVerify) {
-        emit({ kind: "text", text: verificationPrompt });
-        return 0;
-      }
-
-      if (dryRun && onlyVerify) {
-        emit({ kind: "info", message: "Dry run — would run verification with: " + automationCommand.join(" ") });
-        emit({ kind: "info", message: "Prompt length: " + verificationPrompt.length + " chars" });
-        return 0;
-      }
-
       if (requiresWorkerCommand({
         workerCommand: resolvedWorkerCommand,
         hasConfigWorker: resolvedWorkerCommand.length > 0,
@@ -1178,30 +1174,6 @@ export function createRunTask(
       })) {
         emit({ kind: "error", message: "No worker command specified. Use --worker <command...> or -- <command>, or set a default worker in .rundown/config.json." });
         return 1;
-      }
-
-      if (!onlyVerify && !task.isInlineCli && !task.isRundownTask) {
-        if (printPrompt) {
-          emit({ kind: "text", text: prompt });
-          return 0;
-        }
-
-        if (dryRun) {
-          emit({ kind: "info", message: "Dry run — would run: " + resolvedWorkerCommand.join(" ") });
-          emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
-          return 0;
-        }
-      }
-
-      if (!onlyVerify && task.isInlineCli && printPrompt) {
-        emit({ kind: "info", message: "Selected task is inline CLI; no worker prompt is rendered." });
-        emit({ kind: "text", text: "cli: " + task.cliCommand! });
-        return 0;
-      }
-
-      if (!onlyVerify && task.isInlineCli && dryRun) {
-        emit({ kind: "info", message: "Dry run — would execute inline CLI: " + task.cliCommand! });
-        return 0;
       }
 
       if (!onlyVerify && task.isRundownTask) {
@@ -1215,6 +1187,323 @@ export function createRunTask(
         }
       }
 
+      if (!printPrompt && !dryRun) {
+        artifactContext = dependencies.artifactStore.createContext({
+          cwd: dependencies.workingDirectory.cwd(),
+          configDir: dependencies.configDir?.configDir,
+          commandName: "run",
+          workerCommand: onlyVerify ? automationCommand : resolvedWorkerCommand,
+          mode,
+          transport,
+          source,
+          task: toRuntimeTaskMetadata(task, fileSource),
+          keepArtifacts,
+        });
+        traceWriter = dependencies.createTraceWriter(trace, artifactContext);
+      }
+
+      const baseCliExpansionOptions = artifactContext?.keepArtifacts
+        ? {
+          ...cliExecutionOptions,
+          artifactContext,
+          artifactPhase: "worker" as const,
+        }
+        : cliExecutionOptions;
+      const cliTraceRunId = artifactContext?.runId;
+      const cliTraceExecutionHandler = cliTraceRunId
+        ? (execution: {
+          command: string;
+          exitCode: number | null;
+          stdoutLength: number;
+          stderrLength: number;
+          durationMs: number;
+        }): void => {
+          traceWriter.write(createCliBlockExecutedEvent({
+            timestamp: nowIso(),
+            run_id: cliTraceRunId,
+            payload: {
+              command: execution.command,
+              exit_code: execution.exitCode,
+              stdout_length: execution.stdoutLength,
+              stderr_length: execution.stderrLength,
+              duration_ms: execution.durationMs,
+            },
+          }));
+        }
+        : undefined;
+      const withCommandExecutionHandler = (
+        executionOptions: CommandExecutionOptions | undefined,
+        handler: ((execution: {
+          command: string;
+          exitCode: number | null;
+          stdoutLength: number;
+          stderrLength: number;
+          durationMs: number;
+        }) => void | Promise<void>) | undefined,
+      ): CommandExecutionOptions | undefined => {
+        if (!handler) {
+          return executionOptions;
+        }
+
+        const existingHandler = executionOptions?.onCommandExecuted;
+
+        return {
+          ...(executionOptions ?? {}),
+          onCommandExecuted: async (execution): Promise<void> => {
+            await existingHandler?.(execution);
+            await handler(execution);
+          },
+        };
+      };
+      const withCliTrace = (executionOptions: CommandExecutionOptions | undefined): CommandExecutionOptions | undefined =>
+        withCommandExecutionHandler(executionOptions, cliTraceExecutionHandler);
+      const sourceCliFailureWarningHandler = (execution: {
+        command: string;
+        exitCode: number | null;
+        stdoutLength: number;
+        stderrLength: number;
+        durationMs: number;
+      }): void => {
+        if (typeof execution.exitCode !== "number" || execution.exitCode === 0) {
+          return;
+        }
+
+        emit({
+          kind: "warn",
+          message: "`cli` fenced command failed in source markdown (exit "
+            + execution.exitCode
+            + "): "
+            + execution.command
+            + ". Continuing with captured output.",
+        });
+      };
+      const withSourceCliFailureWarning = (
+        executionOptions: CommandExecutionOptions | undefined,
+      ): CommandExecutionOptions | undefined => withCommandExecutionHandler(
+        executionOptions,
+        sourceCliFailureWarningHandler,
+      );
+      const templateCliFailureHandler = (templateLabel: string) => (execution: {
+        command: string;
+        exitCode: number | null;
+        stdoutLength: number;
+        stderrLength: number;
+        durationMs: number;
+      }): void => {
+        if (typeof execution.exitCode === "number" && execution.exitCode === 0) {
+          return;
+        }
+
+        throw new TemplateCliBlockExecutionError(templateLabel, execution.command, execution.exitCode);
+      };
+      const withTemplateCliFailureAbort = (
+        executionOptions: CommandExecutionOptions | undefined,
+        templateLabel: string,
+      ): CommandExecutionOptions | undefined => withCommandExecutionHandler(
+        executionOptions,
+        templateCliFailureHandler(templateLabel),
+      );
+      const handleTemplateCliFailure = async (error: unknown): Promise<number | null> => {
+        if (!(error instanceof TemplateCliBlockExecutionError)) {
+          return null;
+        }
+
+        const exitCodeLabel = error.exitCode === null ? "unknown" : String(error.exitCode);
+        emit({
+          kind: "error",
+          message: "`cli` fenced command failed in "
+            + error.templateLabel
+            + " (exit "
+            + exitCodeLabel
+            + "): "
+            + error.command
+            + ". Aborting run.",
+        });
+        await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+        return await failRun(
+          1,
+          "failed",
+          "`cli` fenced command failed in " + error.templateLabel + ": " + error.command,
+          1,
+        );
+      };
+      const cliExecutionOptionsWithTrace = withCliTrace(cliExecutionOptions);
+      const sourceCliBlockCount = extractCliBlocks(fileSource).length;
+      const expandedSource = cliExpansionEnabled
+        ? await expandCliBlocks(
+          fileSource,
+          cliBlockExecutor,
+          sourceDir,
+          withSourceCliFailureWarning(
+            withCliTrace(artifactContext?.keepArtifacts
+              ? {
+                ...baseCliExpansionOptions,
+                artifactPhaseLabel: "cli-source",
+                artifactExtra: { promptType: "source" },
+              }
+              : baseCliExpansionOptions),
+          ),
+        )
+        : fileSource;
+      const expandedTasks = parseTasks(expandedSource, task.file);
+      const expandedTask = findTaskByFallback(expandedTasks, {
+        text: task.text,
+        file: task.file,
+        line: task.line,
+        index: task.index,
+        source: fileSource,
+      });
+      const selectedExpandedTask = expandedTask ?? task;
+      const expandedContextBefore = expandedSource
+        .split("\n")
+        .slice(0, Math.max(0, selectedExpandedTask.line - 1))
+        .join("\n");
+
+      const templates = loadProjectTemplatesFromPorts(
+        dependencies.configDir,
+        dependencies.templateLoader,
+        dependencies.pathOperations,
+      );
+      const templateVarsWithTrace: ExtraTemplateVars = {
+        ...extraTemplateVars,
+        traceInstructions: getTraceInstructions(trace),
+      };
+      const vars: TemplateVars = {
+        ...templateVarsWithTrace,
+        task: task.text,
+        file: task.file,
+        context: expandedContextBefore,
+        taskIndex: task.index,
+        taskLine: task.line,
+        source: expandedSource,
+        ...buildTaskHierarchyTemplateVars(task),
+      };
+
+      const renderedPrompt = renderTemplate(templates.task, vars);
+      const taskTemplateCliBlockCount = extractCliBlocks(renderedPrompt).length;
+      let prompt = renderedPrompt;
+      if (cliExpansionEnabled) {
+        try {
+          prompt = await expandCliBlocks(
+            renderedPrompt,
+            cliBlockExecutor,
+            dependencies.workingDirectory.cwd(),
+            withTemplateCliFailureAbort(
+              withCliTrace(artifactContext?.keepArtifacts
+                ? {
+                  ...baseCliExpansionOptions,
+                  artifactPhaseLabel: "cli-task-template",
+                  artifactExtra: { promptType: "task-template" },
+                }
+                : baseCliExpansionOptions),
+              "task template",
+            ),
+          );
+        } catch (error) {
+          const failureCode = await handleTemplateCliFailure(error);
+          if (failureCode !== null) {
+            return failureCode;
+          }
+          throw error;
+        }
+      }
+      const renderedVerificationPrompt = shouldVerify
+        ? renderTemplate(templates.verify, vars)
+        : "";
+      const verificationTemplateCliBlockCount = shouldVerify
+        ? extractCliBlocks(renderedVerificationPrompt).length
+        : 0;
+      let verificationPrompt = shouldVerify ? renderedVerificationPrompt : "";
+      if (shouldVerify && cliExpansionEnabled) {
+        try {
+          verificationPrompt = await expandCliBlocks(
+            renderedVerificationPrompt,
+            cliBlockExecutor,
+            dependencies.workingDirectory.cwd(),
+            withTemplateCliFailureAbort(
+              withCliTrace(artifactContext?.keepArtifacts
+                ? {
+                  ...baseCliExpansionOptions,
+                  artifactPhaseLabel: "cli-verify-template",
+                  artifactExtra: { promptType: "verify-template" },
+                }
+                : baseCliExpansionOptions),
+              "verify template",
+            ),
+          );
+        } catch (error) {
+          const failureCode = await handleTemplateCliFailure(error);
+          if (failureCode !== null) {
+            return failureCode;
+          }
+          throw error;
+        }
+      }
+      const cliExecutionOptionsWithVerificationTemplateFailureAbort = withTemplateCliFailureAbort(
+        cliExecutionOptions,
+        "verification/repair template",
+      );
+      const cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace = withTemplateCliFailureAbort(
+        cliExecutionOptionsWithTrace,
+        "verification/repair template",
+      );
+      const dryRunCliBlockCount = ignoreCliBlock
+        ? 0
+        : sourceCliBlockCount + taskTemplateCliBlockCount + verificationTemplateCliBlockCount;
+
+      const emitDryRunCliExpansionNote = (): void => {
+        if (!dryRunSuppressesCliExpansion) {
+          return;
+        }
+
+        emit({
+          kind: "info",
+          message: "Dry run — skipped `cli` fenced block execution; would execute "
+            + dryRunCliBlockCount
+            + " block"
+            + (dryRunCliBlockCount === 1 ? "" : "s")
+            + ".",
+        });
+      };
+
+      if (printPrompt && onlyVerify) {
+        emit({ kind: "text", text: verificationPrompt });
+        return 0;
+      }
+
+      if (dryRun && onlyVerify) {
+        emitDryRunCliExpansionNote();
+        emit({ kind: "info", message: "Dry run — would run verification with: " + automationCommand.join(" ") });
+        emit({ kind: "info", message: "Prompt length: " + verificationPrompt.length + " chars" });
+        return 0;
+      }
+
+      if (!onlyVerify && !task.isInlineCli && !task.isRundownTask) {
+        if (printPrompt) {
+          emit({ kind: "text", text: prompt });
+          return 0;
+        }
+
+        if (dryRun) {
+          emitDryRunCliExpansionNote();
+          emit({ kind: "info", message: "Dry run — would run: " + resolvedWorkerCommand.join(" ") });
+          emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
+          return 0;
+        }
+      }
+
+      if (!onlyVerify && task.isInlineCli && printPrompt) {
+        emit({ kind: "info", message: "Selected task is inline CLI; no worker prompt is rendered." });
+        emit({ kind: "text", text: "cli: " + task.cliCommand! });
+        return 0;
+      }
+
+      if (!onlyVerify && task.isInlineCli && dryRun) {
+        emitDryRunCliExpansionNote();
+        emit({ kind: "info", message: "Dry run — would execute inline CLI: " + task.cliCommand! });
+        return 0;
+      }
+
       if (!onlyVerify && task.isRundownTask && printPrompt) {
         emit({ kind: "info", message: "Selected task is rundown delegate; no worker prompt is rendered." });
         emit({ kind: "text", text: "rundown: " + (task.rundownArgs ?? "") });
@@ -1222,12 +1511,14 @@ export function createRunTask(
       }
 
       if (!onlyVerify && task.isRundownTask && dryRun) {
+        emitDryRunCliExpansionNote();
         const args = parseRundownTaskArgs(task.rundownArgs);
         const delegatedArgs = buildDelegatedRundownArgs(args, {
           parentWorkerCommand: resolvedWorkerCommand,
           parentTransport: transport,
           parentKeepArtifacts: keepArtifacts,
           parentHideAgentOutput: hideAgentOutput,
+          parentIgnoreCliBlock: ignoreCliBlock,
           parentVerify: verify,
           parentNoRepair: noRepair,
           parentRepairAttempts: repairAttempts,
@@ -1236,23 +1527,14 @@ export function createRunTask(
         return 0;
       }
 
-      artifactContext = dependencies.artifactStore.createContext({
-          cwd: dependencies.workingDirectory.cwd(),
-          configDir: dependencies.configDir?.configDir,
-          commandName: "run",
-          workerCommand: onlyVerify ? automationCommand : resolvedWorkerCommand,
-        mode,
-        transport,
-        source,
-        task: toRuntimeTaskMetadata(task, fileSource),
-        keepArtifacts,
-      });
-      traceWriter = dependencies.createTraceWriter(trace, artifactContext);
+      if (!artifactContext) {
+        throw new Error("Artifact context was not initialized before task execution.");
+      }
       const selectedWorkerCommand = onlyVerify ? automationCommand : resolvedWorkerCommand;
       traceEnrichmentContext = {
         task,
-        source: fileSource,
-        contextBefore,
+        source: expandedSource,
+        contextBefore: expandedContextBefore,
         worker: selectedWorkerCommand,
         templates,
       };
@@ -1264,7 +1546,7 @@ export function createRunTask(
           taskPositionInFile: task.index + 1,
           hasSubtasks: false,
         };
-      startTraceRun(task, selectedWorkerCommand, taskContextMetrics, onlyVerify, contextBefore);
+      startTraceRun(task, selectedWorkerCommand, taskContextMetrics, onlyVerify, expandedContextBefore);
 
       if (onlyVerify) {
         emit({ kind: "info", message: configuredOnlyVerify
@@ -1273,22 +1555,35 @@ export function createRunTask(
         });
 
         const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
-        emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-        const { valid, failureReason } = await runVerification(
-          dependencies,
-          traceWriter,
-          task,
-          fileSource,
-          contextBefore,
-          templates,
-          automationCommand,
-          transport,
-          maxRepairAttempts,
-          allowRepair,
-          templateVarsWithTrace,
-          artifactContext,
-          trace,
-        );
+        emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
+        let valid: boolean;
+        let failureReason: string | null;
+        try {
+          ({ valid, failureReason } = await runVerification(
+            dependencies,
+            traceWriter,
+            task,
+            expandedSource,
+            expandedContextBefore,
+            templates,
+            automationCommand,
+            transport,
+            maxRepairAttempts,
+            allowRepair,
+            templateVarsWithTrace,
+            artifactContext,
+            trace,
+            cliBlockExecutor,
+            cliExecutionOptionsWithVerificationTemplateFailureAbort,
+            cliExpansionEnabled,
+          ));
+        } catch (error) {
+          const failureCode = await handleTemplateCliFailure(error);
+          if (failureCode !== null) {
+            return failureCode;
+          }
+          throw error;
+        }
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
           const verificationFailureMessage = failureReason
@@ -1357,22 +1652,35 @@ export function createRunTask(
 
         if (shouldVerify) {
           const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
-          emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-          const { valid, failureReason } = await runVerification(
-            dependencies,
-            traceWriter,
-            task,
-            fileSource,
-            contextBefore,
-            templates,
-            automationCommand,
-            transport,
-            maxRepairAttempts,
-            allowRepair,
-            templateVarsWithTrace,
-            artifactContext,
-            trace,
-          );
+          emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
+          let valid: boolean;
+          let failureReason: string | null;
+          try {
+            ({ valid, failureReason } = await runVerification(
+              dependencies,
+              traceWriter,
+              task,
+              expandedSource,
+              expandedContextBefore,
+              templates,
+              automationCommand,
+              transport,
+              maxRepairAttempts,
+              allowRepair,
+              templateVarsWithTrace,
+              artifactContext,
+              trace,
+              cliBlockExecutor,
+              cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+              cliExpansionEnabled,
+            ));
+          } catch (error) {
+            const failureCode = await handleTemplateCliFailure(error);
+            if (failureCode !== null) {
+              return failureCode;
+            }
+            throw error;
+          }
           completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
           if (!valid) {
             const verificationFailureMessage = failureReason
@@ -1468,6 +1776,7 @@ export function createRunTask(
           parentTransport: transport,
           parentKeepArtifacts: keepArtifacts,
           parentHideAgentOutput: hideAgentOutput,
+          parentIgnoreCliBlock: ignoreCliBlock,
           parentVerify: verify,
           parentNoRepair: noRepair,
           parentRepairAttempts: repairAttempts,
@@ -1495,22 +1804,35 @@ export function createRunTask(
 
         if (shouldVerify) {
           const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
-          emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-          const { valid, failureReason } = await runVerification(
-            dependencies,
-            traceWriter,
-            task,
-            fileSource,
-            contextBefore,
-            templates,
-            automationCommand,
-            transport,
-            maxRepairAttempts,
-            allowRepair,
-            templateVarsWithTrace,
-            artifactContext,
-            trace,
-          );
+          emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
+          let valid: boolean;
+          let failureReason: string | null;
+          try {
+            ({ valid, failureReason } = await runVerification(
+              dependencies,
+              traceWriter,
+              task,
+              expandedSource,
+              expandedContextBefore,
+              templates,
+              automationCommand,
+              transport,
+              maxRepairAttempts,
+              allowRepair,
+              templateVarsWithTrace,
+              artifactContext,
+              trace,
+              cliBlockExecutor,
+              cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+              cliExpansionEnabled,
+            ));
+          } catch (error) {
+            const failureCode = await handleTemplateCliFailure(error);
+            if (failureCode !== null) {
+              return failureCode;
+            }
+            throw error;
+          }
           completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
           if (!valid) {
             const verificationFailureMessage = failureReason
@@ -1548,7 +1870,7 @@ export function createRunTask(
 
       emit({ kind: "info", message: "Running: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]" });
       const executePhaseTrace = beginPhaseTrace("execute", resolvedWorkerCommand);
-      emitPromptMetrics(prompt, contextBefore, "execute.md");
+      emitPromptMetrics(prompt, expandedContextBefore, "execute.md");
       const runResult = await dependencies.workerExecutor.runWorker({
         command: resolvedWorkerCommand,
         prompt,
@@ -1585,22 +1907,35 @@ export function createRunTask(
 
       if (shouldVerify) {
         const verifyPhaseTrace = beginPhaseTrace("verify", automationCommand);
-        emitPromptMetrics(verificationPrompt, contextBefore, "verify.md");
-        const { valid, failureReason } = await runVerification(
-          dependencies,
-          traceWriter,
-          task,
-          fileSource,
-          contextBefore,
-          templates,
-          automationCommand,
-          transport,
-          maxRepairAttempts,
-          allowRepair,
-          templateVarsWithTrace,
-          artifactContext,
-          trace,
-        );
+        emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
+        let valid: boolean;
+        let failureReason: string | null;
+        try {
+          ({ valid, failureReason } = await runVerification(
+            dependencies,
+            traceWriter,
+            task,
+            expandedSource,
+            expandedContextBefore,
+            templates,
+            automationCommand,
+            transport,
+            maxRepairAttempts,
+            allowRepair,
+            templateVarsWithTrace,
+            artifactContext,
+            trace,
+            cliBlockExecutor,
+            cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+            cliExpansionEnabled,
+          ));
+        } catch (error) {
+          const failureCode = await handleTemplateCliFailure(error);
+          if (failureCode !== null) {
+            return failureCode;
+          }
+          throw error;
+        }
         completePhaseTrace(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
         if (!valid) {
           const verificationFailureMessage = failureReason
@@ -1699,6 +2034,9 @@ async function runVerification(
   extraTemplateVars: ExtraTemplateVars,
   artifactContext: ArtifactContext,
   trace: boolean,
+  cliBlockExecutor?: CommandExecutor,
+  cliExecutionOptions?: CommandExecutionOptions,
+  cliExpansionEnabled: boolean = true,
 ): Promise<VerifyRepairLoopResult> {
   return runVerifyRepairLoop({
     taskVerification: dependencies.taskVerification,
@@ -1720,6 +2058,9 @@ async function runVerification(
     templateVars: extraTemplateVars,
     artifactContext,
     trace,
+    cliBlockExecutor,
+    cliExecutionOptions,
+    cliExpansionEnabled,
   });
 }
 
@@ -2180,6 +2521,7 @@ function buildDelegatedRundownArgs(
     parentTransport: string;
     parentKeepArtifacts: boolean;
     parentHideAgentOutput: boolean;
+    parentIgnoreCliBlock: boolean;
     parentVerify: boolean;
     parentNoRepair: boolean;
     parentRepairAttempts: number;
@@ -2201,6 +2543,10 @@ function buildDelegatedRundownArgs(
 
   if (!hasLongOption(delegated, "--hide-agent-output") && options.parentHideAgentOutput) {
     delegated.push("--hide-agent-output");
+  }
+
+  if (!hasLongOption(delegated, "--ignore-cli-block") && options.parentIgnoreCliBlock) {
+    delegated.push("--ignore-cli-block");
   }
 
   if (!hasLongOptionVariant(delegated, ["--verify", "--no-verify"])) {

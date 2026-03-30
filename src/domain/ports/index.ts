@@ -2,6 +2,12 @@ export type { FileSystem, FileSystemDirent, FileSystemStat } from "./file-system
 export type { FileLock, FileLockMetadata, FileLockHolder } from "./file-lock.js";
 export { FileLockError } from "./file-lock.js";
 export type { ProcessRunner, ProcessRunOptions, ProcessRunResult, ProcessRunMode } from "./process-runner.js";
+export type {
+  CommandExecutor,
+  CommandExecutionOptions,
+  CommandResult,
+} from "./command-executor.js";
+export { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "./command-executor.js";
 export type { GitClient } from "./git-client.js";
 export type { TemplateLoader } from "./template-loader.js";
 export type { VerificationStore } from "./verification-store.js";

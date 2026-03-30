@@ -1,7 +1,12 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createPlanTask, type PlanTaskDependencies, type PlanTaskOptions } from "../../src/application/plan-task.js";
-import type { ApplicationOutputEvent, ArtifactStore, FileSystem } from "../../src/domain/ports/index.js";
+import type {
+  ApplicationOutputEvent,
+  ArtifactStore,
+  CommandExecutor,
+  FileSystem,
+} from "../../src/domain/ports/index.js";
 import { FileLockError, type FileLock } from "../../src/domain/ports/file-lock.js";
 
 describe("plan-task", () => {
@@ -22,6 +27,141 @@ describe("plan-task", () => {
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "text" && event.text.includes("# Roadmap"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("## Phase"))).toBe(true);
+  });
+
+  it("expands cli blocks in rendered plan prompt before printing", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("```cli\necho hello\n```");
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "text",
+      text: expect.stringContaining("<command>echo hello</command>"),
+    });
+  });
+
+  it("passes exec timeout to cli block expansion in plan prompt", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("```cli\necho hello\n```");
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      printPrompt: true,
+      cliBlockTimeoutMs: 1234,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).toHaveBeenCalledWith(
+      "echo hello",
+      cwd,
+      expect.objectContaining({
+        timeoutMs: 1234,
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+  });
+
+  it("skips cli block expansion when ignoreCliBlock is enabled", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("```cli\necho hello\n```");
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true, ignoreCliBlock: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "text",
+      text: expect.stringContaining("```cli\necho hello\n```"),
+    });
+  });
+
+  it("emits an error and aborts when plan template cli block fails", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 6,
+        stdout: "",
+        stderr: "template failed",
+      })),
+    };
+    const { dependencies, events, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("```cli\necho hello\n```");
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, workerCommand: ["opencode", "run"] }));
+
+    expect(code).toBe(1);
+    expect(events).toContainEqual({
+      kind: "error",
+      message: "`cli` fenced command failed in plan template (exit 6): echo hello. Aborting run.",
+    });
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
   });
 
   it("renders custom plan templates with vars from vars file and --var", async () => {
@@ -125,6 +265,39 @@ describe("plan-task", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning document:"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("No existing TODO items detected"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(true);
+  });
+
+  it("dry-run skips cli block expansion and reports skipped block count", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const cliBlockExecutor: CommandExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "hello\n",
+        stderr: "",
+      })),
+    };
+    const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+      cliBlockExecutor,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue("```cli\necho hello\n```");
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, dryRun: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(cliBlockExecutor.execute)).not.toHaveBeenCalled();
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Dry run — skipped `cli` fenced block execution; would execute 1 block.",
+    });
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — would plan:"))).toBe(true);
   });
 
   it("detects existing TODO items before any worker invocation", async () => {
@@ -825,6 +998,7 @@ function createDependencies(options: {
   markdownFile: string;
   fileContent: string;
   readThrows?: boolean;
+  cliBlockExecutor?: CommandExecutor;
 }): {
   dependencies: PlanTaskDependencies;
   events: ApplicationOutputEvent[];
@@ -889,6 +1063,13 @@ function createDependencies(options: {
   const dependencies: PlanTaskDependencies = {
     workerExecutor,
     workingDirectory: { cwd: vi.fn(() => options.cwd) },
+    cliBlockExecutor: options.cliBlockExecutor ?? {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      })),
+    },
     fileSystem,
     fileLock: createNoopFileLock(),
     pathOperations: {
@@ -949,6 +1130,8 @@ function createOptions(overrides: Partial<PlanTaskOptions> = {}): PlanTaskOption
     keepArtifacts: false,
     trace: false,
     forceUnlock: false,
+    ignoreCliBlock: false,
+    cliBlockTimeoutMs: undefined,
     varsFileOption: false,
     cliTemplateVarArgs: [],
     workerCommand: ["opencode", "run"],

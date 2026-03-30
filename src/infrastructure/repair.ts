@@ -6,6 +6,8 @@
 
 import type { Task } from "../domain/parser.js";
 import type { VerificationStore } from "../domain/ports/verification-store.js";
+import type { CommandExecutionOptions, CommandExecutor } from "../domain/ports/command-executor.js";
+import { expandCliBlocks } from "../domain/cli-block.js";
 import {
   buildTaskHierarchyTemplateVars,
   renderTemplate,
@@ -15,6 +17,7 @@ import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
 import { verify } from "./verification.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
+import { createCliBlockExecutor } from "./cli-block-executor.js";
 
 export interface RepairOptions {
   task: Task;
@@ -32,6 +35,9 @@ export interface RepairOptions {
   configDir?: string;
   templateVars?: ExtraTemplateVars;
   artifactContext?: RuntimeArtifactsContext;
+  cliBlockExecutor?: CommandExecutor;
+  cliExecutionOptions?: CommandExecutionOptions;
+  cliExpansionEnabled?: boolean;
 }
 
 export interface RepairResult {
@@ -71,7 +77,28 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       ...buildTaskHierarchyTemplateVars(options.task),
     };
 
-    const prompt = renderTemplate(options.repairTemplate, vars);
+    const renderedPrompt = renderTemplate(options.repairTemplate, vars);
+    const cliExpansionOptions = options.artifactContext?.keepArtifacts
+      ? {
+        ...options.cliExecutionOptions,
+        artifactContext: options.artifactContext,
+        artifactPhase: "repair" as const,
+        artifactPhaseLabel: "cli-repair-template",
+        artifactExtra: {
+          promptType: "repair-template",
+          attempt: attempts,
+          ...(options.cliExecutionOptions?.artifactExtra ?? {}),
+        },
+      }
+      : options.cliExecutionOptions;
+    const prompt = options.cliExpansionEnabled === false
+      ? renderedPrompt
+      : await expandCliBlocks(
+        renderedPrompt,
+        options.cliBlockExecutor ?? createCliBlockExecutor(),
+        options.cwd ?? process.cwd(),
+        cliExpansionOptions,
+      );
 
     // Run repair worker
     await runWorker({
@@ -102,6 +129,9 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       configDir: options.configDir,
       templateVars: options.templateVars,
       artifactContext: options.artifactContext,
+      cliBlockExecutor: options.cliBlockExecutor,
+      cliExecutionOptions: options.cliExecutionOptions,
+      cliExpansionEnabled: options.cliExpansionEnabled,
     });
 
     if (valid) {

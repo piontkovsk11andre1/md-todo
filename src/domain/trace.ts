@@ -10,6 +10,7 @@ export type TraceEventType =
   | "phase.started"
   | "phase.completed"
   | "output.volume"
+  | "cli_block.executed"
   | "prompt.metrics"
   | "timing.waterfall"
   | "agent.signals"
@@ -122,6 +123,14 @@ export interface OutputVolumePayload {
   stderr_bytes: number;
   stdout_lines: number;
   stderr_lines: number;
+}
+
+export interface CliBlockExecutedPayload {
+  command: string;
+  exit_code: number | null;
+  stdout_length: number;
+  stderr_length: number;
+  duration_ms: number;
 }
 
 export interface TimingWaterfallPhase {
@@ -242,6 +251,7 @@ export type TaskContextEvent = TraceEventBase<"task.context", TaskContextPayload
 export type PhaseStartedEvent = TraceEventBase<"phase.started", PhaseStartedPayload>;
 export type PhaseCompletedEvent = TraceEventBase<"phase.completed", PhaseCompletedPayload>;
 export type OutputVolumeEvent = TraceEventBase<"output.volume", OutputVolumePayload>;
+export type CliBlockExecutedEvent = TraceEventBase<"cli_block.executed", CliBlockExecutedPayload>;
 export type PromptMetricsEvent = TraceEventBase<"prompt.metrics", PromptMetricsPayload>;
 export type TimingWaterfallEvent = TraceEventBase<"timing.waterfall", TimingWaterfallPayload>;
 export type AgentSignalsEvent = TraceEventBase<"agent.signals", AgentSignalsPayload>;
@@ -264,6 +274,7 @@ export type TraceEvent =
   | PhaseStartedEvent
   | PhaseCompletedEvent
   | OutputVolumeEvent
+  | CliBlockExecutedEvent
   | PromptMetricsEvent
   | TimingWaterfallEvent
   | AgentSignalsEvent
@@ -397,6 +408,19 @@ export function createOutputVolumeEvent(input: {
     timestamp: input.timestamp,
     run_id: input.run_id,
     event_type: "output.volume",
+    payload: input.payload,
+  });
+}
+
+export function createCliBlockExecutedEvent(input: {
+  timestamp: string;
+  run_id: string;
+  payload: CliBlockExecutedPayload;
+}): CliBlockExecutedEvent {
+  return createTraceEvent({
+    timestamp: input.timestamp,
+    run_id: input.run_id,
+    event_type: "cli_block.executed",
     payload: input.payload,
   });
 }

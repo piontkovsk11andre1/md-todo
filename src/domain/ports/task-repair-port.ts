@@ -1,4 +1,5 @@
 import type { Task } from "../parser.js";
+import type { CommandExecutionOptions, CommandExecutor } from "./command-executor.js";
 import type { ProcessRunMode } from "./process-runner.js";
 import type { PromptTransport } from "./worker-executor-port.js";
 
@@ -17,6 +18,9 @@ export interface TaskRepairOptions {
   configDir?: string;
   templateVars?: Record<string, unknown>;
   artifactContext?: unknown;
+  cliBlockExecutor?: CommandExecutor;
+  cliExecutionOptions?: CommandExecutionOptions;
+  cliExpansionEnabled?: boolean;
 }
 
 export interface TaskRepairResult {

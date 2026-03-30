@@ -3,6 +3,7 @@ import {
   getTraceInstructions,
   DEFAULT_VERIFY_TEMPLATE,
 } from "../domain/defaults.js";
+import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { type Task, parseTasks } from "../domain/parser.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import {
@@ -20,6 +21,8 @@ import type {
   ArtifactStoreStatus,
   ArtifactRunMetadata,
   ArtifactStore,
+  CommandExecutionOptions,
+  CommandExecutor,
   ConfigDirResult,
   FileSystem,
   PathOperationsPort,
@@ -54,8 +57,21 @@ interface ResolvedTaskContext {
 }
 
 interface ReverifyPromptContext {
-  vars: TemplateVars;
   verificationPrompt: string;
+  repairPrompt: string;
+}
+
+class TemplateCliBlockExecutionError extends Error {
+  readonly templateLabel: string;
+  readonly command: string;
+  readonly exitCode: number | null;
+
+  constructor(templateLabel: string, command: string, exitCode: number | null) {
+    super("Template cli block execution failed");
+    this.templateLabel = templateLabel;
+    this.command = command;
+    this.exitCode = exitCode;
+  }
 }
 
 export interface ReverifyTaskDependencies {
@@ -74,6 +90,7 @@ export interface ReverifyTaskDependencies {
   templateLoader: TemplateLoader;
   workerConfigPort: WorkerConfigPort;
   output: ApplicationOutputPort;
+  cliBlockExecutor: CommandExecutor;
 }
 
 export interface ReverifyTaskOptions {
@@ -89,6 +106,8 @@ export interface ReverifyTaskOptions {
   keepArtifacts: boolean;
   workerCommand: string[];
   trace: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
 }
 
 export function createReverifyTask(
@@ -110,7 +129,53 @@ export function createReverifyTask(
       keepArtifacts,
       workerCommand,
       trace,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
     } = options;
+    const cliExecutionOptions = cliBlockTimeoutMs === undefined
+      ? undefined
+      : { timeoutMs: cliBlockTimeoutMs };
+    const withCommandExecutionHandler = (
+      executionOptions: CommandExecutionOptions | undefined,
+      handler: ((execution: {
+        command: string;
+        exitCode: number | null;
+        stdoutLength: number;
+        stderrLength: number;
+        durationMs: number;
+      }) => void | Promise<void>) | undefined,
+    ): CommandExecutionOptions | undefined => {
+      if (!handler) {
+        return executionOptions;
+      }
+
+      const existingHandler = executionOptions?.onCommandExecuted;
+
+      return {
+        ...(executionOptions ?? {}),
+        onCommandExecuted: async (execution): Promise<void> => {
+          await existingHandler?.(execution);
+          await handler(execution);
+        },
+      };
+    };
+    const templateCliFailureHandler = (templateLabel: string) => (execution: {
+      command: string;
+      exitCode: number | null;
+      stdoutLength: number;
+      stderrLength: number;
+      durationMs: number;
+    }): void => {
+      if (typeof execution.exitCode === "number" && execution.exitCode === 0) {
+        return;
+      }
+
+      throw new TemplateCliBlockExecutionError(templateLabel, execution.command, execution.exitCode);
+    };
+    const cliExecutionOptionsWithTemplateFailureAbort = withCommandExecutionHandler(
+      cliExecutionOptions,
+      templateCliFailureHandler("verification/repair template"),
+    );
 
     const hasMultiRunSelection = all === true || last !== undefined;
 
@@ -197,7 +262,45 @@ export function createReverifyTask(
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
-      const promptContext = buildReverifyPromptContext(taskContext, templates.verify, trace);
+      const cliBlockExecutor = dependencies.cliBlockExecutor;
+      const promptContext = buildReverifyPromptContext(taskContext, templates, trace);
+      const verificationPromptCliBlockCount = extractCliBlocks(promptContext.verificationPrompt).length;
+      const repairPromptCliBlockCount = extractCliBlocks(promptContext.repairPrompt).length;
+      const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
+      let expandedVerificationPrompt = promptContext.verificationPrompt;
+      let expandedRepairPrompt = promptContext.repairPrompt;
+      if (!ignoreCliBlock && !dryRunSuppressesCliExpansion) {
+        try {
+          expandedVerificationPrompt = await expandCliBlocks(
+            promptContext.verificationPrompt,
+            cliBlockExecutor,
+            cwd,
+            cliExecutionOptionsWithTemplateFailureAbort,
+          );
+          expandedRepairPrompt = await expandCliBlocks(
+            promptContext.repairPrompt,
+            cliBlockExecutor,
+            cwd,
+            cliExecutionOptionsWithTemplateFailureAbort,
+          );
+        } catch (error) {
+          if (error instanceof TemplateCliBlockExecutionError) {
+            const exitCodeLabel = error.exitCode === null ? "unknown" : String(error.exitCode);
+            emit({
+              kind: "error",
+              message: "`cli` fenced command failed in "
+                + error.templateLabel
+                + " (exit "
+                + exitCodeLabel
+                + "): "
+                + error.command
+                + ". Aborting run.",
+            });
+            return { exitCode: 1, status: null };
+          }
+          throw error;
+        }
+      }
       const effectiveWorkerCommand = resolveWorkerForInvocation({
         commandName: "reverify",
         workerConfig: loadedWorkerConfig,
@@ -209,13 +312,24 @@ export function createReverifyTask(
       });
 
       if (printPrompt) {
-        emit({ kind: "text", text: promptContext.verificationPrompt });
+        emit({ kind: "text", text: expandedVerificationPrompt });
         return { exitCode: 0, status: null };
       }
 
       if (dryRun) {
+        if (dryRunSuppressesCliExpansion && !ignoreCliBlock) {
+          const totalCliBlockCount = verificationPromptCliBlockCount + repairPromptCliBlockCount;
+          emit({
+            kind: "info",
+            message: "Dry run — skipped `cli` fenced block execution; would execute "
+              + totalCliBlockCount
+              + " block"
+              + (totalCliBlockCount === 1 ? "" : "s")
+              + ".",
+          });
+        }
         emit({ kind: "info", message: "Dry run - would run verification with: " + effectiveWorkerCommand.join(" ") });
-        emit({ kind: "info", message: "Prompt length: " + promptContext.verificationPrompt.length + " chars" });
+        emit({ kind: "info", message: "Prompt length: " + expandedVerificationPrompt.length + " chars" });
         return { exitCode: 0, status: null };
       }
 
@@ -311,16 +425,18 @@ export function createReverifyTask(
           task: taskContext.task,
           source: taskContext.source,
           contextBefore: taskContext.contextBefore,
-          verifyTemplate: templates.verify,
-          repairTemplate: templates.repair,
+          verifyTemplate: expandedVerificationPrompt,
+          repairTemplate: expandedRepairPrompt,
           workerCommand: effectiveWorkerCommand,
           transport,
           configDir: dependencies.configDir?.configDir,
           maxRepairAttempts: runBehavior.maxRepairAttempts,
           allowRepair: runBehavior.allowRepair,
-          templateVars: promptContext.vars,
+          templateVars: {},
           artifactContext,
           trace,
+          cliBlockExecutor,
+          cliExecutionOptions: cliExecutionOptionsWithTemplateFailureAbort,
         });
 
         if (!verificationResult.valid) {
@@ -562,7 +678,7 @@ function toRuntimeTaskMetadata(task: Task, source: string): RuntimeTaskMetadata 
 
 function buildReverifyPromptContext(
   taskContext: ResolvedTaskContext,
-  verifyTemplate: string,
+  templates: ReverifyTemplates,
   trace: boolean,
 ): ReverifyPromptContext {
   const vars: TemplateVars = {
@@ -577,8 +693,8 @@ function buildReverifyPromptContext(
   };
 
   return {
-    vars,
-    verificationPrompt: renderTemplate(verifyTemplate, vars),
+    verificationPrompt: renderTemplate(templates.verify, vars),
+    repairPrompt: renderTemplate(templates.repair, vars),
   };
 }
 

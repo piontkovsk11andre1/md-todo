@@ -15,6 +15,8 @@ export function createTaskVerificationAdapter(verificationStore: VerificationSto
         verificationStore,
         templateVars: options.templateVars as ExtraTemplateVars | undefined,
         artifactContext: options.artifactContext as RuntimeArtifactsContext | undefined,
+        cliBlockExecutor: options.cliBlockExecutor,
+        cliExecutionOptions: options.cliExecutionOptions,
       });
     },
   };
