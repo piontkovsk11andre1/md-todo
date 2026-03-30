@@ -7,7 +7,7 @@ import {
   getTraceInstructions,
   DEFAULT_VERIFY_TEMPLATE,
 } from "../domain/defaults.js";
-import { markChecked } from "../domain/checkbox.js";
+import { markChecked, resetAllCheckboxes } from "../domain/checkbox.js";
 import { parseTasks, type Task } from "../domain/parser.js";
 import type { SortMode } from "../domain/sorting.js";
 import { requiresWorkerCommand, resolveRunBehavior } from "../domain/run-options.js";
@@ -158,6 +158,9 @@ export interface RunTaskOptions {
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
   runAll: boolean;
+  redo: boolean;
+  resetAfter: boolean;
+  clean: boolean;
   onFailCommand?: string;
   hideAgentOutput: boolean;
   trace: boolean;
@@ -191,6 +194,9 @@ export function createRunTask(
       commitMessageTemplate,
       onCompleteCommand,
       runAll,
+      redo,
+      resetAfter,
+      clean,
       onFailCommand,
       hideAgentOutput,
       trace,
@@ -222,6 +228,20 @@ export function createRunTask(
         transport,
         workerCommand,
       });
+    }
+
+    if (onlyVerify && (redo || resetAfter || clean)) {
+      emit({
+        kind: "error",
+        message: "--redo, --reset-after, and --clean cannot be combined with --only-verify.",
+      });
+      return 1;
+    }
+
+    const effectiveRunAll = runAll || redo || clean;
+    if (!runAll && (redo || clean)) {
+      const impliedByFlag = clean ? "--clean" : "--redo";
+      emit({ kind: "info", message: impliedByFlag + " implies --all; running all tasks." });
     }
 
     const runBehavior = resolveRunBehavior({
@@ -256,6 +276,11 @@ export function createRunTask(
     let traceWriter: TraceWriterPort = dependencies.traceWriter;
     let artifactsFinalized = false;
     let traceEnrichmentContext: TraceEnrichmentContext | null = null;
+    const pendingPreRunResetTraceEvents: Array<{
+      file: string;
+      resetCount: number;
+      dryRun: boolean;
+    }> = [];
     let activeTraceRun: {
       runId: string;
       task: Task;
@@ -331,6 +356,13 @@ export function createRunTask(
           is_verify_only: isVerifyOnly,
         },
       }));
+
+      if (pendingPreRunResetTraceEvents.length > 0) {
+        for (const resetEvent of pendingPreRunResetTraceEvents) {
+          emitResetPhaseTrace("pre-run-reset", resetEvent.file, resetEvent.resetCount, resetEvent.dryRun);
+        }
+        pendingPreRunResetTraceEvents.length = 0;
+      }
     };
 
     const beginPhaseTrace = (
@@ -492,6 +524,24 @@ export function createRunTask(
           },
         }));
       }
+    };
+
+    const emitResetPhaseTrace = (
+      phase: "pre-run-reset" | "post-run-reset",
+      file: string,
+      resetCount: number,
+      isDryRun: boolean,
+    ): void => {
+      const phaseTrace = beginPhaseTrace(phase, ["rundown", phase, file]);
+      if (!phaseTrace) {
+        return;
+      }
+
+      const pluralSuffix = resetCount === 1 ? "" : "es";
+      const stdout = isDryRun
+        ? `Dry run — would reset ${resetCount} checkbox${pluralSuffix} in ${file}.`
+        : `Reset ${resetCount} checkbox${pluralSuffix} in ${file}.`;
+      completePhaseTrace(phaseTrace, 0, stdout, "", true);
     };
 
     const emitTraceTaskOutcome = (
@@ -703,7 +753,11 @@ export function createRunTask(
       reason: string,
       exitCode: number | null,
       preserve: boolean = keepArtifacts,
-    ): Promise<number> => finishRun(code, status, preserve, { reason, exitCode });
+    ): Promise<number> => {
+      runCompleted = exitCode !== null;
+      runFailed = true;
+      return finishRun(code, status, preserve, { reason, exitCode });
+    };
 
     const finalizeArtifacts = (
       status: ArtifactStoreStatus,
@@ -945,8 +999,14 @@ export function createRunTask(
     };
 
     let unexpectedError: unknown;
+    let resolvedFiles: string[] = [];
+    let runCompleted = false;
+    let runFailed = false;
+    let deferredCommitContext: { task: Task; source: string } | null = null;
+    const deferCommitUntilPostRun = commitAfterComplete && resetAfter;
     try {
       const files = await dependencies.sourceResolver.resolveSources(source);
+      resolvedFiles = files;
       if (files.length === 0) {
         emit({ kind: "warn", message: "No Markdown files found matching: " + source });
         return 3;
@@ -1008,12 +1068,30 @@ export function createRunTask(
         }
       }
 
+      if (redo) {
+        for (const filePath of files) {
+          const resetCount = maybeResetFileCheckboxes(
+            filePath,
+            dependencies.fileSystem,
+            dryRun,
+            emit,
+            "pre-run",
+          );
+          pendingPreRunResetTraceEvents.push({
+            file: filePath,
+            resetCount,
+            dryRun,
+          });
+        }
+      }
+
       let tasksCompleted = 0;
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
       const result = dependencies.taskSelector.selectNextTask(files, sortMode);
       if (!result) {
+        runCompleted = true;
         if (tasksCompleted > 0) {
           emit({ kind: "success", message: "All tasks completed (" + tasksCompleted + " total)." });
           return 0;
@@ -1208,18 +1286,24 @@ export function createRunTask(
 
         checkTaskUsingFileSystem(task, dependencies.fileSystem);
         emit({ kind: "success", message: "Task checked: " + task.text });
+        if (deferCommitUntilPostRun) {
+          deferredCommitContext = { task, source };
+        }
         const taskCompletionExtra = await afterTaskComplete(
           dependencies,
           task,
           source,
-          commitAfterComplete,
+          commitAfterComplete && !deferCommitUntilPostRun,
           commitMessageTemplate,
           onCompleteCommand,
           hideHookOutput,
         );
         await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
         tasksCompleted++;
-        if (!runAll) return 0;
+        if (!effectiveRunAll) {
+          runCompleted = true;
+          return 0;
+        }
         resetArtifacts();
         continue;
       }
@@ -1287,18 +1371,24 @@ export function createRunTask(
 
         checkTaskUsingFileSystem(task, dependencies.fileSystem);
         emit({ kind: "success", message: "Task checked: " + task.text });
+        if (deferCommitUntilPostRun) {
+          deferredCommitContext = { task, source };
+        }
         const taskCompletionExtra = await afterTaskComplete(
           dependencies,
           task,
           source,
-          commitAfterComplete,
+          commitAfterComplete && !deferCommitUntilPostRun,
           commitMessageTemplate,
           onCompleteCommand,
           hideHookOutput,
         );
         await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
         tasksCompleted++;
-        if (!runAll) return 0;
+        if (!effectiveRunAll) {
+          runCompleted = true;
+          return 0;
+        }
         resetArtifacts();
         continue;
       }
@@ -1419,18 +1509,24 @@ export function createRunTask(
 
         checkTaskUsingFileSystem(task, dependencies.fileSystem);
         emit({ kind: "success", message: "Task checked: " + task.text });
+        if (deferCommitUntilPostRun) {
+          deferredCommitContext = { task, source };
+        }
         const taskCompletionExtra = await afterTaskComplete(
           dependencies,
           task,
           source,
-          commitAfterComplete,
+          commitAfterComplete && !deferCommitUntilPostRun,
           commitMessageTemplate,
           onCompleteCommand,
           hideHookOutput,
         );
         await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
         tasksCompleted++;
-        if (!runAll) return 0;
+        if (!effectiveRunAll) {
+          runCompleted = true;
+          return 0;
+        }
         resetArtifacts();
         continue;
       }
@@ -1503,24 +1599,55 @@ export function createRunTask(
 
       checkTaskUsingFileSystem(task, dependencies.fileSystem);
       emit({ kind: "success", message: "Task checked: " + task.text });
+      if (deferCommitUntilPostRun) {
+        deferredCommitContext = { task, source };
+      }
       const taskCompletionExtra = await afterTaskComplete(
         dependencies,
         task,
         source,
-        commitAfterComplete,
+        commitAfterComplete && !deferCommitUntilPostRun,
         commitMessageTemplate,
         onCompleteCommand,
         hideHookOutput,
       );
       await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
       tasksCompleted++;
-      if (!runAll) return 0;
+      if (!effectiveRunAll) {
+        runCompleted = true;
+        return 0;
+      }
       resetArtifacts();
       } // end while
     } catch (error) {
       unexpectedError = error;
       throw error;
     } finally {
+      if (resetAfter && runCompleted) {
+        for (const filePath of resolvedFiles) {
+          const resetCount = maybeResetFileCheckboxes(
+            filePath,
+            dependencies.fileSystem,
+            dryRun,
+            emit,
+            "post-run",
+          );
+          emitResetPhaseTrace("post-run-reset", filePath, resetCount, dryRun);
+        }
+      }
+
+      if (deferredCommitContext && !runFailed) {
+        await afterTaskComplete(
+          dependencies,
+          deferredCommitContext.task,
+          deferredCommitContext.source,
+          true,
+          commitMessageTemplate,
+          undefined,
+          hideHookOutput,
+        );
+      }
+
       try {
         dependencies.fileLock.releaseAll();
       } catch (error) {
@@ -2258,6 +2385,42 @@ function checkTaskUsingFileSystem(task: Task, fileSystem: FileSystem): void {
   const source = fileSystem.readText(task.file);
   const updated = markChecked(source, task);
   fileSystem.writeText(task.file, updated);
+}
+
+function resetFileCheckboxes(file: string, fileSystem: FileSystem): void {
+  const source = fileSystem.readText(file);
+  const resetCount = countCheckedTasks(source, file);
+
+  if (resetCount === 0) {
+    return;
+  }
+
+  const updated = resetAllCheckboxes(source, file);
+  fileSystem.writeText(file, updated);
+}
+
+function maybeResetFileCheckboxes(
+  file: string,
+  fileSystem: FileSystem,
+  dryRun: boolean,
+  emit: ApplicationOutputPort["emit"],
+  phase: "pre-run" | "post-run",
+): number {
+  const source = fileSystem.readText(file);
+  const resetCount = countCheckedTasks(source, file);
+
+  if (dryRun) {
+    emit({ kind: "info", message: `Dry run — would reset checkboxes (${phase}) in: ${file}` });
+    return resetCount;
+  }
+
+  resetFileCheckboxes(file, fileSystem);
+  emit({ kind: "info", message: `Reset ${resetCount} checkbox${resetCount === 1 ? "" : "es"} in ${file}.` });
+  return resetCount;
+}
+
+function countCheckedTasks(source: string, file: string): number {
+  return parseTasks(source, file).filter((task) => task.checked).length;
 }
 
 async function isGitRepoWithGitClient(gitClient: GitClient, cwd: string): Promise<boolean> {

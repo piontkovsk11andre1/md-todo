@@ -36,6 +36,9 @@ rundown run roadmap.md -- opencode run
 rundown run docs/ -- opencode run
 rundown run "notes/**/*.md" -- opencode run
 rundown run roadmap.md --all -- opencode run
+rundown run roadmap.md --redo -- opencode run
+rundown run roadmap.md --reset-after -- opencode run
+rundown run roadmap.md --clean -- opencode run
 rundown runall roadmap.md -- opencode run
 rundown run tasks.md --hide-agent-output --worker opencode run
 ```
@@ -529,9 +532,14 @@ These options are available on `rundown run`.
 | `--on-fail <command>` | Run a shell command when a task fails (execution or verification failure). | unset |
 | `--hide-agent-output` | Hide worker stdout/stderr during execution; show only rundown status messages. | off |
 | `--all` | Run all tasks sequentially instead of stopping after one. Stops on failure. | off |
+| `--redo` | Reset checked checkboxes in all resolved source files before task selection. Implies `--all`. | off |
+| `--reset-after` | Reset all checkboxes in all resolved source files after run completion. | off |
+| `--clean` | Shorthand for `--redo --reset-after`. | off |
 | `--force-unlock` | Remove stale source lockfiles before acquiring run locks. Active locks held by live processes are not removed. | off |
 
 `--commit-message` is only applied when `--commit` is enabled.
+
+When `--commit` and `--reset-after` are combined, rundown applies post-run reset first, then commits so git captures the clean (all-unchecked) state.
 
 Examples:
 
@@ -583,6 +591,29 @@ Example:
 
 ```bash
 rundown run roadmap.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
+```
+
+### Checkbox reset flags
+
+- `--redo` resets checked checkboxes before selecting tasks. This is source-scoped across every file resolved from `<source>` (single file, directory, or glob).
+- `--redo` implies `--all`; rundown emits an info message and runs all tasks sequentially.
+- `--reset-after` resets checkboxes after run completion. In `--all` mode it still runs after a mid-run task failure so files end clean.
+- `--reset-after` does not run for interrupted sessions (`SIGINT`/`SIGTERM`).
+- `--clean` is a convenience alias for `--redo --reset-after`.
+- `--redo`, `--reset-after`, and `--clean` cannot be combined with `--only-verify` (returns exit code `1`).
+- With `--dry-run`, reset phases are reported but files are not mutated.
+
+Examples:
+
+```bash
+# Re-run from the top of every checked task in the resolved source set
+rundown run docs/todos.md --redo --worker opencode run
+
+# Run tasks, then always leave files unchecked
+rundown run "docs/**/*.md" --all --reset-after --worker opencode run
+
+# Canonical reusable runbook flow: clean before and after
+rundown run runbook.md --clean --worker opencode run
 ```
 
 ### Inspection and dry runs

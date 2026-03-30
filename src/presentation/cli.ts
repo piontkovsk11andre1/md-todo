@@ -243,6 +243,9 @@ program
   .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
   .option("--hide-agent-output", "Hide worker stdout/stderr during execution; show only rundown status messages.", false)
   .option("--all", "Run all tasks sequentially instead of stopping after one (alias: runall)", false)
+  .option("--redo", "Reset all checkboxes in the source file before running", false)
+  .option("--reset-after", "Reset all checkboxes in the source file after the run completes", false)
+  .option("--clean", "Shorthand for --redo --reset-after", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring run locks", false)
   .option("--worker <command...>", "Worker command to run (alternative to -- <command>)")
   .allowUnknownOption(false)
@@ -274,6 +277,9 @@ program
     const onFailCommand = normalizeOptionalString(opts.onFail);
     const hideAgentOutput = Boolean(opts.hideAgentOutput as boolean | undefined);
     const runAll = Boolean(opts.all as boolean | undefined);
+    const clean = Boolean(opts.clean as boolean | undefined);
+    const redo = Boolean(opts.redo as boolean | undefined) || clean;
+    const resetAfter = Boolean(opts.resetAfter as boolean | undefined) || clean;
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     return getApp().runTask({
       source,
@@ -299,6 +305,9 @@ program
       onFailCommand,
       hideAgentOutput,
       runAll,
+      redo,
+      resetAfter,
+      clean,
       forceUnlock,
     });
   }));

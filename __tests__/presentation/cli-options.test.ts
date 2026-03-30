@@ -124,6 +124,101 @@ describe("CLI run option normalization", () => {
     expect(call.runAll).toBe(true);
   });
 
+  it("defaults reset flags to false when omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.redo).toBe(false);
+    expect(call.resetAfter).toBe(false);
+    expect(call.clean).toBe(false);
+  });
+
+  it("parses --redo flag without enabling reset-after", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--redo",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.redo).toBe(true);
+    expect(call.resetAfter).toBe(false);
+    expect(call.clean).toBe(false);
+  });
+
+  it("parses --reset-after flag without enabling redo", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--reset-after",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.redo).toBe(false);
+    expect(call.resetAfter).toBe(true);
+    expect(call.clean).toBe(false);
+  });
+
+  it("passes reset flags to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--redo",
+      "--reset-after",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.redo).toBe(true);
+    expect(call.resetAfter).toBe(true);
+    expect(call.clean).toBe(false);
+  });
+
+  it("expands --clean into redo and reset-after", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.clean).toBe(true);
+    expect(call.redo).toBe(true);
+    expect(call.resetAfter).toBe(true);
+  });
+
+  it("shows reset options in run help text", async () => {
+    const runTask = vi.fn(async () => 0);
+    const result = await invokeRunAndCaptureHelpOutput([
+      "run",
+      "--help",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+
+    const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--redo Reset all checkboxes in the source file before running");
+    expect(compactHelpOutput).toContain("--reset-after Reset all checkboxes in the source file after the run completes");
+    expect(compactHelpOutput).toContain("--clean Shorthand for --redo --reset-after");
+  });
+
   it("expands runall alias to run --all", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -1534,6 +1629,60 @@ async function invokeRunAndCaptureExitCode(args: string[], runTask: ReturnType<t
     }
     throw error;
   } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+async function invokeRunAndCaptureHelpOutput(
+  args: string[],
+  runTask: ReturnType<typeof vi.fn>,
+): Promise<{ output: string; exitCode: number }> {
+  const previousEnv = captureEnv();
+  let output = "";
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+    output += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    return true;
+  }) as never);
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    const match = /CLI exited with code (\d+)/.exec(message);
+    if (match) {
+      return {
+        output,
+        exitCode: Number(match[1]),
+      };
+    }
+    if (/process\.exit unexpectedly called/.test(message)) {
+      return {
+        output,
+        exitCode: 1,
+      };
+    }
+    throw error;
+  } finally {
+    stdoutSpy.mockRestore();
     restoreEnv(previousEnv);
   }
 

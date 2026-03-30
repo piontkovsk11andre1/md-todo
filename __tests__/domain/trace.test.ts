@@ -134,6 +134,26 @@ describe("trace event factory functions", () => {
     });
   });
 
+  it("creates phase.started event for reset phases", () => {
+    const event = createPhaseStartedEvent({
+      timestamp,
+      run_id: "run-123",
+      payload: {
+        phase: "pre-run-reset",
+        sequence: 3,
+        command: ["rundown", "pre-run-reset", "TODO.md"],
+      },
+    });
+
+    expectCommonTraceFields(event);
+    expect(event.event_type).toBe("phase.started");
+    expect(event.payload).toEqual({
+      phase: "pre-run-reset",
+      sequence: 3,
+      command: ["rundown", "pre-run-reset", "TODO.md"],
+    });
+  });
+
   it("creates task.context event with schema version and required payload fields", () => {
     const event = createTaskContextEvent({
       timestamp,

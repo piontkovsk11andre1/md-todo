@@ -7,7 +7,7 @@ import type { DiscussTaskOptions } from "../../src/create-app.js";
 
 describe("public API exports", () => {
   it("keeps root index exports intentionally narrow", () => {
-    expect(Object.keys(api).sort()).toEqual(["createApp"]);
+    expect(Object.keys(api).sort()).toEqual(["createApp", "resetAllCheckboxes"]);
   });
 
   it("exports trace-related public types", () => {

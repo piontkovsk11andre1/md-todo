@@ -3463,6 +3463,212 @@ describe.sequential("CLI integration", () => {
     expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
   });
 
+  it("run --redo --all resets checked tasks before execution and runs all tasks", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "redo-all-worker.mjs");
+    fs.writeFileSync(roadmapPath, "- [x] Draft release notes\n- [ ] Publish release\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, "process.exit(0);\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--all",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => line.includes("All tasks completed (2 total)"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Draft release notes\n- [x] Publish release\n");
+  });
+
+  it("run with glob source and --redo resets checked tasks in all resolved files", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceGlob = "projects/*/roadmap.md";
+    const alphaDir = path.join(workspace, "projects", "alpha");
+    const betaDir = path.join(workspace, "projects", "beta");
+    const alphaSourcePath = path.join(alphaDir, "roadmap.md");
+    const betaSourcePath = path.join(betaDir, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "redo-multi-worker.mjs");
+
+    fs.mkdirSync(alphaDir, { recursive: true });
+    fs.mkdirSync(betaDir, { recursive: true });
+    fs.writeFileSync(alphaSourcePath, "- [x] Alpha done\n- [ ] Alpha next\n", "utf-8");
+    fs.writeFileSync(betaSourcePath, "- [x] Beta done\n- [ ] Beta next\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, "process.exit(0);\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      sourceGlob,
+      "--redo",
+      "--all",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("projects/alpha/roadmap.md"))).toBe(true);
+    expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("projects/beta/roadmap.md"))).toBe(true);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(4);
+    expect(result.logs.some((line) => line.includes("All tasks completed (4 total)"))).toBe(true);
+    expect(fs.readFileSync(alphaSourcePath, "utf-8")).toBe("- [x] Alpha done\n- [x] Alpha next\n");
+    expect(fs.readFileSync(betaSourcePath, "utf-8")).toBe("- [x] Beta done\n- [x] Beta next\n");
+  });
+
+  it("run --redo --dry-run leaves checkbox state unchanged", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const initialMarkdown = "- [x] cli: echo one\n- [ ] cli: echo two\n";
+    fs.writeFileSync(roadmapPath, initialMarkdown, "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--dry-run",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Dry run — would reset checkboxes (pre-run) in:") && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(initialMarkdown);
+  });
+
+  it("run --redo --only-verify exits with an error and does not mutate checkbox state", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const initialMarkdown = "- [x] cli: echo one\n- [ ] cli: echo two\n";
+    fs.writeFileSync(roadmapPath, initialMarkdown, "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--only-verify",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("cannot be combined with --only-verify"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(initialMarkdown);
+  });
+
+  it("run --reset-after leaves file with all checkboxes unchecked after run", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--reset-after",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => /Reset 3 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n");
+  });
+
+  it("run --redo --reset-after resets before execution and leaves file unchecked after completion", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] cli: echo already done\n- [ ] cli: echo one\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--reset-after",
+      "--all",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(result.logs.some((line) => /Reset 2 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] cli: echo already done\n- [ ] cli: echo one\n");
+  });
+
+  it("run --clean behaves like --redo --reset-after and leaves file unchecked after completion", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] cli: echo already done\n- [ ] cli: echo one\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--clean",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(result.logs.some((line) => /Reset 2 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] cli: echo already done\n- [ ] cli: echo one\n");
+  });
+
+  it("run --redo composes with --keep-artifacts and executes all tasks", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] cli: echo first\n- [ ] cli: echo second\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--keep-artifacts",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("--redo implies --all"))).toBe(true);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => line.includes("Runtime artifacts saved at"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] cli: echo first\n- [x] cli: echo second\n");
+
+    const savedRuns = readSavedRunMetadata(workspace)
+      .filter((run) => run.commandName === "run");
+    expect(savedRuns.length).toBeGreaterThan(0);
+    expect(savedRuns.every((run) => run.status === "completed")).toBe(true);
+  });
+
+  it("run --reset-after composes with --keep-artifacts and leaves file clean", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [x] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--reset-after",
+      "--keep-artifacts",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => /Reset 3 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Runtime artifacts saved at"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n");
+
+    const savedRuns = readSavedRunMetadata(workspace)
+      .filter((run) => run.commandName === "run");
+    expect(savedRuns.length).toBeGreaterThan(0);
+    expect(savedRuns.every((run) => run.status === "completed")).toBe(true);
+  });
+
   it("runall completes multiple inline CLI tasks sequentially", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");

@@ -451,6 +451,214 @@ describe("run-task commit behavior", () => {
     expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(false);
   });
 
+  it("checks clean worktree before --redo pre-run reset when --commit is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] cli: echo hello\n",
+    });
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "rev-parse") {
+          return "true";
+        }
+        if (args[0] === "status") {
+          return "M unrelated.txt\n";
+        }
+        return "";
+      }),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      redo: true,
+      commitAfterComplete: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo hello\n");
+    expect(events.some((event) => event.kind === "error" && event.message.includes("working directory is not clean"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.startsWith("Reset "))).toBe(false);
+    expect(vi.mocked(dependencies.taskSelector.selectNextTask)).not.toHaveBeenCalled();
+  });
+
+  it("commits reset state when --commit and --reset-after are enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    let addObserved = false;
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "status") {
+          return "";
+        }
+        if (args[0] === "add") {
+          addObserved = true;
+          expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
+        }
+        if (args[0] === "rev-parse" && args[1] === "HEAD") {
+          return "abc123def";
+        }
+        return "";
+      }),
+    };
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      commitAfterComplete: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(addObserved).toBe(true);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message === "Committed: rundown: complete \"cli: echo hello\" in tasks.md")).toBe(true);
+  });
+
+  it("commits clean all-unchecked file state when --commit and --reset-after run in --all mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo one");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    let addSnapshot = "";
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "status") {
+          return "";
+        }
+        if (args[0] === "add") {
+          addSnapshot = fileSystem.readText(taskFile);
+        }
+        if (args[0] === "rev-parse" && args[1] === "HEAD") {
+          return "abc123def";
+        }
+        return "";
+      }),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      const lines = fileSystem.readText(taskFile).split("\n");
+      const uncheckedIndex = lines.findIndex((line) => line.startsWith("- [ ] "));
+      if (uncheckedIndex === -1) {
+        return null;
+      }
+
+      const text = lines[uncheckedIndex]!.replace("- [ ] ", "");
+      return {
+        task: {
+          text,
+          checked: false,
+          index: uncheckedIndex,
+          line: uncheckedIndex + 1,
+          column: 1,
+          offsetStart: 0,
+          offsetEnd: text.length,
+          file: taskFile,
+          isInlineCli: true,
+          isRundownTask: false,
+          cliCommand: text.replace(/^cli:\s*/i, ""),
+          depth: 0,
+          children: [],
+          subItems: [],
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+      resetAfter: true,
+      commitAfterComplete: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeInlineCli)).toHaveBeenCalledTimes(2);
+    expect(addSnapshot).toBe("- [ ] cli: echo one\n- [ ] cli: echo two\n");
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo one\n- [ ] cli: echo two\n");
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(true);
+  });
+
+  it("does not commit when run fails even if --commit and --reset-after are enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "status") {
+          return "";
+        }
+        return "";
+      }),
+    };
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      commitAfterComplete: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "add")).toBe(false);
+    expect(vi.mocked(gitClient.run).mock.calls.some(([args]) => args[0] === "commit")).toBe(false);
+  });
+
   it("does not run git status --porcelain when --commit is not enabled", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -1234,6 +1442,55 @@ describe("run-task prompt and mode behavior", () => {
     expect(dependencies.fileLock.forceRelease).not.toHaveBeenCalled();
   });
 
+  it("rejects --only-verify when combined with reset flags", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      onlyVerify: true,
+      redo: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    expect(dependencies.sourceResolver.resolveSources).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "error"
+      && event.message.includes("cannot be combined with --only-verify")
+    )).toBe(true);
+  });
+
+  it("rejects --redo --only-verify with a clear error message", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      onlyVerify: true,
+      redo: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(1);
+    const errorEvent = events.find((event) => event.kind === "error");
+    expect(errorEvent?.message).toBe("--redo, --reset-after, and --clean cannot be combined with --only-verify.");
+  });
+
   it("acquires a lock for each resolved source file before selecting tasks and releases all locks after completion", async () => {
     const cwd = "/workspace";
     const primaryFile = path.join(cwd, "tasks.md");
@@ -1268,6 +1525,422 @@ describe("run-task prompt and mode behavior", () => {
     const lockAcquireOrder = vi.mocked(dependencies.fileLock.acquire).mock.invocationCallOrder[0];
     const taskSelectOrder = vi.mocked(dependencies.taskSelector.selectNextTask).mock.invocationCallOrder[0];
     expect(lockAcquireOrder).toBeLessThan(taskSelectOrder);
+  });
+
+  it("resets checkboxes in every resolved source file before task selection when redo is enabled", async () => {
+    const cwd = "/workspace";
+    const primaryFile = path.join(cwd, "tasks.md");
+    const secondaryFile = path.join(cwd, "more.md");
+    const task = createTask(primaryFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [primaryFile]: "- [x] Build release\n",
+      [secondaryFile]: "- [x] Secondary\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.sourceResolver.resolveSources).mockResolvedValue([primaryFile, secondaryFile]);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      expect(fileSystem.readText(primaryFile)).toBe("- [ ] Build release\n");
+      expect(fileSystem.readText(secondaryFile)).toBe("- [ ] Secondary\n");
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "**/*.md",
+      verify: false,
+      redo: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(fileSystem.readText(primaryFile)).toBe("- [ ] Build release\n");
+    expect(fileSystem.readText(secondaryFile)).toBe("- [ ] Secondary\n");
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets checkboxes across every resolved source file for both --redo and --reset-after", async () => {
+    const cwd = "/workspace";
+    const firstFile = path.join(cwd, "a.md");
+    const secondFile = path.join(cwd, "b.md");
+    const task = createInlineTask(firstFile, "cli: echo a");
+    const fileSystem = createInMemoryFileSystem({
+      [firstFile]: "- [x] cli: echo a\n",
+      [secondFile]: "- [x] cli: echo b\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    let selectCallCount = 0;
+
+    vi.mocked(dependencies.sourceResolver.resolveSources).mockResolvedValue([firstFile, secondFile]);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      const firstSource = fileSystem.readText(firstFile);
+      const secondSource = fileSystem.readText(secondFile);
+
+      if (selectCallCount === 0) {
+        expect(firstSource).toBe("- [ ] cli: echo a\n");
+        expect(secondSource).toBe("- [ ] cli: echo b\n");
+      }
+
+      if (firstSource.includes("- [ ] cli: echo a")) {
+        selectCallCount++;
+        return {
+          task: createInlineTask(firstFile, "cli: echo a"),
+          source: "a.md",
+          contextBefore: "",
+        };
+      }
+
+      if (secondSource.includes("- [ ] cli: echo b")) {
+        selectCallCount++;
+        return {
+          task: createInlineTask(secondFile, "cli: echo b"),
+          source: "b.md",
+          contextBefore: "",
+        };
+      }
+
+      return null;
+    });
+
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "**/*.md",
+      verify: false,
+      runAll: true,
+      redo: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeInlineCli)).toHaveBeenCalledTimes(2);
+    expect(fileSystem.readText(firstFile)).toBe("- [ ] cli: echo a\n");
+    expect(fileSystem.readText(secondFile)).toBe("- [ ] cli: echo b\n");
+    expect(events.filter((event) => event.kind === "info" && event.message === `Reset 1 checkbox in ${firstFile}.`)).toHaveLength(2);
+    expect(events.filter((event) => event.kind === "info" && event.message === `Reset 1 checkbox in ${secondFile}.`)).toHaveLength(2);
+  });
+
+  it("applies both reset phases when --clean is expanded to --redo and --reset-after", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo hello");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] cli: echo hello\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask)
+      .mockImplementationOnce(() => {
+        expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
+        return {
+          task: createInlineTask(taskFile, "cli: echo hello"),
+          source: "tasks.md",
+          contextBefore: "",
+        };
+      })
+      .mockImplementationOnce(() => null);
+
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      clean: true,
+      redo: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeInlineCli)).toHaveBeenCalledTimes(1);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo hello\n");
+    expect(events.filter((event) => event.kind === "info" && event.message === `Reset 1 checkbox in ${taskFile}.`)).toHaveLength(2);
+  });
+
+  it("emits pre-run reset count messages for each resolved source file when redo is enabled", async () => {
+    const cwd = "/workspace";
+    const primaryFile = path.join(cwd, "tasks.md");
+    const secondaryFile = path.join(cwd, "more.md");
+    const task = createTask(primaryFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [primaryFile]: "- [x] Build release\n- [ ] Keep unchecked\n",
+      [secondaryFile]: "- [x] Secondary\n- [x] Third\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.sourceResolver.resolveSources).mockResolvedValue([primaryFile, secondaryFile]);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "**/*.md",
+      verify: false,
+      redo: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Reset 1 checkbox in ${primaryFile}.`
+    )).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Reset 2 checkboxes in ${secondaryFile}.`
+    )).toBe(true);
+  });
+
+  it("logs pre-run reset intent and does not mutate files when redo is used with dry-run", async () => {
+    const cwd = "/workspace";
+    const primaryFile = path.join(cwd, "tasks.md");
+    const secondaryFile = path.join(cwd, "more.md");
+    const task = createTask(primaryFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [primaryFile]: "- [x] Build release\n",
+      [secondaryFile]: "- [x] Secondary\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.sourceResolver.resolveSources).mockResolvedValue([primaryFile, secondaryFile]);
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      expect(fileSystem.readText(primaryFile)).toBe("- [x] Build release\n");
+      expect(fileSystem.readText(secondaryFile)).toBe("- [x] Secondary\n");
+      return null;
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "**/*.md",
+      verify: false,
+      redo: true,
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(fileSystem.readText(primaryFile)).toBe("- [x] Build release\n");
+    expect(fileSystem.readText(secondaryFile)).toBe("- [x] Secondary\n");
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Dry run — would reset checkboxes (pre-run) in: ${primaryFile}`
+    )).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Dry run — would reset checkboxes (pre-run) in: ${secondaryFile}`
+    )).toBe(true);
+  });
+
+  it("does not write files during pre-run reset when redo is combined with dry-run", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const writeSpy = vi.spyOn(fileSystem, "writeText");
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      redo: true,
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] Build release\n");
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Dry run — would reset checkboxes (pre-run) in: ${taskFile}`
+    )).toBe(true);
+  });
+
+  it("logs post-run reset intent and does not mutate files when reset-after is used with dry-run", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      resetAfter: true,
+      dryRun: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] Build release\n");
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Dry run — would reset checkboxes (post-run) in: ${taskFile}`
+    )).toBe(true);
+  });
+
+  it("emits post-run reset count message when reset-after is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      resetAfter: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) =>
+      event.kind === "info"
+      && event.message === `Reset 1 checkbox in ${taskFile}.`
+    )).toBe(true);
+  });
+
+  it("emits pre-run-reset phase trace events when tracing is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    vi.mocked(dependencies.taskSelector.selectNextTask)
+      .mockReturnValueOnce({
+        task,
+        source: "tasks.md",
+        contextBefore: "",
+      })
+      .mockReturnValueOnce(null);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      redo: true,
+      trace: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.started",
+      payload: expect.objectContaining({
+        phase: "pre-run-reset",
+      }),
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.completed",
+      payload: expect.objectContaining({
+        phase: "pre-run-reset",
+        exit_code: 0,
+      }),
+    }));
+  });
+
+  it("emits post-run-reset phase trace events when tracing is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Build release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Build release\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    dependencies.createTraceWriter = vi.fn((_trace: boolean, _artifactContext) => traceWriter);
+    dependencies.workerExecutor.runWorker = vi.fn()
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "execution complete",
+        stderr: "",
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      resetAfter: true,
+      trace: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] Build release\n");
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.started",
+      payload: expect.objectContaining({
+        phase: "post-run-reset",
+      }),
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "phase.completed",
+      payload: expect.objectContaining({
+        phase: "post-run-reset",
+        exit_code: 0,
+      }),
+    }));
   });
 
   it("returns 1 with a clear message when a source file lock is already held", async () => {
@@ -3817,6 +4490,293 @@ describe("run-task --all mode", () => {
     expect(events.some((e) => e.kind === "error" && e.message.includes("Inline CLI exited with code 1"))).toBe(true);
   });
 
+  it("re-unchecks tasks after all tasks complete in --all mode when reset-after is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo one");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      const lines = fileSystem.readText(taskFile).split("\n");
+      const uncheckedIndex = lines.findIndex((line) => line.startsWith("- [ ] "));
+      if (uncheckedIndex === -1) {
+        return null;
+      }
+
+      const text = lines[uncheckedIndex]!.replace("- [ ] ", "");
+      return {
+        task: {
+          text,
+          checked: false,
+          index: uncheckedIndex,
+          line: uncheckedIndex + 1,
+          column: 1,
+          offsetStart: 0,
+          offsetEnd: text.length,
+          file: taskFile,
+          isInlineCli: true,
+          isRundownTask: false,
+          cliCommand: text.replace(/^cli:\s*/i, ""),
+          depth: 0,
+          children: [],
+          subItems: [],
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }));
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.workerExecutor.executeInlineCli)).toHaveBeenCalledTimes(2);
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(3);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo one\n- [ ] cli: echo two\n");
+    expect(events.some((event) => event.kind === "info" && event.message === `Reset 2 checkboxes in ${taskFile}.`)).toBe(true);
+  });
+
+  it("resets checkboxes after partial failure in --all mode when reset-after is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: fail\n",
+    });
+    const gitClient = createGitClientMock();
+    let selectCallCount = 0;
+    const events: ApplicationOutputEvent[] = [];
+
+    const tasks = [
+      { text: "cli: echo one", cmd: "echo one", exitCode: 0 },
+      { text: "cli: fail", cmd: "fail", exitCode: 1 },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const t = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task: {
+              text: t.text,
+              checked: false,
+              index: selectCallCount - 1,
+              line: selectCallCount,
+              column: 1,
+              offsetStart: 0,
+              offsetEnd: t.text.length,
+              file: taskFile,
+              isInlineCli: true,
+              isRundownTask: false,
+              cliCommand: t.cmd,
+              depth: 0,
+              children: [],
+              subItems: [],
+            },
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeInlineCli: vi.fn(async (_cmd: string) => {
+          if (_cmd === "fail") return { exitCode: 1, stdout: "", stderr: "error" };
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      fileLock: createNoopFileLock(),
+      templateLoader: { load: vi.fn(() => null) },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test", rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
+          cwd, keepArtifacts: false, commandName: "run",
+        })),
+        beginPhase: vi.fn(), completePhase: vi.fn(), finalize: vi.fn(),
+        displayPath: vi.fn(() => ".rundown/runs/run-test"),
+        rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+        listSaved: vi.fn(() => []), listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null), find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0), removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
+      output: { emit: (event) => { events.push(event); } },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(selectCallCount).toBe(2);
+    expect(fileSystem.readText(taskFile)).toBe("- [ ] cli: echo one\n- [ ] cli: fail\n");
+    expect(events.some((event) => event.kind === "info" && event.message === `Reset 1 checkbox in ${taskFile}.`)).toBe(true);
+  });
+
+  it("does not run reset-after when --all run is interrupted", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: interrupted\n",
+    });
+    const gitClient = createGitClientMock();
+    let selectCallCount = 0;
+    const events: ApplicationOutputEvent[] = [];
+
+    const tasks = [
+      { text: "cli: echo one", cmd: "echo one" },
+      { text: "cli: interrupted", cmd: "interrupted" },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const t = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task: {
+              text: t.text,
+              checked: false,
+              index: selectCallCount - 1,
+              line: selectCallCount,
+              column: 1,
+              offsetStart: 0,
+              offsetEnd: t.text.length,
+              file: taskFile,
+              isInlineCli: true,
+              isRundownTask: false,
+              cliCommand: t.cmd,
+              depth: 0,
+              children: [],
+              subItems: [],
+            },
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeInlineCli: vi.fn(async (_cmd: string) => {
+          if (_cmd === "interrupted") {
+            return { exitCode: null, stdout: "", stderr: "" };
+          }
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      fileLock: createNoopFileLock(),
+      templateLoader: { load: vi.fn(() => null) },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test", rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
+          cwd, keepArtifacts: false, commandName: "run",
+        })),
+        beginPhase: vi.fn(), completePhase: vi.fn(), finalize: vi.fn(),
+        displayPath: vi.fn(() => ".rundown/runs/run-test"),
+        rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+        listSaved: vi.fn(() => []), listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null), find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0), removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
+      output: { emit: (event) => { events.push(event); } },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: true,
+      resetAfter: true,
+    }));
+
+    expect(code).toBe(1);
+    expect(selectCallCount).toBe(2);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo one\n- [ ] cli: interrupted\n");
+    expect(events.some((event) => event.kind === "info" && event.message === `Reset 1 checkbox in ${taskFile}.`)).toBe(false);
+  });
+
   it("runs only one task when --all is not set", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -3836,6 +4796,182 @@ describe("run-task --all mode", () => {
 
     expect(code).toBe(0);
     expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-enables --all when --redo is set and emits an info message", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const gitClient = createGitClientMock();
+    const events: ApplicationOutputEvent[] = [];
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", cmd: "echo one" },
+      { text: "cli: echo two", cmd: "echo two" },
+    ];
+
+    const dependencies: RunTaskDependencies = {
+      sourceResolver: { resolveSources: vi.fn(async () => [taskFile]) },
+      taskSelector: {
+        selectNextTask: vi.fn(() => {
+          if (selectCallCount >= tasks.length) return null;
+          const t = tasks[selectCallCount];
+          selectCallCount++;
+          return {
+            task: {
+              text: t.text,
+              checked: false,
+              index: selectCallCount - 1,
+              line: selectCallCount,
+              column: 1,
+              offsetStart: 0,
+              offsetEnd: t.text.length,
+              file: taskFile,
+              isInlineCli: true,
+              isRundownTask: false,
+              cliCommand: t.cmd,
+              depth: 0,
+              children: [],
+              subItems: [],
+            },
+            source: "tasks.md",
+            contextBefore: "",
+          };
+        }),
+        selectTaskByLocation: vi.fn(() => null),
+      },
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+        executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      },
+      taskVerification: { verify: vi.fn(async () => true) },
+      taskRepair: { repair: vi.fn(async () => ({ valid: true, attempts: 0 })) },
+      workingDirectory: { cwd: vi.fn(() => cwd) },
+      fileSystem,
+      fileLock: createNoopFileLock(),
+      templateLoader: { load: vi.fn(() => null) },
+      verificationStore: { write: vi.fn(), read: vi.fn(() => null), remove: vi.fn() },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test",
+          rootDir: path.join(cwd, ".rundown", "runs", "run-test"),
+          cwd,
+          keepArtifacts: false,
+          commandName: "run",
+        })),
+        beginPhase: vi.fn(),
+        completePhase: vi.fn(),
+        finalize: vi.fn(),
+        displayPath: vi.fn(() => ".rundown/runs/run-test"),
+        rootDir: vi.fn(() => path.join(cwd, ".rundown", "runs")),
+        listSaved: vi.fn(() => []),
+        listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null),
+        find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0),
+        removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      gitClient,
+      processRunner: { run: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })) },
+      pathOperations: {
+        join: (...parts) => path.join(...parts),
+        resolve: (...parts) => path.resolve(...parts),
+        dirname: (p) => path.dirname(p),
+        relative: (from, to) => path.relative(from, to),
+        isAbsolute: (p) => path.isAbsolute(p),
+      },
+      templateVarsLoader: { load: vi.fn(() => ({})) },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      configDir: {
+        configDir: path.join(cwd, ".rundown"),
+        isExplicit: false,
+      },
+      createTraceWriter: vi.fn((_trace: boolean, _artifactContext) => ({
+        write: vi.fn(),
+        flush: vi.fn(),
+      })),
+      output: { emit: (event) => { events.push(event); } },
+    };
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: false,
+      redo: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(2);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("--redo implies --all"))).toBe(true);
+  });
+
+  it("resets checked tasks before selection and executes from top when --redo is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createInlineTask(taskFile, "cli: echo first");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] cli: echo first\n- [ ] cli: echo second\n",
+    });
+    const gitClient = createGitClientMock();
+    const { dependencies, events } = createDependencies({ cwd, task, fileSystem, gitClient });
+    const executedCommands: string[] = [];
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockImplementation(() => {
+      const lines = fileSystem.readText(taskFile).split("\n");
+      const uncheckedIndex = lines.findIndex((line) => line.startsWith("- [ ] "));
+      if (uncheckedIndex === -1) {
+        return null;
+      }
+
+      const text = lines[uncheckedIndex]!.replace("- [ ] ", "");
+      return {
+        task: {
+          text,
+          checked: false,
+          index: uncheckedIndex,
+          line: uncheckedIndex + 1,
+          column: 1,
+          offsetStart: 0,
+          offsetEnd: text.length,
+          file: taskFile,
+          isInlineCli: true,
+          isRundownTask: false,
+          cliCommand: text.replace(/^cli:\s*/i, ""),
+          depth: 0,
+          children: [],
+          subItems: [],
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async (command: string) => {
+      executedCommands.push(command);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const runTask = createRunTask(dependencies);
+    const code = await runTask(createOptions({
+      source: "tasks.md",
+      verify: false,
+      runAll: false,
+      redo: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(executedCommands).toEqual(["echo first", "echo second"]);
+    expect(fileSystem.readText(taskFile)).toBe("- [x] cli: echo first\n- [x] cli: echo second\n");
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(3);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("--redo implies --all"))).toBe(true);
   });
 });
 
@@ -4311,6 +5447,9 @@ function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
     commitMessageTemplate: undefined,
     onCompleteCommand: undefined,
     runAll: false,
+    redo: false,
+    resetAfter: false,
+    clean: false,
     onFailCommand: undefined,
     hideAgentOutput: false,
     trace: false,

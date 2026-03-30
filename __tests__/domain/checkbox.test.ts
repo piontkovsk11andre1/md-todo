@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { markChecked, markUnchecked } from "../../src/domain/checkbox.js";
+import {
+  markChecked,
+  markUnchecked,
+  resetAllCheckboxes,
+} from "../../src/domain/checkbox.js";
 
 describe("markChecked", () => {
   it("should replace [ ] with [x] on the target line", () => {
@@ -120,5 +124,66 @@ describe("markUnchecked", () => {
     const result = markUnchecked(source, task);
 
     expect(result).toBe("# Title\r\n\r\n- [ ] First task\r\n- [x] Second task\r\n");
+  });
+});
+
+describe("resetAllCheckboxes", () => {
+  it("should return unchanged source for an empty file", () => {
+    const source = "";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe("");
+  });
+
+  it("should return unchanged source when all tasks are already unchecked", () => {
+    const source = "- [ ] One\n- [ ] Two\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe(source);
+  });
+
+  it("should uncheck all checked tasks", () => {
+    const source = "- [x] Done one\n- [ ] Todo two\n- [x] Done three\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe("- [ ] Done one\n- [ ] Todo two\n- [ ] Done three\n");
+  });
+
+  it("should uncheck all tasks when every task is checked", () => {
+    const source = "- [x] One\n- [x] Two\n- [x] Three\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe("- [ ] One\n- [ ] Two\n- [ ] Three\n");
+  });
+
+  it("should preserve nested structure while unchecking", () => {
+    const source = "- [x] Parent\n  - [x] Child\n  - [ ] Child two\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe("- [ ] Parent\n  - [ ] Child\n  - [ ] Child two\n");
+  });
+
+  it("should preserve non-task [x] markers inside fenced code blocks", () => {
+    const source =
+      "- [x] Real task\n\n```md\n- [x] Not a real task\nconst flag = '[x]';\n```\n\n- [ ] Another real task\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe(
+      "- [ ] Real task\n\n```md\n- [x] Not a real task\nconst flag = '[x]';\n```\n\n- [ ] Another real task\n",
+    );
+  });
+
+  it("should preserve CRLF line endings", () => {
+    const source = "# Title\r\n\r\n- [x] First\r\n- [ ] Second\r\n- [x] Third\r\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe("# Title\r\n\r\n- [ ] First\r\n- [ ] Second\r\n- [ ] Third\r\n");
   });
 });
