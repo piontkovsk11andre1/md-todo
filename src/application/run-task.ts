@@ -77,7 +77,6 @@ import type {
    WorkingDirectoryPort,
   } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
-import { createCliBlockExecutor } from "../infrastructure/cli-block-executor.js";
 
 export type RunnerMode = ProcessRunMode;
 export type PromptTransport = PortPromptTransport;
@@ -196,7 +195,15 @@ export function createRunTask(
   dependencies: RunTaskDependencies,
 ): (options: RunTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
-  const cliBlockExecutor = dependencies.cliBlockExecutor ?? createCliBlockExecutor();
+  const cliBlockExecutor = dependencies.cliBlockExecutor ?? {
+    async execute() {
+      return {
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      };
+    },
+  };
 
   return async function runTask(options: RunTaskOptions): Promise<number> {
       const {

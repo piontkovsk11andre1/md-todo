@@ -1,6 +1,4 @@
 node_modules/
 dist/
-.rundown-tmp/
-**/.rundown/runs/
-**/.rundown/logs/
-**/.rundown/*.lock
+.rundown/
+coverage/
