@@ -234,7 +234,7 @@ describe("normalizePlannerTodoAdditions", () => {
 });
 
 describe("insertPlannerTodos", () => {
-  it("inserts TODOs under the most relevant section when none exist", () => {
+  it("appends TODOs to end of document when none exist", () => {
     const source = [
       "# Delivery Plan",
       "",
@@ -253,10 +253,25 @@ describe("insertPlannerTodos", () => {
     });
 
     expect(result.insertedCount).toBe(2);
-    expect(result.updatedSource).toContain("## Next Steps\nCoordinate rollout.\n\n- [ ] Draft rollout plan\n- [ ] Confirm ownership\n## Notes");
+    expect(result.updatedSource).toBe([
+      "# Delivery Plan",
+      "",
+      "## Scope",
+      "Define the release boundaries.",
+      "",
+      "## Next Steps",
+      "Coordinate rollout.",
+      "",
+      "## Notes",
+      "Additional context.",
+      "",
+      "- [ ] Draft rollout plan",
+      "- [ ] Confirm ownership",
+      "",
+    ].join("\n"));
   });
 
-  it("falls back to EOF insertion when no headings are present", () => {
+  it("appends TODOs at EOF when no headings are present", () => {
     const source = "Release intent without sections.";
 
     const result = insertPlannerTodos(source, "- [ ] Add milestone list\n", {
@@ -267,61 +282,7 @@ describe("insertPlannerTodos", () => {
     expect(result.updatedSource).toBe("Release intent without sections.\n\n- [ ] Add milestone list\n");
   });
 
-  it("uses heading proximity to break semantic ties near fallback section", () => {
-    const source = [
-      "# Delivery Plan",
-      "",
-      "## Release Validation Deployment Overview",
-      "Capture current status.",
-      "",
-      "## Background",
-      "Context details.",
-      "",
-      "## Next Steps",
-      "Coordinate rollout.",
-      "",
-      "## Release Validation Deployment Notes",
-      "Capture rollout checks.",
-      "",
-      "## Appendix",
-      "Reference links.",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, "- [ ] Release validation deployment across staging\n", {
-      hasExistingTodos: false,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toContain(
-      "## Release Validation Deployment Notes\nCapture rollout checks.\n\n- [ ] Release validation deployment across staging\n## Appendix",
-    );
-  });
-
-  it("breaks exact heading-score ties deterministically by document order", () => {
-    const source = [
-      "# Plan",
-      "",
-      "## Release Checklist",
-      "First candidate section.",
-      "",
-      "## Release Checklist",
-      "Second candidate section.",
-      "",
-      "## Notes",
-      "General context.",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, "- [ ] Validate release checklist\n", {
-      hasExistingTodos: false,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toContain(
-      "## Release Checklist\nFirst candidate section.\n\n- [ ] Validate release checklist\n## Release Checklist",
-    );
-  });
-
-  it("falls back to EOF insertion when headings exist but no section is relevant", () => {
+  it("appends TODOs at EOF when headings exist", () => {
     const source = [
       "# Plan",
       "",
@@ -351,7 +312,7 @@ describe("insertPlannerTodos", () => {
     ].join("\n"));
   });
 
-  it("appends TODOs to end of document when TODOs already exist", () => {
+  it("appends TODOs into the existing TODO list when one already exists", () => {
     const source = [
       "# Plan",
       "",
@@ -372,12 +333,13 @@ describe("insertPlannerTodos", () => {
       "",
       "## TODO",
       "- [ ] Existing",
+      "- [ ] New",
       "",
       "## Notes",
       "Keep this untouched.",
-      "- [ ] New",
       "",
     ].join("\n"));
+    expect(result.updatedSource).not.toContain("Keep this untouched.\n\n- [ ] New");
   });
 
   it("deduplicates planner output and existing TODO entries", () => {

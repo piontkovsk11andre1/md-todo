@@ -619,7 +619,7 @@ describe("plan-task", () => {
     expect(events.some((event) => event.kind === "error" && event.message.includes("stdout contract"))).toBe(true);
   });
 
-  it("inserts generated TODO items into relevant section when no TODOs exist", async () => {
+  it("appends generated TODO items at document end when no TODOs exist", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
     const content = [
@@ -653,7 +653,22 @@ describe("plan-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
     const updated = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
-    expect(updated).toContain("## Next Steps\nCoordinate delivery.\n\n- [ ] Write tests\n- [ ] Update docs\n## Notes");
+    expect(updated).toBe([
+      "# Roadmap",
+      "",
+      "## Summary",
+      "Build a new release process.",
+      "",
+      "## Next Steps",
+      "Coordinate delivery.",
+      "",
+      "## Notes",
+      "Track decisions.",
+      "",
+      "- [ ] Write tests",
+      "- [ ] Update docs",
+      "",
+    ].join("\n"));
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ status: "completed", preserve: false }),
@@ -689,7 +704,7 @@ describe("plan-task", () => {
     expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 TODO item"))).toBe(true);
   });
 
-  it("enhances existing TODO documents by appending only missing additions", async () => {
+  it("appends missing TODO additions into an existing TODO list", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
     const content = [
@@ -697,6 +712,9 @@ describe("plan-task", () => {
       "",
       "## Next Steps",
       "- [ ] Existing task",
+      "",
+      "## Notes",
+      "Keep this untouched.",
       "",
     ].join("\n");
     const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
@@ -727,6 +745,10 @@ describe("plan-task", () => {
     expect(finalSource).toContain("- [ ] Existing task");
     expect(finalSource).toContain("- [ ] Add CI pipeline checks");
     expect(finalSource.indexOf("- [ ] Existing task")).toBe(finalSource.lastIndexOf("- [ ] Existing task"));
+    expect(finalSource).toContain(
+      "## Next Steps\n- [ ] Existing task\n- [ ] Add CI pipeline checks\n\n## Notes\nKeep this untouched.\n",
+    );
+    expect(finalSource).not.toContain("Keep this untouched.\n\n- [ ] Add CI pipeline checks\n");
     expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 2"))).toBe(true);
     expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 1 TODO item"))).toBe(true);
   });
