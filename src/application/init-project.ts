@@ -1,5 +1,6 @@
 import {
   DEFAULT_CONFIG_CONTENT,
+  DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
@@ -91,6 +92,7 @@ export function createInitProject(
     write("verify.md", DEFAULT_VERIFY_TEMPLATE);
     write("repair.md", DEFAULT_REPAIR_TEMPLATE);
     write("plan.md", DEFAULT_PLAN_TEMPLATE);
+    write("research.md", DEFAULT_RESEARCH_TEMPLATE);
     write("trace.md", DEFAULT_TRACE_TEMPLATE);
     write("vars.json", DEFAULT_VARS_FILE_CONTENT);
     write("config.json", DEFAULT_CONFIG_CONTENT);

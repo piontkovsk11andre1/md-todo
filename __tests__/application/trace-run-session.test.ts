@@ -50,16 +50,20 @@ describe("trace-run-session", () => {
     });
 
     const phase = session.beginPhase("execute", ["opencode", "run"]);
+    session.emitRoundStarted(1, 2);
     session.emitPromptMetrics("prompt", "context", "execute");
     session.completePhase(phase, 0, "stdout", "", true);
+    session.emitRoundCompleted(1, 2);
     session.emitTaskOutcome("completed");
     session.emitDeferredEvents();
     session.emitRunCompleted("completed");
 
     expect(write.mock.calls.some((call) => call[0]?.event_type === "run.started")).toBe(true);
+    expect(write.mock.calls.some((call) => call[0]?.event_type === "round.started")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "phase.started")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "prompt.metrics")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "phase.completed")).toBe(true);
+    expect(write.mock.calls.some((call) => call[0]?.event_type === "round.completed")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "task.completed")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "run.completed")).toBe(true);
     expect(session.getRunId()).toBe("run-1");

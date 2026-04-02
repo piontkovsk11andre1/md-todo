@@ -83,7 +83,23 @@ Possible planner output:
 
 Those items are inserted as nested subtasks. Because child tasks must complete before the parent, the new subitems become the next runnable work.
 
-## 6. Variables for repository context
+## 6. Research before planning
+
+Use `research` when a document is still thin and needs implementation context before TODO synthesis.
+
+```bash
+rundown research docs/release-plan.md -- opencode run
+rundown plan docs/release-plan.md --scan-count 3 -- opencode run
+```
+
+What happens:
+
+1. `research` rewrites the document body with richer context and structure,
+2. preserves existing author intent and checkbox state,
+3. rejects output that introduces new unchecked TODO items,
+4. then `plan` appends actionable TODOs from that enriched foundation.
+
+## 7. Variables for repository context
 
 ```bash
 rundown run roadmap.md --vars-file --var ticket=ENG-42 -- opencode run
@@ -91,7 +107,7 @@ rundown run roadmap.md --vars-file --var ticket=ENG-42 -- opencode run
 
 This loads `.rundown/vars.json`, overrides `ticket`, and makes those values available in templates.
 
-## 7. Keep artifacts for inspection
+## 8. Keep artifacts for inspection
 
 ```bash
 rundown run roadmap.md --keep-artifacts -- opencode run
@@ -99,7 +115,7 @@ rundown run roadmap.md --keep-artifacts -- opencode run
 
 This preserves the per-run folder under `.rundown/runs/` so prompts, logs, and metadata can be inspected later.
 
-## 8. Auto-commit completed tasks
+## 9. Auto-commit completed tasks
 
 ```bash
 rundown run docs/ --commit -- opencode run
@@ -123,7 +139,7 @@ Custom commit messages:
 rundown run docs/ --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
 ```
 
-## 9. Post-completion hooks
+## 10. Post-completion hooks
 
 Run any command after a task completes. Task metadata is available as environment variables.
 
@@ -143,7 +159,7 @@ Or use the hook for notifications, logging, or chaining:
 rundown run roadmap.md --on-complete 'echo "Completed: $RUNDOWN_TASK in $RUNDOWN_FILE"' -- opencode run
 ```
 
-## 10. A practical OpenCode setup
+## 11. A practical OpenCode setup
 
 A clean default pattern is:
 
@@ -153,7 +169,7 @@ A clean default pattern is:
 
 This keeps prompt handoff durable, inspectable, and friendly to large Markdown context.
 
-## 11. Reverify before release
+## 12. Reverify before release
 
 ```bash
 rundown reverify --no-repair -- opencode run
@@ -163,7 +179,7 @@ Use this to re-check the latest completed task with the current verify template 
 
 If historical metadata no longer maps to a unique task after major edits, `reverify` exits with code `3` instead of guessing.
 
-## 12. Revert a previously completed task
+## 13. Revert a previously completed task
 
 ```bash
 rundown revert --run latest -- opencode run
@@ -171,7 +187,7 @@ rundown revert --run latest -- opencode run
 
 `revert` requires the original run to have been executed with both `--commit` and `--keep-artifacts`; otherwise no revertable run metadata is available.
 
-## 13. Concurrent run protection on one source file
+## 14. Concurrent run protection on one source file
 
 Terminal A:
 
@@ -194,7 +210,7 @@ rundown run roadmap.md -- opencode run
 rundown run docs/setup.md -- opencode run
 ```
 
-## 14. Recover from stale locks
+## 15. Recover from stale locks
 
 If a previous process crashed and left a stale lockfile, remove it manually:
 
@@ -211,7 +227,7 @@ rundown plan roadmap.md --force-unlock -- opencode run
 
 `--force-unlock` and `unlock` only remove stale locks. They do not break locks held by a live process.
 
-## 15. Mixed TODO with `cli:` and `rundown:` tasks
+## 16. Mixed TODO with `cli:` and `rundown:` tasks
 
 Markdown:
 
@@ -236,7 +252,7 @@ What happens:
 3. The inline `rundown:` flags override forwarded parent flags when they differ.
 4. After the delegated run succeeds, the parent run verifies/checks that task and continues.
 
-## 16. Layered worker profiles from config
+## 17. Layered worker profiles from config
 
 Fresh `rundown init` writes `.rundown/config.json` as `{}`. With that empty default, pass a worker explicitly (`--worker ...` or `-- ...`) until you configure one.
 
@@ -295,7 +311,7 @@ How model selection resolves:
 3. Tasks under `- check:` are verify-only tasks.
 4. A CLI worker still overrides all config/profile layers when provided.
 
-## 17. Command-output blocks (`cli` fenced blocks)
+## 18. Command-output blocks (`cli` fenced blocks)
 
 Use fenced `cli` blocks in Markdown or templates when you want `rundown` to execute commands and inject their output into the worker prompt.
 

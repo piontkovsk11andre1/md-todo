@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
+  DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
@@ -103,6 +104,7 @@ describe("createConfigDirAdapter", () => {
     expect(templates.verify).toBe(DEFAULT_VERIFY_TEMPLATE);
     expect(templates.repair).toBe(DEFAULT_REPAIR_TEMPLATE);
     expect(templates.plan).toBe(DEFAULT_PLAN_TEMPLATE);
+    expect(templates.research).toBe(DEFAULT_RESEARCH_TEMPLATE);
     expect(templates.trace).toBe(DEFAULT_TRACE_TEMPLATE);
   });
 

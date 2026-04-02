@@ -59,6 +59,7 @@ describe("extra infrastructure adapters", () => {
         defaults: { worker: ["opencode", "run"] },
         commands: {
           plan: { workerArgs: ["--model", "opus-4.6"] },
+          research: { workerArgs: ["--model", "opus-4.6"] },
         },
         profiles: {
           fast: { workerArgs: ["--model", "gpt-5.3-codex"] },

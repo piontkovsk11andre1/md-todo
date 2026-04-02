@@ -215,6 +215,13 @@ rundown revert --last 2 --method reset -- opencode run
 
 Run document-level TODO synthesis on a single Markdown document using the planner template.
 
+For thin specs, run `research` first so `plan` has richer context:
+
+```bash
+rundown research docs/spec.md -- opencode run
+rundown plan docs/spec.md --scan-count 3 -- opencode run
+```
+
 `plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
 
 Input rules:
@@ -405,6 +412,7 @@ Lock scope by command:
 
 - `run`: acquires before task-selection reads and holds through the full task lifecycle, including `--all` loops, verification/repair, checkbox updates, and `--on-complete`/`--on-fail` hooks.
 - `plan`: acquires before planning starts and holds for the full scan loop until planning finalization completes.
+- `research`: acquires before reading the source and holds through worker invocation plus document replacement/guard checks.
 - `revert`: acquires before git undo operations for the target source set and releases after undo processing finishes.
 - `discuss`: acquires before task-selection reads and holds for the full discussion lifecycle, including worker invocation and finalization.
 - `list`, `next`, and `reverify`: no exclusive source lock (read-only behavior).
@@ -481,7 +489,7 @@ With a freshly initialized empty config (`{}`), no worker is resolved by default
 Worker resolution cascade (lowest to highest priority):
 
 - `defaults` in `.rundown/config.json`
-- `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `discuss`, `reverify`)
+- `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `discuss`, `research`, `reverify`)
 - Markdown frontmatter `profile: <name>`
 - Parent directive item `- profile: <name>` for child checkbox tasks
 - CLI `--worker` or separator form `-- <command>`
@@ -524,12 +532,74 @@ If the worker does not provide details, rundown prints fallback reasons (for exa
 
 `file` is the default and is usually the right choice.
 
+### `rundown research <markdown-file>`
+
+Enrich a single Markdown document with context and structure before planning.
+
+`research` rewrites the document body with expanded feature detail, implementation context, design constraints, and planning scaffolding. It is intentionally upstream of `plan`:
+
+1. author drafts a thin feature doc,
+2. `rundown research <source>` enriches it,
+3. `rundown plan <source>` appends actionable TODOs,
+4. `rundown run <source>` executes tasks.
+
+Input rules:
+
+- Exactly one file path is required.
+- File extension must be `.md` or `.markdown`.
+- Directories and globs are rejected for `research`.
+
+Behavior and safety guards:
+
+- Worker output is treated as the full replacement Markdown document.
+- Existing checkbox state must remain unchanged, or the write is rejected and rolled back.
+- New unchecked TODO items (`- [ ]`) are not allowed in research output.
+- `research` runs a single pass (no `--scan-count` convergence loop).
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--mode <mode>` | Research execution mode: `wait`, `tui`. | `wait` |
+| `--transport <file|arg>` | Prompt transport for worker invocation. | `file` |
+| `--force-unlock` | Remove stale source lockfile before acquiring the research lock. Active locks held by live processes are not removed. | off |
+| `--dry-run` | Render research prompt + execution intent and exit without running the worker. | off |
+| `--print-prompt` | Print the rendered research prompt and exit `0` without running the worker. | off |
+| `--keep-artifacts` | Preserve runtime artifacts under `.rundown/runs/` even on success. | off |
+| `--show-agent-output` | Show worker stdout/stderr during execution (hidden by default). | off |
+| `--trace` | Write structured trace events to `.rundown/runs/<id>/trace.jsonl` and mirror them to `.rundown/logs/trace.jsonl`. | off |
+| `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
+| `--var <key=value>` | Inject template variables (repeatable). | none |
+| `--worker <command...>` | Worker command (preferred on PowerShell). | unset |
+| `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. | off |
+| `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). | `30000` |
+
+Worker resolution:
+
+- `--worker <command...>` and separator form `-- <command>` are both supported.
+- If neither is provided, `research` resolves the worker from `.rundown/config.json` using the standard cascade.
+- Custom research prompts can be supplied via `.rundown/research.md`; otherwise the built-in default research template is used.
+
+Examples:
+
+```bash
+# Enrich a thin spec before planning
+rundown research docs/spec.md -- opencode run
+
+# Inspect research prompt only
+rundown research docs/spec.md --print-prompt --worker opencode run
+
+# Dry-run with explicit vars
+rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42 --worker opencode run
+```
+
 ### Command-output block expansion
 
 - `--ignore-cli-block` — skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
 - `--cli-block-timeout <ms>` — per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
 
 These options apply to `run`, `discuss`, `plan`, and `reverify`.
+These options also apply to `research`.
 
 ### Sorting
 
@@ -667,6 +737,7 @@ Behavior notes:
 - For `reverify`, `--print-prompt` and `--dry-run` target the verify prompt for the resolved historical task.
 - For `reverify --all` or `reverify --last <n>`, `--print-prompt` is not supported and returns exit code `1`; use `--dry-run` to inspect all selected runs.
 - For `plan`, both flags apply to the planner prompt.
+- For `research`, both flags apply to the research prompt.
 - Fenced `cli` blocks run during `--print-prompt` so printed prompts match worker-visible prompts (unless `--ignore-cli-block` is set).
 - Fenced `cli` blocks do not run during `--dry-run`; prompts remain unexpanded.
 - For inline `cli:` tasks on `run`, `--print-prompt` prints the inline command and exits without executing it.

@@ -3,6 +3,7 @@ import {
   extractProfileFromSubItems,
   resolveWorkerConfig,
   type WorkerConfig,
+  type WorkerConfigCommandName,
   type WorkerProfile,
 } from "../domain/worker-config.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -11,7 +12,7 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
  * Input contract used to resolve the effective worker command for one invocation.
  */
 interface ResolveWorkerForInvocationInput {
-  commandName: string;
+  commandName: WorkerConfigCommandName;
   workerConfig: WorkerConfig | undefined;
   source: string;
   task?: Pick<Task, "directiveProfile" | "subItems">;

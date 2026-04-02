@@ -1,4 +1,8 @@
-import type { ConfigDirResult } from "../domain/ports/index.js";
+import type {
+  ConfigDirResult,
+  ProcessRunMode,
+  PromptTransport,
+} from "../domain/ports/index.js";
 import type {
   GlobalOutputEntryWriter,
   LoggedOutputContext,
@@ -34,4 +38,31 @@ export interface CliInvocationLogState {
   writer: GlobalOutputEntryWriter;
   // Immutable metadata attached to all records emitted for this invocation.
   context: LoggedOutputContext;
+}
+
+/**
+ * Normalized shared options for worker-backed CLI command invocations.
+ */
+export interface WorkerCommandInvocationOptions {
+  mode: ProcessRunMode;
+  transport: PromptTransport;
+  showAgentOutput: boolean;
+  dryRun: boolean;
+  printPrompt: boolean;
+  keepArtifacts: boolean;
+  varsFileOption: string | boolean | undefined;
+  cliTemplateVarArgs: string[];
+  workerCommand: string[];
+  trace: boolean;
+  forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs: number;
+  configDirOption?: string;
+}
+
+/**
+ * Normalized invocation payload for the `research` command.
+ */
+export interface ResearchCommandInvocationOptions extends WorkerCommandInvocationOptions {
+  source: string;
 }

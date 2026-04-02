@@ -7,15 +7,18 @@ import {
   parsePromptTransport,
   parseRepairAttempts,
   parseRevertMethod,
+  parseRounds,
   parseRunnerMode,
   parseScanCount,
   parseSortMode,
   resolveIgnoreCliBlockFlag,
   resolveNoRepairFlag,
   resolvePlanMarkdownFile,
+  resolveResearchMarkdownFile,
   resolveVerifyFlag,
 } from "./cli-options.js";
 import type { CliApp } from "./cli-app-init.js";
+import type { ResearchCommandInvocationOptions } from "./cli-invocation-types.js";
 
 type CliActionResult = number | Promise<number>;
 type CliOpts = Record<string, string | string[] | boolean>;
@@ -44,6 +47,10 @@ interface DiscussActionDependencies extends WorkerActionDependencies {
 
 interface PlanActionDependencies extends WorkerActionDependencies {
   plannerModes: readonly ProcessRunMode[];
+}
+
+interface ResearchActionDependencies extends WorkerActionDependencies {
+  researchModes: readonly ProcessRunMode[];
 }
 
 /**
@@ -108,6 +115,11 @@ export function createRunCommandAction({
     const clean = Boolean(opts.clean as boolean | undefined);
     const redo = Boolean(opts.redo as boolean | undefined) || clean;
     const resetAfter = Boolean(opts.resetAfter as boolean | undefined) || clean;
+    const roundsArg = opts.rounds as string | undefined;
+    const rounds = parseRounds(roundsArg);
+    if (roundsArg !== undefined && !(clean || (redo && resetAfter))) {
+      throw new Error("--rounds requires --clean or both --redo and --reset-after.");
+    }
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
@@ -140,6 +152,7 @@ export function createRunCommandAction({
       redo,
       resetAfter,
       clean,
+      rounds,
       forceUnlock,
       cliBlockTimeoutMs,
       ignoreCliBlock,
@@ -394,6 +407,55 @@ export function createPlanCommandAction({
       cliTemplateVarArgs,
       workerCommand,
     });
+  };
+}
+
+/**
+ * Creates the `research` command action handler.
+ *
+ * The returned action resolves the target markdown source and option set before invoking the application
+ * `researchTask` workflow.
+ */
+export function createResearchCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+  researchModes,
+}: ResearchActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
+  return (markdownFiles: string[], opts: CliOpts) => {
+    const markdownFile = resolveResearchMarkdownFile(markdownFiles);
+    const mode = parseRunnerMode(opts.mode as string | undefined, researchModes);
+    const transport = parsePromptTransport(opts.transport as string | undefined);
+    const dryRun = opts.dryRun as boolean;
+    const printPrompt = opts.printPrompt as boolean;
+    const keepArtifacts = opts.keepArtifacts as boolean;
+    const trace = opts.trace as boolean;
+    const showAgentOutput = Boolean(opts.showAgentOutput as boolean | undefined);
+    const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
+    const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
+    const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
+    const varsFileOption = opts.varsFile as string | boolean | undefined;
+    const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
+    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+
+    const request: ResearchCommandInvocationOptions = {
+      source: markdownFile,
+      mode,
+      transport,
+      showAgentOutput,
+      dryRun,
+      printPrompt,
+      keepArtifacts,
+      trace,
+      forceUnlock,
+      ignoreCliBlock,
+      cliBlockTimeoutMs,
+      configDirOption: normalizeOptionalString(opts.configDir),
+      varsFileOption,
+      cliTemplateVarArgs,
+      workerCommand,
+    };
+
+    return getApp().researchTask(request);
   };
 }
 

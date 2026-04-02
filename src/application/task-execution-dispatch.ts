@@ -58,6 +58,10 @@ export async function dispatchTaskExecution(params: {
   selectedWorkerCommand: string[];
   pendingPreRunResetTraceEvents: Array<{ file: string; resetCount: number; dryRun: boolean }>;
   traceRunSession: ReturnType<typeof createTraceRunSession>;
+  roundContext: {
+    currentRound: number;
+    totalRounds: number;
+  };
   configuredOnlyVerify: boolean;
   onlyVerify: boolean;
   shouldVerify: boolean;
@@ -85,6 +89,7 @@ export async function dispatchTaskExecution(params: {
     selectedWorkerCommand,
     pendingPreRunResetTraceEvents,
     traceRunSession,
+    roundContext,
     configuredOnlyVerify,
     onlyVerify,
     shouldVerify,
@@ -124,6 +129,7 @@ export async function dispatchTaskExecution(params: {
     isVerifyOnly: onlyVerify,
     contextBefore: expandedContextBefore,
   });
+  traceRunSession.emitRoundStarted(roundContext.currentRound, roundContext.totalRounds);
   // Flush queued pre-run reset trace events into the active run.
   if (pendingPreRunResetTraceEvents.length > 0) {
     for (const resetEvent of pendingPreRunResetTraceEvents) {

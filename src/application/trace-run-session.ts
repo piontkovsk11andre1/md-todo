@@ -8,6 +8,8 @@ import {
   createPhaseCompletedEvent,
   createPhaseStartedEvent,
   createPromptMetricsEvent,
+  createRoundCompletedEvent,
+  createRoundStartedEvent,
   createRunCompletedEvent,
   createRunStartedEvent,
   createTaskCompletedEvent,
@@ -379,6 +381,44 @@ export function createTraceRunSession(config: {
     },
 
     beginPhase,
+
+    /**
+     * Emits a round-started boundary event for multi-round clean execution.
+     */
+    emitRoundStarted(currentRound: number, totalRounds: number): void {
+      const runId = sessionState.getRunId();
+      if (!runId) {
+        return;
+      }
+
+      config.getTraceWriter().write(createRoundStartedEvent({
+        timestamp: nowIso(),
+        run_id: runId,
+        payload: {
+          current_round: currentRound,
+          total_rounds: totalRounds,
+        },
+      }));
+    },
+
+    /**
+     * Emits a round-completed boundary event for multi-round clean execution.
+     */
+    emitRoundCompleted(currentRound: number, totalRounds: number): void {
+      const runId = sessionState.getRunId();
+      if (!runId) {
+        return;
+      }
+
+      config.getTraceWriter().write(createRoundCompletedEvent({
+        timestamp: nowIso(),
+        run_id: runId,
+        payload: {
+          current_round: currentRound,
+          total_rounds: totalRounds,
+        },
+      }));
+    },
 
     /**
      * Emits prompt size and context-ratio metrics for the active run.

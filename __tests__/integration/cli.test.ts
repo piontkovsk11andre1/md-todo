@@ -4913,6 +4913,318 @@ describe.sequential("CLI integration", () => {
     expect(updated).toBe("# Roadmap\n\n## Scope\n- [ ] Existing task\n");
   });
 
+  it("research --print-prompt renders custom templates with vars and expanded cli blocks", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "# Roadmap\n\nInitial sketch.\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "research.md"), [
+      "CUSTOM RESEARCH TEMPLATE",
+      "File={{file}}",
+      "Branch={{branch}}",
+      "Env={{env}}",
+      "```cli",
+      "echo research-cli-block-output",
+      "```",
+      "Source={{source}}",
+      "",
+    ].join("\n"), "utf-8");
+    fs.writeFileSync(path.join(workspace, "custom-vars.json"), JSON.stringify({ branch: "main" }, null, 2), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--print-prompt",
+      "--vars-file",
+      "custom-vars.json",
+      "--var",
+      "env=prod",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("CUSTOM RESEARCH TEMPLATE")).toBe(true);
+    expect(combinedOutput.includes("File=roadmap.md")).toBe(true);
+    expect(combinedOutput.includes("Branch=main")).toBe(true);
+    expect(combinedOutput.includes("Env=prod")).toBe(true);
+    expect(combinedOutput.includes("<command>echo research-cli-block-output</command>")).toBe(true);
+    expect(combinedOutput.includes("research-cli-block-output")).toBe(true);
+    expect(combinedOutput.includes("Source=# Roadmap")).toBe(true);
+  });
+
+  it("research updates markdown, uses file transport, and persists artifacts", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "research-worker-file-transport.cjs");
+    const capturePath = path.join(workspace, "research-file-transport-capture.json");
+
+    fs.writeFileSync(sourcePath, "# Roadmap\n\nInitial sketch.\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      `fs.writeFileSync(${JSON.stringify(capturePath.replace(/\\/g, "/"))}, JSON.stringify({`,
+      "  promptPath,",
+      "  promptPathExists: fs.existsSync(promptPath),",
+      "  promptContainsSource: prompt.includes('Initial sketch.'),",
+      "}, null, 2));",
+      "console.log('# Roadmap\\n\\nInitial sketch.\\n\\n## Context\\n\\nExpanded context.');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--keep-artifacts",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Research worker completed."))).toBe(true);
+    const updated = fs.readFileSync(sourcePath, "utf-8");
+    expect(updated).toContain("## Context");
+
+    const capture = JSON.parse(fs.readFileSync(capturePath, "utf-8")) as {
+      promptPath: string;
+      promptPathExists: boolean;
+      promptContainsSource: boolean;
+    };
+    expect(capture.promptPathExists).toBe(true);
+    expect(capture.promptContainsSource).toBe(true);
+    expect(capture.promptPath).toContain("prompt.md");
+
+    const researchRun = readSavedRunMetadata(workspace)
+      .find((run) => run.commandName === "research");
+    expect(researchRun).toBeDefined();
+    expect(researchRun?.status).toBe("completed");
+    const runDir = path.join(workspace, ".rundown", "runs", researchRun!.runId);
+    expect(fs.existsSync(path.join(runDir, "01-research", "prompt.md"))).toBe(true);
+    expect(fs.existsSync(path.join(runDir, "01-research", "stdout.log"))).toBe(true);
+  });
+
+  it("research --transport arg passes inline prompt text to the worker", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "research-worker-arg-transport.cjs");
+    const capturePath = path.join(workspace, "research-arg-transport-capture.json");
+
+    fs.writeFileSync(sourcePath, "# Roadmap\n\nThin note.\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      "const lastArg = process.argv[process.argv.length - 1];",
+      `fs.writeFileSync(${JSON.stringify(capturePath.replace(/\\/g, "/"))}, JSON.stringify({`,
+      "  argLooksLikeFilePath: fs.existsSync(lastArg),",
+      "  argContainsPhaseText: lastArg.includes('Research and enrich the source document with implementation context.'),",
+      "  argContainsSource: lastArg.includes('Thin note.'),",
+      "}, null, 2));",
+      "console.log('# Roadmap\\n\\nArg transport output.');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--transport",
+      "arg",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toContain("Arg transport output.");
+    const capture = JSON.parse(fs.readFileSync(capturePath, "utf-8")) as {
+      argLooksLikeFilePath: boolean;
+      argContainsPhaseText: boolean;
+      argContainsSource: boolean;
+    };
+    expect(capture.argLooksLikeFilePath).toBe(false);
+    expect(capture.argContainsPhaseText).toBe(true);
+    expect(capture.argContainsSource).toBe(true);
+  });
+
+  it("research holds the source lock during execution and releases it after completion", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "roadmap.md";
+    const sourcePath = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`).replace(/\\/g, "/");
+    const markerPath = path.join(workspace, "research-lock-seen.txt");
+    const workerScriptPath = path.join(workspace, "research-worker-lock-check.cjs");
+
+    fs.writeFileSync(sourcePath, "# Roadmap\n\nLock lifecycle check.\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      `const lockPath = ${JSON.stringify(lockPath)};`,
+      `const markerPath = ${JSON.stringify(markerPath.replace(/\\/g, "/"))};`,
+      "fs.writeFileSync(markerPath, String(fs.existsSync(lockPath)));",
+      "console.log('# Roadmap\\n\\nLock lifecycle check.\\n\\nExpanded.');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      sourceName,
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(markerPath, "utf-8").trim()).toBe("true");
+    expect(fs.existsSync(path.join(workspace, ".rundown", `${sourceName}.lock`))).toBe(false);
+  });
+
+  it("research returns 1 when the source markdown is locked by another active process", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "roadmap.md";
+    const sourcePath = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`);
+    fs.writeFileSync(sourcePath, "# Roadmap\n\nStill locked.\n", "utf-8");
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, JSON.stringify({
+      pid: process.pid,
+      command: "run",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      file: sourcePath,
+    }), "utf-8");
+
+    const result = await runCli([
+      "research",
+      sourceName,
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Source file is locked by another rundown process"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--force-unlock"))).toBe(true);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toBe("# Roadmap\n\nStill locked.\n");
+    expect(fs.existsSync(lockPath)).toBe(true);
+  });
+
+  it("research rejects checkbox-state mutation output and restores original source", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "research-worker-checkbox-violation.cjs");
+    const original = "# Roadmap\n\n- [x] Keep this checked\n";
+
+    fs.writeFileSync(sourcePath, original, "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "console.log('# Roadmap\\n\\n- [ ] Keep this checked');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Research changed checkbox state in"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Research update rejected due to constraint violation."))).toBe(true);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toBe(original);
+  });
+
+  it("research rejects new unchecked TODO output and restores original source", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "research-worker-todo-violation.cjs");
+    const original = "# Roadmap\n\nThin note.\n";
+
+    fs.writeFileSync(sourcePath, original, "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "console.log('# Roadmap\\n\\nThin note.\\n\\n- [ ] New task from research');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Research introduced new unchecked TODO items in"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Research update rejected due to constraint violation."))).toBe(true);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toBe(original);
+  });
+
+  it("research --dry-run does not execute worker and does not modify source", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "research-dry-run-worker-executed.txt");
+    const workerScriptPath = path.join(workspace, "research-worker-dry-run-guard.cjs");
+    const original = "# Roadmap\n\nInitial sketch.\n";
+
+    fs.writeFileSync(sourcePath, original, "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(markerPath.replace(/\\/g, "/"))}, 'executed');`,
+      "console.log('# Roadmap\\n\\nMutated by worker.');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--dry-run",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Dry run - would research:"))).toBe(true);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toBe(original);
+  });
+
+  it("research --print-prompt does not execute worker and does not modify source", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "research-print-prompt-worker-executed.txt");
+    const workerScriptPath = path.join(workspace, "research-worker-print-prompt-guard.cjs");
+    const original = "# Roadmap\n\nInitial sketch.\n";
+
+    fs.writeFileSync(sourcePath, original, "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(markerPath.replace(/\\/g, "/"))}, 'executed');`,
+      "console.log('# Roadmap\\n\\nMutated by worker.');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("Research and enrich the source document with implementation context.")).toBe(true);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(fs.readFileSync(sourcePath, "utf-8")).toBe(original);
+  });
+
   it("run skips immediate verification in detached mode and keeps runtime artifacts", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
@@ -5255,6 +5567,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "verify.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "repair.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "research.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "config.json"))).toBe(true);
@@ -5274,6 +5587,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(customConfigDir, "verify.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "repair.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "plan.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "research.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "config.json"))).toBe(true);

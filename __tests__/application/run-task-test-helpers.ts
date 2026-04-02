@@ -233,6 +233,7 @@ export function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOption
     redo: false,
     resetAfter: false,
     clean: false,
+    rounds: 1,
     onFailCommand: undefined,
     showAgentOutput: false,
     trace: false,

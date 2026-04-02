@@ -1,6 +1,7 @@
 import { createRunTask, type RunTaskOptions } from "./application/run-task.js";
 import { createDiscussTask, type DiscussTaskOptions } from "./application/discuss-task.js";
 import { createPlanTask, type PlanTaskOptions as PlanTaskUseCaseOptions } from "./application/plan-task.js";
+import { createResearchTask, type ResearchTaskOptions as ResearchTaskUseCaseOptions } from "./application/research-task.js";
 import { createListTasks, type ListTasksOptions } from "./application/list-tasks.js";
 import { createNextTask, type NextTaskOptions } from "./application/next-task.js";
 import { createUnlockTask, type UnlockTaskOptions } from "./application/unlock-task.js";
@@ -72,6 +73,7 @@ export type App = {
   reverifyTask: (options: ReverifyTaskOptions) => Promise<number>;
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
+  researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
   unlockTask: (options: UnlockTaskOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
   nextTask: (options: NextTaskOptions) => Promise<number>;
@@ -97,6 +99,24 @@ export interface PlanTaskCommandOptions {
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
+}
+
+export interface ResearchTaskCommandOptions {
+  source: string;
+  mode: ResearchTaskUseCaseOptions["mode"];
+  transport: ResearchTaskUseCaseOptions["transport"];
+  showAgentOutput: boolean;
+  dryRun: boolean;
+  printPrompt: boolean;
+  keepArtifacts: boolean;
+  varsFileOption: string | boolean | undefined;
+  cliTemplateVarArgs: string[];
+  workerCommand: string[];
+  trace: boolean;
+  forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
+  configDirOption?: string;
 }
 
 export type AppUseCaseFactories = {
@@ -286,6 +306,20 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       output: ports.output,
     }),
     planTask: (ports) => planTaskUseCase(ports),
+    researchTask: (ports) => createResearchTask({
+      workerExecutor: ports.workerExecutor,
+      cliBlockExecutor: ports.cliBlockExecutor,
+      artifactStore: ports.artifactStore,
+      fileSystem: ports.fileSystem,
+      fileLock: ports.fileLock,
+      workingDirectory: ports.workingDirectory,
+      pathOperations: ports.pathOperations,
+      templateLoader: ports.templateLoader,
+      templateVarsLoader: ports.templateVarsLoader,
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
     unlockTask: (ports) => createUnlockTask({
       fileLock: ports.fileLock,
       fileSystem: ports.fileSystem,
@@ -362,6 +396,7 @@ function createAppFromFactories(
     reverifyTask: factories.reverifyTask(ports),
     revertTask: factories.revertTask(ports),
     planTask: factories.planTask(ports),
+    researchTask: factories.researchTask(ports),
     unlockTask: factories.unlockTask(ports),
     listTasks: factories.listTasks(ports),
     nextTask: factories.nextTask(ports),

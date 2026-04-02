@@ -16,6 +16,8 @@ export type TraceSchemaVersion = typeof TRACE_SCHEMA_VERSION;
  */
 export type TraceEventType =
   | "run.started"
+  | "round.started"
+  | "round.completed"
   | "discussion.started"
   | "discussion.completed"
   | "task.context"
@@ -94,6 +96,22 @@ export interface RunStartedPayload {
   task_text: string;
   task_file: string;
   task_line: number;
+}
+
+/**
+ * Payload for `round.started` events.
+ */
+export interface RoundStartedPayload {
+  current_round: number;
+  total_rounds: number;
+}
+
+/**
+ * Payload for `round.completed` events.
+ */
+export interface RoundCompletedPayload {
+  current_round: number;
+  total_rounds: number;
 }
 
 /**
@@ -345,6 +363,14 @@ export interface RunCompletedPayload {
  */
 export type RunStartedEvent = TraceEventBase<"run.started", RunStartedPayload>;
 /**
+ * Strongly typed event shape for `round.started`.
+ */
+export type RoundStartedEvent = TraceEventBase<"round.started", RoundStartedPayload>;
+/**
+ * Strongly typed event shape for `round.completed`.
+ */
+export type RoundCompletedEvent = TraceEventBase<"round.completed", RoundCompletedPayload>;
+/**
  * Strongly typed event shape for `discussion.started`.
  */
 export type DiscussionStartedEvent = TraceEventBase<
@@ -436,6 +462,8 @@ export type RunCompletedEvent = TraceEventBase<"run.completed", RunCompletedPayl
  */
 export type TraceEvent =
   | RunStartedEvent
+  | RoundStartedEvent
+  | RoundCompletedEvent
   | DiscussionStartedEvent
   | DiscussionCompletedEvent
   | TaskContextEvent
@@ -506,6 +534,44 @@ export function createRunStartedEvent(input: {
     timestamp: input.timestamp,
     run_id: input.run_id,
     event_type: "run.started",
+    payload: input.payload,
+  });
+}
+
+/**
+ * Creates a `round.started` trace event.
+ *
+ * @param input Required metadata and payload for the event.
+ * @returns Typed `round.started` event.
+ */
+export function createRoundStartedEvent(input: {
+  timestamp: string;
+  run_id: string;
+  payload: RoundStartedPayload;
+}): RoundStartedEvent {
+  return createTraceEvent({
+    timestamp: input.timestamp,
+    run_id: input.run_id,
+    event_type: "round.started",
+    payload: input.payload,
+  });
+}
+
+/**
+ * Creates a `round.completed` trace event.
+ *
+ * @param input Required metadata and payload for the event.
+ * @returns Typed `round.completed` event.
+ */
+export function createRoundCompletedEvent(input: {
+  timestamp: string;
+  run_id: string;
+  payload: RoundCompletedPayload;
+}): RoundCompletedEvent {
+  return createTraceEvent({
+    timestamp: input.timestamp,
+    run_id: input.run_id,
+    event_type: "round.completed",
     payload: input.payload,
   });
 }

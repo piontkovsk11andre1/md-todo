@@ -107,6 +107,10 @@ interface IterationPromptConfig {
 interface IterationTraceConfig {
   traceRunSession: ReturnType<typeof createTraceRunSession>;
   pendingPreRunResetTraceEvents: Array<{ file: string; resetCount: number; dryRun: boolean }>;
+  roundContext: {
+    currentRound: number;
+    totalRounds: number;
+  };
 }
 
 interface IterationLifecycle {
@@ -331,6 +335,7 @@ export async function runTaskIteration(params: {
     pendingPreRunResetTraceEvents: traceConfig.pendingPreRunResetTraceEvents,
     traceRunSession: traceConfig.traceRunSession,
     configuredOnlyVerify: verifyConfig.configuredOnlyVerify,
+    roundContext: traceConfig.roundContext,
     onlyVerify,
     shouldVerify,
     mode: execution.mode,

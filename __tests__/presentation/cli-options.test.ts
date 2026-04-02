@@ -152,6 +152,98 @@ describe("CLI run option normalization", () => {
     expect(call.redo).toBe(false);
     expect(call.resetAfter).toBe(false);
     expect(call.clean).toBe(false);
+    expect(call.rounds).toBe(1);
+  });
+
+  it("passes explicit --rounds value to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--rounds",
+      "3",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.rounds).toBe(3);
+  });
+
+  it("logs a CLI error and exits when --rounds is used without clean reset flags", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--rounds",
+      "2",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--rounds requires --clean or both --redo and --reset-after"));
+  });
+
+  it("logs a CLI error and exits when --rounds is used with only --redo", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--redo",
+      "--rounds",
+      "2",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--rounds requires --clean or both --redo and --reset-after"));
+  });
+
+  it("logs a CLI error and exits when --rounds is used with only --reset-after", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--reset-after",
+      "--rounds",
+      "2",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("--rounds requires --clean or both --redo and --reset-after"));
+  });
+
+  it("accepts --rounds when combined with --redo and --reset-after", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--redo",
+      "--reset-after",
+      "--rounds",
+      "2",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.redo).toBe(true);
+    expect(call.resetAfter).toBe(true);
+    expect(call.rounds).toBe(2);
   });
 
   it("parses --redo flag without enabling reset-after", async () => {
@@ -232,6 +324,66 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--redo Reset all checkboxes in the source file before running");
     expect(compactHelpOutput).toContain("--reset-after Reset all checkboxes in the source file after the run completes");
     expect(compactHelpOutput).toContain("--clean Shorthand for --redo --reset-after");
+    expect(compactHelpOutput).toContain("--rounds <n> Repeat clean cycles N times (default: 1)");
+  });
+
+  it("logs a CLI error and exits with code 1 on zero --rounds", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--rounds",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --rounds value: 0"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a positive integer"));
+  });
+
+  it("logs a CLI error and exits with code 1 on negative --rounds", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--rounds",
+      "-1",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --rounds value: -1"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a positive integer"));
+  });
+
+  it("logs a CLI error and exits with code 1 on non-integer --rounds", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--rounds",
+      "abc",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --rounds value: abc"));
   });
 
   it("expands all alias to run --all", async () => {
@@ -1610,6 +1762,260 @@ describe("CLI plan and utility command normalization", () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Must be a safe positive integer"));
   });
 
+  it("passes research options through with separator worker command", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-options-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+    const call = await invokeResearchAndCaptureCall([
+      "research",
+      markdownFile,
+      "--mode",
+      "wait",
+      "--transport",
+      "arg",
+      "--dry-run",
+      "--print-prompt",
+      "--keep-artifacts",
+      "--trace",
+      "--force-unlock",
+      "--ignore-cli-block",
+      "--cli-block-timeout",
+      "1234",
+      "--vars-file",
+      "custom-vars.json",
+      "--var",
+      "env=prod",
+      "--",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(call.source).toBe(markdownFile);
+    expect(call.mode).toBe("wait");
+    expect(call.transport).toBe("arg");
+    expect(call.dryRun).toBe(true);
+    expect(call.printPrompt).toBe(true);
+    expect(call.keepArtifacts).toBe(true);
+    expect(call.trace).toBe(true);
+    expect(call.forceUnlock).toBe(true);
+    expect(call.ignoreCliBlock).toBe(true);
+    expect(call.cliBlockTimeoutMs).toBe(1234);
+    expect(call.varsFileOption).toBe("custom-vars.json");
+    expect(call.cliTemplateVarArgs).toEqual(["env=prod"]);
+    expect(call.workerCommand).toEqual(["opencode", "run"]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults research mode to wait", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-mode-default-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+      const call = await invokeResearchAndCaptureCall([
+        "research",
+        markdownFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask);
+
+      expect(call.mode).toBe("wait");
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts research --mode tui", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-mode-tui-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+      const call = await invokeResearchAndCaptureCall([
+        "research",
+        markdownFile,
+        "--mode",
+        "tui",
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask);
+
+      expect(call.mode).toBe("tui");
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 on research detached mode", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-mode-detached-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+      await invokeResearchAndExpectExit([
+        "research",
+        markdownFile,
+        "--mode",
+        "detached",
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask);
+
+      expect(researchTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --mode value: detached"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when research is missing a markdown file path", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeResearchAndExpectExit([
+      "research",
+      "--worker",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(researchTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires exactly one Markdown file path"));
+  });
+
+  it("logs a CLI error and exits with code 1 when research receives multiple markdown file paths", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeResearchAndExpectExit([
+      "research",
+      "one.md",
+      "two.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(researchTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("accepts exactly one Markdown file path"));
+  });
+
+  it("logs a CLI error and exits with code 1 when research file path is not markdown", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeResearchAndExpectExit([
+      "research",
+      "tasks.txt",
+      "--worker",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(researchTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid research document path: tasks.txt"));
+  });
+
+  it("logs a CLI error and exits with code 1 when research file path does not exist", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const missingMarkdown = path.join(
+      os.tmpdir(),
+      `rundown-research-missing-${Date.now()}-${Math.random().toString(16).slice(2)}.md`,
+    );
+
+    await invokeResearchAndExpectExit([
+      "research",
+      missingMarkdown,
+      "--worker",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(researchTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires exactly one existing Markdown file"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("does not exist"));
+  });
+
+  it("logs a CLI error and exits with code 1 when research receives a directory path", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-dir-input-"));
+    const markdownLikeDirectory = path.join(tempRoot, "notes.md");
+    fs.mkdirSync(markdownLikeDirectory, { recursive: true });
+
+    try {
+      await invokeResearchAndExpectExit([
+        "research",
+        markdownLikeDirectory,
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask);
+
+      expect(researchTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires exactly one existing Markdown file"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("does not accept directory or glob inputs"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when research receives a glob path", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeResearchAndExpectExit([
+      "research",
+      "tasks*.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], researchTask);
+
+    expect(researchTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("requires exactly one existing Markdown file"));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("does not accept directory or glob inputs"));
+  });
+
+  it("logs a CLI error and exits with code 1 when research receives --scan-count", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-research-scan-count-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+      await invokeResearchAndExpectExit([
+        "research",
+        markdownFile,
+        "--scan-count",
+        "2",
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask);
+
+      expect(researchTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Unsupported option for `research`: --scan-count"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("single-pass flow"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes list options to the application layer", async () => {
     const listTasks = vi.fn(async () => 0);
     const call = await invokeListAndCaptureCall([
@@ -1959,6 +2365,41 @@ async function invokePlanAndCaptureCall(args: string[], planTask: ReturnType<typ
   return planTask.mock.calls[0][0] as RunTaskCall;
 }
 
+async function invokeResearchAndCaptureCall(args: string[], researchTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      researchTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  expect(researchTask).toHaveBeenCalledTimes(1);
+  return researchTask.mock.calls[0][0] as RunTaskCall;
+}
+
 async function invokeRunAndExpectExitWithGlobalLogCapture(
   args: string[],
   runTask: ReturnType<typeof vi.fn>,
@@ -2087,6 +2528,41 @@ async function invokePlanAndExpectExit(args: string[], planTask: ReturnType<type
       nextTask: vi.fn(async () => 0),
       listTasks: vi.fn(async () => 0),
       planTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+async function invokeResearchAndExpectExit(args: string[], researchTask: ReturnType<typeof vi.fn>): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      researchTask,
       initProject: vi.fn(async () => 0),
       manageArtifacts: vi.fn(() => 0),
     }),

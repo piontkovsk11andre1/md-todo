@@ -121,6 +121,7 @@ export interface RunTaskOptions {
   redo: boolean;
   resetAfter: boolean;
   clean: boolean;
+  rounds: number;
   onFailCommand?: string;
   showAgentOutput: boolean;
   trace: boolean;
@@ -173,6 +174,7 @@ export function createRunTaskExecution(
       redo,
       resetAfter,
       clean,
+      rounds,
       onFailCommand,
       showAgentOutput,
       trace,
@@ -216,6 +218,22 @@ export function createRunTaskExecution(
       emit({
         kind: "error",
         message: "--redo, --reset-after, and --clean cannot be combined with --only-verify.",
+      });
+      return 1;
+    }
+
+    if (!Number.isInteger(rounds) || rounds <= 0) {
+      emit({
+        kind: "error",
+        message: "--rounds must be a positive integer.",
+      });
+      return 1;
+    }
+
+    if (rounds > 1 && !(clean || (redo && resetAfter))) {
+      emit({
+        kind: "error",
+        message: "--rounds > 1 requires --clean or both --redo and --reset-after.",
       });
       return 1;
     }
@@ -269,6 +287,7 @@ export function createRunTaskExecution(
     const pendingPreRunResetTraceEvents: Array<{ file: string; resetCount: number; dryRun: boolean }> = [];
     // Defer commit until all post-run reset actions complete when required.
     const deferCommitUntilPostRun = commitAfterComplete && resetAfter;
+    let currentRound = 1;
     // Use an injectable timestamp provider for prompt/template rendering.
     const nowIso = (): string => new Date().toISOString();
     // Create a trace session that aggregates run and task lifecycle events.
@@ -303,6 +322,17 @@ export function createRunTaskExecution(
       failure?: { reason: string; exitCode: number | null },
       extra?: Record<string, unknown>,
     ): Promise<number> => {
+      const roundMetadata = {
+        rounds,
+        currentRound,
+      };
+      const finalExtra = extra
+        ? {
+          ...extra,
+          ...roundMetadata,
+        }
+        : roundMetadata;
+      traceRunSession.emitRoundCompleted(currentRound, rounds);
       traceRunSession.emitTaskOutcome(status, failure);
       await runTraceEnrichment({
         trace,
@@ -316,7 +346,7 @@ export function createRunTaskExecution(
       });
       traceRunSession.emitDeferredEvents();
       traceRunSession.emitRunCompleted(status);
-      finalizeArtifacts(status, preserve, extra);
+      finalizeArtifacts(status, preserve, finalExtra);
       return code;
     };
 
@@ -410,101 +440,168 @@ export function createRunTaskExecution(
         }
       }
 
-      // `--redo` resets checked tasks before selection so they can run again.
-      if (redo) {
-        for (const filePath of files) {
-          const resetCount = maybeResetFileCheckboxes(
-            filePath,
-            dependencies.fileSystem,
-            dryRun,
-            emit,
-            "pre-run",
-          );
-          pendingPreRunResetTraceEvents.push({ file: filePath, resetCount, dryRun });
-        }
-      }
-
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        // Select the next available task using the configured sort strategy.
-        const result = dependencies.taskSelector.selectNextTask(files, sortMode);
-        if (!result) {
-          state.runCompleted = true;
-          if (state.tasksCompleted > 0) {
-            emit({ kind: "success", message: "All tasks completed (" + state.tasksCompleted + " total)." });
-            return 0;
+      const runTaskLoop = async (
+        files: string[],
+        emitCompletionMessage: boolean,
+      ): Promise<number> => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          // Select the next available task using the configured sort strategy.
+          const result = dependencies.taskSelector.selectNextTask(files, sortMode);
+          if (!result) {
+            state.runCompleted = true;
+            if (state.tasksCompleted > 0) {
+              if (emitCompletionMessage) {
+                emit({ kind: "success", message: "All tasks completed (" + state.tasksCompleted + " total)." });
+              }
+              return 0;
+            }
+            emit({ kind: "info", message: "No unchecked tasks found." });
+            return 3;
           }
-          emit({ kind: "info", message: "No unchecked tasks found." });
-          return 3;
+
+          // Execute one full task iteration and inspect control-flow instructions.
+          const iterationResult = await runTaskIteration({
+            dependencies,
+            emit,
+            state,
+            context: {
+              source,
+              fileSource: result.source,
+              files,
+              task: result.task,
+            },
+            execution: {
+              mode,
+              transport,
+              keepArtifacts,
+              printPrompt,
+              dryRun,
+              dryRunSuppressesCliExpansion,
+              cliExpansionEnabled,
+              ignoreCliBlock,
+              verify,
+              noRepair,
+              repairAttempts,
+              forceExecute,
+              showAgentOutput,
+              hideHookOutput,
+              trace,
+            },
+            worker: {
+              workerCommand,
+              loadedWorkerConfig,
+            },
+            verifyConfig: {
+              configuredOnlyVerify,
+              configuredShouldVerify,
+              maxRepairAttempts,
+              allowRepair,
+            },
+            completion: {
+              effectiveRunAll,
+              commitAfterComplete,
+              deferCommitUntilPostRun,
+              commitMessageTemplate,
+              onCompleteCommand,
+              onFailCommand,
+            },
+            prompts: {
+              extraTemplateVars,
+              cliExecutionOptions,
+              cliBlockExecutor,
+              nowIso,
+            },
+            traceConfig: {
+              traceRunSession,
+              pendingPreRunResetTraceEvents,
+              roundContext: {
+                currentRound,
+                totalRounds: rounds,
+              },
+            },
+            lifecycle: {
+              failRun,
+              finishRun,
+              resetArtifacts,
+            },
+          });
+
+          if (!iterationResult.continueLoop) {
+            return iterationResult.exitCode ?? 0;
+          }
+        }
+      };
+
+      const resetRoundExecutionState = (): void => {
+        state.runCompleted = false;
+        state.tasksCompleted = 0;
+      };
+
+      let totalTasksCompletedAcrossRounds = 0;
+      resetRoundExecutionState();
+      for (let round = 0; round < rounds; round++) {
+        currentRound = round + 1;
+        if (round > 0) {
+          resetRoundExecutionState();
         }
 
-        // Execute one full task iteration and inspect control-flow instructions.
-        const iterationResult = await runTaskIteration({
-          dependencies,
-          emit,
-          state,
-          context: {
-            source,
-            fileSource: result.source,
-            files,
-            task: result.task,
-          },
-          execution: {
-            mode,
-            transport,
-            keepArtifacts,
-            printPrompt,
-            dryRun,
-            dryRunSuppressesCliExpansion,
-            cliExpansionEnabled,
-            ignoreCliBlock,
-            verify,
-            noRepair,
-            repairAttempts,
-            forceExecute,
-            showAgentOutput,
-            hideHookOutput,
-            trace,
-          },
-          worker: {
-            workerCommand,
-            loadedWorkerConfig,
-          },
-          verifyConfig: {
-            configuredOnlyVerify,
-            configuredShouldVerify,
-            maxRepairAttempts,
-            allowRepair,
-          },
-          completion: {
-            effectiveRunAll,
-            commitAfterComplete,
-            deferCommitUntilPostRun,
-            commitMessageTemplate,
-            onCompleteCommand,
-            onFailCommand,
-          },
-          prompts: {
-            extraTemplateVars,
-            cliExecutionOptions,
-            cliBlockExecutor,
-            nowIso,
-          },
-          traceConfig: {
-            traceRunSession,
-            pendingPreRunResetTraceEvents,
-          },
-          lifecycle: {
-            failRun,
-            finishRun,
-            resetArtifacts,
-          },
-        });
+        if (rounds > 1) {
+          emit({
+            kind: "info",
+            message: "Round " + (round + 1) + "/" + rounds + " - resetting checkboxes and running all tasks...",
+          });
+        }
 
-        if (!iterationResult.continueLoop) {
-          return iterationResult.exitCode ?? 0;
+        // `--redo` resets checked tasks before selection so they can run again.
+        if (redo) {
+          for (const filePath of files) {
+            const resetCount = maybeResetFileCheckboxes(
+              filePath,
+              dependencies.fileSystem,
+              dryRun,
+              emit,
+              "pre-run",
+            );
+            pendingPreRunResetTraceEvents.push({ file: filePath, resetCount, dryRun });
+          }
+        }
+
+        const shouldEmitRoundCompletion = rounds === 1 || round === rounds - 1;
+        const roundExitCode = await runTaskLoop(files, shouldEmitRoundCompletion);
+        if (roundExitCode !== 0 || !state.runCompleted) {
+          return roundExitCode;
+        }
+
+        totalTasksCompletedAcrossRounds += state.tasksCompleted;
+
+        if (round < rounds - 1 && resetAfter && state.runCompleted) {
+          for (const filePath of files) {
+            const resetCount = maybeResetFileCheckboxes(
+              filePath,
+              dependencies.fileSystem,
+              dryRun,
+              emit,
+              "post-run",
+            );
+            traceRunSession.emitResetPhase("post-run-reset", filePath, resetCount, dryRun);
+          }
         }
       }
+
+      if (rounds > 1) {
+        emit({
+          kind: "success",
+          message:
+            "All "
+            + rounds
+            + " rounds completed successfully ("
+            + totalTasksCompletedAcrossRounds
+            + " tasks total).",
+        });
+      }
+
+      return 0;
     } catch (error) {
       // Preserve unexpected errors so finalization can emit failed trace status.
       unexpectedError = error;
@@ -562,7 +659,10 @@ export function createRunTaskExecution(
         });
         traceRunSession.emitDeferredEvents();
         traceRunSession.emitRunCompleted("failed");
-        finalizeArtifacts("failed", keepArtifacts || mode === "detached");
+        finalizeArtifacts("failed", keepArtifacts || mode === "detached", {
+          rounds,
+          currentRound,
+        });
       }
 
       // Flush any buffered trace output as the final shutdown step.

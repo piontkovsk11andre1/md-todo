@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   DEFAULT_DISCUSS_TEMPLATE,
+  DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
@@ -26,6 +27,8 @@ export interface ProjectTemplates {
   repair: string;
   // Template used by the plan phase.
   plan: string;
+  // Template used by the research phase.
+  research: string;
   // Template used by the trace phase.
   trace: string;
 }
@@ -44,6 +47,7 @@ export interface ProjectTemplates {
  * - `.rundown/verify.md`
  * - `.rundown/repair.md`
  * - `.rundown/plan.md`
+ * - `.rundown/research.md`
  * - `.rundown/trace.md`
  *
  * @param configDir Optional absolute or relative path to the project template directory.
@@ -58,6 +62,7 @@ export function loadProjectTemplates(configDir?: string): ProjectTemplates {
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
     };
   }
@@ -69,6 +74,7 @@ export function loadProjectTemplates(configDir?: string): ProjectTemplates {
     verify: loadFile(path.join(configDir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
     repair: loadFile(path.join(configDir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
     plan: loadFile(path.join(configDir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
+    research: loadFile(path.join(configDir, "research.md")) ?? DEFAULT_RESEARCH_TEMPLATE,
     trace: loadFile(path.join(configDir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,
   };
 }

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { WorkerConfigPort } from "../../domain/ports/worker-config-port.js";
-import type { WorkerConfig, WorkerProfile } from "../../domain/worker-config.js";
+import {
+  WORKER_CONFIG_COMMAND_NAMES,
+  type WorkerCommandProfiles,
+  type WorkerConfig,
+  type WorkerConfigCommandName,
+  type WorkerProfile,
+} from "../../domain/worker-config.js";
 
 const WORKER_CONFIG_FILE_NAME = "config.json";
 
@@ -67,6 +73,30 @@ function validateProfileMap(value: unknown, keyPath: string): Record<string, Wor
 }
 
 /**
+ * Validates `commands` config and accepts only known command keys.
+ */
+function validateCommandProfiles(value: unknown, keyPath: string): WorkerCommandProfiles {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+  }
+
+  const allowedNames = new Set<string>(WORKER_CONFIG_COMMAND_NAMES);
+  const result: WorkerCommandProfiles = {};
+
+  for (const [key, profile] of Object.entries(value)) {
+    if (!allowedNames.has(key)) {
+      throw new Error(
+        `Invalid worker config at ${keyPath}.${key}: unknown command. Allowed: ${WORKER_CONFIG_COMMAND_NAMES.join(", ")}.`,
+      );
+    }
+
+    result[key as WorkerConfigCommandName] = validateWorkerProfile(profile, `${keyPath}.${key}`);
+  }
+
+  return result;
+}
+
+/**
  * Validates the top-level worker configuration document.
  */
 function validateWorkerConfig(value: unknown): WorkerConfig {
@@ -80,7 +110,7 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
 
   return {
     defaults: defaults === undefined ? undefined : validateWorkerProfile(defaults, "defaults"),
-    commands: commands === undefined ? undefined : validateProfileMap(commands, "commands"),
+    commands: commands === undefined ? undefined : validateCommandProfiles(commands, "commands"),
     profiles: profiles === undefined ? undefined : validateProfileMap(profiles, "profiles"),
   };
 }

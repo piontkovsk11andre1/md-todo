@@ -52,6 +52,32 @@ describe("resolveWorkerConfig", () => {
     });
   });
 
+  it("applies per-command overrides for research", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        defaults: {
+          worker: ["opencode", "run"],
+          workerArgs: ["--model", "gpt-5.3-codex"],
+        },
+        commands: {
+          research: {
+            worker: ["opencode", "run"],
+            workerArgs: ["--model", "opus-4.6"],
+          },
+        },
+      },
+      "research",
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(resolved).toEqual({
+      worker: ["opencode", "run"],
+      workerArgs: ["--model", "gpt-5.3-codex", "--model", "opus-4.6"],
+    });
+  });
+
   it("applies file-level frontmatter profile", () => {
     const resolved = resolveWorkerConfig(
       {

@@ -5,7 +5,7 @@
 This lets you:
 
 - define a default worker so you do not need `--worker` on every command,
-- set per-command worker overrides (`run`, `plan`, `discuss`, `reverify`),
+- set per-command worker overrides (`run`, `plan`, `discuss`, `research`, `reverify`),
 - define named profiles (for model or other worker args),
 - apply profiles from file frontmatter or directive parent list items,
 - override everything from the CLI when needed.
@@ -16,7 +16,7 @@ Path: `<config-dir>/config.json` (typically `.rundown/config.json`).
 
 When created by `rundown init`, this file starts as an empty JSON object (`{}`).
 
-That means no default worker is configured until you add one. Worker-required commands (`run`, `plan`, `discuss`, `reverify`) must receive a worker explicitly via `--worker <command...>` or `-- <command>` when config is empty.
+That means no default worker is configured until you add one. Worker-required commands (`run`, `plan`, `discuss`, `research`, `reverify`) must receive a worker explicitly via `--worker <command...>` or `-- <command>` when config is empty.
 
 Example:
 
@@ -32,6 +32,10 @@ Example:
     },
     "discuss": {
       "worker": ["opencode"]
+    },
+    "research": {
+      "worker": ["opencode", "run"],
+      "workerArgs": ["--model", "opus-4.6"]
     }
   },
   "profiles": {
@@ -73,7 +77,7 @@ All command arrays and arg arrays must be JSON arrays of strings.
 Section behavior:
 
 - `defaults`: global baseline for all commands.
-- `commands.<name>`: override/extend defaults for one command (for example `plan`).
+- `commands.<name>`: override/extend defaults for one command (for example `plan` or `research`).
 - `profiles.<name>`: named reusable profile values, selected from frontmatter or directives.
 
 ## Resolution cascade

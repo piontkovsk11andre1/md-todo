@@ -1,6 +1,7 @@
 import {
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
+  DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
@@ -24,6 +25,7 @@ export interface ProjectTemplates {
   verify: string;
   repair: string;
   plan: string;
+  research: string;
   trace: string;
 }
 
@@ -46,6 +48,7 @@ export function loadProjectTemplatesFromPorts(
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
     };
   }
@@ -59,6 +62,7 @@ export function loadProjectTemplatesFromPorts(
     verify: templateLoader.load(pathOperations.join(dir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
     repair: templateLoader.load(pathOperations.join(dir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
     plan: templateLoader.load(pathOperations.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
+    research: templateLoader.load(pathOperations.join(dir, "research.md")) ?? DEFAULT_RESEARCH_TEMPLATE,
     trace: templateLoader.load(pathOperations.join(dir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,
   };
 }

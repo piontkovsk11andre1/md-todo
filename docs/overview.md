@@ -315,6 +315,24 @@ Use `--dry-run` to preview selected runs, SHAs, and undo method without changing
 
 Use `--force` to bypass clean-worktree and reset contiguous-HEAD checks. This is intentionally unsafe and should be reserved for advanced recovery workflows.
 
+## Research before planning
+
+Use `rundown research` when a feature document is too thin for high-quality TODO synthesis.
+
+`research` reads the full Markdown file and rewrites the document body with richer context: expanded intent, implementation constraints, integration notes, and planning scaffolding.
+
+Guardrails:
+
+- `research` must preserve existing checkbox states.
+- `research` must not introduce new unchecked TODO items.
+- output is applied as full-document replacement and rolled back on guard violations.
+
+Typical flow:
+
+1. `rundown research <source> -- opencode run`
+2. `rundown plan <source> --scan-count 3 -- opencode run`
+3. `rundown run <source> -- opencode run`
+
 ## Planning
 
 `rundown plan` expands a selected task into nested subtasks.

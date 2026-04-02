@@ -215,6 +215,49 @@ Example output format:
 `;
 
 /**
+ * Default research-phase prompt template used to enrich a source document with
+ * implementation context before planning.
+ */
+export const DEFAULT_RESEARCH_TEMPLATE = `\
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
+
+## Full document
+
+{{source}}
+
+## Phase
+
+Research and enrich the source document with implementation context.
+
+Read the full document above and enrich it with the context, background, and
+structural detail needed for a planning agent to later propose concrete TODO
+items.
+
+Your output replaces the document body. Write the complete updated Markdown
+document.
+
+Guidelines:
+
+- Expand thin descriptions into clear feature specifications.
+- Add relevant technical context: existing code patterns, module boundaries,
+  API surfaces, and conventions discovered via CLI blocks or project knowledge.
+- Surface design constraints, edge cases, and compatibility considerations.
+- Propose document structure: add section headings, acceptance criteria
+  outlines, scope/out-of-scope boundaries, and integration notes.
+- Preserve everything the author already wrote - do not remove or contradict
+  existing content, only augment it.
+- Do NOT add TODO items (\`- [ ]\` lines). Task decomposition is a separate
+  phase.
+- Do NOT change any checkbox state in the document.
+- Do NOT add implementation code. This phase is about context and planning
+  guidance, not execution.
+- Write in the same voice and style as the existing document.
+
+Return the full updated Markdown document and nothing else.
+{{traceInstructions}}
+`;
+
+/**
  * Default trace-phase prompt template used to produce an analysis.summary payload.
  */
 export const DEFAULT_TRACE_TEMPLATE = `\

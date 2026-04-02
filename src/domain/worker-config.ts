@@ -11,13 +11,34 @@ export interface WorkerProfile {
 }
 
 /**
+ * Known command names that support worker configuration overrides.
+ */
+export const WORKER_CONFIG_COMMAND_NAMES = [
+  "run",
+  "plan",
+  "discuss",
+  "research",
+  "reverify",
+] as const;
+
+/**
+ * Supported command names for `config.commands` worker overrides.
+ */
+export type WorkerConfigCommandName = typeof WORKER_CONFIG_COMMAND_NAMES[number];
+
+/**
+ * Per-command worker profile overrides keyed by supported command name.
+ */
+export type WorkerCommandProfiles = Partial<Record<WorkerConfigCommandName, WorkerProfile>>;
+
+/**
  * Worker configuration loaded from user or project settings.
  */
 export interface WorkerConfig {
   // Baseline profile applied first to all command executions.
   defaults?: WorkerProfile;
   // Per-command overrides keyed by command name.
-  commands?: Record<string, WorkerProfile>;
+  commands?: WorkerCommandProfiles;
   // Named reusable profiles referenced by directive or file metadata.
   profiles?: Record<string, WorkerProfile>;
 }
@@ -126,7 +147,7 @@ function mergeWorkerProfile(base: ResolvedWorker, override: WorkerProfile): Reso
  */
 export function resolveWorkerConfig(
   config: WorkerConfig | undefined,
-  commandName: string,
+  commandName: WorkerConfigCommandName,
   fileProfile: string | undefined,
   directiveProfile: string | undefined,
   cliWorker: string[] | undefined,

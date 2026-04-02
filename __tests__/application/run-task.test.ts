@@ -299,6 +299,305 @@ describe("run-task orchestration", () => {
     expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
   });
 
+  it("applies pre-run reset at the start of every round", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [x] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+    const executeInlineCli = vi.spyOn(dependencies.workerExecutor, "executeInlineCli");
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, redo: true, resetAfter: true, rounds: 2 }),
+    );
+
+    expect(code).toBe(0);
+    expect(executeInlineCli).toHaveBeenCalledTimes(2);
+    expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
+  });
+
+  it("applies inter-round reset after successful non-final rounds", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+    const executeInlineCli = vi.spyOn(dependencies.workerExecutor, "executeInlineCli");
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, runAll: true, redo: true, resetAfter: true, rounds: 2 }),
+    );
+
+    expect(code).toBe(0);
+    expect(executeInlineCli).toHaveBeenCalledTimes(2);
+    expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
+  });
+
+  it("preserves single-pass behavior for --dry-run across multiple rounds", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        dryRun: true,
+        redo: true,
+        resetAfter: true,
+        rounds: 3,
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.taskSelector.selectNextTask).toHaveBeenCalledTimes(1);
+    expect(dependencies.workerExecutor.executeInlineCli).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Round 2/3"))).toBe(false);
+  });
+
+  it("runs multiple rounds and emits round headers plus aggregate summary", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, runAll: true, redo: true, resetAfter: true, rounds: 3 }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(3);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Round 1/3"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Round 3/3"))).toBe(true);
+    expect(
+      events.some((event) => event.kind === "success" && event.message.includes("All 3 rounds completed successfully (3 tasks total).")),
+    ).toBe(true);
+  });
+
+  it("keeps rounds=1 behavior aligned with single-pass output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, runAll: true, redo: true, resetAfter: true, rounds: 1 }),
+    );
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Round 1/1"))).toBe(false);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("All tasks completed (1 total)."))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("rounds completed successfully"))).toBe(false);
+  });
+
+  it("rejects --rounds > 1 when clean reset phases are not both enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+
+    for (const flags of [
+      {},
+      { redo: true, resetAfter: false },
+      { redo: false, resetAfter: true },
+    ]) {
+      const { dependencies, events } = createDependencies({
+        cwd,
+        task: createTask(taskFile, "build release"),
+        fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+        gitClient: createGitClientMock(),
+      });
+
+      const code = await createRunTask(dependencies)(
+        createOptions({
+          verify: false,
+          rounds: 2,
+          ...flags,
+        }),
+      );
+
+      expect(code).toBe(1);
+      expect(
+        events.some((event) => event.kind === "error" && event.message.includes("--rounds > 1 requires --clean or both --redo and --reset-after.")),
+      ).toBe(true);
+      expect(dependencies.sourceResolver.resolveSources).not.toHaveBeenCalled();
+    }
+  });
+
+  it("stops early on first failed round and does not start later rounds", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({ exitCode: 9, stdout: "", stderr: "boom" }));
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, runAll: true, redo: true, resetAfter: true, rounds: 3 }),
+    );
+
+    expect(code).toBe(1);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Round 2/3"))).toBe(false);
+  });
+
+  it("records rounds metadata in run artifact finalization", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({ verify: false, runAll: true, redo: true, resetAfter: true, rounds: 2 }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.artifactStore.finalize).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        extra: expect.objectContaining({
+          rounds: 2,
+          currentRound: 2,
+        }),
+      }),
+    );
+  });
+
   it("runs deferred commit before releasing locks", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
@@ -325,6 +624,49 @@ describe("run-task orchestration", () => {
     ];
     const releaseOrder = vi.mocked(dependencies.fileLock.releaseAll).mock.invocationCallOrder[0];
     expect(commitOrder).toBeLessThan(releaseOrder);
+  });
+
+  it("defers --commit with reset-after until after final successful round", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        commitAfterComplete: true,
+        runAll: true,
+        redo: true,
+        resetAfter: true,
+        rounds: 3,
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(3);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(1);
   });
 
   it("releases locks before unexpected-error artifact finalization", async () => {

@@ -160,6 +160,9 @@ describe("createWorkerConfigAdapter", () => {
             worker: ["opencode", "run"],
             workerArgs: ["--model", "opus-4.6"],
           },
+          research: {
+            workerArgs: ["--model", "opus-4.6"],
+          },
           discuss: {
             workerArgs: ["--model", "gpt-5.3-codex"],
           },
@@ -182,16 +185,20 @@ describe("createWorkerConfigAdapter", () => {
         worker: ["opencode", "run"],
         workerArgs: ["--color", "always"],
       },
-      commands: {
-        plan: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "opus-4.6"],
+        commands: {
+          plan: {
+            worker: ["opencode", "run"],
+            workerArgs: ["--model", "opus-4.6"],
+          },
+          research: {
+            worker: undefined,
+            workerArgs: ["--model", "opus-4.6"],
+          },
+          discuss: {
+            worker: undefined,
+            workerArgs: ["--model", "gpt-5.3-codex"],
+          },
         },
-        discuss: {
-          worker: undefined,
-          workerArgs: ["--model", "gpt-5.3-codex"],
-        },
-      },
       profiles: {
         complex: {
           worker: undefined,
@@ -203,5 +210,25 @@ describe("createWorkerConfigAdapter", () => {
         },
       },
     });
+  });
+
+  it("rejects unknown command keys in commands config", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        commands: {
+          execute: {
+            worker: ["opencode", "run"],
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at commands.execute: unknown command. Allowed: run, plan, discuss, research, reverify.`,
+    );
   });
 });

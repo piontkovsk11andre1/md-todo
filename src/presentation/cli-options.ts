@@ -1,6 +1,7 @@
 import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../domain/ports/command-executor.js";
+import fs from "node:fs";
 
 // Supported prompt transport backends accepted by the CLI.
 const PROMPT_TRANSPORTS: readonly PromptTransport[] = ["file", "arg"];
@@ -128,23 +129,117 @@ export function parseScanCount(value: string | undefined): number {
 }
 
 /**
+ * Parses the number of clean execution rounds.
+ */
+export function parseRounds(value: string | undefined): number {
+  return parseIntOption(value, {
+    optionName: "rounds",
+    defaultValue: 1,
+    allowUndefined: false,
+    min: 1,
+    integerLabel: "positive integer",
+    safeIntegerLabel: "safe positive integer",
+  });
+}
+
+/**
  * Validates and resolves the single Markdown file expected by the `plan` command.
  */
 export function resolvePlanMarkdownFile(markdownFiles: string[]): string {
+  return resolveSingleMarkdownFile({
+    commandName: "plan",
+    usage: "rundown plan <markdown-file> [options]",
+    invalidPathLabel: "plan",
+    markdownFiles,
+  });
+}
+
+/**
+ * Validates and resolves the single Markdown file expected by the `research` command.
+ */
+export function resolveResearchMarkdownFile(markdownFiles: string[]): string {
+  const markdownFile = resolveSingleMarkdownFile({
+    commandName: "research",
+    usage: "rundown research <source> [options]",
+    invalidPathLabel: "research",
+    markdownFiles,
+  });
+
+  if (containsGlobPattern(markdownFile)) {
+    throw new Error(
+      "Invalid research document path: "
+        + markdownFile
+        + ". The `research` command requires exactly one existing Markdown file and does not accept directory or glob inputs.",
+    );
+  }
+
+  if (!fs.existsSync(markdownFile)) {
+    throw new Error(
+      "Invalid research document path: "
+        + markdownFile
+        + ". The `research` command requires exactly one existing Markdown file; the provided path does not exist.",
+    );
+  }
+
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(markdownFile);
+  } catch {
+    throw new Error(
+      "Invalid research document path: "
+        + markdownFile
+        + ". The `research` command requires exactly one existing Markdown file and cannot read this path.",
+    );
+  }
+
+  if (!stats.isFile()) {
+    throw new Error(
+      "Invalid research document path: "
+        + markdownFile
+        + ". The `research` command requires exactly one existing Markdown file and does not accept directory or glob inputs.",
+    );
+  }
+
+  return markdownFile;
+}
+
+interface ResolveSingleMarkdownFileOptions {
+  commandName: string;
+  usage: string;
+  invalidPathLabel: string;
+  markdownFiles: string[];
+}
+
+/**
+ * Validates a command that accepts exactly one Markdown document path.
+ */
+function resolveSingleMarkdownFile({
+  commandName,
+  usage,
+  invalidPathLabel,
+  markdownFiles,
+}: ResolveSingleMarkdownFileOptions): string {
   if (markdownFiles.length === 0) {
-    throw new Error("The `plan` command requires exactly one Markdown file path. Usage: rundown plan <markdown-file> [options].");
+    throw new Error(`The \`${commandName}\` command requires exactly one Markdown file path. Usage: ${usage}.`);
   }
 
   if (markdownFiles.length > 1) {
-    throw new Error(`The \`plan\` command accepts exactly one Markdown file path. Received ${markdownFiles.length}: ${markdownFiles.join(", ")}.`);
+    throw new Error(`The \`${commandName}\` command accepts exactly one Markdown file path. Received ${markdownFiles.length}: ${markdownFiles.join(", ")}.`);
   }
 
   const markdownFile = markdownFiles[0] ?? "";
   if (!/\.(md|markdown)$/i.test(markdownFile)) {
-    throw new Error(`Invalid plan document path: ${markdownFile}. The \`plan\` command only accepts Markdown files (.md or .markdown).`);
+    throw new Error(`Invalid ${invalidPathLabel} document path: ${markdownFile}. The \`${commandName}\` command only accepts Markdown files (.md or .markdown).`);
   }
 
   return markdownFile;
+}
+
+/**
+ * Detects whether a path string contains common glob metacharacters.
+ */
+function containsGlobPattern(value: string): boolean {
+  return /[*?[\]{}]/.test(value);
 }
 
 /**

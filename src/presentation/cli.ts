@@ -32,6 +32,7 @@ import {
   createLogCommandAction,
   createNextCommandAction,
   createPlanCommandAction,
+  createResearchCommandAction,
   createReverifyCommandAction,
   createRevertCommandAction,
   createRunCommandAction,
@@ -41,6 +42,7 @@ import {
 const RUNNER_MODES: readonly ProcessRunMode[] = ["wait", "tui", "detached"];
 const PLANNER_MODES: readonly ProcessRunMode[] = ["wait"];
 const DISCUSS_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
+const RESEARCH_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
 const DEFAULT_PLAN_SCAN_COUNT = 3;
 const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
 
@@ -117,6 +119,7 @@ program
   .option("--redo", "Reset all checkboxes in the source file before running", false)
   .option("--reset-after", "Reset all checkboxes in the source file after the run completes", false)
   .option("--clean", "Shorthand for --redo --reset-after", false)
+  .option("--rounds <n>", "Repeat clean cycles N times (default: 1)")
   .option("--force-unlock", "Break stale source lockfiles before acquiring run locks", false)
   .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
@@ -269,6 +272,34 @@ program
   })));
 
 program
+  .command("research")
+  .description("Enrich a Markdown document with implementation context and planning scaffolding.")
+  .argument("[markdown-file...]", "Markdown document to enrich")
+  .option("--mode <mode>", "Research mode: wait, tui", "wait")
+  .option("--transport <transport>", "Prompt transport: file, arg", "file")
+  .option("--dry-run", "Show what would be researched without executing", false)
+  .option("--print-prompt", "Print the rendered research prompt and exit", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
+  .option("--force-unlock", "Break stale source lockfiles before acquiring research lock", false)
+  .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
+  .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
+  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
+  .allowUnknownOption(false)
+  .action(withCliAction(createResearchCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+    researchModes: RESEARCH_MODES,
+  })));
+
+program
   .command("unlock")
   .description("Manually release a stale source lockfile.")
   .argument("<source>", "Markdown source file path used to derive <config-dir>/locks/<basename>.lock")
@@ -364,8 +395,33 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   });
   runtimeState.workerFromSeparator = workerCommandArgs;
 
+  try {
+    // Keep research as a strict single-pass workflow for this iteration.
+    validateUnsupportedResearchScanCount(rundownArgs);
+  } catch (error) {
+    emitCliFatalError(error, runtimeState.invocationLogState);
+    terminate(1);
+    return;
+  }
+
   // Delegate command dispatch and argument validation to commander.
   await program.parseAsync(rundownArgs, { from: "user" });
+}
+
+/**
+ * Rejects plan-style scan/convergence options for `research`.
+ */
+function validateUnsupportedResearchScanCount(argv: string[]): void {
+  if (resolveInvocationCommand(argv) !== "research") {
+    return;
+  }
+
+  const hasScanCountOption = argv.some((token) => token === "--scan-count" || token.startsWith("--scan-count="));
+  if (!hasScanCountOption) {
+    return;
+  }
+
+  throw new Error("Unsupported option for `research`: --scan-count. Research currently runs as a single-pass flow and does not support scan/convergence loops.");
 }
 
 /**

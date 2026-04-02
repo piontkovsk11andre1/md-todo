@@ -93,7 +93,7 @@ This creates:
 
 `rundown init` now writes both `.rundown/vars.json` and `.rundown/config.json` as empty JSON objects (`{}`).
 
-Because the default config is empty, worker-required commands (`run`, `plan`, `discuss`, `reverify`) need an explicit worker command until you configure one in `.rundown/config.json`:
+Because the default config is empty, worker-required commands (`run`, `plan`, `discuss`, `research`, `reverify`) need an explicit worker command until you configure one in `.rundown/config.json`:
 
 ```bash
 rundown run roadmap.md -- opencode run
@@ -137,6 +137,7 @@ Useful first commands:
 rundown next docs/
 rundown list docs/
 rundown log --revertable --limit 10
+rundown research roadmap.md -- opencode run
 rundown plan roadmap.md --scan-count 3 -- opencode run
 rundown reverify -- opencode run
 rundown revert --dry-run --worker opencode run
@@ -230,7 +231,24 @@ If verification fails, `rundown` renders `.rundown/repair.md`, runs another atte
 
 This makes failure part of the workload model instead of an untracked side effect.
 
-### 5. Plan
+### 5. Research
+
+When a feature document is still thin (for example title + intent only), run `research` first.
+
+`rundown research` reads the full document and rewrites it with richer implementation context, constraints, and planning scaffolding while preserving author intent.
+
+`research` is single-pass in this iteration and does not support `--scan-count` convergence loops.
+
+Research is intentionally a prep phase:
+
+```bash
+rundown research docs/release-plan.md -- opencode run
+rundown plan docs/release-plan.md --scan-count 3 -- opencode run
+```
+
+It does not decompose work into TODOs itself; that remains the `plan` phase.
+
+### 6. Plan
 
 When implementation intent is spread across a full document, `rundown plan` scans that markdown file and appends missing actionable TODOs using `.rundown/plan.md`.
 
@@ -248,7 +266,7 @@ rundown plan docs/release-plan.md --scan-count 3 -- opencode run
 rundown plan docs/migration.md --scan-count 2 -- opencode run
 ```
 
-### 6. Reverify
+### 7. Reverify
 
 `rundown reverify` re-runs verify and optional repair against a previously completed task from saved run metadata.
 
@@ -264,6 +282,7 @@ The system is shaped by files that live next to your code:
 - `.rundown/verify.md`
 - `.rundown/repair.md`
 - `.rundown/plan.md`
+- `.rundown/research.md`
 - `.rundown/trace.md`
 - `.rundown/vars.json`
 

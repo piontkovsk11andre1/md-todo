@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
+  DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
@@ -22,6 +23,7 @@ describe("project-templates", () => {
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
     });
     expect(templateLoader.load).not.toHaveBeenCalled();
@@ -53,9 +55,11 @@ describe("project-templates", () => {
       verify: "VERIFY",
       repair: DEFAULT_REPAIR_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
     });
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "execute.md"));
+    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "trace.md"));
   });
 });
