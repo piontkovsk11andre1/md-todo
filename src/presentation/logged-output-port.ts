@@ -83,6 +83,8 @@ function resolveLogKind(event: ApplicationOutputEvent): string {
       return "error";
     case "success":
       return "success";
+    case "progress":
+      return "progress";
     case "task":
       return "task";
     case "text":
@@ -104,6 +106,7 @@ function resolveLogLevel(event: ApplicationOutputEvent): GlobalOutputLogLevel {
       return "error";
     case "info":
     case "success":
+    case "progress":
     case "task":
     case "text":
     default:
@@ -122,6 +125,7 @@ function resolveLogStream(event: ApplicationOutputEvent): GlobalOutputLogStream 
     case "info":
     case "warn":
     case "success":
+    case "progress":
     case "task":
     case "text":
     default:
@@ -139,6 +143,8 @@ function resolveLogMessage(event: ApplicationOutputEvent): string {
     case "error":
     case "success":
       return event.message;
+    case "progress":
+      return formatProgressMessage(event.progress);
     case "task": {
       // Render the primary task line, then append ordered child and sub-item lines.
       const task = formatTaskLine(event.task);
@@ -166,6 +172,30 @@ function resolveLogMessage(event: ApplicationOutputEvent): string {
     default:
       return "";
   }
+}
+
+/**
+ * Builds a log-safe progress message from structured progress metadata.
+ */
+function formatProgressMessage(progress: {
+  label: string;
+  detail?: string;
+  current?: number;
+  total?: number;
+  unit?: string;
+}): string {
+  const hasCounters = typeof progress.current === "number"
+    && typeof progress.total === "number"
+    && Number.isFinite(progress.current)
+    && Number.isFinite(progress.total)
+    && progress.total > 0;
+  const current = hasCounters ? Math.max(0, Math.floor(progress.current!)) : 0;
+  const total = hasCounters ? Math.max(1, Math.floor(progress.total!)) : 0;
+  const counter = hasCounters
+    ? ` (${current}/${total}${progress.unit ? ` ${progress.unit}` : ""})`
+    : "";
+  const detail = progress.detail ? ` - ${progress.detail}` : "";
+  return `${progress.label}${counter}${detail}`;
 }
 
 /**

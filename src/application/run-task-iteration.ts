@@ -336,6 +336,12 @@ export async function runTaskIteration(params: {
     templates: preparedPrompts.templates,
   };
 
+  if (onlyVerify) {
+    emit({ kind: "info", message: "Execution phase skipped; entering verification phase." });
+  } else {
+    emit({ kind: "info", message: "Starting execute phase..." });
+  }
+
   // Dispatch the task and receive a structured result for completion routing.
   const dispatchResult = await dispatchTaskExecution({
     dependencies,
@@ -369,6 +375,14 @@ export async function runTaskIteration(params: {
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace:
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
   });
+
+  if (dispatchResult.kind === "ready-for-completion") {
+    if (dispatchResult.shouldVerify) {
+      emit({ kind: "info", message: "Execute phase finished; starting verify/repair phase..." });
+    } else {
+      emit({ kind: "info", message: "Execute phase finished; verification is disabled for this task." });
+    }
+  }
 
   // Convert execution failures into lifecycle failure handling with hooks.
   if (dispatchResult.kind === "execution-failed") {

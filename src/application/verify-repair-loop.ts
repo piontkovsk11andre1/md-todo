@@ -67,6 +67,8 @@ export async function runVerifyRepairLoop(
   input: VerifyRepairLoopInput,
 ): Promise<VerifyRepairLoopResult> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const formatRepairAttempt = (attemptNumber: number): string => "Repair attempt "
+    + attemptNumber + " of " + input.maxRepairAttempts;
   // Trace events are tied to a run id derived from artifact context.
   const runId = resolveTraceRunId(input.artifactContext);
   // Emits pass/fail details for each verification attempt.
@@ -152,6 +154,7 @@ export async function runVerifyRepairLoop(
   };
 
   // Always run one initial verification before considering repairs.
+  emit({ kind: "info", message: "Verify phase: running initial verification (attempt 1)." });
   emit({ kind: "info", message: "Running verification..." });
 
   const initialVerificationStartedAt = Date.now();
@@ -189,6 +192,7 @@ export async function runVerifyRepairLoop(
   if (valid) {
     dependencies.verificationStore.remove(input.task);
     emitVerificationEfficiency();
+    emit({ kind: "success", message: "Verify phase complete: verification passed on initial attempt." });
     emit({ kind: "success", message: "Verification passed." });
     return { valid: true, failureReason: null };
   }
@@ -198,12 +202,14 @@ export async function runVerifyRepairLoop(
     const failureReason = cumulativeFailureReasons.at(-1) ?? initialFailureReason;
     emitRepairOutcome(false, 0);
     emitVerificationEfficiency();
+    emit({ kind: "warn", message: "Repair phase skipped: repair is disabled." });
     emit({ kind: "error", message: "Last validation error: " + (failureReason ?? "Verification failed (no details).") });
     return { valid: false, failureReason };
   }
 
   // Enter repair mode after a failed initial verification.
   const repairWarningReason = initialFailureReason ?? "Verification failed (no details).";
+  emit({ kind: "info", message: "Verify phase complete: initial verification failed." });
   emit({
     kind: "warn",
     message: "Verification failed: " + repairWarningReason + ". Running repair (" + input.maxRepairAttempts + " attempt(s))...",
@@ -215,6 +221,7 @@ export async function runVerifyRepairLoop(
     attempts += 1;
     repairAttempts = attempts;
     emitRepairAttempt(attempts, previousFailure);
+    emit({ kind: "info", message: formatRepairAttempt(attempts) + ": starting..." });
 
     // Each repair invocation performs one repair cycle and one verification pass.
     const repairStartedAt = Date.now();
@@ -253,10 +260,15 @@ export async function runVerifyRepairLoop(
       emitRepairOutcome(true, attempts);
       dependencies.verificationStore.remove(input.task);
       emitVerificationEfficiency();
+      emit({ kind: "info", message: formatRepairAttempt(attempts) + ": passed verification." });
       emit({ kind: "success", message: "Repair succeeded after " + attempts + " attempt(s)." });
       return { valid: true, failureReason: null };
     }
 
+    emit({
+      kind: "info",
+      message: formatRepairAttempt(attempts) + ": failed verification.",
+    });
     emit({
       kind: "warn",
       message: "Repair attempt " + attempts + " failed: " + (repairFailureReason ?? "Verification failed (no details)."),
@@ -268,6 +280,7 @@ export async function runVerifyRepairLoop(
   // All repair attempts failed; report the most recent failure reason.
   emitRepairOutcome(false, attempts);
   emitVerificationEfficiency();
+  emit({ kind: "warn", message: "Repair phase complete: all repair attempts exhausted." });
   const failureReason = cumulativeFailureReasons.at(-1) ?? initialFailureReason;
   emit({ kind: "error", message: "Last validation error: " + (failureReason ?? "Verification failed (no details).") });
   return { valid: false, failureReason };

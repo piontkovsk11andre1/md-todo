@@ -24,6 +24,73 @@ import { createTraceRunSession } from "./trace-run-session.js";
 // Normalized emitter signature used across dispatch helpers.
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
+const DELEGATED_RUNDOWN_HEARTBEAT_INTERVAL_MS = 15_000;
+const DELEGATION_DEPTH_ENV = "RUNDOWN_DELEGATION_DEPTH";
+
+type DelegatedHeartbeatController = {
+  stop: () => void;
+};
+
+function parseDelegationDepth(rawDepth: string | undefined): number {
+  if (!rawDepth) {
+    return 0;
+  }
+
+  const parsed = Number.parseInt(rawDepth, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+}
+
+function buildDelegationContextTag(): string {
+  const currentDepth = parseDelegationDepth(process.env[DELEGATION_DEPTH_ENV]);
+  return "[delegation d" + String(currentDepth) + "->d" + String(currentDepth + 1) + "]";
+}
+
+function startDelegatedRundownHeartbeat(params: {
+  emit: EmitFn;
+  subcommand: string;
+  startedAtMs: number;
+  delegationContextTag: string;
+}): DelegatedHeartbeatController {
+  const { emit, subcommand, startedAtMs, delegationContextTag } = params;
+  let stopped = false;
+  let heartbeatHandle: ReturnType<typeof setInterval> | null = setInterval(() => {
+    if (stopped) {
+      return;
+    }
+
+    const elapsedSeconds = Math.max(1, Math.floor((Date.now() - startedAtMs) / 1000));
+    emit({
+      kind: "info",
+      message: "Delegated rundown " + subcommand + " still running... ("
+        + elapsedSeconds
+        + "s elapsed) "
+        + delegationContextTag,
+    });
+  }, DELEGATED_RUNDOWN_HEARTBEAT_INTERVAL_MS);
+
+  if (typeof heartbeatHandle.unref === "function") {
+    heartbeatHandle.unref();
+  }
+
+  return {
+    stop: (): void => {
+      if (stopped) {
+        return;
+      }
+
+      stopped = true;
+      if (heartbeatHandle) {
+        clearInterval(heartbeatHandle);
+        heartbeatHandle = null;
+      }
+    },
+  };
+}
+
 /**
  * Describes the control-flow outcome after dispatching task execution.
  *
@@ -255,26 +322,87 @@ export async function dispatchTaskExecution(params: {
       };
     }
     // Execute delegated rundown task and inherit parent execution settings.
-    emit({ kind: "info", message: "Delegating to rundown: rundown " + delegatedCommand.join(" ") });
+    const delegationContextTag = buildDelegationContextTag();
+    const delegatedDisplayCommand = "rundown " + delegatedCommand.join(" ");
+    emit({
+      kind: "info",
+      message: "Delegating to rundown: " + delegatedDisplayCommand + " " + delegationContextTag,
+    });
+    emit({
+      kind: "info",
+      message: "Starting delegated rundown " + delegatedInvocation.subcommand + " task... " + delegationContextTag,
+    });
+    const delegatedStartedAt = Date.now();
+    const delegatedHeartbeat = startDelegatedRundownHeartbeat({
+      emit,
+      subcommand: delegatedInvocation.subcommand,
+      startedAtMs: delegatedStartedAt,
+      delegationContextTag,
+    });
+
     const rundownTaskPhaseTrace = traceRunSession.beginPhase("rundown-delegate", ["rundown", ...delegatedCommand]);
-    const rundownTaskResult = await dependencies.workerExecutor.executeRundownTask(
-      delegatedInvocation.subcommand,
-      delegatedExecutionArgs,
-      rundownTaskCwd,
-      {
-      artifactContext,
-      keepArtifacts,
-      artifactExtra: { taskType: "rundown-task" },
-      parentWorkerCommand: resolvedWorkerCommand,
-      parentTransport: transport,
-      parentKeepArtifacts: keepArtifacts,
-      parentShowAgentOutput: showAgentOutput,
-      parentIgnoreCliBlock: ignoreCliBlock,
-      parentVerify: verify,
-      parentNoRepair: noRepair,
-      parentRepairAttempts: repairAttempts,
-    },
-    );
+    let rundownTaskResult;
+    try {
+      rundownTaskResult = await dependencies.workerExecutor.executeRundownTask(
+        delegatedInvocation.subcommand,
+        delegatedExecutionArgs,
+        rundownTaskCwd,
+        {
+          artifactContext,
+          keepArtifacts,
+          artifactExtra: { taskType: "rundown-task" },
+          parentWorkerCommand: resolvedWorkerCommand,
+          parentTransport: transport,
+          parentKeepArtifacts: keepArtifacts,
+          parentShowAgentOutput: showAgentOutput,
+          parentIgnoreCliBlock: ignoreCliBlock,
+          parentVerify: verify,
+          parentNoRepair: noRepair,
+          parentRepairAttempts: repairAttempts,
+        },
+      );
+    } catch (error) {
+      delegatedHeartbeat.stop();
+      const delegatedElapsedSeconds = Math.max(1, Math.floor((Date.now() - delegatedStartedAt) / 1000));
+      emit({
+        kind: "warn",
+        message: "Delegated rundown "
+          + delegatedInvocation.subcommand
+          + " interrupted before completion after "
+          + delegatedElapsedSeconds
+          + "s. "
+          + delegationContextTag,
+      });
+      throw error;
+    } finally {
+      delegatedHeartbeat.stop();
+    }
+
+    const delegatedElapsedSeconds = Math.max(1, Math.floor((Date.now() - delegatedStartedAt) / 1000));
+    if (rundownTaskResult.exitCode === 0) {
+      emit({
+        kind: "info",
+        message: "Delegated rundown "
+          + delegatedInvocation.subcommand
+          + " finished (exit 0) in "
+          + delegatedElapsedSeconds
+          + "s. "
+          + delegationContextTag,
+      });
+    } else {
+      emit({
+        kind: "warn",
+        message: "Delegated rundown "
+          + delegatedInvocation.subcommand
+          + " failed (exit "
+          + String(rundownTaskResult.exitCode)
+          + ") in "
+          + delegatedElapsedSeconds
+          + "s. "
+          + delegationContextTag,
+      });
+    }
+
     traceRunSession.completePhase(
       rundownTaskPhaseTrace,
       rundownTaskResult.exitCode,

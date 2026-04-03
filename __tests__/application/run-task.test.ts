@@ -199,6 +199,110 @@ describe("run-task orchestration", () => {
     expect(dependencies.fileLock.releaseAll).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps worker stdout/stderr hidden by default and only emits lifecycle output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "worker stdout",
+      stderr: "worker stderr",
+    }));
+
+    const code = await createRunTask(dependencies)(createOptions({ verify: false, workerCommand: ["opencode", "run"] }));
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Running:"))).toBe(true);
+  });
+
+  it("forwards worker stdout/stderr when --show-agent-output is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "worker stdout",
+      stderr: "worker stderr",
+    }));
+
+    const code = await createRunTask(dependencies)(createOptions({ verify: false, showAgentOutput: true, workerCommand: ["opencode", "run"] }));
+
+    expect(code).toBe(0);
+    expect(events).toContainEqual({ kind: "text", text: "worker stdout" });
+    expect(events).toContainEqual({ kind: "stderr", text: "worker stderr" });
+  });
+
+  it("keeps delegated rundown stdout/stderr hidden by default while showing delegation lifecycle", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const delegatedFile = path.join(cwd, "Child.md");
+    const delegatedTask = createTask(taskFile, "rundown: run Child.md --verify");
+    delegatedTask.isRundownTask = true;
+    delegatedTask.rundownArgs = "run Child.md --verify";
+
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: delegatedTask,
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] rundown: run Child.md --verify\n",
+        [delegatedFile]: "- [ ] child\n",
+      }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated stdout",
+      stderr: "delegated stderr",
+    }));
+
+    const code = await createRunTask(dependencies)(createOptions({ verify: false }));
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Starting delegated rundown run task"))).toBe(true);
+  });
+
+  it("forwards delegated rundown stdout/stderr when --show-agent-output is enabled", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const delegatedFile = path.join(cwd, "Child.md");
+    const delegatedTask = createTask(taskFile, "rundown: run Child.md --verify");
+    delegatedTask.isRundownTask = true;
+    delegatedTask.rundownArgs = "run Child.md --verify";
+
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: delegatedTask,
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] rundown: run Child.md --verify\n",
+        [delegatedFile]: "- [ ] child\n",
+      }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "delegated stdout",
+      stderr: "delegated stderr",
+    }));
+
+    const code = await createRunTask(dependencies)(createOptions({ verify: false, showAgentOutput: true }));
+
+    expect(code).toBe(0);
+    expect(events).toContainEqual({ kind: "text", text: "delegated stdout" });
+    expect(events).toContainEqual({ kind: "stderr", text: "delegated stderr" });
+  });
+
   it("releases all locks on verification failure", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

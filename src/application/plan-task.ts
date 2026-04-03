@@ -494,6 +494,10 @@ export function createPlanTask(
 
           // Build per-scan prompt context and execute the planner worker.
           const scanPrompt = buildPlanScanPrompt(prompt, latestDocumentSource, scanIndex, scanCount);
+          emit({
+            kind: "info",
+            message: "Executing planner " + scanLabel + "...",
+          });
           const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
           const runResult = await dependencies.workerExecutor.runWorker({
             command: [...resolvedWorkerCommand],
@@ -511,6 +515,12 @@ export function createPlanTask(
               scanCount,
               scanLabel,
             },
+          });
+          emit({
+            kind: "info",
+            message: "Planner " + scanLabel + " completed (exit "
+              + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
+              + ").",
           });
           completePlanPhaseTrace(
             planPhaseTrace,

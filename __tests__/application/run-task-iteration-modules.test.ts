@@ -489,6 +489,61 @@ describe("task-execution-dispatch", () => {
     expect(events).toContainEqual({ kind: "stderr", text: "inline err" });
   });
 
+  it("keeps inline cli stdout/stderr hidden when show-agent-output is disabled while preserving lifecycle status", async () => {
+    const task = createInlineTask(path.join(cwd, "tasks.md"), "cli: npm test");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] cli: npm test\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.executeInlineCli = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "inline out",
+      stderr: "inline err",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      task,
+      prompt: "prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("ready-for-completion");
+    expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Executing inline CLI:"))).toBe(true);
+  });
+
   it("returns detached for detached worker mode", async () => {
     const task = createTask(path.join(cwd, "tasks.md"), "Ship release");
     const fileSystem = createInMemoryFileSystem({
@@ -540,6 +595,61 @@ describe("task-execution-dispatch", () => {
     });
 
     expect(result).toEqual({ kind: "detached" });
+  });
+
+  it("keeps default worker stdout/stderr hidden when show-agent-output is disabled while preserving lifecycle status", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] Ship release\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "worker out",
+      stderr: "worker err",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      task,
+      prompt: "prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("ready-for-completion");
+    expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Running: opencode run"))).toBe(true);
   });
 
   it("preserves default execute-and-verify lifecycle metadata for non-memory tasks", async () => {
@@ -775,6 +885,16 @@ describe("task-execution-dispatch", () => {
       executionFailureRunReason: "Rundown run task exited with a non-zero code.",
       executionFailureExitCode: 9,
     });
+    const rundownLifecycleMessages = rundownDeps.events
+      .filter((event) => event.kind === "info" || event.kind === "warn")
+      .map((event) => event.message);
+    expect(
+      rundownLifecycleMessages.some(
+        (message) => message.startsWith("Starting delegated rundown run task...")
+          && message.includes("[delegation d0->d1]"),
+      ),
+    ).toBe(true);
+    expect(rundownLifecycleMessages.some((message) => message.includes("Delegated rundown run failed (exit 9)"))).toBe(true);
   });
 
   it("delegates explicit rundown make using make subcommand messaging and args", async () => {
@@ -827,16 +947,275 @@ describe("task-execution-dispatch", () => {
     });
 
     expect(result.kind).toBe("ready-for-completion");
-    expect(events).toContainEqual({
-      kind: "info",
-      message: "Delegating to rundown: rundown make SeedText 3.Feature.md",
-    });
+    expect(
+      events.some(
+        (event) => event.kind === "info"
+          && event.message === "Delegating to rundown: rundown make SeedText 3.Feature.md [delegation d0->d1]",
+      ),
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) => event.kind === "info"
+          && event.message === "Starting delegated rundown make task... [delegation d0->d1]",
+      ),
+    ).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Delegated rundown make finished (exit 0)"))).toBe(true);
     expect(dependencies.workerExecutor.executeRundownTask).toHaveBeenCalledWith(
       "make",
       ["SeedText", "3.Feature.md"],
       expect.stringContaining("workspace"),
       expect.any(Object),
     );
+  });
+
+  it("preserves nested rundown forwarding semantics while emitting tagged lifecycle updates", async () => {
+    const previousDepth = process.env.RUNDOWN_DELEGATION_DEPTH;
+    process.env.RUNDOWN_DELEGATION_DEPTH = "2";
+
+    try {
+      const task: Task = {
+        ...createTask(path.join(cwd, "tasks.md"), "rundown: run Child.md --no-show-agent-output --repair-attempts=3"),
+        isRundownTask: true,
+        rundownArgs: "run Child.md --no-show-agent-output --repair-attempts=3",
+      };
+      const fileSystem = createInMemoryFileSystem({
+        [task.file]: "- [ ] rundown: run Child.md --no-show-agent-output --repair-attempts=3\n",
+        [path.join(cwd, "Child.md")]: "- [ ] child\n",
+      });
+      const { dependencies, events } = createDependencies({
+        cwd,
+        task,
+        fileSystem,
+        gitClient: createGitClientMock(),
+      });
+
+      dependencies.workerExecutor.executeRundownTask = vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "delegated stdout",
+        stderr: "delegated stderr",
+      }));
+
+      const result = await dispatchTaskExecution({
+        dependencies,
+        emit: (event) => events.push(event),
+        files: [task.file],
+        selectedWorkerCommand: ["opencode", "run"],
+        pendingPreRunResetTraceEvents: [],
+        traceRunSession: createSession(),
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+        configuredOnlyVerify: false,
+        onlyVerify: false,
+        shouldVerify: true,
+        mode: "wait",
+        transport: "arg",
+        keepArtifacts: true,
+        showAgentOutput: true,
+        ignoreCliBlock: true,
+        verify: false,
+        noRepair: true,
+        repairAttempts: 8,
+        taskIntent: "execute-and-verify",
+        task,
+        prompt: "prompt",
+        expandedContextBefore: "",
+        artifactContext: createArtifactContext(),
+        resolvedWorkerCommand: ["opencode", "run"],
+        trace: true,
+        cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+        cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+      });
+
+      expect(result.kind).toBe("ready-for-completion");
+      expect(dependencies.workerExecutor.executeRundownTask).toHaveBeenCalledWith(
+        "run",
+        ["Child.md", "--no-show-agent-output", "--repair-attempts=3"],
+        expect.stringContaining("workspace"),
+        expect.objectContaining({
+          parentWorkerCommand: ["opencode", "run"],
+          parentTransport: "arg",
+          parentKeepArtifacts: true,
+          parentShowAgentOutput: true,
+          parentIgnoreCliBlock: true,
+          parentVerify: false,
+          parentNoRepair: true,
+          parentRepairAttempts: 8,
+        }),
+      );
+
+      expect(events.some(
+        (event) => event.kind === "info"
+          && event.message === "Delegating to rundown: rundown run Child.md --no-show-agent-output --repair-attempts=3 [delegation d2->d3]",
+      )).toBe(true);
+      expect(events.some(
+        (event) => event.kind === "info"
+          && event.message === "Starting delegated rundown run task... [delegation d2->d3]",
+      )).toBe(true);
+      expect(events.some(
+        (event) => event.kind === "info"
+          && event.message.includes("Delegated rundown run finished (exit 0)")
+          && event.message.includes("[delegation d2->d3]"),
+      )).toBe(true);
+    } finally {
+      if (previousDepth === undefined) {
+        delete process.env.RUNDOWN_DELEGATION_DEPTH;
+      } else {
+        process.env.RUNDOWN_DELEGATION_DEPTH = previousDepth;
+      }
+    }
+  });
+
+  it("emits delegated rundown heartbeat updates while nested execution is still running", async () => {
+    vi.useFakeTimers();
+    try {
+      const task: Task = {
+        ...createTask(path.join(cwd, "tasks.md"), "rundown: run Child.md --verify"),
+        isRundownTask: true,
+        rundownArgs: "run Child.md --verify",
+      };
+      const fileSystem = createInMemoryFileSystem({
+        [task.file]: "- [ ] rundown: run Child.md --verify\n",
+        [path.join(cwd, "Child.md")]: "- [ ] child\n",
+      });
+      const { dependencies, events } = createDependencies({
+        cwd,
+        task,
+        fileSystem,
+        gitClient: createGitClientMock(),
+      });
+      dependencies.workerExecutor.executeRundownTask = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 31_000));
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      });
+
+      const executionPromise = dispatchTaskExecution({
+        dependencies,
+        emit: (event) => events.push(event),
+        files: [task.file],
+        selectedWorkerCommand: ["opencode", "run"],
+        pendingPreRunResetTraceEvents: [],
+        traceRunSession: createSession(),
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+        configuredOnlyVerify: false,
+        onlyVerify: false,
+        shouldVerify: true,
+        mode: "wait",
+        transport: "file",
+        keepArtifacts: true,
+        showAgentOutput: false,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        taskIntent: "execute-and-verify",
+        task,
+        prompt: "prompt",
+        expandedContextBefore: "",
+        artifactContext: createArtifactContext(),
+        resolvedWorkerCommand: ["opencode", "run"],
+        trace: true,
+        cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+        cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+      });
+
+      await vi.advanceTimersByTimeAsync(31_000);
+      const result = await executionPromise;
+
+      expect(result.kind).toBe("ready-for-completion");
+      const infoMessages = events
+        .filter((event) => event.kind === "info")
+        .map((event) => event.message);
+      expect(infoMessages.some((message) => message.includes("still running..."))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops delegated rundown heartbeat when delegated execution throws", async () => {
+    vi.useFakeTimers();
+    try {
+      const task: Task = {
+        ...createTask(path.join(cwd, "tasks.md"), "rundown: run Child.md --verify"),
+        isRundownTask: true,
+        rundownArgs: "run Child.md --verify",
+      };
+      const fileSystem = createInMemoryFileSystem({
+        [task.file]: "- [ ] rundown: run Child.md --verify\n",
+        [path.join(cwd, "Child.md")]: "- [ ] child\n",
+      });
+      const { dependencies, events } = createDependencies({
+        cwd,
+        task,
+        fileSystem,
+        gitClient: createGitClientMock(),
+      });
+
+      dependencies.workerExecutor.executeRundownTask = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 16_000));
+        throw new Error("delegated failure");
+      });
+
+      const executionPromise = dispatchTaskExecution({
+        dependencies,
+        emit: (event) => events.push(event),
+        files: [task.file],
+        selectedWorkerCommand: ["opencode", "run"],
+        pendingPreRunResetTraceEvents: [],
+        traceRunSession: createSession(),
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+        configuredOnlyVerify: false,
+        onlyVerify: false,
+        shouldVerify: true,
+        mode: "wait",
+        transport: "file",
+        keepArtifacts: true,
+        showAgentOutput: false,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        taskIntent: "execute-and-verify",
+        task,
+        prompt: "prompt",
+        expandedContextBefore: "",
+        artifactContext: createArtifactContext(),
+        resolvedWorkerCommand: ["opencode", "run"],
+        trace: true,
+        cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+        cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+      });
+      const executionRejection = expect(executionPromise).rejects.toThrow("delegated failure");
+
+      await vi.advanceTimersByTimeAsync(16_000);
+      await executionRejection;
+
+      const countStillRunningMessages = (): number => events
+        .filter((event) => event.kind === "info" && event.message.includes("still running..."))
+        .length;
+
+      const heartbeatCountAtFailure = countStillRunningMessages();
+      expect(heartbeatCountAtFailure).toBeGreaterThan(0);
+      expect(events.some(
+        (event) => event.kind === "warn" && event.message.includes("interrupted before completion"),
+      )).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(countStillRunningMessages()).toBe(heartbeatCountAtFailure);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps delegated child output hidden by default while tracing rundown-delegate for run and make", async () => {

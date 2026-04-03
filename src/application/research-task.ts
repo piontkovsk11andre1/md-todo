@@ -435,6 +435,17 @@ export function createResearchTask(
         keepArtifacts,
       });
 
+      emit({
+        kind: "info",
+        message: "Running research worker: "
+          + resolvedWorkerCommand.join(" ")
+          + " [mode="
+          + mode
+          + ", transport="
+          + transport
+          + "]",
+      });
+
       const runResult = await dependencies.workerExecutor.runWorker({
         command: [...resolvedWorkerCommand],
         prompt,
@@ -447,6 +458,13 @@ export function createResearchTask(
         artifactContext,
         artifactPhase: "worker",
         artifactPhaseLabel: "research",
+      });
+
+      emit({
+        kind: "info",
+        message: "Research worker completed (exit "
+          + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
+          + ").",
       });
 
       if (mode === "wait" && showAgentOutput && runResult.stderr) {

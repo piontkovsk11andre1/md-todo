@@ -97,6 +97,16 @@ describe("createLoggedOutputPort", () => {
       { kind: "error", message: "error message" },
       { kind: "success", message: "success message" },
       {
+        kind: "progress",
+        progress: {
+          label: "Verify phase",
+          current: 1,
+          total: 3,
+          unit: "attempts",
+          detail: "running",
+        },
+      },
+      {
         kind: "task",
         task: {
           text: "Verify output mapping",
@@ -150,6 +160,7 @@ describe("createLoggedOutputPort", () => {
     expect(outputEmit).toHaveBeenNthCalledWith(6, events[5]);
     expect(outputEmit).toHaveBeenNthCalledWith(7, events[6]);
     expect(outputEmit).toHaveBeenNthCalledWith(8, events[7]);
+    expect(outputEmit).toHaveBeenNthCalledWith(9, events[8]);
 
     expect(writer.write).toHaveBeenCalledTimes(events.length);
     expect(writer.write).toHaveBeenNthCalledWith(1, {
@@ -208,8 +219,8 @@ describe("createLoggedOutputPort", () => {
       ts: "2026-03-28T12:34:56.000Z",
       level: "info",
       stream: "stdout",
-      kind: "task",
-      message: "TODO.md:41 [#7] Verify output mapping",
+      kind: "progress",
+      message: "Verify phase (1/3 attempts) - running",
       command: "rundown",
       argv: ["execute", "TODO.md"],
       cwd: "/workspace",
@@ -222,7 +233,7 @@ describe("createLoggedOutputPort", () => {
       level: "info",
       stream: "stdout",
       kind: "task",
-      message: "TODO.md:42 [#8] Blocked output mapping (blocked)",
+      message: "TODO.md:41 [#7] Verify output mapping",
       command: "rundown",
       argv: ["execute", "TODO.md"],
       cwd: "/workspace",
@@ -231,6 +242,19 @@ describe("createLoggedOutputPort", () => {
       session_id: "session-2",
     });
     expect(writer.write).toHaveBeenNthCalledWith(7, {
+      ts: "2026-03-28T12:34:56.000Z",
+      level: "info",
+      stream: "stdout",
+      kind: "task",
+      message: "TODO.md:42 [#8] Blocked output mapping (blocked)",
+      command: "rundown",
+      argv: ["execute", "TODO.md"],
+      cwd: "/workspace",
+      pid: 456,
+      version: "1.2.3",
+      session_id: "session-2",
+    });
+    expect(writer.write).toHaveBeenNthCalledWith(8, {
       ts: "2026-03-28T12:34:56.000Z",
       level: "info",
       stream: "stdout",
@@ -243,7 +267,7 @@ describe("createLoggedOutputPort", () => {
       version: "1.2.3",
       session_id: "session-2",
     });
-    expect(writer.write).toHaveBeenNthCalledWith(8, {
+    expect(writer.write).toHaveBeenNthCalledWith(9, {
       ts: "2026-03-28T12:34:56.000Z",
       level: "error",
       stream: "stderr",
@@ -256,6 +280,55 @@ describe("createLoggedOutputPort", () => {
       version: "1.2.3",
       session_id: "session-2",
     });
+  });
+
+  it("formats progress messages safely when counters are invalid or non-positive", () => {
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: vi.fn() },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["run", "TODO.md"],
+        cwd: "/workspace",
+        pid: 2000,
+        version: "1.2.3",
+        sessionId: "session-progress",
+      },
+      now: () => "2026-03-28T20:00:00.000Z",
+    });
+
+    port.emit({
+      kind: "progress",
+      progress: {
+        label: "Delegated rundown run",
+        current: Number.NaN,
+        total: Number.POSITIVE_INFINITY,
+        detail: "still running",
+      },
+    });
+    port.emit({
+      kind: "progress",
+      progress: {
+        label: "Verify phase",
+        current: 2.8,
+        total: 0,
+        unit: "attempts",
+        detail: "waiting",
+      },
+    });
+
+    expect(writer.write).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "progress",
+      message: "Delegated rundown run - still running",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "progress",
+      message: "Verify phase - waiting",
+    }));
   });
 
   it("renders child task lines indented under the parent task", () => {

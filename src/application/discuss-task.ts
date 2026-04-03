@@ -356,6 +356,10 @@ export function createDiscussTask(
       }));
 
       // Invoke worker in TUI mode to collect discussion output.
+      emit({
+        kind: "info",
+        message: "Running discussion worker: " + resolvedWorkerCommand.join(" ") + " [mode=tui, transport=" + options.transport + "]",
+      });
       const result = await dependencies.workerExecutor.runWorker({
         command: resolvedWorkerCommand,
         prompt,
@@ -367,6 +371,12 @@ export function createDiscussTask(
         configDir: dependencies.configDir?.configDir,
         artifactContext,
         artifactPhase: "discuss",
+      });
+      emit({
+        kind: "info",
+        message: "Discussion worker completed (exit "
+          + (result.exitCode === null ? "null" : String(result.exitCode))
+          + ").",
       });
 
       // Detect and immediately revert checkbox edits introduced by the discussion step.

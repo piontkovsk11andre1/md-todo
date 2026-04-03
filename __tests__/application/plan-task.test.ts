@@ -901,7 +901,11 @@ describe("plan-task", () => {
     expect(finalSource).toContain("- [ ] Write tests");
     expect(finalSource).toContain("- [ ] Update docs");
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning plan-scan-01-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Executing planner plan-scan-01-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planner plan-scan-01-of-03 completed (exit 0)."))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning plan-scan-03-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Executing planner plan-scan-03-of-03"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planner plan-scan-03-of-03 completed (exit 0)."))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 3"))).toBe(true);
     expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
   });

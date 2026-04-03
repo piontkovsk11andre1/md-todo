@@ -9,6 +9,20 @@ import {
 import type { InlineCliResult } from "./inline-cli.js";
 
 const DISABLE_AUTO_PARSE_ENV = "RUNDOWN_DISABLE_AUTO_PARSE";
+const DELEGATION_DEPTH_ENV = "RUNDOWN_DELEGATION_DEPTH";
+
+function parseDelegationDepth(rawDepth: string | undefined): number {
+  if (!rawDepth) {
+    return 0;
+  }
+
+  const parsed = Number.parseInt(rawDepth, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
+}
 
 /**
  * Options for delegating a task to a nested rundown command.
@@ -84,6 +98,8 @@ export async function executeRundownTask(
     // Ensure delegated runs can auto-parse their own output unless explicitly disabled there.
     const childEnv: NodeJS.ProcessEnv = { ...process.env };
     delete childEnv[DISABLE_AUTO_PARSE_ENV];
+    const parentDelegationDepth = parseDelegationDepth(process.env[DELEGATION_DEPTH_ENV]);
+    childEnv[DELEGATION_DEPTH_ENV] = String(parentDelegationDepth + 1);
 
     const child = spawn(command, commandArgs, {
       stdio: ["inherit", "pipe", "pipe"],

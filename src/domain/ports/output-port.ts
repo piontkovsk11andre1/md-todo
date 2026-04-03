@@ -1,6 +1,21 @@
 import type { SubItem, Task } from "../parser.js";
 
 /**
+ * Structured progress metadata for long-running lifecycle updates.
+ */
+export interface ApplicationProgressPayload {
+  // Human-readable phase or activity label.
+  label: string;
+  // Optional concise status detail shown next to the label.
+  detail?: string;
+  // Optional bounded progress counters.
+  current?: number;
+  total?: number;
+  // Optional counter unit name (for example: attempts, scans).
+  unit?: string;
+}
+
+/**
  * Represents a normalized output event emitted by the application layer.
  *
  * Consumers can render these events in a terminal, UI, log sink, or any other
@@ -15,6 +30,8 @@ export type ApplicationOutputEvent =
   | { kind: "error"; message: string }
   // Positive completion or success message.
   | { kind: "success"; message: string }
+  // Structured progress event for in-flight lifecycle updates.
+  | { kind: "progress"; progress: ApplicationProgressPayload }
   // Structured task payload for planner/task-list rendering.
   | { kind: "task"; task: Task; blocked?: boolean; children?: Task[]; subItems?: SubItem[] }
   // Raw text line intended for standard application output.

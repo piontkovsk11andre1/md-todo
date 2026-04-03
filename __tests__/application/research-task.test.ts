@@ -365,7 +365,7 @@ describe("research-task", () => {
   it("acquires research file lock before reading source, runs worker once, and releases lock", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
-    const { dependencies, artifactStore } = createDependencies({
+    const { dependencies, artifactStore, events } = createDependencies({
       cwd,
       markdownFile,
       fileContent: "# Roadmap\nBuild a new release process.\n",
@@ -395,6 +395,14 @@ describe("research-task", () => {
       markdownFile,
       "# Enriched\n\nDetails\n",
     );
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Running research worker: opencode run [mode=wait, transport=arg]",
+    });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Research worker completed (exit 0).",
+    });
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.objectContaining({ runId: "run-research" }),

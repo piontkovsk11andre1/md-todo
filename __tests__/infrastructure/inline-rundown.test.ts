@@ -41,6 +41,34 @@ afterEach(() => {
 });
 
 describe("executeRundownTask", () => {
+  it("increments delegation depth env for nested rundown invocation", async () => {
+    process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js", "run", "Parent.md"];
+    const previousDepth = process.env.RUNDOWN_DELEGATION_DEPTH;
+    process.env.RUNDOWN_DELEGATION_DEPTH = "2";
+    const child = createChildProcess();
+    spawnMock.mockReturnValue(child);
+
+    try {
+      const promise = executeRundownTask("run", ["Child.md"], "/repo");
+      child.emit("close", 0);
+
+      await expect(promise).resolves.toEqual({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+      const spawnOptions = spawnMock.mock.calls[0]?.[2] as { env?: NodeJS.ProcessEnv };
+      expect(spawnOptions.env?.RUNDOWN_DELEGATION_DEPTH).toBe("3");
+    } finally {
+      if (previousDepth === undefined) {
+        delete process.env.RUNDOWN_DELEGATION_DEPTH;
+      } else {
+        process.env.RUNDOWN_DELEGATION_DEPTH = previousDepth;
+      }
+    }
+  });
+
   it("uses process argv runtime and entrypoint by default", async () => {
     process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js", "run", "Parent.md"];
     const child = createChildProcess();

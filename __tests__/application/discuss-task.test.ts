@@ -583,7 +583,7 @@ describe("discuss-task", () => {
     const fileSystem = createInMemoryFileSystem({
       [taskFile]: "- [ ] Refine rollout scope\n",
     });
-    const { dependencies } = createDependencies({
+    const { dependencies, events } = createDependencies({
       cwd,
       task,
       source: "- [ ] Refine rollout scope\n",
@@ -617,6 +617,14 @@ describe("discuss-task", () => {
       artifactPhase: "discuss",
       cwd,
     }));
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Running discussion worker: opencode run [mode=tui, transport=arg]",
+    });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Discussion worker completed (exit 0).",
+    });
   });
 
   it("acquires source lock before worker invocation and releases locks after worker exit", async () => {
