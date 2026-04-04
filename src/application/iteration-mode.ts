@@ -2,6 +2,7 @@ import { classifyTaskIntent, type TaskIntentDecision } from "../domain/task-inte
 import { type Task } from "../domain/parser.js";
 import type { ToolResolverPort } from "../domain/ports/tool-resolver-port.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { parsePrefixChain, type PrefixChain } from "../domain/prefix-chain.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
@@ -15,6 +16,7 @@ export interface IterationVerificationMode {
   onlyVerify: boolean;
   shouldVerify: boolean;
   taskIntentDecision: TaskIntentDecision;
+  prefixChain: PrefixChain;
 }
 
 /**
@@ -43,13 +45,21 @@ export function resolveIterationVerificationMode(params: {
 
   // Classify the task text so verify-only directives can influence iteration mode.
   const taskIntent = classifyTaskIntent(task.text, toolResolver);
+  // Parse the unified prefix chain for tool-based dispatch.
+  const prefixChain = parsePrefixChain(task.text, toolResolver);
+
+  // Determine verify-only from either legacy intent or prefix chain handler.
+  const prefixChainIsVerifyOnly = prefixChain.handler?.tool.frontmatter?.skipExecution === true
+    && prefixChain.handler?.tool.frontmatter?.shouldVerify === true;
   // Enter verify-only mode when globally configured or when task intent requires it.
-  const onlyVerify = configuredOnlyVerify || (taskIntent.intent === "verify-only" && !forceExecute);
+  const onlyVerify = configuredOnlyVerify
+    || (taskIntent.intent === "verify-only" && !forceExecute)
+    || (prefixChainIsVerifyOnly && !forceExecute);
   // Verification is required whenever verify mode is configured or verify-only is active.
   const shouldVerify = configuredShouldVerify || onlyVerify;
 
   // Explain verify-only intent handling when it is task-derived (not globally forced).
-  if (!configuredOnlyVerify && taskIntent.intent === "verify-only") {
+  if (!configuredOnlyVerify && (taskIntent.intent === "verify-only" || prefixChainIsVerifyOnly)) {
     if (forceExecute) {
       // Inform the user that explicit force-execute overrides verify-only intent.
       emit({ kind: "info", message: "Task classified as verify-only (" + taskIntent.reason + "), but --force-execute is enabled; running execution." });
@@ -59,5 +69,5 @@ export function resolveIterationVerificationMode(params: {
     }
   }
 
-  return { onlyVerify, shouldVerify, taskIntentDecision: taskIntent };
+  return { onlyVerify, shouldVerify, taskIntentDecision: taskIntent, prefixChain };
 }

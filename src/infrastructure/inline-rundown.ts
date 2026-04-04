@@ -31,6 +31,7 @@ function parseDelegationDepth(rawDepth: string | undefined): number {
  * preferences while still allowing explicit CLI arguments to take precedence.
  */
 export interface RundownTaskOptions {
+  env?: Record<string, string>;
   artifactContext?: RuntimeArtifactsContext;
   keepArtifacts?: boolean;
   artifactExtra?: Record<string, unknown>;
@@ -95,7 +96,10 @@ export async function executeRundownTask(
 
   return new Promise((resolve, reject) => {
     // Ensure delegated runs can auto-parse their own output unless explicitly disabled there.
-    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...(options?.env ?? {}),
+    };
     delete childEnv[DISABLE_AUTO_PARSE_ENV];
     const parentDelegationDepth = parseDelegationDepth(process.env[DELEGATION_DEPTH_ENV]);
     childEnv[DELEGATION_DEPTH_ENV] = String(parentDelegationDepth + 1);

@@ -15,6 +15,10 @@ import {
   type TaskContextMetrics,
 } from "./task-context-resolution.js";
 import { createTraceRunSession } from "./trace-run-session.js";
+import type { PrefixChain } from "../domain/prefix-chain.js";
+import { executeToolChain } from "./tool-execution.js";
+
+const INCLUDE_STACK_ENV = "RUNDOWN_INCLUDE_STACK";
 
 // Normalized emitter signature used across dispatch helpers.
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -75,6 +79,7 @@ export async function dispatchTaskExecution(params: {
   memoryCapturePrefix?: "memory" | "memorize" | "remember" | "inventory";
   toolName?: string;
   toolPayload?: string;
+  prefixChain?: PrefixChain;
   task: Task;
   prompt: string;
   expandedContextBefore: string;
@@ -109,6 +114,7 @@ export async function dispatchTaskExecution(params: {
     memoryCapturePrefix,
     toolName,
     toolPayload,
+    prefixChain,
     task,
     prompt,
     expandedContextBefore,
@@ -162,6 +168,104 @@ export async function dispatchTaskExecution(params: {
       emit({ kind: "stderr", text: stderr });
     }
   };
+
+  // Unified prefix chain dispatch: when a prefix chain with tools is detected,
+  // route through the tool execution pipeline instead of legacy intent branches.
+  if (prefixChain && (prefixChain.handler || prefixChain.modifiers.length > 0)) {
+    if (mode === "detached" && prefixChain.handler) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage:
+          "Tool-handled tasks do not support detached mode because worker output is required.",
+        executionFailureRunReason: "Tool-handled task cannot run in detached mode.",
+        executionFailureExitCode: 1,
+      };
+    }
+
+    const source = dependencies.fileSystem.readText(task.file);
+    const toolContext: import("../domain/ports/tool-handler-port.js").ToolHandlerContext = {
+      task,
+      payload: prefixChain.remainingText,
+      source,
+      contextBefore: expandedContextBefore,
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      emit,
+      configDir: dependencies.configDir?.configDir,
+      workerExecutor: dependencies.workerExecutor,
+      workerPattern: selectedWorkerPattern,
+      workerCommand: selectedWorkerCommand,
+      mode,
+      trace,
+      cwd: dependencies.workingDirectory.cwd(),
+      executionEnv,
+      artifactContext,
+      keepArtifacts,
+      templateVars: {
+        task: task.text,
+        payload: prefixChain.remainingText,
+        file: task.file,
+        context: expandedContextBefore,
+        taskIndex: task.index,
+        taskLine: task.line,
+        source,
+        ...buildTaskHierarchyTemplateVars(task),
+      } satisfies TemplateVars,
+      showAgentOutput,
+    };
+
+    const executePhaseTrace = traceRunSession.beginPhase("execute", selectedWorkerCommand);
+    const chainResult = await executeToolChain(prefixChain, toolContext, emit);
+
+    if (chainResult.kind === "execution-failed") {
+      traceRunSession.completePhase(executePhaseTrace, chainResult.executionFailureExitCode ?? 1, "", "", true);
+      return chainResult;
+    }
+
+    if (chainResult.kind === "tool-handled") {
+      if (chainResult.childFile) {
+        const includeExecution = await runIncludedFile({
+          dependencies,
+          task,
+          childFile: chainResult.childFile,
+          artifactContext,
+          keepArtifacts,
+          executionEnv,
+          selectedWorkerCommand,
+          showAgentOutput,
+          ignoreCliBlock,
+          verify,
+          noRepair,
+          repairAttempts,
+          emitExecutionWorkerOutput,
+        });
+
+        if (!includeExecution.ok) {
+          traceRunSession.completePhase(executePhaseTrace, includeExecution.exitCode ?? 1, "", "", true);
+          return {
+            kind: "execution-failed",
+            executionFailureMessage: includeExecution.message,
+            executionFailureRunReason: includeExecution.reason,
+            executionFailureExitCode: includeExecution.exitCode,
+          };
+        }
+      }
+
+      traceRunSession.completePhase(executePhaseTrace, 0, "", "", true);
+      return {
+        kind: "ready-for-completion",
+        shouldVerify: chainResult.shouldVerify && shouldVerify,
+        cliExecutionOptionsForVerification: cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+        toolExpansionInsertedChildCount: chainResult.childTaskCount > 0 ? chainResult.childTaskCount : undefined,
+      };
+    }
+
+    // chainResult.kind === "modifiers-only" — fall through to default execution
+    // with any modifier-applied context (e.g. profile override).
+    traceRunSession.completePhase(executePhaseTrace, 0, "", "", true);
+  }
 
   const isMemoryCaptureTask = taskIntent === "memory-capture";
   const isToolExpansionTask = taskIntent === "tool-expansion";
@@ -236,7 +340,7 @@ export async function dispatchTaskExecution(params: {
     }
 
     const resolvedTool = dependencies.toolResolver?.resolve(toolName);
-    if (!resolvedTool) {
+    if (!resolvedTool || !resolvedTool.template) {
       return {
         kind: "execution-failed",
         executionFailureMessage: "Unable to resolve tool template: " + toolName,
@@ -391,6 +495,172 @@ export async function dispatchTaskExecution(params: {
     verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
     verificationFailureRunReason: "Verification failed after all repair attempts.",
   };
+}
+
+function runIncludedFile(params: {
+  dependencies: RunTaskDependencies;
+  task: Task;
+  childFile: string;
+  artifactContext: ArtifactRunContext;
+  keepArtifacts: boolean;
+  executionEnv?: Record<string, string>;
+  selectedWorkerCommand: string[];
+  showAgentOutput: boolean;
+  ignoreCliBlock: boolean;
+  verify: boolean;
+  noRepair: boolean;
+  repairAttempts: number;
+  emitExecutionWorkerOutput: (stdout: string, stderr: string) => void;
+}): Promise<
+  | { ok: true }
+  | { ok: false; message: string; reason: string; exitCode: number | null }
+> {
+  const {
+    dependencies,
+    task,
+    childFile,
+    artifactContext,
+    keepArtifacts,
+    executionEnv,
+    selectedWorkerCommand,
+    showAgentOutput,
+    ignoreCliBlock,
+    verify,
+    noRepair,
+    repairAttempts,
+    emitExecutionWorkerOutput,
+  } = params;
+
+  return (async () => {
+    const resolvedCurrentFile = dependencies.pathOperations.resolve(task.file);
+    const resolvedIncludedFile = dependencies.pathOperations.resolve(childFile);
+    const currentFile = normalizeIncludePath(resolvedCurrentFile);
+    const includedFile = normalizeIncludePath(resolvedIncludedFile);
+    const includeStack = parseIncludeStack(executionEnv?.[INCLUDE_STACK_ENV] ?? process.env[INCLUDE_STACK_ENV]);
+
+    if (includedFile === currentFile) {
+      return {
+        ok: false as const,
+        message: "Include cycle detected: task includes itself (" + task.file + ").",
+        reason: "Include cycle detected (direct self-include).",
+        exitCode: 1,
+      };
+    }
+
+    if (includeStack.includes(currentFile)) {
+      const cyclePath = [...includeStack, currentFile]
+        .map((entry) => entry.replaceAll("\\", "/"))
+        .join(" -> ");
+      return {
+        ok: false as const,
+        message: "Include cycle detected: " + cyclePath,
+        reason: "Include cycle detected (indirect recursion).",
+        exitCode: 1,
+      };
+    }
+
+    if (includeStack.includes(includedFile)) {
+      const cyclePath = [...includeStack, currentFile, includedFile]
+        .map((entry) => entry.replaceAll("\\", "/"))
+        .join(" -> ");
+      return {
+        ok: false as const,
+        message: "Include cycle detected: " + cyclePath,
+        reason: "Include cycle detected (indirect recursion).",
+        exitCode: 1,
+      };
+    }
+
+    const nestedIncludeStack = [...includeStack, currentFile];
+    const nestedExecutionEnv: Record<string, string> = {
+      ...(executionEnv ?? {}),
+      [INCLUDE_STACK_ENV]: JSON.stringify(nestedIncludeStack),
+    };
+
+    const clonedIncludedFile = cloneIncludedFileToArtifacts({
+      dependencies,
+      includedFilePath: resolvedIncludedFile,
+      artifactContext,
+    });
+
+    const includeRunResult = await dependencies.workerExecutor.executeRundownTask(
+      "run",
+      [clonedIncludedFile, "--all"],
+      dependencies.workingDirectory.cwd(),
+      {
+        env: nestedExecutionEnv,
+        artifactContext,
+        keepArtifacts,
+        artifactExtra: {
+          taskType: "include",
+          includeSource: currentFile,
+          includeTarget: includedFile,
+        },
+        parentWorkerCommand: selectedWorkerCommand,
+        parentKeepArtifacts: keepArtifacts,
+        parentShowAgentOutput: showAgentOutput,
+        parentIgnoreCliBlock: ignoreCliBlock,
+        parentVerify: verify,
+        parentNoRepair: noRepair,
+        parentRepairAttempts: repairAttempts,
+      },
+    );
+
+    emitExecutionWorkerOutput(includeRunResult.stdout, includeRunResult.stderr);
+
+    if (includeRunResult.exitCode !== 0 && includeRunResult.exitCode !== null) {
+      return {
+        ok: false as const,
+        message: "Included file execution failed with code " + includeRunResult.exitCode + ": " + includedFile,
+        reason: "Included file execution failed.",
+        exitCode: includeRunResult.exitCode,
+      };
+    }
+
+    return { ok: true as const };
+  })();
+}
+
+function cloneIncludedFileToArtifacts(params: {
+  dependencies: RunTaskDependencies;
+  includedFilePath: string;
+  artifactContext: ArtifactRunContext;
+}): string {
+  const { dependencies, includedFilePath, artifactContext } = params;
+  const includesDir = dependencies.pathOperations.join(artifactContext.rootDir, "includes");
+  dependencies.fileSystem.mkdir(includesDir, { recursive: true });
+
+  const sanitizedFileName = includedFilePath
+    .replaceAll("\\", "_")
+    .replaceAll("/", "_")
+    .replaceAll(":", "_");
+  const clonedFilePath = dependencies.pathOperations.join(includesDir, sanitizedFileName);
+  const sourceContent = dependencies.fileSystem.readText(includedFilePath);
+  dependencies.fileSystem.writeText(clonedFilePath, sourceContent);
+
+  return clonedFilePath;
+}
+
+function parseIncludeStack(raw: string | undefined): string[] {
+  if (!raw || raw.trim().length === 0) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .map((entry) => normalizeIncludePath(entry));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeIncludePath(filePath: string): string {
+  return filePath.replaceAll("/", "\\").toLowerCase();
 }
 
 function persistMemoryCaptureOutput(params: {

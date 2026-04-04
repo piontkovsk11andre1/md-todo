@@ -7,7 +7,7 @@ This lets you:
 - define a default worker so you do not need `--worker` on every command,
 - set per-command worker overrides (`run`, `plan`, `discuss`, `research`, `reverify`, `verify`, `memory`, `tools.<toolName>`),
 - define named profiles (for model or other worker args),
-- apply profiles from file frontmatter or directive parent list items,
+- apply profiles from file frontmatter, directive parent list items, or `profile:` prefix modifiers,
 - override everything from the CLI when needed.
 
 ## Config file
@@ -91,7 +91,7 @@ Section behavior:
 - `defaults`: global baseline for all commands.
 - `commands.<name>`: override/extend defaults for one command (for example `plan`, `verify`, or `memory`).
 - `commands.tools.<toolName>`: override/extend defaults for one tool-expansion prefix task (for example `tools.post-on-gitea`).
-- `profiles.<name>`: named reusable profile values, selected from frontmatter or directives.
+- `profiles.<name>`: named reusable profile values, selected from frontmatter, directives, or prefix modifiers.
 
 ## Resolution cascade
 
@@ -101,7 +101,8 @@ Worker resolution applies this precedence (lowest to highest):
 2. `config.commands.<command>`
 3. file frontmatter `profile: <name>`
 4. directive parent `profile: <name>`
-5. CLI `--worker` / `-- <command>`
+5. prefix modifier `profile: <name>`
+6. CLI `--worker` / `-- <command>`
 
 Notes:
 
@@ -164,9 +165,43 @@ Colon prefixes on checkbox text are also supported for verify-only intent:
 - [ ] verify: docs are up to date
 ```
 
+## Unified prefix tool chain
+
+Checkbox task prefixes now resolve through one tool pipeline.
+
+General form:
+
+```markdown
+- [ ] <tool-name>: <payload>
+```
+
+Prefix chains compose modifiers and a terminal handler:
+
+```markdown
+- [ ] profile: fast, verify: release checks pass
+- [ ] profile: complex; memory: capture migration constraints
+```
+
+Composition rules:
+
+- segments split on `, ` or `; ` only when the next segment starts with a known tool prefix,
+- modifier tools apply left-to-right and patch context,
+- handler tools are terminal and execute the task behavior,
+- when a chain has only modifiers (for example `profile: fast`), rundown runs default execute+verify with modified context.
+
+Built-in handler aliases:
+
+- verify-only: `verify:`, `confirm:`, `check:`
+- memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- include task file: `include:`
+
+Built-in modifier:
+
+- `profile:`
+
 ## Tool templates
 
-Custom tool prefixes are discovered from Markdown templates in `<config-dir>/tools/`.
+Custom tool prefixes are discovered from configured tool directories.
 
 Layout:
 
@@ -178,7 +213,16 @@ Layout:
     summarize.md
 ```
 
-A task that starts with `<tool-name>:` is treated as a tool-expansion task when the matching template file exists.
+You can customize lookup locations with `toolDirs` in `config.json`.
+Directories are resolved relative to `<config-dir>` unless absolute, and are searched in listed order.
+
+```json
+{
+  "toolDirs": ["tools", "shared-tools"]
+}
+```
+
+A task that starts with `<tool-name>:` resolves as a tool when a matching `.js` or `.md` tool exists.
 
 ```markdown
 - [ ] post-on-gitea: open an issue for failed login callback handling
@@ -191,10 +235,15 @@ Template variables:
 
 Resolution and precedence:
 
-- Built-in prefixes are evaluated first (`verify:`/`confirm:`/`check:`, memory aliases, `cli:`, `rundown:`).
-- Tool names are resolved against `<config-dir>/tools/<name>.md`.
+- Project `.js` tools in `toolDirs` are checked first and can override built-ins.
+- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, `include:`, `profile:`).
+- Project `.md` tools are checked after built-ins (for non-built-in tool names).
 - Unknown prefixes do not error; they fall back to normal task execution.
-- Empty tool payload is invalid and fails fast.
+- Empty payload for handler tools is invalid and fails fast.
+
+Special parser-level prefixes:
+
+- `cli:` and `rundown:` are handled directly by rundown and do not go through tool resolution.
 
 Bracket prefixes (`[verify]`, `[confirm]`, `[check]`) are not supported.
 

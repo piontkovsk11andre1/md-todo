@@ -67,6 +67,8 @@ export interface InlineCliExecutionOptions {
  * child runs can preserve behavior and inheritance semantics.
  */
 export interface RundownTaskExecutionOptions {
+  // Optional additional environment variables for delegated rundown execution.
+  env?: Record<string, string>;
   // Optional context object recorded alongside artifacts.
   artifactContext?: unknown;
   // Keeps generated artifacts when true.

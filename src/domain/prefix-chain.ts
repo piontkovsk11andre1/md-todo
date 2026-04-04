@@ -1,0 +1,156 @@
+import type { ToolResolverPort, ToolDefinition } from "./ports/tool-resolver-port.js";
+
+/**
+ * A single resolved segment in a prefix chain.
+ */
+export interface PrefixSegment {
+  tool: ToolDefinition;
+  payload: string;
+}
+
+/**
+ * Parsed prefix chain extracted from a task's text.
+ *
+ * Modifiers are context-patching tools applied left-to-right before the handler.
+ * The handler is the terminal tool that performs the actual task action.
+ * When no tool prefixes are detected the chain is empty and `remainingText`
+ * holds the full original task text.
+ */
+export interface PrefixChain {
+  modifiers: PrefixSegment[];
+  handler?: PrefixSegment;
+  remainingText: string;
+}
+
+/**
+ * Extracts the first `toolName:` prefix from text, if it resolves to a known tool.
+ */
+function extractLeadingTool(
+  text: string,
+  toolResolver: ToolResolverPort,
+): { tool: ToolDefinition; rest: string } | undefined {
+  const colonIndex = text.indexOf(":");
+  if (colonIndex <= 0) {
+    return undefined;
+  }
+
+  const candidate = text.slice(0, colonIndex).trim();
+  if (candidate.length === 0) {
+    return undefined;
+  }
+
+  const tool = toolResolver.resolve(candidate);
+  if (!tool) {
+    return undefined;
+  }
+
+  return {
+    tool,
+    rest: text.slice(colonIndex + 1).trim(),
+  };
+}
+
+function getKnownToolNameSet(toolResolver: ToolResolverPort): Set<string> {
+  return new Set(
+    toolResolver.listKnownToolNames()
+      .map((toolName) => toolName.trim().toLowerCase())
+      .filter((toolName) => toolName.length > 0),
+  );
+}
+
+/**
+ * Splits text at `, ` or `; ` boundaries only when the segment after the
+ * delimiter starts with a known tool prefix (`toolName:`).
+ *
+ * Returns an array of raw text segments preserving internal commas/semicolons
+ * that are not followed by a recognized tool name.
+ */
+function splitAtToolBoundaries(
+  text: string,
+  knownToolNames: ReadonlySet<string>,
+): string[] {
+  const segments: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    let bestSplitIndex = -1;
+
+    // Scan for `, ` or `; ` delimiters where the next word before `:` is a tool.
+    for (let i = 0; i < remaining.length - 1; i++) {
+      const ch = remaining[i];
+      if ((ch === "," || ch === ";") && remaining[i + 1] === " ") {
+        const after = remaining.slice(i + 2).trimStart();
+        const colonIdx = after.indexOf(":");
+        if (colonIdx > 0) {
+          const candidate = after.slice(0, colonIdx).trim();
+          if (candidate.length > 0 && knownToolNames.has(candidate.toLowerCase())) {
+            bestSplitIndex = i;
+            break;
+          }
+        }
+      }
+    }
+
+    if (bestSplitIndex === -1) {
+      segments.push(remaining);
+      break;
+    }
+
+    segments.push(remaining.slice(0, bestSplitIndex).trim());
+    remaining = remaining.slice(bestSplitIndex + 2).trimStart();
+  }
+
+  return segments;
+}
+
+/**
+ * Parses a task's text into a prefix chain of modifier and handler tools.
+ *
+ * Supports:
+ * - Single prefix:    `verify: tests pass`
+ * - Chained prefixes: `profile: fast, verify: tests pass`
+ * - Mixed delimiters: `profile: fast; memory: capture notes`
+ * - No prefix:        `plain task text` → empty chain
+ *
+ * Modifiers accumulate left-to-right. The first handler tool encountered
+ * becomes the terminal handler; any text after it is the handler payload.
+ * If no handler is found, the remaining text becomes the default task text.
+ */
+export function parsePrefixChain(taskText: string, toolResolver?: ToolResolverPort): PrefixChain {
+  const trimmed = taskText.trim();
+
+  if (!toolResolver) {
+    return { modifiers: [], remainingText: trimmed };
+  }
+
+  const knownToolNames = getKnownToolNameSet(toolResolver);
+  const segments = splitAtToolBoundaries(trimmed, knownToolNames);
+  const modifiers: PrefixSegment[] = [];
+  let handler: PrefixSegment | undefined;
+  let remainingText = trimmed;
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i];
+    const extracted = extractLeadingTool(segment, toolResolver);
+
+    if (!extracted) {
+      // Not a tool — treat the rest (this segment + remaining segments) as plain text.
+      remainingText = segments.slice(i).join(", ");
+      break;
+    }
+
+    if (extracted.tool.kind === "modifier") {
+      modifiers.push({ tool: extracted.tool, payload: extracted.rest });
+      // If this is the last segment, remaining text is empty.
+      remainingText = "";
+      continue;
+    }
+
+    // Handler tool — terminal. Payload includes only this segment's rest.
+    handler = { tool: extracted.tool, payload: extracted.rest };
+    remainingText = extracted.rest;
+    break;
+  }
+
+  return { modifiers, handler, remainingText };
+}

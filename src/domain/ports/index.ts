@@ -108,5 +108,15 @@ export type { TemplateVarsLoaderPort } from "./template-vars-loader-port.js";
 /** Tool template resolution contracts for prefix-driven expansions. */
 export type { ToolDefinition, ToolResolverPort } from "./tool-resolver-port.js";
 
+/** Tool handler types for unified prefix-chain execution. */
+export type {
+  ToolKind,
+  ToolFrontmatter,
+  ToolContextModifications,
+  ToolHandlerResult,
+  ToolHandlerContext,
+  ToolHandlerFn,
+} from "./tool-handler-port.js";
+
 /** Trace writer contract used for structured execution telemetry. */
 export type { TraceWriterPort } from "./trace-writer-port.js";

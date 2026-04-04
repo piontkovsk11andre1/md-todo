@@ -57,6 +57,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
      */
     async executeRundownTask(subcommand, args, cwd, options): Promise<WorkerRunResult> {
       return executeRundownTask(subcommand, args, cwd, {
+        env: options?.env,
         // Keep artifact handling consistent with other adapter execution paths.
         artifactContext: options?.artifactContext as RuntimeArtifactsContext | undefined,
         keepArtifacts: options?.keepArtifacts,

@@ -6,6 +6,7 @@ import { dispatchTaskExecution } from "../../src/application/task-execution-disp
 import { completeTaskIteration } from "../../src/application/complete-task-iteration.js";
 import { runTraceEnrichment } from "../../src/application/trace-enrichment.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
+import { includeHandler } from "../../src/domain/builtin-tools/include.js";
 import * as verifyRepairLoopModule from "../../src/application/verify-repair-loop.js";
 import * as runLifecycleModule from "../../src/application/run-lifecycle.js";
 import * as checkboxOperationsModule from "../../src/application/checkbox-operations.js";
@@ -610,6 +611,366 @@ describe("task-execution-dispatch", () => {
     });
 
     expect(result).toEqual({ kind: "detached" });
+  });
+
+  it("fails include tool execution on direct self-include cycles", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "include: ./tasks.md");
+    const resolvedTaskFile = path.resolve(task.file);
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] include: ./tasks.md\n",
+      [resolvedTaskFile]: "- [ ] include: ./tasks.md\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      prefixChain: {
+        modifiers: [],
+        handler: {
+          tool: {
+            name: "include",
+            kind: "handler",
+            handler: includeHandler,
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          },
+          payload: "./tasks.md",
+        },
+        remainingText: "./tasks.md",
+      },
+      task,
+      prompt: "unused",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      trace: false,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("execution-failed");
+    if (result.kind === "execution-failed") {
+      expect(result.executionFailureMessage).toContain("Include cycle detected");
+      expect(result.executionFailureRunReason).toBe("Include cycle detected (direct self-include).");
+      expect(result.executionFailureExitCode).toBe(1);
+    }
+    expect(dependencies.workerExecutor.executeRundownTask).not.toHaveBeenCalled();
+  });
+
+  it("executes include tasks from cloned artifact copies without mutating the source include file", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "include: ./child.md");
+    const childFile = path.join(cwd, "child.md");
+    const resolvedTaskFile = path.resolve(task.file);
+    const resolvedChildFile = path.resolve(childFile);
+    const originalChildSource = "- [ ] Ship child\n";
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] include: ./child.md\n",
+      [childFile]: originalChildSource,
+      [resolvedTaskFile]: "- [ ] include: ./child.md\n",
+      [resolvedChildFile]: originalChildSource,
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.workerExecutor.executeRundownTask = vi.fn(async (_subcommand, args) => {
+      const delegatedFile = args[0];
+      if (typeof delegatedFile === "string") {
+        const delegatedSource = fileSystem.readText(delegatedFile);
+        fileSystem.writeText(delegatedFile, delegatedSource + "- [x] mutated clone only\n");
+      }
+
+      return {
+        exitCode: 0,
+        stdout: "include ok",
+        stderr: "",
+      };
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      prefixChain: {
+        modifiers: [],
+        handler: {
+          tool: {
+            name: "include",
+            kind: "handler",
+            handler: includeHandler,
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          },
+          payload: "./child.md",
+        },
+        remainingText: "./child.md",
+      },
+      task,
+      prompt: "unused",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      trace: false,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("ready-for-completion");
+    expect(dependencies.workerExecutor.executeRundownTask).toHaveBeenCalledTimes(1);
+    const executeCallArgs = vi.mocked(dependencies.workerExecutor.executeRundownTask).mock.calls[0];
+    const delegatedRunArgs = executeCallArgs[1];
+    const clonedIncludePath = delegatedRunArgs[0];
+    expect((clonedIncludePath as string).split("\\").join("/"))
+      .toContain("/workspace/.rundown/runs/run-dispatch/includes/");
+    expect(clonedIncludePath).not.toBe(resolvedChildFile);
+    expect(fileSystem.readText(clonedIncludePath as string)).toContain("mutated clone only");
+    expect(fileSystem.readText(resolvedChildFile)).toBe(originalChildSource);
+  });
+
+  it("fails include tool execution on indirect include cycles from include stack", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "include: ./child.md");
+    const childFile = path.join(cwd, "child.md");
+    const resolvedTaskFile = path.resolve(task.file);
+    const resolvedChildFile = path.resolve(childFile);
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] include: ./child.md\n",
+      [childFile]: "- [ ] Ship child\n",
+      [resolvedTaskFile]: "- [ ] include: ./child.md\n",
+      [resolvedChildFile]: "- [ ] Ship child\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      prefixChain: {
+        modifiers: [],
+        handler: {
+          tool: {
+            name: "include",
+            kind: "handler",
+            handler: includeHandler,
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          },
+          payload: "./child.md",
+        },
+        remainingText: "./child.md",
+      },
+      task,
+      prompt: "unused",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      trace: false,
+      executionEnv: {
+        RUNDOWN_INCLUDE_STACK: JSON.stringify([resolvedChildFile]),
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("execution-failed");
+    if (result.kind === "execution-failed") {
+      expect(result.executionFailureMessage).toContain("Include cycle detected");
+      expect(result.executionFailureRunReason).toBe("Include cycle detected (indirect recursion).");
+      expect(result.executionFailureExitCode).toBe(1);
+    }
+    expect(dependencies.workerExecutor.executeRundownTask).not.toHaveBeenCalled();
+  });
+
+  it("fails include tool execution when current file already appears in include stack", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "include: ./child.md");
+    const childFile = path.join(cwd, "child.md");
+    const resolvedTaskFile = path.resolve(task.file);
+    const resolvedChildFile = path.resolve(childFile);
+    const parentFile = path.join(cwd, "parent.md");
+    const resolvedParentFile = path.resolve(parentFile);
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] include: ./child.md\n",
+      [childFile]: "- [ ] Ship child\n",
+      [parentFile]: "- [ ] include: ./tasks.md\n",
+      [resolvedTaskFile]: "- [ ] include: ./child.md\n",
+      [resolvedChildFile]: "- [ ] Ship child\n",
+      [resolvedParentFile]: "- [ ] include: ./tasks.md\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      prefixChain: {
+        modifiers: [],
+        handler: {
+          tool: {
+            name: "include",
+            kind: "handler",
+            handler: includeHandler,
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          },
+          payload: "./child.md",
+        },
+        remainingText: "./child.md",
+      },
+      task,
+      prompt: "unused",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      trace: false,
+      executionEnv: {
+        RUNDOWN_INCLUDE_STACK: JSON.stringify([resolvedParentFile, resolvedTaskFile]),
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("execution-failed");
+    if (result.kind === "execution-failed") {
+      expect(result.executionFailureMessage).toContain("Include cycle detected");
+      expect(result.executionFailureRunReason).toBe("Include cycle detected (indirect recursion).");
+      expect(result.executionFailureExitCode).toBe(1);
+    }
+    expect(dependencies.workerExecutor.executeRundownTask).not.toHaveBeenCalled();
   });
 
   it("keeps default worker stdout/stderr hidden when show-agent-output is disabled while preserving lifecycle status", async () => {

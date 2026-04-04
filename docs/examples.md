@@ -354,3 +354,22 @@ Useful flags:
 
 - `--ignore-cli-block` keeps `cli` blocks unexpanded (safe for review and dry inspection).
 - `--cli-block-timeout 60000` increases command timeout to 60 seconds.
+
+## 19. Unified prefix composition
+
+Markdown:
+
+```md
+- [ ] verify: release checklist is complete
+- [ ] profile: fast, verify: docs examples are accurate
+- [ ] profile: complex; memory: capture migration assumptions
+- [ ] include: ./release-subtasks.md
+```
+
+What happens:
+
+1. `verify:` / `confirm:` / `check:` run verify-only behavior.
+2. `memory:` / `memorize:` / `remember:` / `inventory:` run capture + persist, then verify.
+3. `profile:` applies as a modifier and composes with downstream handler tools.
+4. `include:` executes tasks from a cloned artifacts copy of the target markdown file and auto-checks include on success.
+5. Unknown prefixes are treated as normal task text and do not fail resolution.

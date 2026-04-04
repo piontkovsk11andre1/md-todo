@@ -688,6 +688,82 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
   });
 
+  it("run keeps directive-based profile behavior for verify tasks during migration", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(
+      path.join(workspace, "roadmap.md"),
+      [
+        "- profile: legacy",
+        "  - [ ] verify: release docs are consistent",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
+      defaults: {
+        worker: ["opencode", "run"],
+      },
+      profiles: {
+        legacy: {
+          workerArgs: ["--profile", "legacy-directive"],
+        },
+        modern: {
+          workerArgs: ["--profile", "modern-prefix"],
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--dry-run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("would run verification with: opencode run --profile legacy-directive"))).toBe(true);
+  });
+
+  it("run prefers prefix-based profile over directive-based profile during migration", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(
+      path.join(workspace, "roadmap.md"),
+      [
+        "- profile: legacy",
+        "  - [ ] profile: modern, verify: release docs are consistent",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
+      defaults: {
+        worker: ["opencode", "run"],
+      },
+      profiles: {
+        legacy: {
+          workerArgs: ["--profile", "legacy-directive"],
+        },
+        modern: {
+          workerArgs: ["--profile", "modern-prefix"],
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--dry-run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(
+      result.logs.some(
+        (line) => line.includes("would run verification with: opencode run --profile legacy-directive --profile modern-prefix"),
+      ),
+    ).toBe(true);
+  });
+
   it("do is registered and rejects non-wait modes before execution", async () => {
     const workspace = makeTempWorkspace();
 

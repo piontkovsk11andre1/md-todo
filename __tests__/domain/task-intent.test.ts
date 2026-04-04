@@ -4,6 +4,7 @@ import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port
 
 const noToolResolver: ToolResolverPort = {
   resolve: () => undefined,
+  listKnownToolNames: () => [],
 };
 
 describe("classifyTaskIntent", () => {
@@ -126,10 +127,12 @@ describe("classifyTaskIntent", () => {
       resolve: (toolName) => toolName === "post-on-gitea"
         ? {
           name: "post-on-gitea",
+          kind: "handler",
           templatePath: "/workspace/.rundown/tools/post-on-gitea.md",
           template: "Request: {{payload}}",
         }
         : undefined,
+      listKnownToolNames: () => ["post-on-gitea"],
     };
 
     const decision = classifyTaskIntent("post-on-gitea: file auth issue", toolResolver);
@@ -144,9 +147,11 @@ describe("classifyTaskIntent", () => {
     const toolResolver: ToolResolverPort = {
       resolve: () => ({
         name: "summarize",
+        kind: "handler",
         templatePath: "/workspace/.rundown/tools/summarize.md",
         template: "{{payload}}",
       }),
+      listKnownToolNames: () => ["summarize"],
     };
 
     const decision = classifyTaskIntent("summarize:   ", toolResolver);
@@ -166,9 +171,11 @@ describe("classifyTaskIntent", () => {
     const toolResolver: ToolResolverPort = {
       resolve: () => ({
         name: "verify",
+        kind: "handler",
         templatePath: "/workspace/.rundown/tools/verify.md",
         template: "{{payload}}",
       }),
+      listKnownToolNames: () => ["verify"],
     };
 
     const decision = classifyTaskIntent("verify: confirm release", toolResolver);
@@ -180,9 +187,11 @@ describe("classifyTaskIntent", () => {
     const toolResolver: ToolResolverPort = {
       resolve: () => ({
         name: "memory",
+        kind: "handler",
         templatePath: "/workspace/.rundown/tools/memory.md",
         template: "{{payload}}",
       }),
+      listKnownToolNames: () => ["memory"],
     };
 
     const decision = classifyTaskIntent("memory: capture context", toolResolver);

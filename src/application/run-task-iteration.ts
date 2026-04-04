@@ -128,6 +128,22 @@ interface IterationLifecycle {
   resetArtifacts: () => void;
 }
 
+function extractPrefixModifierProfile(prefixChain: ReturnType<typeof resolveIterationVerificationMode>["prefixChain"]): string | undefined {
+  let resolvedProfile: string | undefined;
+  for (const modifier of prefixChain.modifiers) {
+    if (modifier.tool.name.toLowerCase() !== "profile") {
+      continue;
+    }
+
+    const profileName = modifier.payload.trim();
+    if (profileName.length > 0) {
+      resolvedProfile = profileName;
+    }
+  }
+
+  return resolvedProfile;
+}
+
 /**
  * Emits execution failure details, runs failure hooks, and finalizes the run as failed.
  */
@@ -186,7 +202,7 @@ export async function runTaskIteration(params: {
   const { source, fileSource, files, task } = context;
 
   // Decide whether this iteration should execute, verify, or do both.
-  const { onlyVerify, shouldVerify, taskIntentDecision } = resolveIterationVerificationMode({
+  const { onlyVerify, shouldVerify, taskIntentDecision, prefixChain } = resolveIterationVerificationMode({
     configuredOnlyVerify: verifyConfig.configuredOnlyVerify,
     configuredShouldVerify: verifyConfig.configuredShouldVerify,
     forceExecute: execution.forceExecute,
@@ -220,12 +236,14 @@ export async function runTaskIteration(params: {
 
   // Announce the next task before any execution or validation occurs.
   emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
+  const modifierProfile = extractPrefixModifierProfile(prefixChain);
   // Resolve the effective worker command using CLI, config, and task metadata.
   const resolvedWorker = resolveWorkerPatternForInvocation({
     commandName: "run",
     workerConfig: worker.loadedWorkerConfig,
     source: fileSource,
     task: taskForExecution,
+    modifierProfile,
     cliWorkerPattern: worker.workerPattern,
     taskIntent: taskIntentDecision.intent,
     toolName: taskIntentDecision.toolName,
@@ -375,6 +393,7 @@ export async function runTaskIteration(params: {
     memoryCapturePrefix: taskIntentDecision.memoryCapturePrefix,
     toolName: taskIntentDecision.toolName,
     toolPayload: taskIntentDecision.toolPayload,
+    prefixChain,
     task: taskForExecution,
     prompt: preparedPrompts.prompt,
     expandedContextBefore: preparedPrompts.expandedContextBefore,

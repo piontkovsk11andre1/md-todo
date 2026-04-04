@@ -18,6 +18,7 @@ interface ResolveWorkerForInvocationInput {
   workerConfig: WorkerConfig | undefined;
   source: string;
   task?: Pick<Task, "directiveProfile" | "taskProfile" | "subItems">;
+  modifierProfile?: string;
   cliWorkerCommand: string[];
   fallbackWorkerCommand?: string[];
   emit?: ApplicationOutputPort["emit"];
@@ -30,6 +31,7 @@ interface ResolveWorkerPatternForInvocationInput {
   workerConfig: WorkerConfig | undefined;
   source: string;
   task?: Pick<Task, "directiveProfile" | "taskProfile" | "subItems">;
+  modifierProfile?: string;
   cliWorkerPattern?: ParsedWorkerPattern;
   fallbackWorkerCommand?: string[];
   emit?: ApplicationOutputPort["emit"];
@@ -76,6 +78,11 @@ function hasWorkerProfileValues(profile: WorkerProfile | undefined): boolean {
  * Describes which configuration source selected the resolved worker command.
  */
 function describeConfigResolutionSource(input: ResolveWorkerForInvocationInput, frontmatterProfile: string | undefined): string | undefined {
+  const modifierProfile = normalizeProfileName(input.modifierProfile);
+  if (modifierProfile) {
+    return `profile "${modifierProfile}" via prefix modifier`;
+  }
+
   const directiveProfile = normalizeProfileName(input.task?.directiveProfile);
   if (directiveProfile) {
     return `profile "${directiveProfile}" via directive`;
@@ -135,7 +142,8 @@ export function resolveWorkerForInvocation(input: ResolveWorkerForInvocationInpu
     input.commandName,
     frontmatterProfile,
     input.task?.directiveProfile,
-    supportsInlineTaskProfile ? input.task?.taskProfile : undefined,
+    normalizeProfileName(input.modifierProfile)
+      ?? (supportsInlineTaskProfile ? input.task?.taskProfile : undefined),
     hasCliWorkerCommand ? input.cliWorkerCommand : undefined,
     intentCommandName,
   );
@@ -187,6 +195,7 @@ export function resolveWorkerPatternForInvocation(
     workerConfig: input.workerConfig,
     source: input.source,
     task: input.task,
+    modifierProfile: input.modifierProfile,
     cliWorkerCommand,
     fallbackWorkerCommand: input.fallbackWorkerCommand,
     emit: input.emit,

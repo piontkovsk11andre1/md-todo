@@ -176,6 +176,37 @@ Example:
 
 If a CLI command is written in a saved Markdown file, `rundown` treats that as explicit permission to run it.
 
+## Unified tool prefixes
+
+Most checkbox prefixes resolve through a unified tool pipeline.
+
+Form:
+
+```md
+- [ ] <tool-name>: <payload>
+```
+
+Built-in handler aliases:
+
+- verify-only: `verify:`, `confirm:`, `check:`
+- memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- file composition: `include:`
+
+Built-in modifier:
+
+- `profile:`
+
+Modifier and handler composition:
+
+- `profile: fast, verify: tests pass`
+- `profile: complex; memory: capture design tradeoffs`
+
+Modifiers patch context left-to-right; the terminal handler executes behavior. If only modifiers are present, rundown uses default execute+verify with the modified context.
+
+Special-case forms:
+
+- `cli:` and `rundown:` remain parser-level task forms and do not run through tool resolution.
+
 ## Runner modes
 
 Runner mode controls how the selected task is handed off.

@@ -184,16 +184,17 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
   const taskRepair = overrides.taskRepair
     ?? createTaskRepairAdapter(verificationStore);
   const fileSystem = overrides.fileSystem ?? createNodeFileSystem();
+  const memoryWriter = overrides.memoryWriter ?? createMemoryWriterAdapter({
+    fileSystem,
+    pathOperations,
+  });
   const toolResolver = overrides.toolResolver ?? createToolResolverAdapter({
     fileSystem,
     pathOperations,
     configDir,
+    memoryWriter,
   });
   const memoryResolver = overrides.memoryResolver ?? createMemoryResolverAdapter({
-    fileSystem,
-    pathOperations,
-  });
-  const memoryWriter = overrides.memoryWriter ?? createMemoryWriterAdapter({
     fileSystem,
     pathOperations,
   });

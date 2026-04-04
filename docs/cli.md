@@ -581,18 +581,52 @@ Worker resolution cascade (lowest to highest priority):
 - `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `make`, `discuss`, `research`, `reverify`)
 - Markdown frontmatter `profile: <name>`
 - Parent directive item `- profile: <name>` for child checkbox tasks
+- Prefix modifier `profile: <name>` on the selected checkbox task
 - CLI `--worker` or separator form `-- <command>`
 
 Profile behavior:
 
 - Named profiles are defined under `profiles` in `.rundown/config.json`.
 - A resolved profile contributes `workerArgs`, appended to the resolved base worker command.
-- Verify-only prefixes support colon-only syntax: `verify:`, `confirm:`, `check:`.
-- Memory-capture prefixes support colon syntax: `memory:`, `memorize:`, `remember:`, `inventory:`.
+
+## Unified tool prefixes
+
+Checkbox task prefixes resolve through one tool pipeline.
+
+Task form:
+
+```md
+- [ ] <tool-name>: <payload>
+```
+
+Built-in handler aliases:
+
+- Verify-only: `verify:`, `confirm:`, `check:`
+- Memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- Include markdown file execution: `include:`
+
+Built-in modifier:
+
+- `profile:`
+
+Composition examples:
+
+```md
+- [ ] verify: docs are up to date
+- [ ] profile: fast, verify: tests pass
+- [ ] profile: complex; memory: capture architecture decisions
+```
+
+Composition rules:
+
+- Prefix segments split on `, ` or `; ` only when the next segment starts with a known tool name.
+- Modifier tools apply left-to-right and patch execution context.
+- Handler tools are terminal and run task behavior.
+- Modifier-only chains still run default execution/verification with the patched context.
 
 ## Memory capture prefixes
 
-If a selected task starts with a memory prefix, rundown treats it as a memory-capture task.
+If a selected task starts with a memory prefix, rundown treats it as a memory-capture tool task.
 
 Supported aliases:
 
@@ -627,14 +661,13 @@ Example:
 - [ ] memory: capture release checklist assumptions and deployment caveats
 ```
 
-## Tool expansion prefixes
+## Custom tool prefixes
 
-You can define custom task prefixes by adding Markdown prompt templates under
-`<config-dir>/tools/` (usually `.rundown/tools/`).
+You can define custom task prefixes by adding `.js` handlers or `.md` templates under configured tool directories (`toolDirs` in `config.json`, default `<config-dir>/tools/`).
 
-Each template file name becomes a runnable prefix:
+Each tool file name becomes a runnable prefix:
 
-- `.rundown/tools/post-on-gitea.md` -> `post-on-gitea:`
+- `.rundown/tools/post-on-gitea.js` -> `post-on-gitea:`
 - `.rundown/tools/summarize.md` -> `summarize:`
 
 Task form:
@@ -643,7 +676,7 @@ Task form:
 - [ ] <tool-name>: <payload>
 ```
 
-Execution behavior:
+Execution behavior for `.md` tools:
 
 - Rundown resolves `<tool-name>` to `<config-dir>/tools/<tool-name>.md`.
 - The tool template is rendered with standard task template vars plus `{{payload}}`.
@@ -653,10 +686,14 @@ Execution behavior:
 
 Resolution rules:
 
-- Built-in prefixes win first (`verify:`/`confirm:`/`check:`, memory aliases, `cli:`, `rundown:`).
+- Project `.js` tools are resolved first and can override built-ins.
+- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, `include:`, `profile:`).
+- Project `.md` tools are resolved after built-ins (for non-built-in names).
 - Tool matching is case-insensitive and checks the text before the first `:`.
 - Unknown prefixes fall back to normal `execute-and-verify` behavior.
 - Empty tool payload fails with exit code `1`.
+
+`cli:` and `rundown:` are parser-level task forms and are not resolved through the tool pipeline.
 
 Example:
 
