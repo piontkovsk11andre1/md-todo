@@ -17,6 +17,8 @@ import {
 import { resolveWorkerForInvocation } from "./resolve-worker.js";
 import { isOpenCodeWorkerCommand } from "./run-task.js";
 import {
+  buildRundownVarEnv,
+  formatTemplateVarsForPrompt,
   parseCliTemplateVars,
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
@@ -206,6 +208,11 @@ export function createPlanTask(
         ...fileTemplateVars,
         ...cliTemplateVars,
       };
+      const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+      const templateVarsWithUserVariables: ExtraTemplateVars = {
+        ...extraTemplateVars,
+        userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+      };
 
       // Read the Markdown source that will receive planner TODO insertions.
       let documentSource: string;
@@ -269,7 +276,7 @@ export function createPlanTask(
       const deepPlanTemplate = DEFAULT_DEEP_PLAN_TEMPLATE;
 
       const vars: TemplateVars = {
-        ...extraTemplateVars,
+        ...templateVarsWithUserVariables,
         ...buildMemoryTemplateVars({
           memoryMetadata: dependencies.memoryResolver?.resolve(source) ?? null,
         }),
@@ -297,7 +304,13 @@ export function createPlanTask(
             renderedPrompt,
             cliBlockExecutor,
             cwd,
-            cliExecutionOptionsWithTemplateFailureAbort,
+            {
+              ...cliExecutionOptionsWithTemplateFailureAbort,
+              env: {
+                ...(cliExecutionOptionsWithTemplateFailureAbort?.env ?? {}),
+                ...rundownVarEnv,
+              },
+            },
           );
         } catch (error) {
           if (error instanceof TemplateCliBlockExecutionError) {
@@ -568,15 +581,16 @@ export function createPlanTask(
             message: "Executing planner " + scanLabel + "...",
           });
           const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
-          const runResult = await dependencies.workerExecutor.runWorker({
-            command: [...resolvedWorkerCommand],
-            prompt: scanPrompt,
+            const runResult = await dependencies.workerExecutor.runWorker({
+              command: [...resolvedWorkerCommand],
+              prompt: scanPrompt,
             mode,
             transport,
-            trace,
-            cwd,
-            configDir: dependencies.configDir?.configDir,
-            artifactContext,
+              trace,
+              cwd,
+              env: rundownVarEnv,
+              configDir: dependencies.configDir?.configDir,
+              artifactContext,
             artifactPhase: "plan",
             artifactPhaseLabel: buildPlanScanPhaseLabel(scanIndex, scanCount),
             artifactExtra: {
@@ -702,6 +716,7 @@ export function createPlanTask(
                 transport,
                 trace,
                 cwd,
+                env: rundownVarEnv,
                 configDir: dependencies.configDir?.configDir,
                 artifactContext,
                 artifactPhase: "plan",

@@ -11,6 +11,10 @@ import type {
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import {
+  buildRundownVarEnv,
+  type ExtraTemplateVars,
+} from "../domain/template-vars.js";
+import {
   buildCommitMessage,
   commitCheckedTaskWithGitClient,
   isGitRepoWithGitClient,
@@ -43,6 +47,7 @@ export async function afterTaskFailed(
   source: string,
   onFailCommand: string | undefined,
   hideHookOutput: boolean,
+  extraTemplateVars: ExtraTemplateVars,
 ): Promise<void> {
   if (!onFailCommand) {
     return;
@@ -60,6 +65,7 @@ export async function afterTaskFailed(
       source,
       cwd,
       dependencies.pathOperations,
+      extraTemplateVars,
     );
 
     if (!hideHookOutput && result.stdout) {
@@ -94,6 +100,7 @@ export async function afterTaskComplete(
   commitMessageTemplate: string | undefined,
   onCompleteCommand: string | undefined,
   hideHookOutput: boolean,
+  extraTemplateVars: ExtraTemplateVars,
 ): Promise<Record<string, unknown> | undefined> {
   const cwd = dependencies.workingDirectory.cwd();
   const emit = dependencies.output.emit.bind(dependencies.output);
@@ -139,6 +146,7 @@ export async function afterTaskComplete(
         source,
         cwd,
         dependencies.pathOperations,
+        extraTemplateVars,
       );
 
       if (!hideHookOutput && result.stdout) {
@@ -195,7 +203,10 @@ async function runHookWithProcessRunner(
   source: string,
   cwd: string,
   pathOperations: PathOperationsPort,
+  extraTemplateVars: ExtraTemplateVars,
 ): Promise<{ success: boolean; exitCode: number | null; stdout: string; stderr: string }> {
+  const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+
   try {
     // Execute through the shell to support full user-provided command strings.
     const result = await processRunner.run({
@@ -212,6 +223,7 @@ async function runHookWithProcessRunner(
         RUNDOWN_LINE: String(task.line),
         RUNDOWN_INDEX: String(task.index),
         RUNDOWN_SOURCE: source,
+        ...rundownVarEnv,
       },
     });
 

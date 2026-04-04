@@ -48,6 +48,8 @@ export interface RunnerOptions {
   captureOutput?: boolean;
   /** Working directory for the command. */
   cwd?: string;
+  /** Additional environment variables for the worker process. */
+  env?: Record<string, string>;
   /** Resolved .rundown directory for runtime artifacts. */
   configDir?: string;
   /** Optional shared runtime artifact context. */
@@ -132,7 +134,14 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
   }
 
   try {
-    const result = await executeCommand(cmd, cmdArgs, mode, cwd, options.captureOutput ?? false);
+    const result = await executeCommand(
+      cmd,
+      cmdArgs,
+      mode,
+      cwd,
+      options.captureOutput ?? false,
+      options.env,
+    );
     const outputCaptured = options.captureOutput ?? mode === "wait";
     completeRuntimePhase(phase, {
       exitCode: result.exitCode,
@@ -277,6 +286,7 @@ function executeCommand(
   mode: RunnerMode,
   cwd: string,
   captureOutput: boolean,
+  env?: Record<string, string>,
 ): Promise<RunnerResult> {
   return new Promise((resolve, reject) => {
     if (mode === "tui") {
@@ -285,6 +295,7 @@ function executeCommand(
           stdio: ["inherit", "pipe", "pipe"],
           cwd,
           shell: false,
+          env: env ? { ...process.env, ...env } : process.env,
         });
 
         const stdout: Buffer[] = [];
@@ -316,7 +327,12 @@ function executeCommand(
         const child = spawn(
           "cmd",
           ["/c", "start", "/wait", '""', cmd, ...args],
-          { stdio: "ignore", cwd, shell: false },
+          {
+            stdio: "ignore",
+            cwd,
+            shell: false,
+            env: env ? { ...process.env, ...env } : process.env,
+          },
         );
         child.on("close", (code: number | null) => {
           resolve({ exitCode: code, stdout: "", stderr: "" });
@@ -330,6 +346,7 @@ function executeCommand(
         stdio: "inherit",
         cwd,
         shell: false,
+        env: env ? { ...process.env, ...env } : process.env,
       });
 
       child.on("close", (code: number | null) => {
@@ -345,6 +362,7 @@ function executeCommand(
         cwd,
         shell: false,
         detached: true,
+        env: env ? { ...process.env, ...env } : process.env,
       });
       child.unref();
       resolve({ exitCode: null, stdout: "", stderr: "" });
@@ -356,6 +374,7 @@ function executeCommand(
       stdio: ["inherit", "pipe", "pipe"],
       cwd,
       shell: false,
+      env: env ? { ...process.env, ...env } : process.env,
     });
 
     const stdout: Buffer[] = [];

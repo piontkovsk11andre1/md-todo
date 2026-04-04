@@ -2022,7 +2022,9 @@ describe("reverify-task", () => {
     expect(vi.mocked(taskRepair.repair)).toHaveBeenCalledWith(expect.objectContaining({
       verifyTemplate: "<command>echo verify-Build release</command>\n<output>\nexpanded:echo verify-Build release\n</output>",
       repairTemplate: "<command>echo repair-Build release</command>\n<output>\nexpanded:echo repair-Build release\n</output>",
-      templateVars: {},
+      templateVars: {
+        userVariables: "(none)",
+      },
     }));
   });
 
@@ -2357,6 +2359,9 @@ function createDependencies(options: {
     templateLoader: {
       load: vi.fn(() => null),
     },
+    templateVarsLoader: {
+      load: vi.fn(() => ({})),
+    },
     workerConfigPort,
     output: {
       emit: (event) => {
@@ -2439,6 +2444,8 @@ function createOptions(overrides: Partial<ReverifyTaskOptions>): ReverifyTaskOpt
     printPrompt: false,
     keepArtifacts: false,
     workerCommand: [],
+    varsFileOption: undefined,
+    cliTemplateVarArgs: [],
     trace: false,
     ignoreCliBlock: false,
     cliBlockTimeoutMs: undefined,

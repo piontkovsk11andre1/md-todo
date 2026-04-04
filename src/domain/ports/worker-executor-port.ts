@@ -41,6 +41,8 @@ export interface WorkerExecutionOptions {
   captureOutput?: boolean;
   // Working directory used for command execution.
   cwd: string;
+  // Optional additional environment variables for command execution.
+  env?: Record<string, string>;
   // Optional configuration directory forwarded to worker runtime.
   configDir?: string;
   // Optional context object recorded alongside artifacts.
@@ -57,6 +59,8 @@ export interface WorkerExecutionOptions {
  * Provides options for executing a direct inline CLI command.
  */
 export interface InlineCliExecutionOptions {
+  // Optional additional environment variables for command execution.
+  env?: Record<string, string>;
   // Optional context object recorded alongside artifacts.
   artifactContext?: unknown;
   // Keeps generated artifacts when true.

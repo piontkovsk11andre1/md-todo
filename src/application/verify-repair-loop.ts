@@ -44,6 +44,7 @@ export interface VerifyRepairLoopInput {
   maxRepairAttempts: number;
   allowRepair: boolean;
   templateVars: Record<string, unknown>;
+  executionEnv?: Record<string, string>;
   artifactContext: ArtifactContext;
   trace: boolean;
   cliBlockExecutor?: CommandExecutor;
@@ -168,6 +169,7 @@ export async function runVerifyRepairLoop(
     transport: input.transport,
     configDir: input.configDir,
     templateVars: input.templateVars,
+    executionEnv: input.executionEnv,
     artifactContext: input.artifactContext,
     trace: input.trace,
     cliBlockExecutor: input.cliBlockExecutor,
@@ -237,6 +239,7 @@ export async function runVerifyRepairLoop(
       transport: input.transport,
       configDir: input.configDir,
       templateVars: input.templateVars,
+      executionEnv: input.executionEnv,
       artifactContext: input.artifactContext,
       trace: input.trace,
       cliBlockExecutor: input.cliBlockExecutor,

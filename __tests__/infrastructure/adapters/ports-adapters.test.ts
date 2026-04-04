@@ -99,6 +99,7 @@ describe("infrastructure adapters", () => {
       mode: "wait",
       transport: "file",
       cwd: "/repo",
+      env: { RUNDOWN_VAR_REGION: "eu-west" },
       artifactContext,
       artifactPhase: "execute",
       artifactExtra: { stage: "test" },
@@ -111,6 +112,7 @@ describe("infrastructure adapters", () => {
       mode: "wait",
       transport: "file",
       cwd: "/repo",
+      env: { RUNDOWN_VAR_REGION: "eu-west" },
       artifactContext,
       artifactPhase: "execute",
       artifactExtra: { stage: "test" },
@@ -124,6 +126,7 @@ describe("infrastructure adapters", () => {
     const adapter = createWorkerExecutorAdapter();
     const artifactContext = { runId: "run-2" };
     const result = await adapter.executeInlineCli("npm test", "/repo", {
+      env: { RUNDOWN_VAR_RELEASE: "v1" },
       artifactContext,
       keepArtifacts: true,
       artifactExtra: { taskType: "inline-cli" },
@@ -131,6 +134,7 @@ describe("infrastructure adapters", () => {
 
     expect(executeInlineCliMock).toHaveBeenCalledTimes(1);
     expect(executeInlineCliMock).toHaveBeenCalledWith("npm test", "/repo", {
+      env: { RUNDOWN_VAR_RELEASE: "v1" },
       artifactContext,
       keepArtifacts: true,
       artifactExtra: { taskType: "inline-cli" },

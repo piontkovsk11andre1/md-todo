@@ -285,6 +285,53 @@ describe("runWorker", () => {
     expect(args).toEqual(["script.js", "inline prompt body"]);
   });
 
+  it("merges custom env into spawned worker process env", async () => {
+    spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+      };
+
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+
+      queueMicrotask(() => {
+        child.emit("close", 0);
+      });
+
+      return child;
+    });
+
+    const originalInherited = process.env.RUNNER_TEST_INHERITED;
+    process.env.RUNNER_TEST_INHERITED = "base-value";
+
+    try {
+      const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+      await runWorker({
+        command: ["node", "script.js"],
+        prompt: "inline prompt body",
+        mode: "wait",
+        transport: "arg",
+        cwd: workspace,
+        env: {
+          RUNDOWN_VAR_DB_HOST: "localhost",
+          RUNNER_TEST_INHERITED: "override-value",
+        },
+      });
+
+      const [, , spawnOptions] = spawnMock.mock.calls[0] as [string, string[], { env: Record<string, string | undefined> }];
+      expect(spawnOptions.env.RUNNER_TEST_INHERITED).toBe("override-value");
+      expect(spawnOptions.env.RUNDOWN_VAR_DB_HOST).toBe("localhost");
+    } finally {
+      if (typeof originalInherited === "undefined") {
+        delete process.env.RUNNER_TEST_INHERITED;
+      } else {
+        process.env.RUNNER_TEST_INHERITED = originalInherited;
+      }
+    }
+  });
+
   it("uses a single --prompt=... argument for opencode tui in file transport", async () => {
     let capturedPromptFile = "";
     let capturedPromptFileContent = "";
@@ -399,7 +446,7 @@ describe("runWorker", () => {
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
       ["--prompt=interactive prompt"],
-      { stdio: "inherit", cwd: workspace, shell: false },
+      expect.objectContaining({ stdio: "inherit", cwd: workspace, shell: false, env: expect.any(Object) }),
     );
   });
 
@@ -478,7 +525,7 @@ describe("runWorker", () => {
     expect(spawnMock).toHaveBeenCalledWith(
       "node",
       ["worker.js", "custom config prompt"],
-      { stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false },
+      expect.objectContaining({ stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false, env: expect.any(Object) }),
     );
 
     const runsDir = path.join(configDir, "runs");
@@ -530,7 +577,7 @@ describe("runWorker", () => {
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
       ["--prompt=interactive prompt"],
-      { stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false },
+      expect.objectContaining({ stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false, env: expect.any(Object) }),
     );
     expect(stdoutWriteSpy).toHaveBeenCalled();
     expect(stderrWriteSpy).toHaveBeenCalled();

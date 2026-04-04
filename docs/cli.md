@@ -771,6 +771,8 @@ rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42 --worker
 These options apply to `run`, `discuss`, `plan`, `make`, and `reverify`.
 These options also apply to `research`.
 
+During fenced `cli` block execution, variables loaded from `--var` and `--vars-file` are available in the spawned shell environment as `RUNDOWN_VAR_<UPPERCASE_KEY>`.
+
 ### Sorting
 
 - `--sort name-sort`
@@ -785,6 +787,12 @@ These options also apply to `research`.
 - `--vars-file` — load `<config-dir>/vars.json`
 
 Direct `--var` entries override values loaded from `--vars-file`.
+
+Variable environment export behavior:
+
+- User variables are also exported to child shell processes as `RUNDOWN_VAR_<NAME>`.
+- `<NAME>` is the template variable key uppercased (for example `--var db_host=localhost` -> `RUNDOWN_VAR_DB_HOST=localhost`).
+- This applies to fenced `cli` block expansion and inline `cli:` task execution.
 
 ### Artifacts
 
@@ -932,6 +940,8 @@ rundown plan roadmap.md --print-prompt -- opencode run
 If the selected task begins with `cli:`, `rundown` executes it directly instead of sending it to the external worker.
 
 The command runs from the directory containing the Markdown file, not the current working directory. This makes inline CLI tasks portable — they behave the same regardless of where `rundown` is invoked from.
+
+Inline `cli:` commands also receive template variables in their process environment as `RUNDOWN_VAR_<UPPERCASE_KEY>` (from both `--var` and `--vars-file`).
 
 Example:
 

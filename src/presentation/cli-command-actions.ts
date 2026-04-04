@@ -276,6 +276,8 @@ export function createReverifyCommandAction({
     const targetRun = normalizeOptionalString(opts.run) ?? "latest";
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
+    const varsFileOption = opts.varsFile as string | boolean | undefined;
+    const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
 
     // Execute the re-verification workflow in the application layer.
@@ -291,6 +293,8 @@ export function createReverifyCommandAction({
       printPrompt,
       keepArtifacts,
       workerCommand,
+      varsFileOption,
+      cliTemplateVarArgs,
       trace,
       ignoreCliBlock,
       cliBlockTimeoutMs,

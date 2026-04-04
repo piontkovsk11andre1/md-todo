@@ -70,6 +70,26 @@ These values are available in templates as placeholders such as `{{branch}}` or 
 For tool-expansion tasks (`<tool-name>: <payload>` with a matching template in `.rundown/tools/`),
 `{{payload}}` is also available and contains the task text after the first `:`.
 
+### Variables section in built-in templates
+
+Built-in worker-facing templates include a `## Variables` section that renders
+`{{userVariables}}`.
+
+`{{userVariables}}` is a formatted dump of all extra template variables (merged from
+`--vars-file` and `--var`, with `--var` winning on conflicts).
+
+- Non-empty variables render as a `key: value` list.
+- When no extra variables are provided, it renders as `(none)`.
+
+This placeholder is available to custom templates as well. If you want the same
+visibility in your own template, include a section like:
+
+````md
+## Variables
+
+{{userVariables}}
+````
+
 ## Built-in memory variables
 
 Worker-facing templates receive source-local memory metadata as compact placeholders.

@@ -48,6 +48,7 @@ export interface RepairOptions {
   configDir?: string;
   /** Additional template variables merged into repair and verify prompts. */
   templateVars?: ExtraTemplateVars;
+  executionEnv?: Record<string, string>;
   /** Runtime artifact context used to capture phase outputs. */
   artifactContext?: RuntimeArtifactsContext;
   /** Optional executor used when expanding CLI blocks in prompts. */
@@ -108,6 +109,10 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
     const cliExpansionOptions = options.artifactContext?.keepArtifacts
       ? {
         ...options.cliExecutionOptions,
+        env: {
+          ...(options.cliExecutionOptions?.env ?? {}),
+          ...(options.executionEnv ?? {}),
+        },
         artifactContext: options.artifactContext,
         artifactPhase: "repair" as const,
         artifactPhaseLabel: "cli-repair-template",
@@ -135,6 +140,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       transport: options.transport ?? "file",
       trace: options.trace,
       cwd: options.cwd,
+      env: options.executionEnv,
       configDir: options.configDir,
       artifactContext: options.artifactContext,
       artifactPhase: "repair",
@@ -155,6 +161,7 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       cwd: options.cwd,
       configDir: options.configDir,
       templateVars: options.templateVars,
+      executionEnv: options.executionEnv,
       artifactContext: options.artifactContext,
       cliBlockExecutor: options.cliBlockExecutor,
       cliExecutionOptions: options.cliExecutionOptions,

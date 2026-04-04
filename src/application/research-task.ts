@@ -6,6 +6,8 @@ import {
   type TemplateVars,
 } from "../domain/template.js";
 import {
+  buildRundownVarEnv,
+  formatTemplateVarsForPrompt,
   parseCliTemplateVars,
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
@@ -158,6 +160,11 @@ export function createResearchTask(
         ...fileTemplateVars,
         ...cliTemplateVars,
       };
+      const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+      const templateVarsWithUserVariables: ExtraTemplateVars = {
+        ...extraTemplateVars,
+        userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+      };
 
       const templates = loadProjectTemplatesFromPorts(
         dependencies.configDir,
@@ -165,7 +172,7 @@ export function createResearchTask(
         dependencies.pathOperations,
       );
       const vars: TemplateVars = {
-        ...extraTemplateVars,
+        ...templateVarsWithUserVariables,
         ...buildMemoryTemplateVars({
           memoryMetadata: dependencies.memoryResolver?.resolve(source) ?? null,
         }),
@@ -188,7 +195,13 @@ export function createResearchTask(
             renderedPrompt,
             dependencies.cliBlockExecutor,
             cwd,
-            cliExecutionOptionsWithTemplateFailureAbort,
+            {
+              ...cliExecutionOptionsWithTemplateFailureAbort,
+              env: {
+                ...(cliExecutionOptionsWithTemplateFailureAbort?.env ?? {}),
+                ...rundownVarEnv,
+              },
+            },
           );
         } catch (error) {
           if (error instanceof TemplateCliBlockExecutionError) {
@@ -333,6 +346,11 @@ export function createResearchTask(
         ...fileTemplateVars,
         ...cliTemplateVars,
       };
+      const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+      const templateVarsWithUserVariables: ExtraTemplateVars = {
+        ...extraTemplateVars,
+        userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+      };
 
       const templates = loadProjectTemplatesFromPorts(
         dependencies.configDir,
@@ -340,7 +358,7 @@ export function createResearchTask(
         dependencies.pathOperations,
       );
       const vars: TemplateVars = {
-        ...extraTemplateVars,
+        ...templateVarsWithUserVariables,
         ...buildMemoryTemplateVars({
           memoryMetadata: dependencies.memoryResolver?.resolve(source) ?? null,
         }),
@@ -363,7 +381,13 @@ export function createResearchTask(
             renderedPrompt,
             dependencies.cliBlockExecutor,
             cwd,
-            cliExecutionOptionsWithTemplateFailureAbort,
+            {
+              ...cliExecutionOptionsWithTemplateFailureAbort,
+              env: {
+                ...(cliExecutionOptionsWithTemplateFailureAbort?.env ?? {}),
+                ...rundownVarEnv,
+              },
+            },
           );
         } catch (error) {
           if (error instanceof TemplateCliBlockExecutionError) {
@@ -454,6 +478,7 @@ export function createResearchTask(
         trace,
         captureOutput: mode === "tui",
         cwd,
+        env: rundownVarEnv,
         configDir: dependencies.configDir?.configDir,
         artifactContext,
         artifactPhase: "worker",

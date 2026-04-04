@@ -88,6 +88,7 @@ export interface VerifyOptions {
   cwd?: string;
   configDir?: string;
   templateVars?: ExtraTemplateVars;
+  executionEnv?: Record<string, string>;
   artifactContext?: RuntimeArtifactsContext;
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
@@ -118,6 +119,10 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
   const cliExpansionOptions = options.artifactContext?.keepArtifacts
     ? {
       ...options.cliExecutionOptions,
+      env: {
+        ...(options.cliExecutionOptions?.env ?? {}),
+        ...(options.executionEnv ?? {}),
+      },
       artifactContext: options.artifactContext,
       artifactPhase: "verify" as const,
       artifactPhaseLabel: "cli-verify-template",
@@ -151,6 +156,7 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
     configDir: options.configDir,
     artifactContext: options.artifactContext,
     artifactPhase: "verify",
+    env: options.executionEnv,
   });
 
   // Persist the normalized sidecar output and return final pass/fail status.

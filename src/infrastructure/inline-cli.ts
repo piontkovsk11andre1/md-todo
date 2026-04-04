@@ -34,6 +34,8 @@ interface ExecuteInlineCliOptions {
   artifactContext?: RuntimeArtifactsContext;
   /** Preserve generated artifacts after execution completes. */
   keepArtifacts?: boolean;
+  /** Additional environment variables for the shell process. */
+  env?: Record<string, string>;
   /** Attach additional metadata to runtime phase artifacts. */
   artifactExtra?: Record<string, unknown>;
 }
@@ -88,6 +90,7 @@ export async function executeInlineCli(
       stdio: ["inherit", "pipe", "pipe"],
       cwd,
       shell: true,
+      env: options?.env ? { ...process.env, ...options.env } : process.env,
     });
 
     // Collect raw buffers to preserve stream ordering and encoding safety.

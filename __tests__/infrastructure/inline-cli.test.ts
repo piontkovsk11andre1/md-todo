@@ -41,7 +41,7 @@ describe("executeInlineCli", () => {
     const child = createChildProcess();
     spawnMock.mockReturnValue(child);
 
-    const artifactContext = { runId: "existing-run" };
+    const artifactContext = { runId: "existing-run" } as any;
     const promise = executeInlineCli("npm test", "/repo", { artifactContext, artifactExtra: { taskType: "inline" } });
 
     child.stdout.emit("data", Buffer.from("hello"));
@@ -92,6 +92,54 @@ describe("executeInlineCli", () => {
       status: "failed",
       preserve: true,
     });
+  });
+
+  it("merges custom environment variables into spawned process env", async () => {
+    const child = createChildProcess();
+    spawnMock.mockReturnValue(child);
+
+    const promise = executeInlineCli("npm run lint", "/repo", {
+      env: {
+        RUNDOWN_VAR_DB_HOST: "localhost",
+      },
+    });
+
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith("npm run lint", expect.objectContaining({
+      cwd: "/repo",
+      shell: true,
+      stdio: ["inherit", "pipe", "pipe"],
+      env: expect.objectContaining({
+        ...process.env,
+        RUNDOWN_VAR_DB_HOST: "localhost",
+      }),
+    }));
+  });
+
+  it("makes custom environment variables visible to spawned commands", async () => {
+    const { spawn } = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+    spawnMock.mockImplementation(spawn);
+
+    const result = await executeInlineCli(
+      `node -e "process.stdout.write(process.env.RUNDOWN_VAR_DB_HOST || '')"`,
+      process.cwd(),
+      {
+        env: {
+          RUNDOWN_VAR_DB_HOST: "localhost",
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("localhost");
+    expect(result.stderr).toBe("");
   });
 
   it("records phase failure and rejects when spawn emits error", async () => {

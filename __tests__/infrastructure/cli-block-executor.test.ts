@@ -41,7 +41,55 @@ describe("createCliBlockExecutor", () => {
       cwd: "/repo",
       shell: true,
       stdio: ["inherit", "pipe", "pipe"],
+      env: expect.objectContaining(process.env),
     }));
+  });
+
+  it("merges custom environment variables into child process env", async () => {
+    const child = createChildProcess();
+    spawnMock.mockReturnValue(child);
+
+    const executor = createCliBlockExecutor();
+    const resultPromise = executor.execute("echo hi", "/repo", {
+      env: {
+        RUNDOWN_VAR_DB_HOST: "localhost",
+      },
+    });
+
+    child.emit("close", 0);
+
+    await expect(resultPromise).resolves.toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith("echo hi", expect.objectContaining({
+      env: expect.objectContaining({
+        ...process.env,
+        RUNDOWN_VAR_DB_HOST: "localhost",
+      }),
+    }));
+  });
+
+  it("makes custom environment variables visible to spawned commands", async () => {
+    const { spawn } = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+    spawnMock.mockImplementation(spawn);
+
+    const executor = createCliBlockExecutor();
+    const result = await executor.execute(
+      `node -e "process.stdout.write(process.env.RUNDOWN_VAR_DB_HOST || '')"`,
+      process.cwd(),
+      {
+        env: {
+          RUNDOWN_VAR_DB_HOST: "localhost",
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("localhost");
+    expect(result.stderr).toBe("");
   });
 
   it("uses default timeout and marks command as timed out", async () => {

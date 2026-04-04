@@ -81,6 +81,7 @@ export async function dispatchTaskExecution(params: {
   artifactContext: ArtifactRunContext;
   resolvedWorkerCommand: string[];
   trace: boolean;
+  executionEnv?: Record<string, string>;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: CommandExecutionOptions | undefined;
 }): Promise<TaskExecutionDispatchResult> {
@@ -113,6 +114,7 @@ export async function dispatchTaskExecution(params: {
     artifactContext,
     resolvedWorkerCommand,
     trace,
+    executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
   } = params;
@@ -183,6 +185,7 @@ export async function dispatchTaskExecution(params: {
     emit({ kind: "info", message: "Executing inline CLI: " + task.cliCommand! + " [cwd=" + inlineCliCwd + "]" });
     const inlineCliPhaseTrace = traceRunSession.beginPhase("execute", [task.cliCommand!]);
     const cliResult = await dependencies.workerExecutor.executeInlineCli(task.cliCommand!, inlineCliCwd, {
+      env: executionEnv,
       artifactContext,
       keepArtifacts,
       artifactExtra: { taskType: "inline-cli" },
@@ -262,6 +265,7 @@ export async function dispatchTaskExecution(params: {
       transport,
       trace,
       cwd: dependencies.workingDirectory.cwd(),
+      env: executionEnv,
       configDir: dependencies.configDir?.configDir,
       artifactContext,
       artifactPhase: "execute",
@@ -318,6 +322,7 @@ export async function dispatchTaskExecution(params: {
     transport,
     trace,
     cwd: dependencies.workingDirectory.cwd(),
+    env: executionEnv,
     configDir: dependencies.configDir?.configDir,
     artifactContext,
     artifactPhase: "execute",

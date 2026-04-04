@@ -31,9 +31,14 @@ export function createCliBlockExecutor(): CommandExecutor {
       return new Promise((resolve, reject) => {
         // Start artifact phase tracking when runtime context is available.
         const phaseHandle = beginCliCommandPhase(command, options);
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          ...(options?.env ?? {}),
+        };
         const child = spawn(command, {
           stdio: ["inherit", "pipe", "pipe"],
           cwd,
+          env,
           // `shell: true` uses the host default shell (`/bin/sh` on Unix,
           // `process.env.ComSpec`/`cmd.exe` on Windows).
           shell: true,

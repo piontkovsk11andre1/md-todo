@@ -66,3 +66,38 @@ export function resolveTemplateVarsFilePath(
 
   return typeof option === "string" ? option : undefined;
 }
+
+/**
+ * Builds environment variables for extra template vars.
+ *
+ * @param vars Extra template variables.
+ * @returns Environment variables prefixed with RUNDOWN_VAR_.
+ */
+export function buildRundownVarEnv(vars: ExtraTemplateVars): Record<string, string> {
+  const envVars: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(vars)) {
+    envVars[`RUNDOWN_VAR_${key.toUpperCase()}`] = value;
+  }
+
+  return envVars;
+}
+
+/**
+ * Formats extra template variables for prompt display.
+ *
+ * @param vars Extra template variables.
+ * @returns Human-readable key=value lines or "(none)".
+ */
+export function formatTemplateVarsForPrompt(vars: ExtraTemplateVars): string {
+  const entries = Object.entries(vars);
+
+  if (entries.length === 0) {
+    return "(none)";
+  }
+
+  return entries
+    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+}

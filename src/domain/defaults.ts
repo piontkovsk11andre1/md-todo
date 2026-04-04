@@ -44,6 +44,14 @@ Memory map:
 \`\`\`
 `;
 
+// Shared user-provided template variables block for worker-facing prompts.
+export const DEFAULT_TEMPLATE_VARS_SECTION = `\
+
+## Variables
+
+{{userVariables}}
+`;
+
 /**
  * Appends trace-output instructions to a template when tracing is enabled.
  *
@@ -85,6 +93,7 @@ export function getTraceInstructions(trace: boolean): string {
 export const DEFAULT_TASK_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Phase
 
@@ -105,6 +114,7 @@ Complete the task described above. Make the necessary changes to the project, bu
 export const DEFAULT_DISCUSS_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Phase
 
@@ -148,6 +158,7 @@ Rules:
 export const DEFAULT_VERIFY_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Phase
 
@@ -174,6 +185,7 @@ Do not write anything else.
 export const DEFAULT_REPAIR_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Phase
 

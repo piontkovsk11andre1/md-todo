@@ -32,6 +32,8 @@ export interface TaskVerificationOptions {
   configDir?: string;
   // Additional template variables merged into prompt rendering.
   templateVars?: Record<string, unknown>;
+  // Optional additional environment variables for worker and CLI command execution.
+  executionEnv?: Record<string, string>;
   // Opaque artifact context forwarded to the verification implementation.
   artifactContext?: unknown;
   // Optional executor used to run embedded CLI blocks.

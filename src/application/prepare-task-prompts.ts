@@ -24,7 +24,10 @@ import type {
   TraceWriterPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
-import type { ExtraTemplateVars } from "../domain/template-vars.js";
+import {
+  formatTemplateVarsForPrompt,
+  type ExtraTemplateVars,
+} from "../domain/template-vars.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -226,6 +229,8 @@ export async function prepareTaskPrompts(params: {
   );
   const templateVarsWithTrace: ExtraTemplateVars = {
     ...extraTemplateVars,
+    userVariables:
+      extraTemplateVars.userVariables ?? formatTemplateVarsForPrompt(extraTemplateVars),
     traceInstructions: getTraceInstructions(trace),
     ...buildMemoryTemplateVars({
       memoryMetadata: dependencies.memoryResolver?.resolve(task.file) ?? null,

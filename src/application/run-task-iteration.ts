@@ -91,12 +91,14 @@ interface IterationCompletionConfig {
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
   onFailCommand?: string;
+  extraTemplateVars: ExtraTemplateVars;
 }
 
 interface IterationPromptConfig {
   extraTemplateVars: ExtraTemplateVars;
   cliExecutionOptions: CommandExecutionOptions | undefined;
   cliBlockExecutor: CommandExecutor;
+  executionEnv?: Record<string, string>;
   nowIso: () => string;
 }
 
@@ -138,6 +140,7 @@ function handleDispatchFailure(params: {
   source: string;
   onFailCommand: string | undefined;
   hideHookOutput: boolean;
+  extraTemplateVars: ExtraTemplateVars;
   failRun: IterationLifecycle["failRun"];
 }): Promise<number> {
   const {
@@ -148,12 +151,13 @@ function handleDispatchFailure(params: {
     source,
     onFailCommand,
     hideHookOutput,
+    extraTemplateVars,
     failRun,
   } = params;
 
   emit({ kind: "error", message: dispatchResult.executionFailureMessage });
   return (async (): Promise<number> => {
-    await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput);
+    await afterTaskFailed(dependencies, task, source, onFailCommand, hideHookOutput, extraTemplateVars);
     return failRun(
       1,
       "execution-failed",
@@ -281,7 +285,14 @@ export async function runTaskIteration(params: {
     onTemplateCliFailure: async (error: unknown): Promise<number | null> => await handleTemplateCliFailure(
       error,
       emit,
-      async () => await afterTaskFailed(dependencies, taskForExecution, source, completion.onFailCommand, execution.hideHookOutput),
+      async () => await afterTaskFailed(
+        dependencies,
+        taskForExecution,
+        source,
+        completion.onFailCommand,
+        execution.hideHookOutput,
+        completion.extraTemplateVars,
+      ),
       async (failureMessage) => await lifecycle.failRun(1, "failed", failureMessage, 1),
     ),
   });
@@ -358,6 +369,7 @@ export async function runTaskIteration(params: {
     artifactContext: state.artifactContext,
     resolvedWorkerCommand,
     trace: execution.trace,
+    executionEnv: prompts.executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort:
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace:
@@ -384,6 +396,7 @@ export async function runTaskIteration(params: {
         source,
         onFailCommand: completion.onFailCommand,
         hideHookOutput: execution.hideHookOutput,
+        extraTemplateVars: completion.extraTemplateVars,
         failRun: lifecycle.failRun,
       }),
     };
@@ -414,6 +427,7 @@ export async function runTaskIteration(params: {
     commitMessageTemplate: completion.commitMessageTemplate,
     onCompleteCommand: completion.onCompleteCommand,
     onFailCommand: completion.onFailCommand,
+    extraTemplateVars: completion.extraTemplateVars,
     hideHookOutput: execution.hideHookOutput,
     maxRepairAttempts: verifyConfig.maxRepairAttempts,
     allowRepair: verifyConfig.allowRepair,
@@ -427,6 +441,7 @@ export async function runTaskIteration(params: {
     expandedContextBefore: preparedPrompts.expandedContextBefore,
     templates: preparedPrompts.templates,
     templateVarsWithTrace: preparedPrompts.templateVarsWithTrace,
+    executionEnv: prompts.executionEnv,
     automationCommand,
     shouldVerify: dispatchResult.shouldVerify,
     verificationPrompt: preparedPrompts.verificationPrompt,

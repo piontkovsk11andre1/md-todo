@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vitest";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
 
 import {
+  createRunTaskExecution,
   getAutomationWorkerCommand,
   isOpenCodeWorkerCommand,
   toRuntimeTaskMetadata,
 } from "../../src/application/run-task-execution.js";
+import {
+  createDependencies,
+  createGitClientMock,
+  createInMemoryFileSystem,
+  createInlineTask,
+  createOptions,
+  createTask,
+} from "./run-task-test-helpers.js";
 
 describe("run-task-execution helpers", () => {
   it("normalizes opencode tui worker commands", () => {
@@ -46,5 +56,94 @@ describe("run-task-execution helpers", () => {
       index: 0,
       source: "tasks.md",
     });
+  });
+
+  it("builds RUNDOWN_VAR_* env from merged vars and threads it to cli blocks and workers", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const cliBlockExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "ok",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+      cliBlockExecutor,
+    });
+    dependencies.templateVarsLoader.load = () => ({
+      api_token: "from-file",
+      channel: "stable",
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "```cli\necho from-template\n```";
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      varsFileOption: ".rundown/vars.json",
+      cliTemplateVarArgs: ["api_token=from-cli", "db_Host=localhost"],
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.cliBlockExecutor?.execute).toHaveBeenCalledWith(
+      "echo from-template",
+      cwd,
+      expect.objectContaining({
+        env: {
+          RUNDOWN_VAR_API_TOKEN: "from-cli",
+          RUNDOWN_VAR_CHANNEL: "stable",
+          RUNDOWN_VAR_DB_HOST: "localhost",
+        },
+      }),
+    );
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      env: {
+        RUNDOWN_VAR_API_TOKEN: "from-cli",
+        RUNDOWN_VAR_CHANNEL: "stable",
+        RUNDOWN_VAR_DB_HOST: "localhost",
+      },
+    }));
+  });
+
+  it("threads merged RUNDOWN_VAR_* env to inline cli execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] cli: echo hello\n" }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.templateVarsLoader.load = () => ({ region: "us-east" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      varsFileOption: ".rundown/vars.json",
+      cliTemplateVarArgs: ["region=eu-west", "release=v1"],
+    }));
+
+    expect(code).toBe(0);
+    const expectedInlineCwd = path.dirname(path.resolve(taskFile));
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledWith(
+      "echo hello",
+      expectedInlineCwd,
+      expect.objectContaining({
+        env: {
+          RUNDOWN_VAR_REGION: "eu-west",
+          RUNDOWN_VAR_RELEASE: "v1",
+        },
+      }),
+    );
   });
 });

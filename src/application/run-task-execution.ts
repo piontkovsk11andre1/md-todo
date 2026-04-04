@@ -1,6 +1,8 @@
 import type { SortMode } from "../domain/sorting.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import {
+  buildRundownVarEnv,
+  formatTemplateVarsForPrompt,
   parseCliTemplateVars,
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
@@ -198,9 +200,7 @@ export function createRunTaskExecution(
       : defaultCliBlockExecutor;
 
     // Build optional timeout configuration for template CLI blocks.
-    const cliExecutionOptions: CommandExecutionOptions | undefined = cliBlockTimeoutMs === undefined
-      ? undefined
-      : { timeoutMs: cliBlockTimeoutMs };
+    let cliExecutionOptions: CommandExecutionOptions | undefined;
     // Suppress CLI expansion in dry runs unless prompt rendering is explicitly requested.
     const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
     // Enable CLI expansion only when globally allowed and not suppressed by dry-run mode.
@@ -279,6 +279,14 @@ export function createRunTaskExecution(
       ...fileTemplateVars,
       ...cliTemplateVars,
     };
+    const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+    const templateVarsWithUserVariables: ExtraTemplateVars = {
+      ...extraTemplateVars,
+      userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+    };
+    cliExecutionOptions = cliBlockTimeoutMs === undefined
+      ? { env: rundownVarEnv }
+      : { timeoutMs: cliBlockTimeoutMs, env: rundownVarEnv };
     // Load worker defaults from config when a config directory is available.
     const loadedWorkerConfig = dependencies.configDir?.configDir
       ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
@@ -518,11 +526,13 @@ export function createRunTaskExecution(
               commitMessageTemplate,
               onCompleteCommand,
               onFailCommand,
+              extraTemplateVars,
             },
             prompts: {
-              extraTemplateVars,
+              extraTemplateVars: templateVarsWithUserVariables,
               cliExecutionOptions,
               cliBlockExecutor,
+              executionEnv: rundownVarEnv,
               nowIso,
             },
             traceConfig: {
@@ -644,6 +654,7 @@ export function createRunTaskExecution(
           commitMessageTemplate,
           undefined,
           hideHookOutput,
+          extraTemplateVars,
         );
       }
 

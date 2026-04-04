@@ -242,6 +242,71 @@ describe("prepare-task-prompts", () => {
     expect(result.verificationPrompt).not.toContain(memoryBodyText);
     expect(dependencies.memoryResolver.resolve).toHaveBeenCalledWith(taskFile);
   });
+
+  it("renders {{userVariables}} in prompt output", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Ship release\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.templateLoader.load = vi.fn((templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "Execute {{task}}\nVariables:\n{{userVariables}}";
+      }
+      if (templatePath.endsWith("verify.md")) {
+        return "Verify {{task}}\nVariables:\n{{userVariables}}";
+      }
+      return null;
+    });
+
+    const result = await prepareTaskPrompts({
+      dependencies,
+      task,
+      fileSource: "- [ ] Ship release",
+      sourceDir: cwd,
+      shouldVerify: true,
+      trace: false,
+      extraTemplateVars: {
+        ticket: "ENG-42",
+        branch: "main",
+      },
+      cliExpansionEnabled: true,
+      ignoreCliBlock: false,
+      cliExecutionOptions: undefined,
+      artifactContext: null,
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      cliBlockExecutor: {
+        execute: vi.fn(async () => ({
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        })),
+      },
+      nowIso: () => "2026-01-01T00:00:00.000Z",
+      emit: vi.fn(),
+      onTemplateCliFailure: vi.fn(async () => null),
+    });
+
+    expect("earlyExitCode" in result).toBe(false);
+    if ("earlyExitCode" in result) {
+      return;
+    }
+
+    const renderedVars = "branch=main\nticket=ENG-42";
+    expect(result.prompt).toContain("Variables:\n" + renderedVars);
+    expect(result.verificationPrompt).toContain("Variables:\n" + renderedVars);
+  });
 });
 
 describe("dry-run-dispatch", () => {
@@ -1739,6 +1804,7 @@ describe("complete-task-iteration", () => {
       cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
       verificationFailureMessage: "Verification failed. Task not checked.",
       verificationFailureRunReason: "Verification failed.",
+      extraTemplateVars: {},
     });
 
     expect(result).toEqual({ continueLoop: false, exitCode: 2 });
@@ -1820,6 +1886,7 @@ describe("complete-task-iteration", () => {
       cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
       verificationFailureMessage: "unused",
       verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
     });
 
     expect(result).toEqual({ continueLoop: true });
@@ -1904,6 +1971,7 @@ describe("complete-task-iteration", () => {
       verificationFailureMessage: "unused",
       verificationFailureRunReason: "unused",
       toolExpansionInsertedChildCount: 1,
+      extraTemplateVars: {},
     });
 
     expect(result).toEqual({ continueLoop: true });

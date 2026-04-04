@@ -1,12 +1,119 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Task } from "../../src/domain/parser.js";
 import type {
   ArtifactRunContext,
   ArtifactStore,
+  ProcessRunner,
 } from "../../src/domain/ports/index.js";
 
-import { finalizeRunArtifacts } from "../../src/application/run-lifecycle.js";
+import {
+  afterTaskComplete,
+  afterTaskFailed,
+  finalizeRunArtifacts,
+} from "../../src/application/run-lifecycle.js";
 
 describe("run-lifecycle", () => {
+  const task: Task = {
+    text: "Ship release",
+    checked: false,
+    index: 3,
+    line: 12,
+    column: 1,
+    offsetStart: 10,
+    offsetEnd: 40,
+    file: "tasks.md",
+    isInlineCli: false,
+    depth: 0,
+    children: [],
+    subItems: [],
+  };
+
+  it("injects RUNDOWN_VAR_* env vars into on-fail hooks", async () => {
+    const run = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+    const processRunner: ProcessRunner = { run };
+
+    const pathOperations = {
+      resolve: vi.fn((value: string) => `/abs/${value}`),
+      join: vi.fn(),
+      dirname: vi.fn(),
+      relative: vi.fn(),
+      isAbsolute: vi.fn(),
+    };
+
+    await afterTaskFailed(
+      {
+        workingDirectory: { cwd: vi.fn(() => "/workspace") },
+        output: { emit: vi.fn() },
+        processRunner,
+        pathOperations,
+        gitClient: { run: vi.fn() },
+        configDir: undefined,
+      },
+      task,
+      "# Tasks",
+      "echo fail-hook",
+      true,
+      {
+        db_host: "localhost",
+        region: "eu-west",
+      },
+    );
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const [options] = run.mock.calls[0] as [{ env: Record<string, string | undefined> }];
+    expect(options.env.RUNDOWN_TASK).toBe("Ship release");
+    expect(options.env.RUNDOWN_FILE).toBe("/abs/tasks.md");
+    expect(options.env.RUNDOWN_SOURCE).toBe("# Tasks");
+    expect(options.env.RUNDOWN_VAR_DB_HOST).toBe("localhost");
+    expect(options.env.RUNDOWN_VAR_REGION).toBe("eu-west");
+  });
+
+  it("injects RUNDOWN_VAR_* env vars into on-complete hooks", async () => {
+    const run = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+    const processRunner: ProcessRunner = { run };
+
+    const pathOperations = {
+      resolve: vi.fn((value: string) => `/abs/${value}`),
+      join: vi.fn(),
+      dirname: vi.fn(),
+      relative: vi.fn(),
+      isAbsolute: vi.fn(),
+    };
+
+    await afterTaskComplete(
+      {
+        workingDirectory: { cwd: vi.fn(() => "/workspace") },
+        output: { emit: vi.fn() },
+        processRunner,
+        pathOperations,
+        gitClient: { run: vi.fn() },
+        configDir: undefined,
+      },
+      task,
+      "# Tasks",
+      false,
+      undefined,
+      "echo complete-hook",
+      true,
+      {
+        release: "v1",
+      },
+    );
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const [options] = run.mock.calls[0] as [{ env: Record<string, string | undefined> }];
+    expect(options.env.RUNDOWN_VAR_RELEASE).toBe("v1");
+    expect(options.env.RUNDOWN_TASK).toBe("Ship release");
+  });
+
   describe("finalizeRunArtifacts", () => {
     it("finalizes runtime artifacts and emits the saved path when preserved", () => {
       const emit = vi.fn();

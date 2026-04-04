@@ -12,6 +12,8 @@ import {
   createDiscussionStartedEvent,
 } from "../domain/trace.js";
 import {
+  buildRundownVarEnv,
+  formatTemplateVarsForPrompt,
   parseCliTemplateVars,
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
@@ -143,14 +145,6 @@ export function createDiscussTask(
       workerCommand,
       cliBlockTimeoutMs,
     } = options;
-    const cliExecutionOptions = cliBlockTimeoutMs === undefined
-      ? undefined
-      : { timeoutMs: cliBlockTimeoutMs };
-    const cliExecutionOptionsWithTemplateFailureAbort = withTemplateCliFailureAbort(
-      cliExecutionOptions,
-      "discuss template",
-    );
-
     const varsFilePath = resolveTemplateVarsFilePath(
       varsFileOption,
       dependencies.configDir?.configDir,
@@ -168,6 +162,18 @@ export function createDiscussTask(
       ...fileTemplateVars,
       ...cliTemplateVars,
     };
+    const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+    const templateVarsWithUserVariables: ExtraTemplateVars = {
+      ...extraTemplateVars,
+      userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+    };
+    const cliExecutionOptions = cliBlockTimeoutMs === undefined
+      ? { env: rundownVarEnv }
+      : { timeoutMs: cliBlockTimeoutMs, env: rundownVarEnv };
+    const cliExecutionOptionsWithTemplateFailureAbort = withTemplateCliFailureAbort(
+      cliExecutionOptions,
+      "discuss template",
+    );
 
     // Resolve markdown sources up front so locking and selection operate on the same set.
     const files = await dependencies.sourceResolver.resolveSources(source);
@@ -248,7 +254,10 @@ export function createDiscussTask(
           memoryMetadata: dependencies.memoryResolver?.resolve(taskContext.task.file) ?? null,
         }),
       };
-      const renderedPrompt = renderDiscussPrompt(templates.discuss, taskContext, templateVarsWithMemory);
+      const renderedPrompt = renderDiscussPrompt(templates.discuss, taskContext, {
+        ...templateVarsWithUserVariables,
+        ...templateVarsWithMemory,
+      });
       const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
       const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
       let prompt = renderedPrompt;
@@ -368,6 +377,7 @@ export function createDiscussTask(
         trace: options.trace,
         captureOutput: options.keepArtifacts,
         cwd,
+        env: rundownVarEnv,
         configDir: dependencies.configDir?.configDir,
         artifactContext,
         artifactPhase: "discuss",

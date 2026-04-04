@@ -16,6 +16,8 @@ export interface CommandResult {
 export interface CommandExecutionOptions {
   // Maximum execution time in milliseconds before timeout handling applies.
   timeoutMs?: number;
+  // Optional environment variables merged into spawned command process environment.
+  env?: Record<string, string>;
   // Optional context object recorded alongside generated artifacts.
   artifactContext?: unknown;
   // Optional artifact phase identifier used for run segmentation.

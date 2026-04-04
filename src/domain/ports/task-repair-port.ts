@@ -36,6 +36,8 @@ export interface TaskRepairOptions {
   configDir?: string;
   /** Additional template variables injected into repair and verify templates. */
   templateVars?: Record<string, unknown>;
+  /** Optional additional environment variables for worker and CLI command execution. */
+  executionEnv?: Record<string, string>;
   /** Optional artifact payload provided as additional repair context. */
   artifactContext?: unknown;
   /** Optional CLI block executor used for command expansion workflows. */

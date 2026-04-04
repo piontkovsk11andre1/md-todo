@@ -185,6 +185,22 @@ Resolution and precedence:
 
 Bracket prefixes (`[verify]`, `[confirm]`, `[check]`) are not supported.
 
+## Template vars in shell environments
+
+Values provided with `--var key=value` (and via `--vars-file`) are also exported to shell processes as environment variables.
+
+Naming format:
+
+- `RUNDOWN_VAR_<NAME>` where `<NAME>` is the variable key uppercased.
+- Example: `--var db_host=localhost` -> `RUNDOWN_VAR_DB_HOST=localhost`
+
+These variables are available in all rundown shell execution contexts:
+
+- fenced `cli` blocks,
+- `cli:` inline tasks,
+- worker command execution,
+- lifecycle hooks.
+
 ## Unsupported profile sub-item form
 
 `profile: <name>` as a direct sub-item under a checkbox task is ignored.

@@ -70,6 +70,7 @@ export async function completeTaskIteration(params: {
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
   onFailCommand?: string;
+  extraTemplateVars: ExtraTemplateVars;
   hideHookOutput: boolean;
   maxRepairAttempts: number;
   allowRepair: boolean;
@@ -83,6 +84,7 @@ export async function completeTaskIteration(params: {
   expandedContextBefore: string;
   templates: ProjectTemplates;
   templateVarsWithTrace: ExtraTemplateVars;
+  executionEnv?: Record<string, string>;
   automationCommand: string[];
   shouldVerify: boolean;
   verificationPrompt: string;
@@ -107,6 +109,7 @@ export async function completeTaskIteration(params: {
     commitMessageTemplate,
     onCompleteCommand,
     onFailCommand,
+    extraTemplateVars,
     hideHookOutput,
     maxRepairAttempts,
     allowRepair,
@@ -120,6 +123,7 @@ export async function completeTaskIteration(params: {
     expandedContextBefore,
     templates,
     templateVarsWithTrace,
+    executionEnv,
     automationCommand,
     shouldVerify,
     verificationPrompt,
@@ -155,6 +159,7 @@ export async function completeTaskIteration(params: {
         maxRepairAttempts,
         allowRepair,
         templateVars: templateVarsWithTrace,
+        executionEnv,
         artifactContext,
         trace,
         cliBlockExecutor,
@@ -165,7 +170,14 @@ export async function completeTaskIteration(params: {
       const failureCode = await handleTemplateCliFailure(
         error,
         emit,
-        async () => await afterTaskFailed(dependencies, task, sourceText, onFailCommand, hideHookOutput),
+        async () => await afterTaskFailed(
+          dependencies,
+          task,
+          sourceText,
+          onFailCommand,
+          hideHookOutput,
+          extraTemplateVars,
+        ),
         async (failureMessage) => await failRun(1, "failed", failureMessage, 1),
       );
       if (failureCode !== null) {
@@ -181,7 +193,14 @@ export async function completeTaskIteration(params: {
         : verificationFailureMessage;
       // Surface verification details, trigger failure hooks, and terminate the run.
       emit({ kind: "error", message: fullVerificationFailureMessage });
-      await afterTaskFailed(dependencies, task, sourceText, onFailCommand, hideHookOutput);
+      await afterTaskFailed(
+        dependencies,
+        task,
+        sourceText,
+        onFailCommand,
+        hideHookOutput,
+        extraTemplateVars,
+      );
       return {
         continueLoop: false,
         exitCode: await failRun(2, "verification-failed", verificationFailureRunReason, 2),
@@ -214,6 +233,7 @@ export async function completeTaskIteration(params: {
     commitMessageTemplate,
     onCompleteCommand,
     hideHookOutput,
+    extraTemplateVars,
   );
   // Persist successful completion state and telemetry.
   await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);

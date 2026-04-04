@@ -27,6 +27,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         trace: options.trace,
         captureOutput: options.captureOutput,
         cwd: options.cwd,
+        env: options.env,
         configDir: options.configDir,
         // Runtime artifacts are managed by infrastructure and narrowed for the runner.
         artifactContext: options.artifactContext as RuntimeArtifactsContext | undefined,
@@ -45,6 +46,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
     ): Promise<WorkerRunResult> {
       return executeInlineCli(command, cwd, {
         // Narrow the context to infrastructure artifact state expected downstream.
+        env: options?.env,
         artifactContext: options?.artifactContext as RuntimeArtifactsContext | undefined,
         keepArtifacts: options?.keepArtifacts,
         artifactExtra: options?.artifactExtra,

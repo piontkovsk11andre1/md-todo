@@ -73,10 +73,15 @@ import { CONFIG_DIR_NAME } from "./domain/ports/config-dir-port.js";
 
 export type { DiscussTaskOptions };
 
+type ReverifyTaskCommandOptions = Omit<ReverifyTaskOptions, "varsFileOption" | "cliTemplateVarArgs"> & {
+  varsFileOption?: string | boolean | undefined;
+  cliTemplateVarArgs?: string[];
+};
+
 export type App = {
   runTask: (options: RunTaskOptions) => Promise<number>;
   discussTask: (options: DiscussTaskOptions) => Promise<number>;
-  reverifyTask: (options: ReverifyTaskOptions) => Promise<number>;
+  reverifyTask: (options: ReverifyTaskCommandOptions) => Promise<number>;
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
@@ -322,6 +327,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       },
       memoryResolver: ports.memoryResolver,
       templateLoader: ports.templateLoader,
+      templateVarsLoader: ports.templateVarsLoader,
       workerConfigPort: ports.workerConfigPort,
       cliBlockExecutor: ports.cliBlockExecutor,
       pathOperations: ports.pathOperations,

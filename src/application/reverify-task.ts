@@ -1,6 +1,13 @@
 import {
   getTraceInstructions,
 } from "../domain/defaults.js";
+import {
+  buildRundownVarEnv,
+  formatTemplateVarsForPrompt,
+  parseCliTemplateVars,
+  resolveTemplateVarsFilePath,
+  type ExtraTemplateVars,
+} from "../domain/template-vars.js";
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import {
@@ -46,6 +53,7 @@ import type {
   TaskRepairPort,
   TaskVerificationPort,
   TemplateLoader,
+  TemplateVarsLoaderPort,
   TraceWriterPort,
   VerificationStore,
   WorkerConfigPort,
@@ -78,6 +86,7 @@ export interface ReverifyTaskDependencies {
   pathOperations: PathOperationsPort;
   memoryResolver?: MemoryResolverPort;
   templateLoader: TemplateLoader;
+  templateVarsLoader: TemplateVarsLoaderPort;
   workerConfigPort: WorkerConfigPort;
   output: ApplicationOutputPort;
   cliBlockExecutor: CommandExecutor;
@@ -98,6 +107,8 @@ export interface ReverifyTaskOptions {
   printPrompt: boolean;
   keepArtifacts: boolean;
   workerCommand: string[];
+  varsFileOption?: string | boolean | undefined;
+  cliTemplateVarArgs?: string[];
   trace: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
@@ -125,14 +136,37 @@ export function createReverifyTask(
       printPrompt,
       keepArtifacts,
       workerCommand,
+      varsFileOption,
+      cliTemplateVarArgs,
       trace,
       ignoreCliBlock,
       cliBlockTimeoutMs,
     } = options;
+    const varsFilePath = resolveTemplateVarsFilePath(
+      varsFileOption,
+      dependencies.configDir?.configDir,
+    );
+    const fileTemplateVars = varsFilePath
+      ? dependencies.templateVarsLoader.load(
+        varsFilePath,
+        dependencies.workingDirectory.cwd(),
+        dependencies.configDir?.configDir,
+      )
+      : {};
+    const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs ?? []);
+    const extraTemplateVars: ExtraTemplateVars = {
+      ...fileTemplateVars,
+      ...cliTemplateVars,
+    };
+    const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
+    const templateVarsWithUserVariables: ExtraTemplateVars = {
+      ...extraTemplateVars,
+      userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
+    };
     // Pass timeout options only when the CLI block timeout flag is provided.
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
-      ? undefined
-      : { timeoutMs: cliBlockTimeoutMs };
+      ? { env: rundownVarEnv }
+      : { timeoutMs: cliBlockTimeoutMs, env: rundownVarEnv };
     // Abort prompt expansion immediately when template CLI commands fail.
     const cliExecutionOptionsWithTemplateFailureAbort = withTemplateCliFailureAbort(
       cliExecutionOptions,
@@ -240,6 +274,7 @@ export function createReverifyTask(
         templates,
         trace,
         dependencies.memoryResolver?.resolve(taskContext.task.file) ?? null,
+        templateVarsWithUserVariables,
       );
       // Count `cli` fenced blocks so dry-run output can report skipped work.
       const verificationPromptCliBlockCount = extractCliBlocks(promptContext.verificationPrompt).length;
@@ -424,7 +459,8 @@ export function createReverifyTask(
           configDir: dependencies.configDir?.configDir,
           maxRepairAttempts: runBehavior.maxRepairAttempts,
           allowRepair: runBehavior.allowRepair,
-          templateVars: {},
+          templateVars: templateVarsWithUserVariables,
+          executionEnv: rundownVarEnv,
           artifactContext,
           trace,
           cliBlockExecutor,
@@ -588,8 +624,10 @@ function buildReverifyPromptContext(
   templates: Pick<ProjectTemplates, "verify" | "repair">,
   trace: boolean,
   memoryMetadata: MemoryMetadata | null,
+  extraTemplateVars: ExtraTemplateVars,
 ): ReverifyPromptContext {
   const vars: TemplateVars = {
+    ...extraTemplateVars,
     task: taskContext.task.text,
     file: taskContext.task.file,
     context: taskContext.contextBefore,
