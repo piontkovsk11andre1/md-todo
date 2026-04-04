@@ -74,6 +74,12 @@ export function createInitProject(
       dependencies.fileSystem.mkdir(configDir, { recursive: true });
     }
 
+    const toolsDirPath = `${configDir}/tools`;
+    if (!dependencies.fileSystem.exists(toolsDirPath)) {
+      dependencies.fileSystem.mkdir(toolsDirPath, { recursive: true });
+      emit({ kind: "success", message: `Created ${displayConfigDir}/tools/` });
+    }
+
     // Write a default file only when no project-specific file exists yet.
     const write = (name: string, content: string) => {
       const filePath = `${configDir}/${name}`;

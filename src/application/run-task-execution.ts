@@ -42,6 +42,7 @@ import type {
   ProcessRunner,
   PromptTransport as PortPromptTransport,
   MemoryResolverPort,
+  ToolResolverPort,
   MemoryWriterPort,
   SourceResolverPort,
   TaskRepairPort,
@@ -92,6 +93,7 @@ export interface RunTaskDependencies {
   templateVarsLoader: TemplateVarsLoaderPort;
   workerConfigPort: WorkerConfigPort;
   memoryResolver?: MemoryResolverPort;
+  toolResolver?: ToolResolverPort;
   memoryWriter?: MemoryWriterPort;
   traceWriter: TraceWriterPort;
   configDir: ConfigDirResult | undefined;

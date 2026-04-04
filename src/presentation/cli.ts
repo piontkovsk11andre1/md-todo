@@ -393,7 +393,7 @@ program
 
 program
   .command("init")
-  .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair, trace) plus vars.json/config.json initialized as empty JSON objects. Use --config-dir to control where it is created.")
+  .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair, trace), scaffold tools/, and initialize vars.json/config.json as empty JSON objects. Use --config-dir to control where it is created.")
   .action(withCliAction(createInitCommandAction({ getApp })));
 
 program

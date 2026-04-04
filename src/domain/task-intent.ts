@@ -1,7 +1,9 @@
+import type { ToolResolverPort } from "./ports/tool-resolver-port.js";
+
 /**
  * Supported execution intents inferred from task wording.
  */
-export type TaskIntent = "verify-only" | "memory-capture" | "execute-and-verify";
+export type TaskIntent = "verify-only" | "memory-capture" | "tool-expansion" | "execute-and-verify";
 
 /**
  * Decision payload returned after classifying task intent.
@@ -17,6 +19,10 @@ export interface TaskIntentDecision {
   hasEmptyPayload: boolean;
   // Canonical memory prefix alias when intent is memory-capture.
   memoryCapturePrefix?: "memory" | "memorize" | "remember" | "inventory";
+  // Resolved tool template name when intent is tool-expansion.
+  toolName?: string;
+  // Tool payload text when intent is tool-expansion.
+  toolPayload?: string;
 }
 
 // Prefix marker that explicitly requests verification without execution.
@@ -50,13 +56,33 @@ function extractMemoryCaptureParts(taskText: string): {
   };
 }
 
+function extractToolExpansionParts(taskText: string): {
+  toolName: string;
+  payload: string;
+} | null {
+  const separatorIndex = taskText.indexOf(":");
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  const toolName = taskText.slice(0, separatorIndex).trim();
+  if (toolName.length === 0) {
+    return null;
+  }
+
+  return {
+    toolName,
+    payload: taskText.slice(separatorIndex + 1).trim(),
+  };
+}
+
 /**
  * Classifies task text into a verification-only or execute-and-verify intent.
  *
  * @param taskText Raw task text selected from the source Markdown item.
  * @returns Intent decision containing both the chosen intent and rationale.
  */
-export function classifyTaskIntent(taskText: string): TaskIntentDecision {
+export function classifyTaskIntent(taskText: string, toolResolver?: ToolResolverPort): TaskIntentDecision {
   // Trim whitespace so explicit prefix checks are stable across formatting.
   const normalized = taskText.trim();
 
@@ -78,6 +104,21 @@ export function classifyTaskIntent(taskText: string): TaskIntentDecision {
       hasEmptyPayload: memoryCapture.payload.length === 0,
       memoryCapturePrefix: memoryCapture.prefix,
     };
+  }
+
+  const toolExpansion = extractToolExpansionParts(normalized);
+  if (toolExpansion !== null && toolResolver) {
+    const resolvedTool = toolResolver.resolve(toolExpansion.toolName);
+    if (resolvedTool) {
+      return {
+        intent: "tool-expansion",
+        reason: "resolved tool template",
+        normalizedTaskText: toolExpansion.payload,
+        hasEmptyPayload: toolExpansion.payload.length === 0,
+        toolName: resolvedTool.name,
+        toolPayload: toolExpansion.payload,
+      };
+    }
   }
 
   return {

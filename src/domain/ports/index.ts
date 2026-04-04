@@ -106,5 +106,8 @@ export type { WorkerConfigPort } from "./worker-config-port.js";
 /** Template variable loader abstraction for prompt rendering context. */
 export type { TemplateVarsLoaderPort } from "./template-vars-loader-port.js";
 
+/** Tool template resolution contracts for prefix-driven expansions. */
+export type { ToolDefinition, ToolResolverPort } from "./tool-resolver-port.js";
+
 /** Trace writer contract used for structured execution telemetry. */
 export type { TraceWriterPort } from "./trace-writer-port.js";

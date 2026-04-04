@@ -1,5 +1,7 @@
 import { type Task } from "../domain/parser.js";
 import type { TaskIntent } from "../domain/task-intent.js";
+import { parsePlannerOutput, insertSubitems } from "../domain/planner.js";
+import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
   ArtifactRunContext,
   CommandExecutionOptions,
@@ -31,6 +33,7 @@ export type TaskExecutionDispatchResult =
     verificationFailureMessage: string;
     verificationFailureRunReason: string;
     cliExecutionOptionsForVerification: CommandExecutionOptions | undefined;
+    toolExpansionInsertedChildCount?: number;
   }
   | {
     kind: "execution-failed";
@@ -70,6 +73,8 @@ export async function dispatchTaskExecution(params: {
   repairAttempts: number;
   taskIntent?: TaskIntent;
   memoryCapturePrefix?: "memory" | "memorize" | "remember" | "inventory";
+  toolName?: string;
+  toolPayload?: string;
   task: Task;
   prompt: string;
   expandedContextBefore: string;
@@ -100,6 +105,8 @@ export async function dispatchTaskExecution(params: {
     repairAttempts,
     taskIntent,
     memoryCapturePrefix,
+    toolName,
+    toolPayload,
     task,
     prompt,
     expandedContextBefore,
@@ -153,6 +160,7 @@ export async function dispatchTaskExecution(params: {
   };
 
   const isMemoryCaptureTask = taskIntent === "memory-capture";
+  const isToolExpansionTask = taskIntent === "tool-expansion";
 
   // Verify-only mode skips execution and returns verification-only settings.
   if (onlyVerify) {
@@ -199,6 +207,103 @@ export async function dispatchTaskExecution(params: {
       cliExecutionOptionsForVerification: cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
       verificationFailureMessage: "Verification failed. Task not checked.",
       verificationFailureRunReason: "Verification failed after inline CLI execution.",
+    };
+  }
+
+  if (isToolExpansionTask) {
+    if (mode === "detached") {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage:
+          "Tool expansion tasks do not support detached mode because worker output is required for TODO insertion.",
+        executionFailureRunReason: "Tool expansion task cannot insert children in detached mode.",
+        executionFailureExitCode: 1,
+      };
+    }
+
+    if (!toolName) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage: "Tool expansion task is missing a resolved tool name.",
+        executionFailureRunReason: "Tool expansion task intent is missing tool metadata.",
+        executionFailureExitCode: 1,
+      };
+    }
+
+    const resolvedTool = dependencies.toolResolver?.resolve(toolName);
+    if (!resolvedTool) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage: "Unable to resolve tool template: " + toolName,
+        executionFailureRunReason: "Tool expansion template could not be resolved.",
+        executionFailureExitCode: 1,
+      };
+    }
+
+    const source = dependencies.fileSystem.readText(task.file);
+    const renderedToolPrompt = renderTemplate(resolvedTool.template, {
+      task: task.text,
+      payload: toolPayload ?? "",
+      file: task.file,
+      context: expandedContextBefore,
+      taskIndex: task.index,
+      taskLine: task.line,
+      source,
+      ...buildTaskHierarchyTemplateVars(task),
+    } satisfies TemplateVars);
+
+    emit({ kind: "info", message: "Running tool expansion: " + resolvedTool.name + " [template=" + resolvedTool.templatePath + "]" });
+    const executePhaseTrace = traceRunSession.beginPhase("execute", resolvedWorkerCommand);
+    traceRunSession.emitPromptMetrics(renderedToolPrompt, expandedContextBefore, "execute.md");
+    const runResult = await dependencies.workerExecutor.runWorker({
+      command: resolvedWorkerCommand,
+      prompt: renderedToolPrompt,
+      mode,
+      transport,
+      trace,
+      cwd: dependencies.workingDirectory.cwd(),
+      configDir: dependencies.configDir?.configDir,
+      artifactContext,
+      artifactPhase: "execute",
+    });
+    traceRunSession.completePhase(
+      executePhaseTrace,
+      runResult.exitCode,
+      runResult.stdout,
+      runResult.stderr,
+      true,
+    );
+    emitExecutionWorkerOutput(runResult.stdout, runResult.stderr);
+
+    if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage: "Tool expansion worker exited with code " + runResult.exitCode + ".",
+        executionFailureRunReason: "Tool expansion worker exited with a non-zero code.",
+        executionFailureExitCode: runResult.exitCode,
+      };
+    }
+
+    const subitemLines = parsePlannerOutput(runResult.stdout);
+    if (subitemLines.length > 0) {
+      const updatedSource = insertSubitems(source, task, subitemLines);
+      dependencies.fileSystem.writeText(task.file, updatedSource);
+      emit({
+        kind: "info",
+        message: "Inserted " + subitemLines.length + " tool-generated child TODO item"
+          + (subitemLines.length === 1 ? "" : "s") + ".",
+      });
+    } else {
+      emit({ kind: "info", message: "Tool expansion produced no child TODO items." });
+    }
+
+    return {
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+      toolExpansionInsertedChildCount: subitemLines.length,
     };
   }
 

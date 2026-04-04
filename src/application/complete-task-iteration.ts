@@ -90,6 +90,7 @@ export async function completeTaskIteration(params: {
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   verificationFailureMessage: string;
   verificationFailureRunReason: string;
+  toolExpansionInsertedChildCount?: number;
 }): Promise<{ continueLoop: boolean; exitCode?: number }> {
   const {
     dependencies,
@@ -126,6 +127,7 @@ export async function completeTaskIteration(params: {
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     verificationFailureMessage,
     verificationFailureRunReason,
+    toolExpansionInsertedChildCount,
   } = params;
 
   // Run verification and optional repair before marking the task as complete.
@@ -190,6 +192,15 @@ export async function completeTaskIteration(params: {
   // Mark the task checkbox in the markdown source once iteration checks pass.
   checkTaskUsingFileSystem(task, dependencies.fileSystem);
   emit({ kind: "success", message: "Task checked: " + task.text });
+
+  // Tool expansions that inserted children should continue so newly inserted
+  // subitems can be selected and executed before ending the run.
+  if ((toolExpansionInsertedChildCount ?? 0) > 0) {
+    state.tasksCompleted++;
+    resetArtifacts();
+    return { continueLoop: true };
+  }
+
   // Save commit context when commits are deferred to post-run lifecycle handling.
   if (deferCommitUntilPostRun) {
     state.deferredCommitContext = { task, source: sourceText };

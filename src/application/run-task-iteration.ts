@@ -188,6 +188,7 @@ export async function runTaskIteration(params: {
     configuredShouldVerify: verifyConfig.configuredShouldVerify,
     forceExecute: execution.forceExecute,
     task,
+    toolResolver: dependencies.toolResolver,
     emit,
   });
 
@@ -195,6 +196,14 @@ export async function runTaskIteration(params: {
     emit({
       kind: "error",
       message: "Memory capture task requires payload text after the prefix (memory:, memorize:, remember:, inventory:).",
+    });
+    return { continueLoop: false, exitCode: 1 };
+  }
+
+  if (taskIntentDecision.intent === "tool-expansion" && taskIntentDecision.hasEmptyPayload) {
+    emit({
+      kind: "error",
+      message: "Tool task requires payload text after the prefix (<tool-name>:).",
     });
     return { continueLoop: false, exitCode: 1 };
   }
@@ -341,6 +350,8 @@ export async function runTaskIteration(params: {
       repairAttempts: execution.repairAttempts,
       taskIntent: taskIntentDecision.intent,
       memoryCapturePrefix: taskIntentDecision.memoryCapturePrefix,
+      toolName: taskIntentDecision.toolName,
+      toolPayload: taskIntentDecision.toolPayload,
       task: taskForExecution,
       prompt: preparedPrompts.prompt,
     expandedContextBefore: preparedPrompts.expandedContextBefore,
@@ -424,5 +435,6 @@ export async function runTaskIteration(params: {
       dispatchResult.cliExecutionOptionsForVerification,
     verificationFailureMessage: dispatchResult.verificationFailureMessage,
     verificationFailureRunReason: dispatchResult.verificationFailureRunReason,
+    toolExpansionInsertedChildCount: dispatchResult.toolExpansionInsertedChildCount,
   });
 }

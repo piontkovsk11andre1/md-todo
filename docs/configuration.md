@@ -151,6 +151,38 @@ Colon prefixes on checkbox text are also supported for verify-only intent:
 - [ ] verify: docs are up to date
 ```
 
+## Tool templates
+
+Custom tool prefixes are discovered from Markdown templates in `<config-dir>/tools/`.
+
+Layout:
+
+```text
+<config-dir>/
+  config.json
+  tools/
+    post-on-gitea.md
+    summarize.md
+```
+
+A task that starts with `<tool-name>:` is treated as a tool-expansion task when the matching template file exists.
+
+```markdown
+- [ ] post-on-gitea: open an issue for failed login callback handling
+```
+
+Template variables:
+
+- Standard task variables are available (`{{task}}`, `{{file}}`, `{{context}}`, `{{source}}`, etc.).
+- `{{payload}}` is the text after the first `:` in the task.
+
+Resolution and precedence:
+
+- Built-in prefixes are evaluated first (`verify:`/`confirm:`/`check:`, memory aliases, `cli:`, `rundown:`).
+- Tool names are resolved against `<config-dir>/tools/<name>.md`.
+- Unknown prefixes do not error; they fall back to normal task execution.
+- Empty tool payload is invalid and fails fast.
+
 Bracket prefixes (`[verify]`, `[confirm]`, `[check]`) are not supported.
 
 ## Unsupported profile sub-item form

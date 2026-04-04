@@ -92,6 +92,36 @@ describe("renderTemplate", () => {
     expect(result).toBe("Verification: Missing tests");
   });
 
+  it("should include payload for tool templates", () => {
+    const template = "Request: {{payload}}\nTask: {{task}}\nFile: {{file}}";
+    const result = renderTemplate(template, {
+      task: "post-on-gitea: Report auth issue",
+      file: "tasks.md",
+      context: "",
+      taskIndex: 0,
+      taskLine: 1,
+      source: "",
+      payload: "Report auth issue",
+    });
+
+    expect(result).toBe("Request: Report auth issue\nTask: post-on-gitea: Report auth issue\nFile: tasks.md");
+  });
+
+  it("should replace payload with empty string when undefined", () => {
+    const template = "Request: {{payload}}";
+    const result = renderTemplate(template, {
+      task: "summarize: auth context",
+      file: "tasks.md",
+      context: "",
+      taskIndex: 0,
+      taskLine: 1,
+      source: "",
+      payload: undefined,
+    });
+
+    expect(result).toBe("Request: ");
+  });
+
   it("should replace known optional placeholders with an empty string when undefined", () => {
     const template = "Verification: {{verificationResult}}";
     const result = renderTemplate(template, {

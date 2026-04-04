@@ -1112,6 +1112,363 @@ describe("task-execution-dispatch", () => {
     });
   });
 
+  it("expands tool tasks into child TODO items and disables verification", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "post-on-gitea: report auth issue");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] post-on-gitea: report auth issue\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: vi.fn(() => ({
+        name: "post-on-gitea",
+        templatePath: path.join(cwd, ".rundown", "tools", "post-on-gitea.md"),
+        template: "Request: {{payload}}\nFile: {{file}}\nContext:\n{{context}}",
+      })),
+    };
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "- [ ] Draft issue details\n- [ ] Create gitea issue",
+      stderr: "",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "tool-expansion",
+      toolName: "post-on-gitea",
+      toolPayload: "report auth issue",
+      task,
+      prompt: "unused prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result).toEqual({
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: undefined,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+      toolExpansionInsertedChildCount: 2,
+    });
+    expect(dependencies.toolResolver.resolve).toHaveBeenCalledWith("post-on-gitea");
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "Request: report auth issue\nFile: " + task.file + "\nContext:\n",
+    }));
+    expect(fileSystem.readText(task.file)).toContain("  - [ ] Draft issue details");
+    expect(fileSystem.readText(task.file)).toContain("  - [ ] Create gitea issue");
+  });
+
+  it("inserts only unchecked TODO lines parsed from tool worker output", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "summarize: auth issue context");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] summarize: auth issue context\n- [ ] Follow-up task\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: vi.fn(() => ({
+        name: "summarize",
+        templatePath: path.join(cwd, ".rundown", "tools", "summarize.md"),
+        template: "Request: {{payload}}",
+      })),
+    };
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "Here is the plan:",
+        "- [x] Already complete",
+        "- plain bullet",
+        "- [ ] Draft auth summary",
+        "* [ ] Post issue update",
+        "+ [ ] Confirm assignee",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "tool-expansion",
+      toolName: "summarize",
+      toolPayload: "auth issue context",
+      task,
+      prompt: "unused prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result).toEqual({
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: undefined,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+      toolExpansionInsertedChildCount: 3,
+    });
+    expect(fileSystem.readText(task.file)).toBe([
+      "- [ ] summarize: auth issue context",
+      "  - [ ] Draft auth summary",
+      "  - [ ] Post issue update",
+      "  - [ ] Confirm assignee",
+      "- [ ] Follow-up task",
+      "",
+    ].join("\n"));
+  });
+
+  it("inserts tool-generated TODOs with nested indentation under nested parent task", async () => {
+    const task = {
+      ...createTask(path.join(cwd, "tasks.md"), "summarize: nested auth issue"),
+      line: 2,
+      depth: 1,
+    };
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: [
+        "- [ ] Parent",
+        "  - [ ] summarize: nested auth issue",
+        "  - [ ] Existing nested task",
+      ].join("\n"),
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: vi.fn(() => ({
+        name: "summarize",
+        templatePath: path.join(cwd, ".rundown", "tools", "summarize.md"),
+        template: "Request: {{payload}}",
+      })),
+    };
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "- [ ] Inserted nested task",
+      stderr: "",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "tool-expansion",
+      toolName: "summarize",
+      toolPayload: "nested auth issue",
+      task,
+      prompt: "unused prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("ready-for-completion");
+    expect(fileSystem.readText(task.file)).toBe([
+      "- [ ] Parent",
+      "  - [ ] summarize: nested auth issue",
+      "    - [ ] Inserted nested task",
+      "  - [ ] Existing nested task",
+    ].join("\n"));
+  });
+
+  it("completes tool tasks with no child TODO output", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "summarize: auth issue context");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] summarize: auth issue context\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: vi.fn(() => ({
+        name: "summarize",
+        templatePath: path.join(cwd, ".rundown", "tools", "summarize.md"),
+        template: "Request: {{payload}}",
+      })),
+    };
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "No tasks needed",
+      stderr: "",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "tool-expansion",
+      toolName: "summarize",
+      toolPayload: "auth issue context",
+      task,
+      prompt: "unused prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result.kind).toBe("ready-for-completion");
+    if (result.kind === "ready-for-completion") {
+      expect(result.shouldVerify).toBe(false);
+    }
+    expect(fileSystem.readText(task.file)).toBe("- [ ] summarize: auth issue context\n");
+  });
+
+  it("rejects detached mode for tool-expansion tasks", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "summarize: auth issue context");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] summarize: auth issue context\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "detached",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "tool-expansion",
+      toolName: "summarize",
+      toolPayload: "auth issue context",
+      task,
+      prompt: "unused prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: false,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result).toEqual({
+      kind: "execution-failed",
+      executionFailureMessage:
+        "Tool expansion tasks do not support detached mode because worker output is required for TODO insertion.",
+      executionFailureRunReason: "Tool expansion task cannot insert children in detached mode.",
+      executionFailureExitCode: 1,
+    });
+  });
+
   it("preserves verify-only precedence when task intent is memory-capture", async () => {
     const task = createTask(path.join(cwd, "tasks.md"), "Capture release memory");
     const fileSystem = createInMemoryFileSystem({
@@ -1472,6 +1829,88 @@ describe("complete-task-iteration", () => {
       source: "- [ ] Ship release",
     });
     expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, { commit: "ok" });
+    expect(resetArtifacts).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues loop after checking tool task when children were inserted", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] post-on-gitea: report auth issue\n  - [ ] Draft issue details\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({});
+    const checkTaskSpy = vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+    const finishRun = vi.fn(async () => 0);
+    const resetArtifacts = vi.fn();
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts,
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: true,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: "done: {{task}}",
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      transport: "file",
+      trace: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task,
+      sourceText: "- [ ] post-on-gitea: report auth issue",
+      expandedSource: "- [ ] post-on-gitea: report auth issue",
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      shouldVerify: false,
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      toolExpansionInsertedChildCount: 1,
+    });
+
+    expect(result).toEqual({ continueLoop: true });
+    expect(state.tasksCompleted).toBe(1);
+    expect(checkTaskSpy).toHaveBeenCalledTimes(1);
+    expect(afterTaskCompleteSpy).not.toHaveBeenCalled();
+    expect(finishRun).not.toHaveBeenCalled();
     expect(resetArtifacts).toHaveBeenCalledTimes(1);
   });
 });

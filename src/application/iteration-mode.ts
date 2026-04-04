@@ -1,5 +1,6 @@
 import { classifyTaskIntent, type TaskIntentDecision } from "../domain/task-intent.js";
 import { type Task } from "../domain/parser.js";
+import type { ToolResolverPort } from "../domain/ports/tool-resolver-port.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -28,6 +29,7 @@ export function resolveIterationVerificationMode(params: {
   configuredShouldVerify: boolean;
   forceExecute: boolean;
   task: Task;
+  toolResolver?: ToolResolverPort;
   emit: EmitFn;
 }): IterationVerificationMode {
   const {
@@ -35,11 +37,12 @@ export function resolveIterationVerificationMode(params: {
     configuredShouldVerify,
     forceExecute,
     task,
+    toolResolver,
     emit,
   } = params;
 
   // Classify the task text so verify-only directives can influence iteration mode.
-  const taskIntent = classifyTaskIntent(task.text);
+  const taskIntent = classifyTaskIntent(task.text, toolResolver);
   // Enter verify-only mode when globally configured or when task intent requires it.
   const onlyVerify = configuredOnlyVerify || (taskIntent.intent === "verify-only" && !forceExecute);
   // Verification is required whenever verify mode is configured or verify-only is active.

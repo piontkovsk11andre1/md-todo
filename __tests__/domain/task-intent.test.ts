@@ -1,46 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { classifyTaskIntent } from "../../src/domain/task-intent.js";
+import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port.js";
+
+const noToolResolver: ToolResolverPort = {
+  resolve: () => undefined,
+};
 
 describe("classifyTaskIntent", () => {
   it("classifies explicit verify: prefix as verify-only", () => {
-    const decision = classifyTaskIntent("verify: release notes are accurate");
+    const decision = classifyTaskIntent("verify: release notes are accurate", noToolResolver);
     expect(decision.intent).toBe("verify-only");
     expect(decision.reason).toContain("explicit");
   });
 
   it("classifies confirm: prefix as verify-only", () => {
-    const decision = classifyTaskIntent("confirm: changelog includes migration note");
+    const decision = classifyTaskIntent("confirm: changelog includes migration note", noToolResolver);
     expect(decision.intent).toBe("verify-only");
     expect(decision.reason).toContain("explicit");
   });
 
   it("classifies check: prefix as verify-only", () => {
-    const decision = classifyTaskIntent("check: all tests pass");
+    const decision = classifyTaskIntent("check: all tests pass", noToolResolver);
     expect(decision.intent).toBe("verify-only");
     expect(decision.reason).toContain("explicit");
   });
 
   it("matches verify-only aliases case-insensitively with colon spacing", () => {
-    expect(classifyTaskIntent("VeRiFy : release checks").intent).toBe("verify-only");
-    expect(classifyTaskIntent("  CONFIRM   : changelog entries").intent).toBe("verify-only");
-    expect(classifyTaskIntent("cHeCk:\tci status").intent).toBe("verify-only");
+    expect(classifyTaskIntent("VeRiFy : release checks", noToolResolver).intent).toBe("verify-only");
+    expect(classifyTaskIntent("  CONFIRM   : changelog entries", noToolResolver).intent).toBe("verify-only");
+    expect(classifyTaskIntent("cHeCk:\tci status", noToolResolver).intent).toBe("verify-only");
   });
 
   it("preserves normalized task text for verify-only prefixes", () => {
-    const decision = classifyTaskIntent("  verify:   release docs are aligned  ");
+    const decision = classifyTaskIntent("  verify:   release docs are aligned  ", noToolResolver);
     expect(decision.intent).toBe("verify-only");
     expect(decision.normalizedTaskText).toBe("verify:   release docs are aligned");
     expect(decision.hasEmptyPayload).toBe(false);
   });
 
   it("keeps verify-only behavior when payload mentions memory aliases", () => {
-    const decision = classifyTaskIntent("confirm: memory: capture incident timeline");
+    const decision = classifyTaskIntent("confirm: memory: capture incident timeline", noToolResolver);
     expect(decision.intent).toBe("verify-only");
     expect(decision.reason).toContain("explicit");
   });
 
   it("classifies memory: prefix as memory-capture", () => {
-    const decision = classifyTaskIntent("memory: capture architecture notes");
+    const decision = classifyTaskIntent("memory: capture architecture notes", noToolResolver);
     expect(decision.intent).toBe("memory-capture");
     expect(decision.reason).toContain("memory");
     expect(decision.memoryCapturePrefix).toBe("memory");
@@ -49,70 +54,139 @@ describe("classifyTaskIntent", () => {
   });
 
   it("classifies memory prefix aliases as memory-capture", () => {
-    const memorizeDecision = classifyTaskIntent("memorize: capture release notes");
+    const memorizeDecision = classifyTaskIntent("memorize: capture release notes", noToolResolver);
     expect(memorizeDecision.intent).toBe("memory-capture");
     expect(memorizeDecision.memoryCapturePrefix).toBe("memorize");
 
-    const rememberDecision = classifyTaskIntent("remember: capture migration caveats");
+    const rememberDecision = classifyTaskIntent("remember: capture migration caveats", noToolResolver);
     expect(rememberDecision.intent).toBe("memory-capture");
     expect(rememberDecision.memoryCapturePrefix).toBe("remember");
 
-    const inventoryDecision = classifyTaskIntent("inventory: capture task context");
+    const inventoryDecision = classifyTaskIntent("inventory: capture task context", noToolResolver);
     expect(inventoryDecision.intent).toBe("memory-capture");
     expect(inventoryDecision.memoryCapturePrefix).toBe("inventory");
   });
 
   it("matches memory prefixes case-insensitively and with colon spacing", () => {
-    expect(classifyTaskIntent("MeMoRy : keep this context").intent).toBe("memory-capture");
-    expect(classifyTaskIntent("  INVENTORY   : map current state").intent).toBe("memory-capture");
+    expect(classifyTaskIntent("MeMoRy : keep this context", noToolResolver).intent).toBe("memory-capture");
+    expect(classifyTaskIntent("  INVENTORY   : map current state", noToolResolver).intent).toBe("memory-capture");
   });
 
   it("extracts normalized payload text for memory capture aliases", () => {
-    expect(classifyTaskIntent("memory:   keep deploy checklist").normalizedTaskText).toBe("keep deploy checklist");
-    expect(classifyTaskIntent("memorize :   release caveats").normalizedTaskText).toBe("release caveats");
-    expect(classifyTaskIntent("remember:\tincident timeline").normalizedTaskText).toBe("incident timeline");
-    expect(classifyTaskIntent("inventory:\n  service boundaries").normalizedTaskText).toBe("service boundaries");
+    expect(classifyTaskIntent("memory:   keep deploy checklist", noToolResolver).normalizedTaskText).toBe("keep deploy checklist");
+    expect(classifyTaskIntent("memorize :   release caveats", noToolResolver).normalizedTaskText).toBe("release caveats");
+    expect(classifyTaskIntent("remember:\tincident timeline", noToolResolver).normalizedTaskText).toBe("incident timeline");
+    expect(classifyTaskIntent("inventory:\n  service boundaries", noToolResolver).normalizedTaskText).toBe("service boundaries");
   });
 
   it("flags empty memory payloads after prefix normalization", () => {
-    expect(classifyTaskIntent("memory:").hasEmptyPayload).toBe(true);
-    expect(classifyTaskIntent("memorize:   ").hasEmptyPayload).toBe(true);
-    expect(classifyTaskIntent("remember :\n\t").hasEmptyPayload).toBe(true);
-    expect(classifyTaskIntent("inventory: \r\n ").hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("memory:", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("memorize:   ", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("remember :\n\t", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("inventory: \r\n ", noToolResolver).hasEmptyPayload).toBe(true);
   });
 
   it("does not classify non-prefix memory words as memory-capture", () => {
-    const decision = classifyTaskIntent("Document memory:pressure behavior in scheduler");
+    const decision = classifyTaskIntent("Document memory:pressure behavior in scheduler", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
     expect(decision.reason).toBe("default");
   });
 
   it("treats [verify] bracket prefix as execute-and-verify", () => {
-    const decision = classifyTaskIntent("[verify] docs are up to date");
+    const decision = classifyTaskIntent("[verify] docs are up to date", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
     expect(decision.reason).toBe("default");
   });
 
   it("does not guess intent from verification verbs alone", () => {
-    const decision = classifyTaskIntent("Confirm all docs links resolve");
+    const decision = classifyTaskIntent("Confirm all docs links resolve", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
   });
 
   it("treats tasks mentioning verify without explicit prefix as execute-and-verify", () => {
-    const decision = classifyTaskIntent("Instrument verify-repair-loop to emit verification.result");
+    const decision = classifyTaskIntent("Instrument verify-repair-loop to emit verification.result", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
   });
 
   it("defaults to execute-and-verify for implementation tasks", () => {
-    const decision = classifyTaskIntent("Implement API schema validation and verify fixtures");
+    const decision = classifyTaskIntent("Implement API schema validation and verify fixtures", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
     expect(decision.normalizedTaskText).toBe("Implement API schema validation and verify fixtures");
     expect(decision.hasEmptyPayload).toBe(false);
   });
 
   it("defaults to execute-and-verify for rundown delegate tasks", () => {
-    const decision = classifyTaskIntent("rundown: Test.md --optional arg-val");
+    const decision = classifyTaskIntent("rundown: Test.md --optional arg-val", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
     expect(decision.reason).toBe("default");
+  });
+
+  it("classifies dynamic tool prefixes when resolver matches", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: (toolName) => toolName === "post-on-gitea"
+        ? {
+          name: "post-on-gitea",
+          templatePath: "/workspace/.rundown/tools/post-on-gitea.md",
+          template: "Request: {{payload}}",
+        }
+        : undefined,
+    };
+
+    const decision = classifyTaskIntent("post-on-gitea: file auth issue", toolResolver);
+    expect(decision.intent).toBe("tool-expansion");
+    expect(decision.toolName).toBe("post-on-gitea");
+    expect(decision.toolPayload).toBe("file auth issue");
+    expect(decision.normalizedTaskText).toBe("file auth issue");
+    expect(decision.hasEmptyPayload).toBe(false);
+  });
+
+  it("flags empty payload for matched tool prefixes", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: () => ({
+        name: "summarize",
+        templatePath: "/workspace/.rundown/tools/summarize.md",
+        template: "{{payload}}",
+      }),
+    };
+
+    const decision = classifyTaskIntent("summarize:   ", toolResolver);
+    expect(decision.intent).toBe("tool-expansion");
+    expect(decision.toolName).toBe("summarize");
+    expect(decision.toolPayload).toBe("");
+    expect(decision.hasEmptyPayload).toBe(true);
+  });
+
+  it("falls through to execute-and-verify when tool prefix is unknown", () => {
+    const decision = classifyTaskIntent("unknown-tool: payload", noToolResolver);
+    expect(decision.intent).toBe("execute-and-verify");
+    expect(decision.reason).toBe("default");
+  });
+
+  it("keeps built-in verify prefix precedence over tool resolver", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: () => ({
+        name: "verify",
+        templatePath: "/workspace/.rundown/tools/verify.md",
+        template: "{{payload}}",
+      }),
+    };
+
+    const decision = classifyTaskIntent("verify: confirm release", toolResolver);
+    expect(decision.intent).toBe("verify-only");
+    expect(decision.reason).toContain("explicit");
+  });
+
+  it("keeps built-in memory prefix precedence over tool resolver", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: () => ({
+        name: "memory",
+        templatePath: "/workspace/.rundown/tools/memory.md",
+        template: "{{payload}}",
+      }),
+    };
+
+    const decision = classifyTaskIntent("memory: capture context", toolResolver);
+    expect(decision.intent).toBe("memory-capture");
+    expect(decision.memoryCapturePrefix).toBe("memory");
   });
 });

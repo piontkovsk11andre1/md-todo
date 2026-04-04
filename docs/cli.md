@@ -631,6 +631,45 @@ Example:
 - [ ] memory: capture release checklist assumptions and deployment caveats
 ```
 
+## Tool expansion prefixes
+
+You can define custom task prefixes by adding Markdown prompt templates under
+`<config-dir>/tools/` (usually `.rundown/tools/`).
+
+Each template file name becomes a runnable prefix:
+
+- `.rundown/tools/post-on-gitea.md` -> `post-on-gitea:`
+- `.rundown/tools/summarize.md` -> `summarize:`
+
+Task form:
+
+```md
+- [ ] <tool-name>: <payload>
+```
+
+Execution behavior:
+
+- Rundown resolves `<tool-name>` to `<config-dir>/tools/<tool-name>.md`.
+- The tool template is rendered with standard task template vars plus `{{payload}}`.
+- The rendered prompt is sent to the worker.
+- Worker output is parsed for unchecked TODO items (`- [ ] ...`) and inserted as child tasks.
+- The tool task is treated as structural expansion and does not run verification itself.
+
+Resolution rules:
+
+- Built-in prefixes win first (`verify:`/`confirm:`/`check:`, memory aliases, `cli:`, `rundown:`).
+- Tool matching is case-insensitive and checks the text before the first `:`.
+- Unknown prefixes fall back to normal `execute-and-verify` behavior.
+- Empty tool payload fails with exit code `1`.
+
+Example:
+
+```md
+- [ ] post-on-gitea: open an issue for the broken auth callback flow
+```
+
+With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and expands the task into child TODO items.
+
 ## Common options
 
 ### Verification and repair

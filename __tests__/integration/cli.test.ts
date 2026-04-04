@@ -646,6 +646,130 @@ describe.sequential("CLI integration", () => {
     expect(index[canonicalSourcePath]?.summary).toBe("Captured release context");
   });
 
+  it("run expands tool tasks into children and continues with inserted work", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "tool-expansion-worker.cjs");
+    const childTaskScriptPath = path.join(workspace, "child-task.cjs");
+    const childProbePath = path.join(workspace, "child-task-ran.txt");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "post-on-gitea.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(toolTemplatePath, "Request: {{payload}}\nContext:\n{{context}}\n", "utf-8");
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "- [ ] post-on-gitea: report auth flow",
+        "- [ ] Later sibling task",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "console.log('- [ ] cli: node child-task.cjs');",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      childTaskScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(childProbePath.replace(/\\/g, "/"))}, 'ok\\n', 'utf-8');`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: report auth flow"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node child-task.cjs"))).toBe(true);
+    expect(fs.existsSync(childProbePath)).toBe(true);
+    expect(fs.readFileSync(childProbePath, "utf-8")).toBe("ok\n");
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
+      "- [x] post-on-gitea: report auth flow",
+      "  - [x] cli: node child-task.cjs",
+      "- [ ] Later sibling task",
+      "",
+    ].join("\n"));
+  });
+
+  it("run falls through gracefully when a tool prefix has no matching file", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "missing-tool-worker.cjs");
+
+    fs.writeFileSync(roadmapPath, "- [ ] missing-tool: handle auth regression\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "console.log('Handled as a normal task');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: missing-tool: handle auth regression"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] missing-tool: handle auth regression\n");
+  });
+
+  it("run prefers built-in prefixes over same-named tool files", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "built-in-prefix-worker.cjs");
+    const childTaskScriptPath = path.join(workspace, "child-task.cjs");
+    const childProbePath = path.join(workspace, "child-task-ran.txt");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "memory.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(toolTemplatePath, "Request: {{payload}}\n", "utf-8");
+    fs.writeFileSync(roadmapPath, "- [ ] memory: capture release context\n", "utf-8");
+    fs.writeFileSync(workerScriptPath, "console.log('- [ ] cli: node child-task.cjs');\n", "utf-8");
+    fs.writeFileSync(
+      childTaskScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(childProbePath.replace(/\\/g, "/"))}, 'ran\\n', 'utf-8');`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: capture release context"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] memory: capture release context\n");
+    expect(fs.existsSync(childProbePath)).toBe(false);
+
+    const memoryFilePath = path.join(workspace, ".rundown", "roadmap.md.memory.md");
+    expect(fs.existsSync(memoryFilePath)).toBe(true);
+    expect(fs.readFileSync(memoryFilePath, "utf-8")).toContain("- [ ] cli: node child-task.cjs");
+  });
+
   it("run returns execution error for memory prefix with empty payload and does not write memory files", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -4737,7 +4861,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("Create a .rundown/ directory with default templates (plan, execute, verify, repair, trace) plus vars.json/config.json initialized as empty JSON objects. Use --config-dir to control where it is created.");
+    expect(compactHelpOutput).toContain("Create a .rundown/ directory with default templates (plan, execute, verify, repair, trace), scaffold tools/, and initialize vars.json/config.json as empty JSON objects. Use --config-dir to control where it is created.");
   });
 
   it("unlock --help shows source argument", async () => {
@@ -6301,6 +6425,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "plan.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "research.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "trace.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "tools"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "config.json"))).toBe(true);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "config.json"), "utf-8")).toBe("{}\n");
@@ -6321,6 +6446,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(customConfigDir, "plan.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "research.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "trace.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "tools"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "config.json"))).toBe(true);
     expect(fs.readFileSync(path.join(customConfigDir, "config.json"), "utf-8")).toBe("{}\n");

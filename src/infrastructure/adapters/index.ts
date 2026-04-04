@@ -91,6 +91,10 @@ export { createMemoryResolverAdapter } from "./memory-resolver-adapter.js";
  */
 export { createMemoryWriterAdapter } from "./memory-writer-adapter.js";
 /**
+ * Creates the project tool template resolver adapter.
+ */
+export { createToolResolverAdapter } from "./tool-resolver-adapter.js";
+/**
  * Creates the configuration directory adapter.
  */
 export { createConfigDirAdapter } from "./config-dir-adapter.js";

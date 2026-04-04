@@ -28,6 +28,9 @@ export interface TemplateVars {
   /** Full source file content. */
   source: string;
 
+  /** Payload text passed to tool templates. */
+  payload?: string;
+
   /** Parsed verification result text (available during correction). */
   verificationResult?: string;
 

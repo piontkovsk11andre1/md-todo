@@ -14,7 +14,9 @@ describe("init-project", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.exists)).toHaveBeenCalledWith("/workspace/.rundown");
+    expect(vi.mocked(fileSystem.exists)).toHaveBeenCalledWith("/workspace/.rundown/tools");
     expect(vi.mocked(fileSystem.mkdir)).toHaveBeenCalledWith("/workspace/.rundown", { recursive: true });
+    expect(vi.mocked(fileSystem.mkdir)).toHaveBeenCalledWith("/workspace/.rundown/tools", { recursive: true });
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       expect.stringMatching(/^\/workspace\/\.rundown\//),
       expect.any(String),
@@ -43,7 +45,9 @@ describe("init-project", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.exists)).toHaveBeenCalledWith(explicitConfigDir);
+    expect(vi.mocked(fileSystem.exists)).toHaveBeenCalledWith(`${explicitConfigDir}/tools`);
     expect(vi.mocked(fileSystem.mkdir)).toHaveBeenCalledWith(explicitConfigDir, { recursive: true });
+    expect(vi.mocked(fileSystem.mkdir)).toHaveBeenCalledWith(`${explicitConfigDir}/tools`, { recursive: true });
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       expect.stringMatching(/^\/workspace\/config\/\.rundown-custom\//),
       expect.any(String),

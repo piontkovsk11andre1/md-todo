@@ -25,6 +25,7 @@ import type {
   FileSystem,
   GitClient,
   MemoryResolverPort,
+  ToolResolverPort,
   MemoryWriterPort,
   ProcessRunner,
   PathOperationsPort,
@@ -55,6 +56,7 @@ import {
   createJsonlTraceWriter,
   createMemoryWriterAdapter,
   createMemoryResolverAdapter,
+  createToolResolverAdapter,
   createNodeFileSystem,
   createNoopTraceWriter,
   createNodePathOperationsAdapter,
@@ -148,6 +150,7 @@ export interface AppPorts {
   workingDirectory: WorkingDirectoryPort;
   pathOperations: PathOperationsPort;
   memoryResolver: MemoryResolverPort;
+  toolResolver: ToolResolverPort;
   memoryWriter?: MemoryWriterPort;
   workerConfigPort: WorkerConfigPort;
   templateVarsLoader: TemplateVarsLoaderPort;
@@ -177,6 +180,11 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
   const taskRepair = overrides.taskRepair
     ?? createTaskRepairAdapter(verificationStore);
   const fileSystem = overrides.fileSystem ?? createNodeFileSystem();
+  const toolResolver = overrides.toolResolver ?? createToolResolverAdapter({
+    fileSystem,
+    pathOperations,
+    configDir,
+  });
   const memoryResolver = overrides.memoryResolver ?? createMemoryResolverAdapter({
     fileSystem,
     pathOperations,
@@ -205,6 +213,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     taskRepair,
     workingDirectory,
     pathOperations,
+    toolResolver,
     memoryResolver,
     memoryWriter,
     workerConfigPort: overrides.workerConfigPort ?? createWorkerConfigAdapter(),
@@ -278,6 +287,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       gitClient: ports.gitClient,
       processRunner: ports.processRunner,
       pathOperations: ports.pathOperations,
+      toolResolver: ports.toolResolver,
       memoryResolver: ports.memoryResolver,
       memoryWriter: ports.memoryWriter,
       templateVarsLoader: ports.templateVarsLoader,

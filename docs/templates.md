@@ -67,6 +67,9 @@ When both are provided, direct `--var` entries override file-loaded values.
 
 These values are available in templates as placeholders such as `{{branch}}` or `{{ticket}}`.
 
+For tool-expansion tasks (`<tool-name>: <payload>` with a matching template in `.rundown/tools/`),
+`{{payload}}` is also available and contains the task text after the first `:`.
+
 ## Built-in memory variables
 
 Worker-facing templates receive source-local memory metadata as compact placeholders.
