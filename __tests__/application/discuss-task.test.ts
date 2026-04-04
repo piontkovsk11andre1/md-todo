@@ -6,6 +6,7 @@ import {
   type DiscussTaskOptions,
 } from "../../src/application/discuss-task.js";
 import { DEFAULT_DISCUSS_TEMPLATE } from "../../src/domain/defaults.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { FileLockError } from "../../src/domain/ports/file-lock.js";
 import type { Task } from "../../src/domain/parser.js";
 import type {
@@ -609,17 +610,18 @@ describe("discuss-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).toHaveBeenCalledWith(expect.objectContaining({
-      command: ["opencode", "run"],
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run"],
+      }),
       prompt: "Discuss: Refine rollout scope",
       mode: "tui",
-      transport: "arg",
       captureOutput: false,
       artifactPhase: "discuss",
       cwd,
     }));
     expect(events).toContainEqual({
       kind: "info",
-      message: "Running discussion worker: opencode run [mode=tui, transport=arg]",
+      message: "Running discussion worker: opencode run [mode=tui]",
     });
     expect(events).toContainEqual({
       kind: "info",
@@ -1283,24 +1285,29 @@ function createInMemoryFileSystem(initialFiles: Record<string, string>): FileSys
   };
 }
 
-function createOptions(overrides: Partial<DiscussTaskOptions>): DiscussTaskOptions {
+function createOptions(
+  overrides: Partial<DiscussTaskOptions> & { workerCommand?: string[]; transport?: string },
+): DiscussTaskOptions {
+  const { workerCommand, transport: _transport, ...optionOverrides } = overrides;
+  const workerPattern = optionOverrides.workerPattern
+    ?? inferWorkerPatternFromCommand(workerCommand ?? []);
+
   return {
     source: "tasks.md",
     mode: "tui",
-    transport: "file",
+    workerPattern,
     sortMode: "name-sort",
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,
     varsFileOption: undefined,
     cliTemplateVarArgs: [],
-    workerCommand: [],
     showAgentOutput: false,
     trace: false,
     forceUnlock: false,
     ignoreCliBlock: false,
     cliBlockTimeoutMs: undefined,
-    ...overrides,
+    ...optionOverrides,
   };
 }
 

@@ -1,6 +1,7 @@
 import { type Task } from "../domain/parser.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { requiresWorkerCommand } from "../domain/run-options.js";
-import { resolveWorkerForInvocation } from "./resolve-worker.js";
+import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { handleTemplateCliFailure } from "./cli-block-handlers.js";
 import { handleDryRunOrPrintPrompt } from "./dry-run-dispatch.js";
 import { formatTaskLabel } from "./run-task-utils.js";
@@ -26,7 +27,6 @@ import type {
   ArtifactStoreStatus,
   CommandExecutionOptions,
   CommandExecutor,
-  PromptTransport,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
@@ -56,7 +56,6 @@ interface IterationTaskContext {
 
 interface IterationExecutionOptions {
   mode: RunnerMode;
-  transport: PromptTransport;
   keepArtifacts: boolean;
   printPrompt: boolean;
   dryRun: boolean;
@@ -73,7 +72,7 @@ interface IterationExecutionOptions {
 }
 
 interface IterationWorkerConfig {
-  workerCommand: string[];
+  workerPattern: ParsedWorkerPattern;
   loadedWorkerConfig: ReturnType<RunTaskDependencies["workerConfigPort"]["load"]> | undefined;
 }
 
@@ -222,16 +221,27 @@ export async function runTaskIteration(params: {
   // Announce the next task before any execution or validation occurs.
   emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
   // Resolve the effective worker command using CLI, config, and task metadata.
-  const resolvedWorkerCommand = resolveWorkerForInvocation({
+  const resolvedWorker = resolveWorkerPatternForInvocation({
     commandName: "run",
     workerConfig: worker.loadedWorkerConfig,
     source: fileSource,
     task: taskForExecution,
-    cliWorkerCommand: worker.workerCommand,
+    cliWorkerPattern: worker.workerPattern,
     emit,
   });
+  const resolvedWorkerCommand = resolvedWorker.workerCommand;
+  const resolvedWorkerPattern = resolvedWorker.workerPattern;
   // Build the automation command variant used for verification-only execution.
   const automationCommand = getAutomationWorkerCommand(resolvedWorkerCommand, execution.mode);
+  const automationWorkerPattern = resolvedWorkerCommand.length === automationCommand.length
+    && resolvedWorkerCommand.every((token, index) => token === automationCommand[index])
+    ? resolvedWorkerPattern
+    : {
+      command: [...automationCommand],
+      usesBootstrap: automationCommand.some((token) => token.includes("$bootstrap")),
+      usesFile: automationCommand.some((token) => token.includes("$file")),
+      appendFile: !automationCommand.some((token) => token.includes("$bootstrap") || token.includes("$file")),
+    };
 
   // Abort early when a task requires a worker command but none is available.
   if (requiresWorkerCommand({
@@ -243,7 +253,7 @@ export async function runTaskIteration(params: {
   })) {
     emit({
       kind: "error",
-      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
     });
     return { continueLoop: false, exitCode: 1 };
   }
@@ -256,7 +266,7 @@ export async function runTaskIteration(params: {
       commandName: "run",
       workerCommand: onlyVerify ? automationCommand : resolvedWorkerCommand,
       mode: execution.mode,
-      transport: execution.transport,
+      transport: "pattern",
       source,
       task: toRuntimeTaskMetadata(taskForExecution, fileSource),
       keepArtifacts: execution.keepArtifacts,
@@ -345,6 +355,7 @@ export async function runTaskIteration(params: {
     emit,
     files,
     selectedWorkerCommand,
+    selectedWorkerPattern: onlyVerify ? automationWorkerPattern : resolvedWorkerPattern,
     pendingPreRunResetTraceEvents: traceConfig.pendingPreRunResetTraceEvents,
     traceRunSession: traceConfig.traceRunSession,
     configuredOnlyVerify: verifyConfig.configuredOnlyVerify,
@@ -352,22 +363,22 @@ export async function runTaskIteration(params: {
     onlyVerify,
     shouldVerify,
     mode: execution.mode,
-    transport: execution.transport,
     keepArtifacts: execution.keepArtifacts,
     showAgentOutput: execution.showAgentOutput,
     ignoreCliBlock: execution.ignoreCliBlock,
-      verify: execution.verify,
-      noRepair: execution.noRepair,
-      repairAttempts: execution.repairAttempts,
-      taskIntent: taskIntentDecision.intent,
-      memoryCapturePrefix: taskIntentDecision.memoryCapturePrefix,
-      toolName: taskIntentDecision.toolName,
-      toolPayload: taskIntentDecision.toolPayload,
-      task: taskForExecution,
-      prompt: preparedPrompts.prompt,
+    verify: execution.verify,
+    noRepair: execution.noRepair,
+    repairAttempts: execution.repairAttempts,
+    taskIntent: taskIntentDecision.intent,
+    memoryCapturePrefix: taskIntentDecision.memoryCapturePrefix,
+    toolName: taskIntentDecision.toolName,
+    toolPayload: taskIntentDecision.toolPayload,
+    task: taskForExecution,
+    prompt: preparedPrompts.prompt,
     expandedContextBefore: preparedPrompts.expandedContextBefore,
     artifactContext: state.artifactContext,
     resolvedWorkerCommand,
+    resolvedWorkerPattern,
     trace: execution.trace,
     executionEnv: prompts.executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort:
@@ -431,7 +442,6 @@ export async function runTaskIteration(params: {
     hideHookOutput: execution.hideHookOutput,
     maxRepairAttempts: verifyConfig.maxRepairAttempts,
     allowRepair: verifyConfig.allowRepair,
-    transport: execution.transport,
     trace: execution.trace,
     cliBlockExecutor: prompts.cliBlockExecutor,
     cliExpansionEnabled: execution.cliExpansionEnabled,
@@ -443,6 +453,7 @@ export async function runTaskIteration(params: {
     templateVarsWithTrace: preparedPrompts.templateVarsWithTrace,
     executionEnv: prompts.executionEnv,
     automationCommand,
+    automationWorkerPattern,
     shouldVerify: dispatchResult.shouldVerify,
     verificationPrompt: preparedPrompts.verificationPrompt,
     artifactContext: state.artifactContext,

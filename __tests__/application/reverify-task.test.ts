@@ -5,6 +5,7 @@ import {
   type ReverifyTaskDependencies,
   type ReverifyTaskOptions,
 } from "../../src/application/reverify-task.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import type {
   ApplicationOutputEvent,
   ArtifactRunMetadata,
@@ -308,7 +309,9 @@ describe("reverify-task", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
-      command: ["default", "worker", "--model", "gpt-5.3-codex"],
+      workerPattern: expect.objectContaining({
+        command: ["default", "worker", "--model", "gpt-5.3-codex"],
+      }),
     }));
   });
 
@@ -357,7 +360,9 @@ describe("reverify-task", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
-      command: ["reverify", "worker", "--speed", "slow", "--speed", "fast"],
+      workerPattern: expect.objectContaining({
+        command: ["reverify", "worker", "--speed", "slow", "--speed", "fast"],
+      }),
     }));
   });
 
@@ -407,7 +412,9 @@ describe("reverify-task", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
-      command: ["cli", "worker", "--model", "gpt-5.3-codex"],
+      workerPattern: expect.objectContaining({
+        command: ["cli", "worker", "--model", "gpt-5.3-codex"],
+      }),
     }));
   });
 
@@ -459,7 +466,9 @@ describe("reverify-task", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
-      command: ["opencode", "run", "--base", "1", "--model", "opus-4.6"],
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run", "--base", "1", "--model", "opus-4.6"],
+      }),
     }));
   });
 
@@ -2434,21 +2443,27 @@ function createInMemoryFileSystem(initialFiles: Record<string, string>): FileSys
   };
 }
 
-function createOptions(overrides: Partial<ReverifyTaskOptions>): ReverifyTaskOptions {
+function createOptions(
+  overrides: Partial<ReverifyTaskOptions> & { workerCommand?: string[]; transport?: string },
+): ReverifyTaskOptions {
+  const { workerCommand, transport: _transport, ...optionOverrides } = overrides;
+  void _transport;
+  const workerPattern = optionOverrides.workerPattern
+    ?? inferWorkerPatternFromCommand(workerCommand ?? []);
+
   return {
     runId: "latest",
-    transport: "file",
+    workerPattern,
     repairAttempts: 0,
     noRepair: false,
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,
-    workerCommand: [],
     varsFileOption: undefined,
     cliTemplateVarArgs: [],
     trace: false,
     ignoreCliBlock: false,
     cliBlockTimeoutMs: undefined,
-    ...overrides,
+    ...optionOverrides,
   };
 }

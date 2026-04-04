@@ -1,4 +1,15 @@
 import pc from "picocolors";
+import {
+  cascade,
+  drawBox,
+  isTTY,
+  pause,
+  progressBar,
+  revealLines,
+  sleep,
+  spinner,
+  typeLine,
+} from "./animation";
 
 // ---------------------------------------------------------------------------
 // Slide context — tracks skip state for the current slide
@@ -41,55 +52,12 @@ function waitForKeypress(onEarlyKey?: () => void): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Animation primitives
-// ---------------------------------------------------------------------------
-
-const isTTY = (): boolean => Boolean(process.stdout.isTTY);
-
-function sleep(ms: number, ctx?: SlideContext): Promise<void> {
-  if (!isTTY() || ms <= 0 || ctx?.skipped) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function write(text: string): void {
   process.stdout.write(text);
 }
 
 function writeln(text: string = ""): void {
   write(text + "\n");
-}
-
-async function typeText(text: string, ctx?: SlideContext, charDelay = 18): Promise<void> {
-  if (!isTTY() || ctx?.skipped) {
-    write(text);
-    return;
-  }
-  for (let i = 0; i < text.length; i++) {
-    write(text[i]);
-    await sleep(charDelay, ctx);
-    if (ctx?.skipped) {
-      const remaining = text.slice(i + 1);
-      if (remaining) write(remaining);
-      return;
-    }
-  }
-}
-
-async function typeLine(text: string, ctx?: SlideContext, charDelay = 18): Promise<void> {
-  await typeText(text, ctx, charDelay);
-  write("\n");
-}
-
-async function revealLines(lines: string[], ctx?: SlideContext, lineDelay = 60): Promise<void> {
-  for (const line of lines) {
-    writeln(line);
-    await sleep(lineDelay, ctx);
-  }
-}
-
-async function pause(ms = 400, ctx?: SlideContext): Promise<void> {
-  await sleep(ms, ctx);
 }
 
 /** Dramatic slow type — for statements that need weight. */
@@ -107,62 +75,6 @@ async function announce(text: string, ctx?: SlideContext): Promise<void> {
   await pause(500, ctx);
   await typeLine(pc.bold(text), ctx, 35);
   await pause(400, ctx);
-}
-
-/** Animated progress bar. */
-async function progressBar(
-  label: string,
-  ctx?: SlideContext,
-  width = 32,
-  fillDelay = 35,
-): Promise<void> {
-  const prefix = `  ${label} `;
-  if (!isTTY() || ctx?.skipped) {
-    writeln(`${prefix}[${"█".repeat(width)}] done`);
-    return;
-  }
-  write(`${prefix}[${" ".repeat(width)}]`);
-  for (let i = 0; i < width; i++) {
-    write(`\r${prefix}[${"█".repeat(i + 1)}${pc.dim("░".repeat(width - i - 1))}]`);
-    await sleep(fillDelay, ctx);
-    if (ctx?.skipped) {
-      write(`\r${prefix}[${"█".repeat(width)}] done`);
-      write("\n");
-      return;
-    }
-  }
-  write(` done\n`);
-}
-
-/** Spinner that runs for a duration then resolves with a message. */
-async function spinner(
-  message: string,
-  durationMs: number,
-  ctx?: SlideContext,
-  doneMessage?: string,
-): Promise<void> {
-  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  if (!isTTY() || ctx?.skipped) {
-    writeln(doneMessage ?? `  ${pc.green("✔")} ${message}`);
-    return;
-  }
-  const start = Date.now();
-  let i = 0;
-  while (Date.now() - start < durationMs && !ctx?.skipped) {
-    write(`\r  ${pc.cyan(frames[i % frames.length])} ${message}`);
-    await sleep(80, ctx);
-    i++;
-  }
-  const final = doneMessage ?? `  ${pc.green("✔")} ${message}`;
-  write(`\r${final}${" ".repeat(10)}\n`);
-}
-
-/** "Cascade" — reveal lines one at a time with staggering vertical sweep. */
-async function cascade(lines: string[], ctx?: SlideContext, lineDelay = 80): Promise<void> {
-  for (const line of lines) {
-    writeln(line);
-    await sleep(lineDelay, ctx);
-  }
 }
 
 /**
@@ -233,28 +145,6 @@ function fmtTaskRef(file: string, line: number, index: number, text: string): st
 
 function fmtCmd(cmd: string): string {
   return `  ${pc.dim("$")} ${pc.bold(cmd)}`;
-}
-
-// ---------------------------------------------------------------------------
-// Box-drawing renderer
-// ---------------------------------------------------------------------------
-
-function drawBox(title: string, lines: string[]): string[] {
-  const innerWidth = Math.max(title.length + 2, ...lines.map(stripAnsi).map((l) => l.length)) + 2;
-  const pad = (s: string) => {
-    const visible = stripAnsi(s).length;
-    return s + " ".repeat(Math.max(0, innerWidth - visible));
-  };
-  const top = `  ${pc.dim("╭─")} ${pc.cyan(title)} ${pc.dim("─".repeat(Math.max(0, innerWidth - title.length - 2)) + "╮")}`;
-  const bot = `  ${pc.dim("╰" + "─".repeat(innerWidth + 2) + "╯")}`;
-  const body = lines.map((l) => `  ${pc.dim("│")} ${pad(l)} ${pc.dim("│")}`);
-  return [top, ...body, bot];
-}
-
-/** Strip ANSI escape sequences for width calculation. */
-function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
 // ---------------------------------------------------------------------------

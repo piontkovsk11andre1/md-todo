@@ -98,7 +98,7 @@ Because the default config is empty, worker-required commands (`run`, `plan`, `d
 ```bash
 rundown run roadmap.md -- opencode run
 # or
-rundown run roadmap.md --worker opencode run
+rundown run roadmap.md --worker "opencode run --file $file"
 ```
 
 Add lockfiles to your repo ignore rules so runtime file locks are never committed:
@@ -128,7 +128,7 @@ rundown run roadmap.md --force-unlock -- opencode run
 PowerShell-safe worker form:
 
 ```powershell
-rundown run docs/ --worker opencode run
+rundown run docs/ --worker "opencode run --file $file"
 ```
 
 Useful first commands:
@@ -140,7 +140,7 @@ rundown log --revertable --limit 10
 rundown research roadmap.md -- opencode run
 rundown plan roadmap.md --scan-count 3 -- opencode run
 rundown reverify -- opencode run
-rundown revert --dry-run --worker opencode run
+rundown revert --dry-run --worker "opencode run --file $file"
 rundown revert --method reset --force --run latest
 ```
 
@@ -343,10 +343,10 @@ rundown run roadmap.md -- opencode run
 Or you can turn it into a more operational loop:
 
 ```bash
-rundown run roadmap.md --show-agent-output --worker opencode run
+rundown run roadmap.md --show-agent-output --worker "opencode run --file $file"
 rundown run roadmap.md --all --commit --on-complete "git push" -- opencode run
-rundown run roadmap.md --clean --all --worker opencode run
-rundown run roadmap.md --keep-artifacts --transport file -- opencode run
+rundown run roadmap.md --clean --all --worker "opencode run --file $file"
+rundown run roadmap.md --keep-artifacts --worker "claude -p $bootstrap"
 rundown reverify --no-repair -- opencode run
 ```
 
@@ -358,7 +358,7 @@ Useful capabilities that stay out of the way until you need them:
 - set per-command `cli` block timeouts with `--cli-block-timeout <ms>`
 - show worker stdout/stderr for execute/verify/plan with `--show-agent-output` (default: off; output hidden otherwise)
 - use interactive sessions with `--mode tui`
-- keep durable prompt handoff on Windows with `--transport file`
+- use worker patterns to choose prompt delivery (`$file` direct path or `$bootstrap` instruction text)
 - auto-commit completed work with a task-derived message
 - trigger hooks on success or failure
 - inspect or clean execution records with `rundown artifacts`

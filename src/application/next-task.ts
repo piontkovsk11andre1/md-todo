@@ -1,5 +1,6 @@
 import type { SortMode } from "../domain/sorting.js";
 import type { Task } from "../domain/parser.js";
+import { parseTasks } from "../domain/parser.js";
 import type {
   SourceResolverPort,
   TaskSelectionResult as PortTaskSelectionResult,
@@ -64,6 +65,12 @@ export function createNextTask(
       emit({ kind: "info", message: "No unchecked tasks found." });
       return 3;
     }
+
+    const totalTasksInFile = parseTasks(result.source, result.task.file).length;
+    emit({
+      kind: "info",
+      message: `Next task: ${result.task.index + 1}/${totalTasksInFile} in ${result.task.file}`,
+    });
 
     // Emit the selected task and any nested checklist items for display.
     emit({

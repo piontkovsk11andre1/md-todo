@@ -13,8 +13,9 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "../domain/template.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
-import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
+import { runWorker, type RunnerMode } from "./runner.js";
 import { verify } from "./verification.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
 import { createCliBlockExecutor } from "./cli-block-executor.js";
@@ -30,16 +31,14 @@ export interface RepairOptions {
   repairTemplate: string;
   /** Prompt template used to re-run verification after each repair. */
   verifyTemplate: string;
-  /** Worker command and arguments used for repair and verification runs. */
-  command: string[];
+  /** Parsed worker pattern used for repair and verification runs. */
+  workerPattern: ParsedWorkerPattern;
   /** Maximum number of repair attempts before failing the loop. */
   maxRetries: number;
   /** Store used to read/write verification outcomes between attempts. */
   verificationStore: VerificationStore;
   /** Optional worker run mode override. */
   mode?: RunnerMode;
-  /** Optional prompt transport override. */
-  transport?: PromptTransport;
   /** Enables verbose worker diagnostics when true. */
   trace?: boolean;
   /** Working directory for worker and CLI block execution. */
@@ -134,10 +133,9 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
 
     // Execute one repair attempt with the prepared prompt.
     await runWorker({
-      command: options.command,
+      workerPattern: options.workerPattern,
       prompt,
       mode: options.mode ?? "wait",
-      transport: options.transport ?? "file",
       trace: options.trace,
       cwd: options.cwd,
       env: options.executionEnv,
@@ -153,10 +151,9 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       source: options.source,
       contextBefore: options.contextBefore,
       template: options.verifyTemplate,
-      command: options.command,
+      workerPattern: options.workerPattern,
       verificationStore: options.verificationStore,
       mode: options.mode,
-      transport: options.transport,
       trace: options.trace,
       cwd: options.cwd,
       configDir: options.configDir,

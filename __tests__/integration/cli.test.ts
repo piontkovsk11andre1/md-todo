@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactStoreStatus } from "../../src/domain/ports/index.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createLockfileFileLock } from "../../src/infrastructure/file-lock.js";
 
 const tempDirs: string[] = [];
@@ -32,6 +33,43 @@ function stripAnsi(value: string): string {
   return value.replace(ANSI_ESCAPE_PATTERN, "");
 }
 
+function normalizeLegacyWorkerPatternArgs(args: string[]): string[] {
+  const normalized: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    normalized.push(arg);
+
+    if (arg !== "--worker") {
+      continue;
+    }
+
+    const firstToken = args[index + 1];
+    if (!firstToken) {
+      continue;
+    }
+
+    const workerTokens: string[] = [firstToken];
+    let lookaheadIndex = index + 2;
+    while (lookaheadIndex < args.length) {
+      const nextToken = args[lookaheadIndex];
+      if (!nextToken || nextToken.startsWith("-")) {
+        break;
+      }
+      workerTokens.push(nextToken);
+      lookaheadIndex += 1;
+    }
+
+    if (workerTokens.length > 1) {
+      normalized[normalized.length - 1] = "--worker";
+      normalized.push(workerTokens.join(" "));
+      index = lookaheadIndex - 1;
+    }
+  }
+
+  return normalized;
+}
+
 async function runCli(args: string[], cwd: string): Promise<{
   code: number;
   logs: string[];
@@ -39,6 +77,7 @@ async function runCli(args: string[], cwd: string): Promise<{
   stdoutWrites: string[];
   stderrWrites: string[];
 }> {
+  const normalizedArgs = normalizeLegacyWorkerPatternArgs(args);
   const previousCwd = process.cwd();
   const previousEnv = process.env.RUNDOWN_DISABLE_AUTO_PARSE;
   const previousTestModeEnv = process.env.RUNDOWN_TEST_MODE;
@@ -77,7 +116,7 @@ async function runCli(args: string[], cwd: string): Promise<{
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizedArgs);
     return { code: 0, logs, errors, stdoutWrites, stderrWrites };
   } catch (error) {
     if (
@@ -243,42 +282,106 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("--flag"))).toBe(true);
   });
 
-  it("run accepts --worker when .rundown/config.json is empty", async () => {
+  it("run expands --worker 'claude -p $bootstrap' with bootstrap text", async () => {
     const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
-    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    const sourcePath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(sourcePath, "- [ ] Write docs\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({ exitCode: 0 });
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
 
     const result = await runCli([
       "run",
       "roadmap.md",
-      "--dry-run",
+      "--no-verify",
+      "--keep-artifacts",
       "--worker",
-      "opencode",
-      "run",
+      "claude -p $bootstrap",
     ], workspace);
 
+    vi.doUnmock("cross-spawn");
+
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Dry run — would run: opencode run"))).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("claude");
+    expect(args[0]).toBe("-p");
+    const bootstrapText = args[1] ?? "";
+    const bootstrapPrefix = "Read the task prompt file at ";
+    const bootstrapSuffix = " and follow the instructions.";
+    expect(bootstrapText.startsWith(bootstrapPrefix)).toBe(true);
+    expect(bootstrapText.endsWith(bootstrapSuffix)).toBe(true);
+    const relativePromptPath = bootstrapText.slice(
+      bootstrapPrefix.length,
+      bootstrapText.length - bootstrapSuffix.length,
+    );
+    const promptPath = path.join(workspace, ...relativePromptPath.split("/"));
+    expect(fs.existsSync(promptPath)).toBe(true);
+    expect(fs.readFileSync(promptPath, "utf-8")).toContain("Write docs");
   });
 
-  it("run accepts -- worker args when .rundown/config.json is empty", async () => {
+  it("run expands --worker 'opencode run --file $file' with prompt file path", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
-    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), "{}\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({ exitCode: 0 });
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
 
     const result = await runCli([
       "run",
       "roadmap.md",
-      "--dry-run",
-      "--",
-      "opencode",
-      "run",
+      "--no-verify",
+      "--keep-artifacts",
+      "--worker",
+      "opencode run --file $file",
     ], workspace);
 
+    vi.doUnmock("cross-spawn");
+
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Dry run — would run: opencode run"))).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("opencode");
+    expect(args[0]).toBe("run");
+    expect(args[1]).toBe("--file");
+    const promptPath = args[2] ?? "";
+    expect(fs.existsSync(promptPath)).toBe(true);
+    expect(fs.readFileSync(promptPath, "utf-8")).toContain("Write docs");
+    expect(args).toHaveLength(3);
+  });
+
+  it("run appends $file implicitly for --worker 'my-agent'", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({ exitCode: 0 });
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+      "--worker",
+      "my-agent",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(0);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("my-agent");
+    expect(args).toHaveLength(1);
+    const promptPath = args[0] ?? "";
+    expect(fs.existsSync(promptPath)).toBe(true);
+    expect(fs.readFileSync(promptPath, "utf-8")).toContain("Write docs");
   });
 
   it("run uses worker from .rundown/config.json when no CLI worker override is provided", async () => {
@@ -3407,8 +3510,6 @@ describe.sequential("CLI integration", () => {
       "roadmap.md",
       "--mode",
       "wait",
-      "--transport",
-      "arg",
       "--sort",
       "old-first",
       "--dry-run",
@@ -3433,7 +3534,6 @@ describe.sequential("CLI integration", () => {
     expect(discussTaskMock).toHaveBeenCalledWith(expect.objectContaining({
       source: "roadmap.md",
       mode: "wait",
-      transport: "arg",
       sortMode: "old-first",
       dryRun: true,
       printPrompt: true,
@@ -3443,7 +3543,7 @@ describe.sequential("CLI integration", () => {
       cliTemplateVarArgs: ["audience=engineering"],
       showAgentOutput: true,
       forceUnlock: true,
-      workerCommand: ["opencode", "run"],
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
     }));
   });
 
@@ -3509,6 +3609,48 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Next task:") && line.includes("First pending task"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Discussion completed."))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toContain("- [ ] First pending task");
+  });
+
+  it("discuss tui on win32 invokes worker in-terminal without cmd start wrapper", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "roadmap.md";
+    const sourcePath = path.join(workspace, sourceName);
+    fs.writeFileSync(sourcePath, "- [ ] First pending task\n", "utf-8");
+
+    const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    const spawnMock = vi.fn().mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { unref: () => void };
+      child.unref = vi.fn();
+      process.nextTick(() => {
+        child.emit("close", 0);
+      });
+      return child;
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "discuss",
+      sourceName,
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+    platformSpy.mockRestore();
+
+    expect(result.code).toBe(0);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+
+    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { stdio?: string }];
+    expect(cmd).toBe("node");
+    expect(args).not.toContain("/c");
+    expect(args).not.toContain("start");
+    expect(options.stdio).toBe("inherit");
   });
 
   it("discuss propagates worker exit code to CLI", async () => {
@@ -3643,7 +3785,7 @@ describe.sequential("CLI integration", () => {
     expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
       source: "roadmap.md",
       dryRun: true,
-      workerCommand: ["opencode", "run"],
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: true,
       commitMessageTemplate: "done: {{task}}",
       onCompleteCommand: "node scripts/after.js",
@@ -3682,7 +3824,7 @@ describe.sequential("CLI integration", () => {
     expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
       source: "roadmap.md",
       dryRun: true,
-      workerCommand: ["opencode", "run"],
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: false,
       commitMessageTemplate: undefined,
       onCompleteCommand: undefined,
@@ -3726,7 +3868,7 @@ describe.sequential("CLI integration", () => {
     expect(runTaskMock).toHaveBeenCalledWith(expect.objectContaining({
       source: "roadmap.md",
       dryRun: true,
-      workerCommand: ["opencode", "run"],
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: true,
       commitMessageTemplate: undefined,
       onCompleteCommand: undefined,
@@ -5022,6 +5164,51 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Prompt length:"))).toBe(true);
   });
 
+  it("plan expands --worker 'claude -p $bootstrap' with bootstrap text", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(sourcePath, "# Roadmap\n\n## Scope\nDeliver API workflow.\n", "utf-8");
+
+    const spawnMock = createWaitModeSpawnMock({
+      stdout: "- [ ] Add release checklist\n",
+      exitCode: 0,
+    });
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "1",
+      "--keep-artifacts",
+      "--worker",
+      "claude -p $bootstrap",
+    ], workspace);
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(0);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("claude");
+    expect(args[0]).toBe("-p");
+    const bootstrapText = args[1] ?? "";
+    const bootstrapPrefix = "Read the task prompt file at ";
+    const bootstrapSuffix = " and follow the instructions.";
+    expect(bootstrapText.startsWith(bootstrapPrefix)).toBe(true);
+    expect(bootstrapText.endsWith(bootstrapSuffix)).toBe(true);
+    const relativePromptPath = bootstrapText.slice(
+      bootstrapPrefix.length,
+      bootstrapText.length - bootstrapSuffix.length,
+    );
+    const promptPath = path.join(workspace, ...relativePromptPath.split("/"));
+    expect(fs.existsSync(promptPath)).toBe(true);
+    expect(fs.readFileSync(promptPath, "utf-8")).toContain("Deliver API workflow");
+    expect(result.logs.some((line) => line.includes("Inserted 1 TODO item"))).toBe(true);
+  });
+
   it("plan --print-prompt expands cli blocks in plan templates", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "# Roadmap\n\nBreak down migration.\n", "utf-8");
@@ -5798,11 +5985,11 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("Source=# Roadmap")).toBe(true);
   });
 
-  it("research updates markdown, uses file transport, and persists artifacts", async () => {
+  it("research updates markdown and persists artifacts", async () => {
     const workspace = makeTempWorkspace();
     const sourcePath = path.join(workspace, "roadmap.md");
-    const workerScriptPath = path.join(workspace, "research-worker-file-transport.cjs");
-    const capturePath = path.join(workspace, "research-file-transport-capture.json");
+    const workerScriptPath = path.join(workspace, "research-worker-file-pattern.cjs");
+    const capturePath = path.join(workspace, "research-file-pattern-capture.json");
 
     fs.writeFileSync(sourcePath, "# Roadmap\n\nInitial sketch.\n", "utf-8");
     fs.writeFileSync(workerScriptPath, [
@@ -5849,44 +6036,43 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(runDir, "01-research", "stdout.log"))).toBe(true);
   });
 
-  it("research --transport arg passes inline prompt text to the worker", async () => {
+  it("research worker without placeholders receives prompt file as trailing argument", async () => {
     const workspace = makeTempWorkspace();
     const sourcePath = path.join(workspace, "roadmap.md");
-    const workerScriptPath = path.join(workspace, "research-worker-arg-transport.cjs");
-    const capturePath = path.join(workspace, "research-arg-transport-capture.json");
+    const workerScriptPath = path.join(workspace, "research-worker-implicit-file-pattern.cjs");
+    const capturePath = path.join(workspace, "research-implicit-file-pattern-capture.json");
 
     fs.writeFileSync(sourcePath, "# Roadmap\n\nThin note.\n", "utf-8");
     fs.writeFileSync(workerScriptPath, [
       "const fs = require('node:fs');",
       "const lastArg = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(lastArg, 'utf-8');",
       `fs.writeFileSync(${JSON.stringify(capturePath.replace(/\\/g, "/"))}, JSON.stringify({`,
       "  argLooksLikeFilePath: fs.existsSync(lastArg),",
-      "  argContainsPhaseText: lastArg.includes('Research and enrich the source document with implementation context.'),",
-      "  argContainsSource: lastArg.includes('Thin note.'),",
+      "  promptContainsPhaseText: prompt.includes('Research and enrich the source document with implementation context.'),",
+      "  promptContainsSource: prompt.includes('Thin note.'),",
       "}, null, 2));",
-      "console.log('# Roadmap\\n\\nArg transport output.');",
+      "console.log('# Roadmap\\n\\nImplicit file pattern output.');",
     ].join("\n"), "utf-8");
 
     const result = await runCli([
       "research",
       "roadmap.md",
-      "--transport",
-      "arg",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.readFileSync(sourcePath, "utf-8")).toContain("Arg transport output.");
+    expect(fs.readFileSync(sourcePath, "utf-8")).toContain("Implicit file pattern output.");
     const capture = JSON.parse(fs.readFileSync(capturePath, "utf-8")) as {
       argLooksLikeFilePath: boolean;
-      argContainsPhaseText: boolean;
-      argContainsSource: boolean;
+      promptContainsPhaseText: boolean;
+      promptContainsSource: boolean;
     };
-    expect(capture.argLooksLikeFilePath).toBe(false);
-    expect(capture.argContainsPhaseText).toBe(true);
-    expect(capture.argContainsSource).toBe(true);
+    expect(capture.argLooksLikeFilePath).toBe(true);
+    expect(capture.promptContainsPhaseText).toBe(true);
+    expect(capture.promptContainsSource).toBe(true);
   });
 
   it("research holds the source lock during execution and releases it after completion", async () => {
@@ -6487,7 +6673,6 @@ function writeSavedRun(
     commandName: "run",
     workerCommand: options.workerCommand ?? ["opencode", "run"],
     mode: "wait",
-    transport: "file",
     source: "roadmap.md",
     task: {
       text: options.taskText ?? "Write docs",

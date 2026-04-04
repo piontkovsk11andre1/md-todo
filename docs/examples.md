@@ -30,7 +30,7 @@ What happens:
 ## 2. PowerShell-safe worker usage
 
 ```powershell
-rundown run docs/ --worker opencode run
+rundown run docs/ --worker 'opencode run --file $file'
 ```
 
 This form avoids common PowerShell argument-splitting friction around `--`.
@@ -165,7 +165,6 @@ A clean default pattern is:
 
 - `rundown run roadmap.md -- opencode run`
 - `rundown run roadmap.md --mode tui -- opencode`
-- `--transport file` for staged prompt files
 
 This keeps prompt handoff durable, inspectable, and friendly to large Markdown context.
 
@@ -242,7 +241,7 @@ Markdown:
 Command:
 
 ```bash
-rundown run TODO.md --worker opencode run --verify --retries 2
+rundown run TODO.md --worker 'opencode run --file $file' --verify --retries 2
 ```
 
 What happens:

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCachedCommandExecutor } from "../../src/infrastructure/cached-command-executor.js";
+import { createCachedCommandExecutor } from "../../src/application/cached-command-executor.js";
 
 describe("createCachedCommandExecutor", () => {
   it("delegates on cache miss and reuses result on cache hit", async () => {

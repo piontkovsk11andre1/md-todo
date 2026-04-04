@@ -1,4 +1,5 @@
 import { extractFrontmatter, type Task } from "../domain/parser.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import {
   extractProfileFromSubItems,
   resolveWorkerConfig,
@@ -19,6 +20,21 @@ interface ResolveWorkerForInvocationInput {
   cliWorkerCommand: string[];
   fallbackWorkerCommand?: string[];
   emit?: ApplicationOutputPort["emit"];
+}
+
+interface ResolveWorkerPatternForInvocationInput {
+  commandName: WorkerConfigCommandName;
+  workerConfig: WorkerConfig | undefined;
+  source: string;
+  task?: Pick<Task, "directiveProfile" | "subItems">;
+  cliWorkerPattern?: ParsedWorkerPattern;
+  fallbackWorkerCommand?: string[];
+  emit?: ApplicationOutputPort["emit"];
+}
+
+interface ResolvedWorkerInvocation {
+  workerCommand: string[];
+  workerPattern: ParsedWorkerPattern;
 }
 
 /**
@@ -126,4 +142,65 @@ export function resolveWorkerForInvocation(input: ResolveWorkerForInvocationInpu
 
   // Return an empty command so callers can handle missing-worker errors consistently.
   return [];
+}
+
+function buildParsedWorkerPattern(command: string[]): ParsedWorkerPattern {
+  const usesBootstrap = command.some((token) => token.includes("$bootstrap"));
+  const usesFile = command.some((token) => token.includes("$file"));
+
+  return {
+    command: [...command],
+    usesBootstrap,
+    usesFile,
+    appendFile: !usesBootstrap && !usesFile,
+  };
+}
+
+/**
+ * Resolves the worker command and parsed pattern used for command execution.
+ */
+export function resolveWorkerPatternForInvocation(
+  input: ResolveWorkerPatternForInvocationInput,
+): ResolvedWorkerInvocation {
+  const cliWorkerCommand = input.cliWorkerPattern?.command ?? [];
+  const resolvedWorkerCommand = resolveWorkerForInvocation({
+    commandName: input.commandName,
+    workerConfig: input.workerConfig,
+    source: input.source,
+    task: input.task,
+    cliWorkerCommand,
+    fallbackWorkerCommand: input.fallbackWorkerCommand,
+    emit: input.emit,
+  });
+
+  if (resolvedWorkerCommand.length === 0) {
+    return {
+      workerCommand: [],
+      workerPattern: {
+        command: [],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+    };
+  }
+
+  const cliWorkerPattern = input.cliWorkerPattern;
+  const resolvedFromCliPattern = cliWorkerPattern
+    && resolvedWorkerCommand.length === cliWorkerPattern.command.length
+    && resolvedWorkerCommand.every((token, index) => token === cliWorkerPattern.command[index]);
+
+  const workerPattern = resolvedFromCliPattern && cliWorkerPattern
+    ? {
+      command: [...cliWorkerPattern.command],
+      usesBootstrap: cliWorkerPattern.usesBootstrap,
+      usesFile: cliWorkerPattern.usesFile,
+      appendFile: cliWorkerPattern.appendFile,
+    }
+    : buildParsedWorkerPattern(resolvedWorkerCommand);
+
+  return {
+    workerCommand: resolvedWorkerCommand,
+    workerPattern,
+  };
 }

@@ -91,6 +91,7 @@ export type App = {
   logRuns: (options: LogRunsOptions) => number;
   initProject: () => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
+  emitOutput?: (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
   releaseAllLocks?: () => void;
 };
 
@@ -99,14 +100,13 @@ export interface PlanTaskCommandOptions {
   scanCount?: number;
   deep?: number;
   mode: PlanTaskUseCaseOptions["mode"];
-  transport: PlanTaskUseCaseOptions["transport"];
+  workerPattern: PlanTaskUseCaseOptions["workerPattern"];
   showAgentOutput: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
@@ -116,14 +116,13 @@ export interface PlanTaskCommandOptions {
 export interface ResearchTaskCommandOptions {
   source: string;
   mode: ResearchTaskUseCaseOptions["mode"];
-  transport: ResearchTaskUseCaseOptions["transport"];
+  workerPattern: ResearchTaskUseCaseOptions["workerPattern"];
   showAgentOutput: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
@@ -132,7 +131,7 @@ export interface ResearchTaskCommandOptions {
 }
 
 export type AppUseCaseFactories = {
-  [Key in Exclude<keyof App, "releaseAllLocks">]: (ports: AppPorts) => App[Key];
+  [Key in Exclude<keyof App, "releaseAllLocks" | "emitOutput">]: (ports: AppPorts) => App[Key];
 };
 
 export interface AppPorts {
@@ -443,6 +442,9 @@ function createAppFromFactories(
     logRuns: factories.logRuns(ports),
     initProject: factories.initProject(ports),
     manageArtifacts: factories.manageArtifacts(ports),
+    emitOutput: (event) => {
+      ports.output.emit(event);
+    },
     releaseAllLocks: () => {
       ports.fileLock.releaseAll();
     },

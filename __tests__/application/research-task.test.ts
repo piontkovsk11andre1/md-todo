@@ -5,6 +5,7 @@ import {
   type ResearchTaskDependencies,
   type ResearchTaskOptions,
 } from "../../src/application/research-task.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import type {
   ArtifactStore,
   ApplicationOutputEvent,
@@ -381,7 +382,6 @@ describe("research-task", () => {
       commandName: "research",
       workerCommand: ["opencode", "run"],
       mode: "wait",
-      transport: "arg",
       source: markdownFile,
       keepArtifacts: false,
     });
@@ -397,7 +397,7 @@ describe("research-task", () => {
     );
     expect(events).toContainEqual({
       kind: "info",
-      message: "Running research worker: opencode run [mode=wait, transport=arg]",
+      message: "Running research worker: opencode run [mode=wait]",
     });
     expect(events).toContainEqual({
       kind: "info",
@@ -441,7 +441,6 @@ describe("research-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).toHaveBeenCalledWith(expect.objectContaining({
       mode: "tui",
-      transport: "file",
       captureOutput: true,
     }));
   });
@@ -877,23 +876,27 @@ function createNoopFileLock(): FileLock {
   };
 }
 
-function createOptions(overrides: Partial<ResearchTaskOptions> = {}): ResearchTaskOptions {
+function createOptions(
+  overrides: Partial<ResearchTaskOptions> & { workerCommand?: string[]; transport?: string } = {},
+): ResearchTaskOptions {
+  const { workerCommand, transport: _transport, ...optionOverrides } = overrides;
+  void _transport;
+
   return {
     source: "roadmap.md",
     mode: "wait",
-    transport: "arg",
+    workerPattern: inferWorkerPatternFromCommand(workerCommand ?? ["opencode", "run"]),
     showAgentOutput: false,
     dryRun: false,
     printPrompt: false,
     keepArtifacts: false,
     varsFileOption: false,
     cliTemplateVarArgs: [],
-    workerCommand: ["opencode", "run"],
     trace: false,
     forceUnlock: false,
     ignoreCliBlock: false,
     cliBlockTimeoutMs: undefined,
     configDirOption: undefined,
-    ...overrides,
+    ...optionOverrides,
   };
 }

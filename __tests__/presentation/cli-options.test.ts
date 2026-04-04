@@ -637,7 +637,6 @@ describe("CLI run option normalization", () => {
 
     expect(call.source).toBe("tasks.md");
     expect(call.mode).toBe("tui");
-    expect(call.transport).toBe("file");
     expect(call.sortMode).toBe("name-sort");
     expect(call.dryRun).toBe(false);
     expect(call.printPrompt).toBe(false);
@@ -716,8 +715,6 @@ describe("CLI run option normalization", () => {
       "tasks.md",
       "--mode",
       "wait",
-      "--transport",
-      "arg",
       "--sort",
       "old-first",
       "--print-prompt",
@@ -728,7 +725,6 @@ describe("CLI run option normalization", () => {
     ], discussTask);
 
     expect(call.mode).toBe("wait");
-    expect(call.transport).toBe("arg");
     expect(call.sortMode).toBe("old-first");
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
@@ -842,8 +838,7 @@ describe("CLI run option normalization", () => {
         "run",
         "tasks.md",
         "--worker",
-        "opencode",
-        "run",
+        "opencode run",
       ]);
     } catch (error) {
       const message = String(error);
@@ -895,8 +890,7 @@ describe("CLI run option normalization", () => {
       "--mode",
       "bad-mode",
       "--worker",
-      "opencode",
-      "run",
+      "opencode run",
     ], runTask, writeSpy);
 
     expect(writeSpy).toHaveBeenCalledTimes(1);
@@ -912,8 +906,7 @@ describe("CLI run option normalization", () => {
         "--mode",
         "bad-mode",
         "--worker",
-        "opencode",
-        "run",
+        "opencode run",
       ],
       cwd: process.cwd(),
       pid: process.pid,
@@ -932,8 +925,7 @@ describe("CLI run option normalization", () => {
       "tasks.md",
       "--unknown-flag",
       "--worker",
-      "opencode",
-      "run",
+      "opencode run",
     ], runTask, writeSpy);
 
     expect(runTask).not.toHaveBeenCalled();
@@ -948,8 +940,7 @@ describe("CLI run option normalization", () => {
         "tasks.md",
         "--unknown-flag",
         "--worker",
-        "opencode",
-        "run",
+        "opencode run",
       ],
       cwd: process.cwd(),
       pid: process.pid,
@@ -998,8 +989,6 @@ describe("CLI reverify option normalization", () => {
       "reverify",
       "--run",
       "run-123",
-      "--transport",
-      "arg",
       "--repair-attempts",
       "2",
       "--no-repair",
@@ -1015,7 +1004,6 @@ describe("CLI reverify option normalization", () => {
     expect(call.last).toBeUndefined();
     expect(call.all).toBe(false);
     expect(call.oldestFirst).toBe(false);
-    expect(call.transport).toBe("arg");
     expect(call.repairAttempts).toBe(2);
     expect(call.noRepair).toBe(true);
     expect(call.dryRun).toBe(true);
@@ -1063,6 +1051,18 @@ describe("CLI reverify option normalization", () => {
     ], reverifyTask);
 
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+  });
+
+  it("accepts worker flags after --worker for reverify", async () => {
+    const reverifyTask = vi.fn(async () => 0);
+    const call = await invokeReverifyAndCaptureCall([
+      "reverify",
+      "--worker",
+      "claude",
+      "-p",
+    ], reverifyTask);
+
+    expect(call.workerCommand).toEqual(["claude", "-p"]);
   });
 
   it("passes trace option to reverify task", async () => {
@@ -1124,23 +1124,6 @@ describe("CLI reverify option normalization", () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --last value: three"));
   });
 
-  it("logs a CLI error and exits with code 1 on invalid transport", async () => {
-    const reverifyTask = vi.fn(async () => 0);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    await invokeReverifyAndExpectExit([
-      "reverify",
-      "--transport",
-      "stdin",
-      "--worker",
-      "opencode",
-      "run",
-    ], reverifyTask);
-
-    expect(reverifyTask).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --transport value: stdin"));
-  });
-
   it("logs a CLI error and exits with code 1 on invalid repair attempts", async () => {
     const reverifyTask = vi.fn(async () => 0);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -1200,7 +1183,7 @@ describe("CLI reverify option normalization", () => {
 
     try {
       const { parseCliArgs } = await import("../../src/presentation/cli.js");
-      await expect(parseCliArgs(["reverify", "--worker", "opencode", "run"]))
+      await expect(parseCliArgs(["reverify", "--worker", "opencode run"]))
         .rejects.toThrow("process.exit:1");
     } finally {
       restoreEnv(previousEnv);
@@ -1259,8 +1242,7 @@ describe("CLI invocation logging context", () => {
       "run",
       "tasks.md",
       "--worker",
-      "opencode",
-      "run",
+      "opencode run",
     ]);
 
     expect(context.command).toBe("run");
@@ -1287,10 +1269,10 @@ describe("CLI invocation logging context", () => {
   });
 
   it("records run command in invocation context for all alias", async () => {
-    const context = await invokeCliAndCaptureLoggedContext(["all", "tasks.md", "--worker", "opencode", "run"]);
+    const context = await invokeCliAndCaptureLoggedContext(["all", "tasks.md", "--worker", "opencode run"]);
 
     expect(context.command).toBe("run");
-    expect(context.argv).toEqual(["run", "--all", "tasks.md", "--worker", "opencode", "run"]);
+    expect(context.argv).toEqual(["run", "--all", "tasks.md", "--worker", "opencode run"]);
   });
 });
 
@@ -1568,8 +1550,6 @@ describe("CLI plan and utility command normalization", () => {
         markdownFile,
         "--scan-count",
         "5",
-        "--transport",
-        "arg",
         "--dry-run",
         "--print-prompt",
         "--keep-artifacts",
@@ -1596,7 +1576,6 @@ describe("CLI plan and utility command normalization", () => {
       expect(researchTask).toHaveBeenCalledWith(expect.objectContaining({
         source: markdownFile,
         mode: "wait",
-        transport: "arg",
         dryRun: true,
         printPrompt: true,
         keepArtifacts: true,
@@ -1607,7 +1586,9 @@ describe("CLI plan and utility command normalization", () => {
         cliBlockTimeoutMs: 1234,
         varsFileOption: "custom-vars.json",
         cliTemplateVarArgs: ["env=prod"],
-        workerCommand: ["opencode", "run"],
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run"],
+        }),
       }));
 
       expect(planTask).toHaveBeenCalledTimes(1);
@@ -1615,7 +1596,6 @@ describe("CLI plan and utility command normalization", () => {
         source: markdownFile,
         scanCount: 5,
         mode: "wait",
-        transport: "arg",
         dryRun: true,
         printPrompt: true,
         keepArtifacts: true,
@@ -1626,7 +1606,9 @@ describe("CLI plan and utility command normalization", () => {
         cliBlockTimeoutMs: 1234,
         varsFileOption: "custom-vars.json",
         cliTemplateVarArgs: ["env=prod"],
-        workerCommand: ["opencode", "run"],
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run"],
+        }),
       }));
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1774,8 +1756,6 @@ describe("CLI plan and utility command normalization", () => {
         "make",
         "please do something",
         markdownFile,
-        "--transport",
-        "arg",
         "--keep-artifacts",
         "--show-agent-output",
         "--trace",
@@ -1803,7 +1783,6 @@ describe("CLI plan and utility command normalization", () => {
       expect(researchTask).toHaveBeenCalledWith(expect.objectContaining({
         source: markdownFile,
         mode: "wait",
-        transport: "arg",
         keepArtifacts: true,
         showAgentOutput: true,
         trace: true,
@@ -1812,13 +1791,14 @@ describe("CLI plan and utility command normalization", () => {
         cliBlockTimeoutMs: 5678,
         varsFileOption: "vars.local.json",
         cliTemplateVarArgs: ["env=prod", "region=eu"],
-        workerCommand: ["opencode", "run", "--model", "gpt-5"],
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run", "--model", "gpt-5"],
+        }),
       }));
 
       expect(planTask).toHaveBeenCalledWith(expect.objectContaining({
         source: markdownFile,
         mode: "wait",
-        transport: "arg",
         keepArtifacts: true,
         showAgentOutput: true,
         trace: true,
@@ -1827,7 +1807,9 @@ describe("CLI plan and utility command normalization", () => {
         cliBlockTimeoutMs: 5678,
         varsFileOption: "vars.local.json",
         cliTemplateVarArgs: ["env=prod", "region=eu"],
-        workerCommand: ["opencode", "run", "--model", "gpt-5"],
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run", "--model", "gpt-5"],
+        }),
       }));
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2266,7 +2248,6 @@ describe("CLI plan and utility command normalization", () => {
     expect(call.scanCount).toBe(3);
     expect(call.deep).toBe(2);
     expect(call.mode).toBe("wait");
-    expect(call.transport).toBe("file");
     expect(call.showAgentOutput).toBe(false);
     expect(call.dryRun).toBe(true);
     expect(call.printPrompt).toBe(true);
@@ -2291,6 +2272,19 @@ describe("CLI plan and utility command normalization", () => {
     ], planTask);
 
     expect(call.cliBlockTimeoutMs).toBe(1234);
+  });
+
+  it("accepts worker flags after --worker for plan", async () => {
+    const planTask = vi.fn(async () => 0);
+    const call = await invokePlanAndCaptureCall([
+      "plan",
+      "tasks.md",
+      "--worker",
+      "claude",
+      "-p",
+    ], planTask);
+
+    expect(call.workerCommand).toEqual(["claude", "-p"]);
   });
 
   it("passes --show-agent-output option to plan task", async () => {
@@ -2602,8 +2596,6 @@ describe("CLI plan and utility command normalization", () => {
       markdownFile,
       "--mode",
       "wait",
-      "--transport",
-      "arg",
       "--dry-run",
       "--print-prompt",
       "--keep-artifacts",
@@ -2623,7 +2615,6 @@ describe("CLI plan and utility command normalization", () => {
 
     expect(call.source).toBe(markdownFile);
     expect(call.mode).toBe("wait");
-    expect(call.transport).toBe("arg");
     expect(call.dryRun).toBe(true);
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
@@ -2913,7 +2904,7 @@ async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeo
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -2924,7 +2915,7 @@ async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeo
   }
 
   expect(runTask).toHaveBeenCalledTimes(1);
-  return runTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(runTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeDiscussAndCaptureCall(
@@ -2951,7 +2942,7 @@ async function invokeDiscussAndCaptureCall(
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -2962,7 +2953,7 @@ async function invokeDiscussAndCaptureCall(
   }
 
   expect(discussTask).toHaveBeenCalledTimes(1);
-  return discussTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(discussTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeRunAndExpectExit(args: string[], runTask: ReturnType<typeof vi.fn>): Promise<void> {
@@ -2985,7 +2976,7 @@ async function invokeRunAndExpectExit(args: string[], runTask: ReturnType<typeof
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message)) {
@@ -3019,7 +3010,7 @@ async function invokeRunAndCaptureExitCode(args: string[], runTask: ReturnType<t
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     const match = /CLI exited with code (\d+)/.exec(message);
@@ -3066,7 +3057,7 @@ async function invokeRunAndCaptureHelpOutput(
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     const match = /CLI exited with code (\d+)/.exec(message);
@@ -3111,7 +3102,7 @@ async function invokeReverifyAndCaptureCall(args: string[], reverifyTask: Return
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3122,7 +3113,7 @@ async function invokeReverifyAndCaptureCall(args: string[], reverifyTask: Return
   }
 
   expect(reverifyTask).toHaveBeenCalledTimes(1);
-  return reverifyTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(reverifyTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeReverifyAndExpectExit(args: string[], reverifyTask: ReturnType<typeof vi.fn>): Promise<void> {
@@ -3145,7 +3136,7 @@ async function invokeReverifyAndExpectExit(args: string[], reverifyTask: ReturnT
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message)) {
@@ -3179,7 +3170,7 @@ async function invokePlanAndCaptureCall(args: string[], planTask: ReturnType<typ
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3190,7 +3181,7 @@ async function invokePlanAndCaptureCall(args: string[], planTask: ReturnType<typ
   }
 
   expect(planTask).toHaveBeenCalledTimes(1);
-  return planTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(planTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeResearchAndCaptureCall(args: string[], researchTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
@@ -3214,7 +3205,7 @@ async function invokeResearchAndCaptureCall(args: string[], researchTask: Return
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3225,7 +3216,7 @@ async function invokeResearchAndCaptureCall(args: string[], researchTask: Return
   }
 
   expect(researchTask).toHaveBeenCalledTimes(1);
-  return researchTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(researchTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeRunAndExpectExitWithGlobalLogCapture(
@@ -3259,7 +3250,7 @@ async function invokeRunAndExpectExitWithGlobalLogCapture(
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
@@ -3294,7 +3285,7 @@ async function invokeRevertAndCaptureCall(args: string[], revertTask: ReturnType
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message) && !/process\.exit unexpectedly called/.test(message)) {
@@ -3305,7 +3296,7 @@ async function invokeRevertAndCaptureCall(args: string[], revertTask: ReturnType
   }
 
   expect(revertTask).toHaveBeenCalledTimes(1);
-  return revertTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(revertTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeRevertAndExpectExit(args: string[], revertTask: ReturnType<typeof vi.fn>): Promise<void> {
@@ -3329,7 +3320,7 @@ async function invokeRevertAndExpectExit(args: string[], revertTask: ReturnType<
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
@@ -3363,7 +3354,7 @@ async function invokePlanAndExpectExit(args: string[], planTask: ReturnType<type
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
@@ -3398,7 +3389,7 @@ async function invokeResearchAndExpectExit(args: string[], researchTask: ReturnT
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
@@ -3441,7 +3432,7 @@ async function invokeMakeAndCaptureCalls(
   let exitCode = 0;
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     const match = /CLI exited with code (\d+)/.exec(message);
@@ -3489,7 +3480,7 @@ async function invokeDoAndCaptureCalls(
   let exitCode = 0;
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     const match = /CLI exited with code (\d+)/.exec(message);
@@ -3530,7 +3521,7 @@ async function invokeLogAndCaptureCall(args: string[], logTask: ReturnType<typeo
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3541,7 +3532,7 @@ async function invokeLogAndCaptureCall(args: string[], logTask: ReturnType<typeo
   }
 
   expect(logTask).toHaveBeenCalledTimes(1);
-  return logTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(logTask.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeLogAndExpectExit(args: string[], logTask: ReturnType<typeof vi.fn>): Promise<void> {
@@ -3567,7 +3558,7 @@ async function invokeLogAndExpectExit(args: string[], logTask: ReturnType<typeof
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
@@ -3601,7 +3592,7 @@ async function invokePlanAndCaptureExitCode(args: string[], planTask: ReturnType
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     const match = /CLI exited with code (\d+)/.exec(message);
@@ -3639,7 +3630,7 @@ async function invokeListAndCaptureCall(args: string[], listTasks: ReturnType<ty
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3650,7 +3641,7 @@ async function invokeListAndCaptureCall(args: string[], listTasks: ReturnType<ty
   }
 
   expect(listTasks).toHaveBeenCalledTimes(1);
-  return listTasks.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(listTasks.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeArtifactsAndCaptureCall(args: string[], manageArtifacts: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
@@ -3673,7 +3664,7 @@ async function invokeArtifactsAndCaptureCall(args: string[], manageArtifacts: Re
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3684,7 +3675,7 @@ async function invokeArtifactsAndCaptureCall(args: string[], manageArtifacts: Re
   }
 
   expect(manageArtifacts).toHaveBeenCalledTimes(1);
-  return manageArtifacts.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(manageArtifacts.mock.calls[0][0] as RunTaskCall);
 }
 
 async function invokeInitAndCaptureCall(args: string[], initProject: ReturnType<typeof vi.fn>): Promise<void> {
@@ -3707,7 +3698,7 @@ async function invokeInitAndCaptureCall(args: string[], initProject: ReturnType<
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3758,7 +3749,7 @@ async function invokeUnlockAndCaptureCall(args: string[], unlockTask: ReturnType
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message)) {
@@ -3769,7 +3760,49 @@ async function invokeUnlockAndCaptureCall(args: string[], unlockTask: ReturnType
   }
 
   expect(unlockTask).toHaveBeenCalledTimes(1);
-  return unlockTask.mock.calls[0][0] as RunTaskCall;
+  return withLegacyWorkerCommand(unlockTask.mock.calls[0][0] as RunTaskCall);
+}
+
+function normalizeLegacyWorkerPatternArgs(args: string[]): string[] {
+  const workerIndex = args.indexOf("--worker");
+  if (workerIndex === -1) {
+    return args;
+  }
+
+  const separatorIndex = args.indexOf("--", workerIndex + 1);
+  if (separatorIndex !== -1) {
+    return args;
+  }
+
+  const tokensAfterWorker = args.slice(workerIndex + 1);
+  if (tokensAfterWorker.length === 0) {
+    return args;
+  }
+
+  return [
+    ...args.slice(0, workerIndex + 1),
+    tokensAfterWorker.join(" "),
+  ];
+}
+
+function withLegacyWorkerCommand(call: RunTaskCall): RunTaskCall {
+  if (Array.isArray(call.workerCommand)) {
+    return call;
+  }
+
+  const workerPattern = call.workerPattern;
+  if (
+    typeof workerPattern === "object"
+    && workerPattern !== null
+    && Array.isArray((workerPattern as { command?: unknown }).command)
+  ) {
+    return {
+      ...call,
+      workerCommand: [...((workerPattern as { command: string[] }).command)],
+    };
+  }
+
+  return call;
 }
 
 function stripAnsi(value: string): string {
@@ -3823,7 +3856,7 @@ async function invokeCliAndCaptureLoggedContext(args: string[]): Promise<LoggedO
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
-    await parseCliArgs(args);
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
   } catch (error) {
     const message = String(error);
     if (!/CLI exited with code \d+/.test(message) && !/process\.exit unexpectedly called/.test(message)) {

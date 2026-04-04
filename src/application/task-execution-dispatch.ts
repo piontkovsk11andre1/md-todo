@@ -1,11 +1,11 @@
 import { type Task } from "../domain/parser.js";
 import type { TaskIntent } from "../domain/task-intent.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { parsePlannerOutput, insertSubitems } from "../domain/planner.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
   ArtifactRunContext,
   CommandExecutionOptions,
-  PromptTransport,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
@@ -54,6 +54,7 @@ export async function dispatchTaskExecution(params: {
   emit: EmitFn;
   files: string[];
   selectedWorkerCommand: string[];
+  selectedWorkerPattern: ParsedWorkerPattern;
   pendingPreRunResetTraceEvents: Array<{ file: string; resetCount: number; dryRun: boolean }>;
   traceRunSession: ReturnType<typeof createTraceRunSession>;
   roundContext: {
@@ -64,7 +65,6 @@ export async function dispatchTaskExecution(params: {
   onlyVerify: boolean;
   shouldVerify: boolean;
   mode: RunnerMode;
-  transport: PromptTransport;
   keepArtifacts: boolean;
   showAgentOutput: boolean;
   ignoreCliBlock: boolean;
@@ -80,6 +80,7 @@ export async function dispatchTaskExecution(params: {
   expandedContextBefore: string;
   artifactContext: ArtifactRunContext;
   resolvedWorkerCommand: string[];
+  resolvedWorkerPattern: ParsedWorkerPattern;
   trace: boolean;
   executionEnv?: Record<string, string>;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
@@ -90,6 +91,7 @@ export async function dispatchTaskExecution(params: {
     emit,
     files,
     selectedWorkerCommand,
+    selectedWorkerPattern,
     pendingPreRunResetTraceEvents,
     traceRunSession,
     roundContext,
@@ -97,7 +99,6 @@ export async function dispatchTaskExecution(params: {
     onlyVerify,
     shouldVerify,
     mode,
-    transport,
     keepArtifacts,
     showAgentOutput,
     ignoreCliBlock,
@@ -113,6 +114,7 @@ export async function dispatchTaskExecution(params: {
     expandedContextBefore,
     artifactContext,
     resolvedWorkerCommand,
+    resolvedWorkerPattern,
     trace,
     executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
@@ -259,10 +261,9 @@ export async function dispatchTaskExecution(params: {
     const executePhaseTrace = traceRunSession.beginPhase("execute", resolvedWorkerCommand);
     traceRunSession.emitPromptMetrics(renderedToolPrompt, expandedContextBefore, "execute.md");
     const runResult = await dependencies.workerExecutor.runWorker({
-      command: resolvedWorkerCommand,
+      workerPattern: resolvedWorkerPattern,
       prompt: renderedToolPrompt,
       mode,
-      transport,
       trace,
       cwd: dependencies.workingDirectory.cwd(),
       env: executionEnv,
@@ -312,14 +313,13 @@ export async function dispatchTaskExecution(params: {
   }
 
   // Default branch executes the configured worker command for standard tasks.
-  emit({ kind: "info", message: "Running: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]" });
+  emit({ kind: "info", message: "Running: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + "]" });
   const executePhaseTrace = traceRunSession.beginPhase("execute", resolvedWorkerCommand);
   traceRunSession.emitPromptMetrics(prompt, expandedContextBefore, "execute.md");
   const runResult = await dependencies.workerExecutor.runWorker({
-    command: resolvedWorkerCommand,
+    workerPattern: selectedWorkerPattern,
     prompt,
     mode,
-    transport,
     trace,
     cwd: dependencies.workingDirectory.cwd(),
     env: executionEnv,

@@ -1,12 +1,5 @@
 import type { ProcessRunMode } from "./process-runner.js";
-
-/**
- * Selects how prompt content is delivered to the worker process.
- *
- * `file` writes prompt content to a temporary file and passes the path,
- * while `arg` passes prompt content directly as a command argument.
- */
-export type PromptTransport = "file" | "arg";
+import type { ParsedWorkerPattern } from "../worker-pattern.js";
 
 /**
  * Captures the normalized result of a worker process execution.
@@ -23,18 +16,16 @@ export interface WorkerRunResult {
 /**
  * Defines options required to execute a worker command.
  *
- * These options control command invocation, prompt transport, trace behavior,
+ * These options control command invocation, trace behavior,
  * output capture, and optional artifact metadata for persisted run records.
  */
 export interface WorkerExecutionOptions {
-  // Full command and arguments used to launch the worker process.
-  command: string[];
+  // Parsed worker pattern used to derive the final worker argv.
+  workerPattern: ParsedWorkerPattern;
   // Rendered prompt content sent to the worker.
   prompt: string;
   // Process runner mode controlling execution behavior.
   mode: ProcessRunMode;
-  // Strategy used to send prompt content to the worker.
-  transport: PromptTransport;
   // Enables trace collection when true.
   trace?: boolean;
   // Captures worker stdout and stderr for later consumption.
@@ -86,8 +77,6 @@ export interface RundownTaskExecutionOptions {
   rundownCommand?: string[];
   // Parent worker command forwarded to nested execution.
   parentWorkerCommand?: string[];
-  // Parent prompt transport mode forwarded to nested execution.
-  parentTransport?: string;
   // Parent keep-artifacts flag forwarded to nested execution.
   parentKeepArtifacts?: boolean;
   // Parent output visibility flag forwarded to nested execution.

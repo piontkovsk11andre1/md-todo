@@ -17,6 +17,7 @@ import type {
   RunTaskDependencies,
   RunTaskOptions,
 } from "../../src/application/run-task.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createMemoryWriterAdapter } from "../../src/infrastructure/adapters/memory-writer-adapter.js";
 
 export function createDependencies(options: {
@@ -218,11 +219,16 @@ export function createTask(file: string, text: string): Task {
   };
 }
 
-export function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOptions {
+export function createOptions(
+  overrides: Partial<RunTaskOptions> & { workerCommand?: string[]; transport?: string },
+): RunTaskOptions {
+  const { workerCommand, transport: _transport, ...optionOverrides } = overrides;
+  void _transport;
+
   return {
     source: "tasks.md",
     mode: "wait",
-    transport: "file",
+    workerPattern: inferWorkerPatternFromCommand(workerCommand ?? ["opencode", "run"]),
     sortMode: "name-sort",
     verify: true,
     onlyVerify: false,
@@ -234,7 +240,6 @@ export function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOption
     keepArtifacts: false,
     varsFileOption: undefined,
     cliTemplateVarArgs: [],
-    workerCommand: [],
     commitAfterComplete: false,
     commitMessageTemplate: undefined,
     onCompleteCommand: undefined,
@@ -249,7 +254,7 @@ export function createOptions(overrides: Partial<RunTaskOptions>): RunTaskOption
     traceOnly: false,
     forceUnlock: false,
     ignoreCliBlock: false,
-    ...overrides,
+    ...optionOverrides,
   };
 }
 

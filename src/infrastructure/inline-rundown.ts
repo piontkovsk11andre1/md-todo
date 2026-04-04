@@ -36,7 +36,6 @@ export interface RundownTaskOptions {
   artifactExtra?: Record<string, unknown>;
   rundownCommand?: string[];
   parentWorkerCommand?: string[];
-  parentTransport?: string;
   parentKeepArtifacts?: boolean;
   parentShowAgentOutput?: boolean;
   parentIgnoreCliBlock?: boolean;
@@ -173,7 +172,6 @@ function buildForwardedArgs(
   const forwarded: string[] = normalizeLegacyRetryArgs(args);
 
   const hasWorkerOverride = hasLongOption(forwarded, "--worker");
-  const hasTransportOverride = hasLongOption(forwarded, "--transport");
   const hasKeepArtifactsOverride = hasLongOption(forwarded, "--keep-artifacts");
   const hasShowAgentOutputOverride = hasLongOptionVariant(forwarded, ["--show-agent-output", "--no-show-agent-output"]);
   const hasIgnoreCliBlockOverride = hasLongOption(forwarded, "--ignore-cli-block");
@@ -184,10 +182,6 @@ function buildForwardedArgs(
 
   if (!hasWorkerOverride && options?.parentWorkerCommand && options.parentWorkerCommand.length > 0) {
     forwarded.push("--worker", ...options.parentWorkerCommand);
-  }
-
-  if (!hasTransportOverride && options?.parentTransport) {
-    forwarded.push("--transport", options.parentTransport);
   }
 
   if (!hasKeepArtifactsOverride && options?.parentKeepArtifacts) {

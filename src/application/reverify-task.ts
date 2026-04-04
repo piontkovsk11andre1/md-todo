@@ -16,6 +16,7 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "../domain/template.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import {
   createRunCompletedEvent,
   createRunStartedEvent,
@@ -38,7 +39,7 @@ import {
   validateRuntimeTaskMetadata,
 } from "./task-context-resolution.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
-import { resolveWorkerForInvocation } from "./resolve-worker.js";
+import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import type {
   ArtifactStoreStatus,
   ArtifactRunMetadata,
@@ -49,7 +50,6 @@ import type {
   MemoryMetadata,
   MemoryResolverPort,
   PathOperationsPort,
-  PromptTransport,
   TaskRepairPort,
   TaskVerificationPort,
   TemplateLoader,
@@ -100,13 +100,12 @@ export interface ReverifyTaskOptions {
   last?: number;
   all?: boolean;
   oldestFirst?: boolean;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   repairAttempts: number;
   noRepair: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
-  workerCommand: string[];
   varsFileOption?: string | boolean | undefined;
   cliTemplateVarArgs?: string[];
   trace: boolean;
@@ -129,13 +128,12 @@ export function createReverifyTask(
       last,
       all,
       oldestFirst,
-      transport,
+      workerPattern,
       repairAttempts,
       noRepair,
       dryRun,
       printPrompt,
       keepArtifacts,
-      workerCommand,
       varsFileOption,
       cliTemplateVarArgs,
       trace,
@@ -316,15 +314,17 @@ export function createReverifyTask(
         }
       }
       // Reuse original worker command when no stronger override is provided.
-      const effectiveWorkerCommand = resolveWorkerForInvocation({
+      const resolvedWorker = resolveWorkerPatternForInvocation({
         commandName: "reverify",
         workerConfig: loadedWorkerConfig,
         source: taskContext.source,
         task: taskContext.task,
-        cliWorkerCommand: workerCommand,
+        cliWorkerPattern: workerPattern,
         fallbackWorkerCommand: selectedRun.workerCommand,
         emit,
       });
+      const effectiveWorkerCommand = resolvedWorker.workerCommand;
+      const effectiveWorkerPattern = resolvedWorker.workerPattern;
 
       // Print prompt mode stops before any worker invocation or artifact writes.
       if (printPrompt) {
@@ -354,7 +354,7 @@ export function createReverifyTask(
       if (effectiveWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
         return { exitCode: 1, status: null };
       }
@@ -374,7 +374,6 @@ export function createReverifyTask(
         commandName: "reverify",
         workerCommand: effectiveWorkerCommand,
         mode: "wait",
-        transport,
         source: selectedRun.source,
         task: toRuntimeTaskMetadata(taskContext.task, taskContext.source),
         keepArtifacts,
@@ -395,7 +394,7 @@ export function createReverifyTask(
           source: selectedRun.source ?? taskContext.task.file,
           worker: effectiveWorkerCommand,
           mode: "wait",
-          transport,
+          transport: "pattern",
           task_text: taskContext.task.text,
           task_file: taskContext.task.file,
           task_line: taskContext.task.line,
@@ -454,8 +453,7 @@ export function createReverifyTask(
           contextBefore: taskContext.contextBefore,
           verifyTemplate: expandedVerificationPrompt,
           repairTemplate: expandedRepairPrompt,
-          workerCommand: effectiveWorkerCommand,
-          transport,
+          workerPattern: effectiveWorkerPattern,
           configDir: dependencies.configDir?.configDir,
           maxRepairAttempts: runBehavior.maxRepairAttempts,
           allowRepair: runBehavior.allowRepair,

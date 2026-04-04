@@ -14,7 +14,8 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "../domain/template.js";
-import { resolveWorkerForInvocation } from "./resolve-worker.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
+import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { isOpenCodeWorkerCommand } from "./run-task.js";
 import {
   buildRundownVarEnv,
@@ -64,11 +65,6 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 export type RunnerMode = ProcessRunMode;
 
 /**
- * Transport strategy used to deliver prompts to the planning worker.
- */
-export type PromptTransport = "file" | "arg";
-
-/**
  * Artifact context alias used for plan command runs.
  */
 type ArtifactContext = ArtifactRunContext;
@@ -107,14 +103,13 @@ export interface PlanTaskOptions {
   scanCount?: number;
   deep?: number;
   mode: RunnerMode;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
@@ -139,14 +134,13 @@ export function createPlanTask(
       scanCount = 3,
       deep = 0,
       mode,
-      transport,
+      workerPattern,
       showAgentOutput,
       dryRun,
       printPrompt,
       keepArtifacts,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
       trace,
       forceUnlock,
       ignoreCliBlock,
@@ -233,13 +227,15 @@ export function createPlanTask(
       const loadedWorkerConfig = dependencies.configDir?.configDir
         ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
         : undefined;
-      const resolvedWorkerCommand = resolveWorkerForInvocation({
+      const resolvedWorker = resolveWorkerPatternForInvocation({
         commandName: "plan",
         workerConfig: loadedWorkerConfig,
         source: documentSource,
-        cliWorkerCommand: workerCommand,
+        cliWorkerPattern: workerPattern,
         emit,
       });
+      const resolvedWorkerCommand = resolvedWorker.workerCommand;
+      const resolvedWorkerPattern = resolvedWorker.workerPattern;
       emit({
         kind: "info",
         message: "Planning document: " + source,
@@ -255,7 +251,7 @@ export function createPlanTask(
       if (resolvedWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
         return 1;
       }
@@ -421,7 +417,6 @@ export function createPlanTask(
         commandName: "plan",
         workerCommand: resolvedWorkerCommand,
         mode,
-        transport,
         source,
         task: {
           text: documentIntent,
@@ -451,7 +446,7 @@ export function createPlanTask(
           source,
           worker: resolvedWorkerCommand,
           mode,
-          transport,
+          transport: "pattern",
           task_text: documentIntent,
           task_file: source,
           task_line: 1,
@@ -546,7 +541,7 @@ export function createPlanTask(
       try {
         emit({
           kind: "info",
-          message: "Running planner: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + ", transport=" + transport + "]",
+          message: "Running planner: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + "]",
         });
 
         // Track mutable scan-loop state for convergence reporting and totals.
@@ -581,16 +576,15 @@ export function createPlanTask(
             message: "Executing planner " + scanLabel + "...",
           });
           const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
-            const runResult = await dependencies.workerExecutor.runWorker({
-              command: [...resolvedWorkerCommand],
-              prompt: scanPrompt,
+          const runResult = await dependencies.workerExecutor.runWorker({
+            workerPattern: resolvedWorkerPattern,
+            prompt: scanPrompt,
             mode,
-            transport,
-              trace,
-              cwd,
-              env: rundownVarEnv,
-              configDir: dependencies.configDir?.configDir,
-              artifactContext,
+            trace,
+            cwd,
+            env: rundownVarEnv,
+            configDir: dependencies.configDir?.configDir,
+            artifactContext,
             artifactPhase: "plan",
             artifactPhaseLabel: buildPlanScanPhaseLabel(scanIndex, scanCount),
             artifactExtra: {
@@ -710,10 +704,9 @@ export function createPlanTask(
 
               const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
               const runResult = await dependencies.workerExecutor.runWorker({
-                command: [...resolvedWorkerCommand],
+                workerPattern: resolvedWorkerPattern,
                 prompt: deepPrompt,
                 mode,
-                transport,
                 trace,
                 cwd,
                 env: rundownVarEnv,

@@ -1,8 +1,8 @@
 import type { Task } from "../domain/parser.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import type {
   CommandExecutionOptions,
   CommandExecutor,
-  PromptTransport,
   TaskRepairPort,
   TaskVerificationPort,
   TraceWriterPort,
@@ -38,8 +38,7 @@ export interface VerifyRepairLoopInput {
   contextBefore: string;
   verifyTemplate: string;
   repairTemplate: string;
-  workerCommand: string[];
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   configDir?: string;
   maxRepairAttempts: number;
   allowRepair: boolean;
@@ -164,9 +163,8 @@ export async function runVerifyRepairLoop(
     source: input.source,
     contextBefore: input.contextBefore,
     template: input.verifyTemplate,
-    command: input.workerCommand,
+    workerPattern: input.workerPattern,
     mode: "wait",
-    transport: input.transport,
     configDir: input.configDir,
     templateVars: input.templateVars,
     executionEnv: input.executionEnv,
@@ -233,10 +231,9 @@ export async function runVerifyRepairLoop(
       contextBefore: input.contextBefore,
       repairTemplate: input.repairTemplate,
       verifyTemplate: input.verifyTemplate,
-      command: input.workerCommand,
+      workerPattern: input.workerPattern,
       maxRetries: 1,
       mode: "wait",
-      transport: input.transport,
       configDir: input.configDir,
       templateVars: input.templateVars,
       executionEnv: input.executionEnv,

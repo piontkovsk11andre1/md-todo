@@ -6,7 +6,6 @@ import {
   parseCliBlockTimeout,
   parseLastCount,
   parseLimitCount,
-  parsePromptTransport,
   parseRepairAttempts,
   parseRevertMethod,
   parseRounds,
@@ -23,6 +22,11 @@ import {
   resolveMakeMarkdownFile,
   resolveVerifyFlag,
 } from "./cli-options.js";
+import {
+  inferWorkerPatternFromCommand,
+  parseWorkerPattern,
+  type ParsedWorkerPattern,
+} from "../domain/worker-pattern.js";
 import type { CliApp } from "./cli-app-init.js";
 import type { ResearchCommandInvocationOptions } from "./cli-invocation-types.js";
 
@@ -40,7 +44,11 @@ type LogCommandHandler = (options: LogCommandOptions) => CliActionResult;
 
 interface WorkerActionDependencies {
   getApp: () => CliApp;
-  getWorkerFromSeparator: () => string[];
+  getWorkerFromSeparator: () => string | undefined;
+}
+
+function emitCliInfo(app: CliApp, message: string): void {
+  app.emitOutput?.({ kind: "info", message });
 }
 
 interface RunActionDependencies extends WorkerActionDependencies {
@@ -69,28 +77,24 @@ interface DoActionDependencies extends WorkerActionDependencies {
   makeModes: readonly ProcessRunMode[];
 }
 
-/**
- * Resolves worker command arguments from either parsed CLI options or the `--` separator payload.
- *
- * Accepts string, string-array, and boolean option shapes produced by the argument parser and always
- * normalizes to a string array consumed by worker-oriented application commands.
- */
-function resolveWorkerCommand(
+function resolveWorkerPattern(
   worker: string | string[] | boolean | undefined,
-  getWorkerFromSeparator: () => string[],
-): string[] {
-  // Preserve repeated `--worker` inputs exactly as provided.
-  if (Array.isArray(worker)) {
-    return worker;
-  }
-
-  // Normalize single `--worker` values into the expected list shape.
+  getWorkerFromSeparator: () => string | undefined,
+): ParsedWorkerPattern {
   if (typeof worker === "string") {
-    return [worker];
+    return parseWorkerPattern(worker);
   }
 
-  // Fall back to downstream worker arguments passed after `--`.
-  return getWorkerFromSeparator();
+  if (Array.isArray(worker)) {
+    return inferWorkerPatternFromCommand(worker);
+  }
+
+  const workerFromSeparator = getWorkerFromSeparator();
+  if (typeof workerFromSeparator === "string") {
+    return parseWorkerPattern(workerFromSeparator);
+  }
+
+  return inferWorkerPatternFromCommand([]);
 }
 
 /**
@@ -107,7 +111,6 @@ export function createRunCommandAction({
   return async (source: string, opts: CliOpts) => {
     // Resolve all execution-mode options before building the run request payload.
     const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
-    const transport = parsePromptTransport(opts.transport as string | undefined);
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean);
@@ -121,7 +124,7 @@ export function createRunCommandAction({
     const traceOnly = opts.traceOnly as boolean;
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
-    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+    const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
@@ -145,7 +148,7 @@ export function createRunCommandAction({
     return getApp().runTask({
       source,
       mode,
-      transport,
+      workerPattern,
       sortMode,
       verify,
       onlyVerify,
@@ -159,7 +162,6 @@ export function createRunCommandAction({
       traceOnly,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,
@@ -216,7 +218,6 @@ export function createDiscussCommandAction({
   return (source: string, opts: CliOpts) => {
     // Parse and normalize discuss-specific option values.
     const mode = parseRunnerMode(opts.mode as string | undefined, discussModes);
-    const transport = parsePromptTransport(opts.transport as string | undefined);
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
@@ -228,20 +229,19 @@ export function createDiscussCommandAction({
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
-    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+    const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
 
     // Delegate to the discuss application flow with normalized arguments.
     return getApp().discussTask({
       source,
       mode,
-      transport,
+      workerPattern,
       sortMode,
       dryRun,
       printPrompt,
       keepArtifacts,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
       showAgentOutput,
       trace,
       forceUnlock,
@@ -263,7 +263,6 @@ export function createReverifyCommandAction({
 }: WorkerActionDependencies): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     // Parse run-selection and behavior flags for re-verification.
-    const transport = parsePromptTransport(opts.transport as string | undefined);
     const last = parseLastCount(opts.last as string | undefined);
     const all = Boolean(opts.all as boolean | undefined);
     const oldestFirst = Boolean(opts.oldestFirst as boolean | undefined);
@@ -278,7 +277,7 @@ export function createReverifyCommandAction({
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
-    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+    const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
 
     // Execute the re-verification workflow in the application layer.
     return getApp().reverifyTask({
@@ -286,13 +285,12 @@ export function createReverifyCommandAction({
       last,
       all,
       oldestFirst,
-      transport,
+      workerPattern,
       repairAttempts,
       noRepair,
       dryRun,
       printPrompt,
       keepArtifacts,
-      workerCommand,
       varsFileOption,
       cliTemplateVarArgs,
       trace,
@@ -424,7 +422,6 @@ export function createPlanCommandAction({
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
     const deep = parsePlanDeep(opts.deep as string | undefined);
     const mode = parseRunnerMode(opts.mode as string | undefined, plannerModes);
-    const transport = parsePromptTransport(opts.transport as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
@@ -435,7 +432,7 @@ export function createPlanCommandAction({
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
-    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+    const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
 
     // Trigger planning in the app layer with a normalized payload.
     return getApp().planTask({
@@ -443,7 +440,7 @@ export function createPlanCommandAction({
       scanCount,
       deep,
       mode,
-      transport,
+      workerPattern,
       showAgentOutput,
       dryRun,
       printPrompt,
@@ -454,7 +451,6 @@ export function createPlanCommandAction({
       cliBlockTimeoutMs,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
     });
   };
 }
@@ -473,7 +469,6 @@ export function createResearchCommandAction({
   return (markdownFiles: string[], opts: CliOpts) => {
     const markdownFile = resolveResearchMarkdownFile(markdownFiles);
     const mode = parseRunnerMode(opts.mode as string | undefined, researchModes);
-    const transport = parsePromptTransport(opts.transport as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
@@ -484,12 +479,12 @@ export function createResearchCommandAction({
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
-    const workerCommand = resolveWorkerCommand(opts.worker, getWorkerFromSeparator);
+    const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
 
     const request: ResearchCommandInvocationOptions = {
       source: markdownFile,
       mode,
-      transport,
+      workerPattern,
       showAgentOutput,
       dryRun,
       printPrompt,
@@ -501,7 +496,6 @@ export function createResearchCommandAction({
       configDirOption: normalizeOptionalString(opts.configDir),
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
     };
 
     return getApp().researchTask(request);
@@ -520,19 +514,23 @@ export function createMakeCommandAction({
   makeModes,
 }: MakeActionDependencies): (seedText: string, markdownFile: string, opts: CliOpts) => CliActionResult {
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
+    const app = getApp();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
     const mode = parseRunnerMode(opts.mode as string | undefined, makeModes);
     const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
     const dryRun = Boolean(opts.dryRun as boolean | undefined);
     const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
 
     createSeedMarkdownFile(targetMarkdownFile, seedText);
 
-    const researchCode = normalizeMakePhaseExitCode(await getApp().researchTask({
+    emitCliInfo(app, "Make phase 1/2: research");
+
+    const researchCode = normalizeMakePhaseExitCode(await app.researchTask({
       source: targetMarkdownFile,
       mode,
-      transport: sharedRuntimeOptions.transport,
+      workerPattern: sharedWorkerPattern,
       showAgentOutput: sharedRuntimeOptions.showAgentOutput,
       dryRun,
       printPrompt,
@@ -544,18 +542,20 @@ export function createMakeCommandAction({
       configDirOption: sharedRuntimeOptions.configDirOption,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
-      workerCommand: sharedRuntimeOptions.workerCommand,
     }));
 
     if (researchCode !== 0) {
       return researchCode;
     }
 
-    return normalizeMakePhaseExitCode(await getApp().planTask({
+    emitCliInfo(app, "Make transition: research -> plan");
+    emitCliInfo(app, "Make phase 2/2: plan");
+
+    return normalizeMakePhaseExitCode(await app.planTask({
       source: targetMarkdownFile,
       scanCount,
       mode,
-      transport: sharedRuntimeOptions.transport,
+      workerPattern: sharedWorkerPattern,
       showAgentOutput: sharedRuntimeOptions.showAgentOutput,
       dryRun,
       printPrompt,
@@ -566,7 +566,6 @@ export function createMakeCommandAction({
       cliBlockTimeoutMs: sharedRuntimeOptions.cliBlockTimeoutMs,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
-      workerCommand: sharedRuntimeOptions.workerCommand,
     }));
   };
 }
@@ -583,9 +582,11 @@ export function createDoCommandAction({
   makeModes,
 }: DoActionDependencies): (seedText: string, markdownFile: string, opts: CliOpts) => CliActionResult {
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
+    const app = getApp();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
     const mode = parseRunnerMode(opts.mode as string | undefined, makeModes);
     const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
     const dryRun = Boolean(opts.dryRun as boolean | undefined);
     const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
@@ -611,6 +612,8 @@ export function createDoCommandAction({
     }
     const cacheCliBlocks = Boolean(opts.cacheCliBlocks as boolean | undefined);
 
+    emitCliInfo(app, "Do phase 1/2: bootstrap (make)");
+
     const bootstrapCode = normalizeMakePhaseExitCode(await createMakeCommandAction({
       getApp,
       getWorkerFromSeparator,
@@ -621,10 +624,16 @@ export function createDoCommandAction({
       return bootstrapCode;
     }
 
-    return getApp().runTask({
+    emitCliInfo(app, "Do transition: bootstrap -> execution");
+    emitCliInfo(app, "Do phase 2/2: execution (run --all)");
+    if (rounds > 1) {
+      emitCliInfo(app, `Execution rounds: 1/${rounds} -> ${rounds}/${rounds}`);
+    }
+
+    return app.runTask({
       source: targetMarkdownFile,
       mode,
-      transport: sharedRuntimeOptions.transport,
+      workerPattern: sharedWorkerPattern,
       sortMode: runSortMode,
       verify,
       onlyVerify,
@@ -638,7 +647,6 @@ export function createDoCommandAction({
       traceOnly,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
-      workerCommand: sharedRuntimeOptions.workerCommand,
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,

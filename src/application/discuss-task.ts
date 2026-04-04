@@ -27,8 +27,9 @@ import {
   detectCheckboxMutations,
   type CheckboxStateSnapshot,
 } from "./checkbox-operations.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
-import { resolveWorkerForInvocation } from "./resolve-worker.js";
+import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { formatTaskLabel } from "./run-task-utils.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type { FileLock } from "../domain/ports/file-lock.js";
@@ -41,7 +42,6 @@ import type {
   MemoryResolverPort,
   PathOperationsPort,
   ProcessRunMode,
-  PromptTransport as PortPromptTransport,
   SourceResolverPort,
   TaskSelectionResult as PortTaskSelectionResult,
   TaskSelectorPort,
@@ -55,11 +55,6 @@ import type {
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 
 export type RunnerMode = ProcessRunMode;
-
-/**
- * Transport strategy used to deliver prompts to the discussion worker.
- */
-export type PromptTransport = PortPromptTransport;
 
 /**
  * Artifact context alias used for discuss command runs.
@@ -109,14 +104,13 @@ export interface DiscussTaskDependencies {
 export interface DiscussTaskOptions {
   source: string;
   mode: RunnerMode;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   sortMode: SortMode;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   showAgentOutput: boolean;
   trace: boolean;
   forceUnlock: boolean;
@@ -142,7 +136,7 @@ export function createDiscussTask(
       printPrompt,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
+      workerPattern,
       cliBlockTimeoutMs,
     } = options;
     const varsFilePath = resolveTemplateVarsFilePath(
@@ -235,14 +229,16 @@ export function createDiscussTask(
       const loadedWorkerConfig = dependencies.configDir?.configDir
         ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
         : undefined;
-      const resolvedWorkerCommand = resolveWorkerForInvocation({
+      const resolvedWorker = resolveWorkerPatternForInvocation({
         commandName: "discuss",
         workerConfig: loadedWorkerConfig,
         source: taskContext.source,
         task: taskContext.task,
-        cliWorkerCommand: workerCommand,
+        cliWorkerPattern: workerPattern,
         emit,
       });
+      const resolvedWorkerCommand = resolvedWorker.workerCommand;
+      const resolvedWorkerPattern = resolvedWorker.workerPattern;
       const templates = loadProjectTemplatesFromPorts(
         dependencies.configDir,
         dependencies.templateLoader,
@@ -317,7 +313,7 @@ export function createDiscussTask(
       if (resolvedWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
         return 1;
       }
@@ -338,7 +334,6 @@ export function createDiscussTask(
         commandName: "discuss",
         workerCommand: resolvedWorkerCommand,
         mode: "tui",
-        transport: options.transport,
         source,
         task: {
           text: taskContext.task.text,
@@ -367,13 +362,12 @@ export function createDiscussTask(
       // Invoke worker in TUI mode to collect discussion output.
       emit({
         kind: "info",
-        message: "Running discussion worker: " + resolvedWorkerCommand.join(" ") + " [mode=tui, transport=" + options.transport + "]",
+        message: "Running discussion worker: " + resolvedWorkerCommand.join(" ") + " [mode=tui]",
       });
       const result = await dependencies.workerExecutor.runWorker({
-        command: resolvedWorkerCommand,
+        workerPattern: resolvedWorkerPattern,
         prompt,
         mode: "tui",
-        transport: options.transport,
         trace: options.trace,
         captureOutput: options.keepArtifacts,
         cwd,

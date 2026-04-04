@@ -23,8 +23,6 @@ export {
  * Public run-task type surface re-exported for compatibility.
  */
 export type {
-  // Prompt delivery strategy for worker execution.
-  PromptTransport,
   // Required dependencies for constructing the run executor.
   RunTaskDependencies,
   // Runtime options supported by a single run invocation.

@@ -5,13 +5,14 @@ import {
   createPhaseCompletedEvent,
   createPhaseStartedEvent,
 } from "../domain/trace.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
+import { inferWorkerPatternFromCommand } from "../domain/worker-pattern.js";
 import type {
   ArtifactRunContext,
   ArtifactStore,
   ConfigDirResult,
   FileSystem,
   PathOperationsPort,
-  PromptTransport,
   TemplateLoader,
   TraceWriterPort,
   WorkerExecutorPort,
@@ -53,8 +54,7 @@ export interface TraceOnlyEnrichmentDependencies {
  * previously completed run.
  */
 export interface RunTraceOnlyEnrichmentOptions {
-  transport: PromptTransport;
-  workerCommand: string[];
+  workerPattern: ParsedWorkerPattern;
 }
 
 /**
@@ -113,13 +113,13 @@ export async function runTraceOnlyEnrichment(
   );
 
   // Prefer an explicit CLI worker command, then fall back to the command saved with the run.
-  const effectiveWorkerCommand = options.workerCommand.length > 0
-    ? options.workerCommand
+  const effectiveWorkerCommand = options.workerPattern.command.length > 0
+    ? options.workerPattern.command
     : selectedRun.workerCommand ?? [];
   if (effectiveWorkerCommand.length === 0) {
     dependencies.emit({
       kind: "error",
-      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
     });
     return 1;
   }
@@ -192,10 +192,11 @@ export async function runTraceOnlyEnrichment(
   try {
     // Run the enrichment worker without recursive tracing to avoid nested trace output.
     const enrichmentResult = await dependencies.workerExecutor.runWorker({
-      command: effectiveWorkerCommand,
+      workerPattern: options.workerPattern.command.length > 0
+        ? options.workerPattern
+        : inferWorkerPatternFromCommand(effectiveWorkerCommand),
       prompt: tracePrompt,
       mode: "wait",
-      transport: options.transport,
       trace: false,
       cwd,
       configDir: dependencies.configDir?.configDir,

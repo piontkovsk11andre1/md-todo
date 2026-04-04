@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { parseWorkerPattern } from "../../../src/domain/worker-pattern.js";
 
 const {
   resolveSourcesMock,
@@ -93,11 +94,11 @@ describe("infrastructure adapters", () => {
 
     const adapter = createWorkerExecutorAdapter();
     const artifactContext = { runId: "run-1" };
+    const workerPattern = parseWorkerPattern("worker run");
     const result = await adapter.runWorker({
-      command: ["worker", "run"],
+      workerPattern,
       prompt: "prompt",
       mode: "wait",
-      transport: "file",
       cwd: "/repo",
       env: { RUNDOWN_VAR_REGION: "eu-west" },
       artifactContext,
@@ -107,15 +108,18 @@ describe("infrastructure adapters", () => {
 
     expect(runWorkerMock).toHaveBeenCalledTimes(1);
     expect(runWorkerMock).toHaveBeenCalledWith({
-      command: ["worker", "run"],
+      workerPattern,
       prompt: "prompt",
       mode: "wait",
-      transport: "file",
       cwd: "/repo",
       env: { RUNDOWN_VAR_REGION: "eu-west" },
       artifactContext,
       artifactPhase: "execute",
+      artifactPhaseLabel: undefined,
+      captureOutput: undefined,
+      configDir: undefined,
       artifactExtra: { stage: "test" },
+      trace: undefined,
     });
     expect(result).toEqual({ exitCode: 0, stdout: "ok", stderr: "" });
   });
@@ -169,14 +173,14 @@ describe("infrastructure adapters", () => {
     const artifactContext = { runId: "run-3" };
     const cliBlockExecutor = { execute: vi.fn() };
     const cliExecutionOptions = { timeoutMs: 1234 };
+    const workerPattern = parseWorkerPattern("worker run");
     const result = await adapter.verify({
       task,
       source: "tasks.md",
       contextBefore: "# Tasks",
       template: "{{task}}",
-      command: ["worker", "run"],
+      workerPattern,
       mode: "wait",
-      transport: "arg",
       cwd: "/repo",
       templateVars,
       artifactContext,
@@ -190,10 +194,9 @@ describe("infrastructure adapters", () => {
       source: "tasks.md",
       contextBefore: "# Tasks",
       template: "{{task}}",
-      command: ["worker", "run"],
+      workerPattern,
       verificationStore,
       mode: "wait",
-      transport: "arg",
       cwd: "/repo",
       templateVars,
       artifactContext,
@@ -230,16 +233,16 @@ describe("infrastructure adapters", () => {
     const artifactContext = { runId: "run-4" };
     const cliBlockExecutor = { execute: vi.fn() };
     const cliExecutionOptions = { timeoutMs: 5678 };
+    const workerPattern = parseWorkerPattern("worker run");
     const result = await adapter.repair({
       task,
       source: "tasks.md",
       contextBefore: "# Tasks",
       repairTemplate: "repair",
       verifyTemplate: "verify",
-      command: ["worker", "run"],
+      workerPattern,
       maxRetries: 2,
       mode: "wait",
-      transport: "file",
       cwd: "/repo",
       templateVars,
       artifactContext,
@@ -254,11 +257,10 @@ describe("infrastructure adapters", () => {
       contextBefore: "# Tasks",
       repairTemplate: "repair",
       verifyTemplate: "verify",
-      command: ["worker", "run"],
+      workerPattern,
       maxRetries: 2,
       verificationStore,
       mode: "wait",
-      transport: "file",
       cwd: "/repo",
       templateVars,
       artifactContext,

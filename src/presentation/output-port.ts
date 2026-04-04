@@ -1,20 +1,38 @@
 import type { ApplicationOutputEvent, ApplicationOutputPort } from "../domain/ports/output-port.js";
 import pc from "picocolors";
+import { sleep, typeText } from "./animation.js";
 
 const ANSI_ESCAPE_PATTERN = /\u001B\[[0-9;]*m/g;
-const SPINNER_FRAMES = ["-", "\\", "|", "/"];
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_FRAME_INTERVAL_MS = 80;
+const CLI_TYPING_DELAY_MS = 10;
+const CLI_CASCADE_DELAY_MS = 45;
+
+interface ProgressPayload {
+  label: string;
+  detail?: string;
+  current?: number;
+  total?: number;
+  unit?: string;
+}
 
 interface ProgressRenderState {
   active: boolean;
   frameIndex: number;
   lineWidth: number;
+  timer: ReturnType<typeof setInterval> | null;
+  latestProgress: ProgressPayload | null;
 }
 
 const progressRenderState: ProgressRenderState = {
   active: false,
   frameIndex: 0,
   lineWidth: 0,
+  timer: null,
+  latestProgress: null,
 };
+
+let animatedLineQueue: Promise<void> = Promise.resolve();
 
 /**
  * Applies a dimmed terminal style to supporting status text.
@@ -57,13 +75,7 @@ interface TaskDetailLineOptions {
 /**
  * Renders a progress payload into a stable one-line status string.
  */
-function formatProgressLine(progress: {
-  label: string;
-  detail?: string;
-  current?: number;
-  total?: number;
-  unit?: string;
-}): string {
+function formatProgressLine(progress: ProgressPayload): string {
   const hasCounters = typeof progress.current === "number" && typeof progress.total === "number";
   const counter = hasCounters
     ? ` (${progress.current}/${progress.total}${progress.unit ? ` ${progress.unit}` : ""})`
@@ -90,6 +102,78 @@ function isInteractiveProgressEnabled(): boolean {
 }
 
 /**
+ * Indicates whether typed CLI line animations are safe for this session.
+ */
+function isInteractiveLineAnimationEnabled(): boolean {
+  return isInteractiveProgressEnabled();
+}
+
+/**
+ * Queues asynchronous typed line animations to preserve output order.
+ */
+function enqueueAnimatedLine(render: () => Promise<void>): void {
+  animatedLineQueue = animatedLineQueue.then(render).catch(() => undefined);
+}
+
+/**
+ * Renders a prefixed line with a subtle typewriter effect.
+ */
+async function renderTypedLine(prefix: string, message: string): Promise<void> {
+  process.stdout.write(`${prefix} `);
+  await typeText(message, undefined, CLI_TYPING_DELAY_MS);
+  process.stdout.write("\n");
+}
+
+/**
+ * Renders a line instantly, then briefly pauses to create a cascade effect.
+ */
+async function renderCascadeLine(prefix: string, message: string): Promise<void> {
+  console.log(`${prefix} ${message}`);
+  await sleep(CLI_CASCADE_DELAY_MS);
+}
+
+/**
+ * Determines whether an info line should be rendered with a reveal effect.
+ */
+function shouldAnimateInfoMessage(message: string): boolean {
+  return message.startsWith("Next task:") || message.startsWith("Planning document:");
+}
+
+/**
+ * Determines whether a success line should be rendered with a reveal effect.
+ */
+function shouldAnimateSuccessMessage(message: string): boolean {
+  return message.startsWith("All tasks completed")
+    || message.startsWith("Initialized ");
+}
+
+/**
+ * Determines whether a success line should be rendered with a cascade-style reveal.
+ */
+function shouldCascadeSuccessMessage(message: string): boolean {
+  return message.startsWith("Created ");
+}
+
+/**
+ * Applies lightweight styling to dry-run revert output while preserving message text.
+ */
+function styleInfoMessage(message: string): string {
+  if (message.startsWith("Dry run - would revert ")) {
+    return pc.yellow(message);
+  }
+
+  if (message.startsWith("- git revert ") || message.startsWith("- git reset ")) {
+    return pc.yellow(message);
+  }
+
+  if (message.startsWith("- run=")) {
+    return pc.dim(message);
+  }
+
+  return message;
+}
+
+/**
  * Computes the printable width of text by removing ANSI color sequences.
  */
 function printableWidth(text: string): number {
@@ -101,30 +185,28 @@ function printableWidth(text: string): number {
  */
 function flushProgressLine(): void {
   if (!progressRenderState.active) {
+    stopSpinnerTimer();
+    progressRenderState.latestProgress = null;
     return;
   }
 
   process.stdout.write("\n");
   progressRenderState.active = false;
   progressRenderState.lineWidth = 0;
+  progressRenderState.latestProgress = null;
+  stopSpinnerTimer();
 }
 
 /**
- * Renders bounded progress payloads with a deterministic ASCII progress bar.
+ * Renders bounded progress payloads with a deterministic block-style progress bar.
  */
-function renderBoundedProgress(progress: {
-  label: string;
-  detail?: string;
-  current?: number;
-  total?: number;
-  unit?: string;
-}): string {
-  const width = 16;
+function renderBoundedProgress(progress: ProgressPayload): string {
+  const width = 28;
   const current = Math.max(0, progress.current ?? 0);
   const total = Math.max(1, progress.total ?? 1);
   const ratio = Math.min(1, current / total);
   const filled = Math.round(ratio * width);
-  const bar = `[${"=".repeat(filled)}${" ".repeat(width - filled)}]`;
+  const bar = `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
   const unit = progress.unit ? ` ${progress.unit}` : "";
   const detail = progress.detail ? ` - ${progress.detail}` : "";
   return `${progress.label} ${bar} ${current}/${total}${unit}${detail}`;
@@ -133,16 +215,9 @@ function renderBoundedProgress(progress: {
 /**
  * Updates an in-place progress line when interactive rendering is enabled.
  */
-function renderInteractiveProgress(progress: {
-  label: string;
-  detail?: string;
-  current?: number;
-  total?: number;
-  unit?: string;
-}): void {
+function renderProgressFrame(progress: ProgressPayload): void {
   const hasCounters = typeof progress.current === "number" && typeof progress.total === "number";
   const frame = SPINNER_FRAMES[progressRenderState.frameIndex % SPINNER_FRAMES.length];
-  progressRenderState.frameIndex += 1;
 
   const message = hasCounters
     ? `${pc.blue("#")} ${renderBoundedProgress(progress)}`
@@ -153,6 +228,54 @@ function renderInteractiveProgress(progress: {
   process.stdout.write(`\r${message}${" ".repeat(padding)}`);
   progressRenderState.active = true;
   progressRenderState.lineWidth = width;
+}
+
+/**
+ * Starts the spinner timer when unbounded progress is active.
+ */
+function startSpinnerTimer(): void {
+  if (progressRenderState.timer) {
+    return;
+  }
+
+  progressRenderState.timer = setInterval(() => {
+    progressRenderState.frameIndex = (progressRenderState.frameIndex + 1) % SPINNER_FRAMES.length;
+
+    if (!progressRenderState.active || !progressRenderState.latestProgress) {
+      return;
+    }
+
+    renderProgressFrame(progressRenderState.latestProgress);
+  }, SPINNER_FRAME_INTERVAL_MS);
+  progressRenderState.timer.unref?.();
+}
+
+/**
+ * Stops and clears the spinner timer.
+ */
+function stopSpinnerTimer(): void {
+  if (!progressRenderState.timer) {
+    return;
+  }
+
+  clearInterval(progressRenderState.timer);
+  progressRenderState.timer = null;
+}
+
+/**
+ * Updates an in-place progress line when interactive rendering is enabled.
+ */
+function renderInteractiveProgress(progress: ProgressPayload): void {
+  const hasCounters = typeof progress.current === "number" && typeof progress.total === "number";
+  progressRenderState.latestProgress = progress;
+
+  if (hasCounters) {
+    stopSpinnerTimer();
+  } else {
+    startSpinnerTimer();
+  }
+
+  renderProgressFrame(progress);
 }
 
 /**
@@ -212,7 +335,11 @@ export const cliOutputPort: ApplicationOutputPort = {
     switch (event.kind) {
       case "info":
         flushProgressLine();
-        console.log(pc.blue("ℹ") + " " + event.message);
+        if (isInteractiveLineAnimationEnabled() && shouldAnimateInfoMessage(event.message)) {
+          enqueueAnimatedLine(() => renderTypedLine(pc.blue("ℹ"), styleInfoMessage(event.message)));
+          return;
+        }
+        console.log(pc.blue("ℹ") + " " + styleInfoMessage(event.message));
         return;
       case "warn":
         flushProgressLine();
@@ -224,6 +351,14 @@ export const cliOutputPort: ApplicationOutputPort = {
         return;
       case "success":
         flushProgressLine();
+        if (isInteractiveLineAnimationEnabled() && shouldCascadeSuccessMessage(event.message)) {
+          enqueueAnimatedLine(() => renderCascadeLine(pc.green("✔"), event.message));
+          return;
+        }
+        if (isInteractiveLineAnimationEnabled() && shouldAnimateSuccessMessage(event.message)) {
+          enqueueAnimatedLine(() => renderTypedLine(pc.green("✔"), event.message));
+          return;
+        }
         console.log(pc.green("✔") + " " + event.message);
         return;
       case "progress":

@@ -5,6 +5,7 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "../domain/template.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import {
   buildRundownVarEnv,
   formatTemplateVarsForPrompt,
@@ -19,7 +20,7 @@ import {
 import { captureCheckboxState } from "./checkbox-operations.js";
 import { parsePlannerOutput } from "../domain/planner.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
-import { resolveWorkerForInvocation } from "./resolve-worker.js";
+import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type {
   ArtifactRunContext,
@@ -44,11 +45,6 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
  * Execution mode used when invoking the research worker.
  */
 export type RunnerMode = ProcessRunMode;
-
-/**
- * Transport strategy used to deliver prompts to the research worker.
- */
-export type PromptTransport = "file" | "arg";
 
 /**
  * Artifact context alias used for research command runs.
@@ -80,14 +76,13 @@ export interface ResearchTaskDependencies {
 export interface ResearchTaskOptions {
   source: string;
   mode: RunnerMode;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
@@ -116,9 +111,8 @@ export function createResearchTask(
       ignoreCliBlock,
       cliBlockTimeoutMs,
       trace,
-      workerCommand,
+      workerPattern,
       mode,
-      transport,
       showAgentOutput,
       keepArtifacts,
       forceUnlock,
@@ -230,18 +224,19 @@ export function createResearchTask(
       const loadedWorkerConfig = dependencies.configDir?.configDir
         ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
         : undefined;
-      const resolvedWorkerCommand = resolveWorkerForInvocation({
+      const resolvedWorker = resolveWorkerPatternForInvocation({
         commandName: "research",
         workerConfig: loadedWorkerConfig,
         source: sourceDocument,
-        cliWorkerCommand: workerCommand,
+        cliWorkerPattern: workerPattern,
         emit,
       });
+      const resolvedWorkerCommand = resolvedWorker.workerCommand;
 
       if (resolvedWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
         return 1;
       }
@@ -416,18 +411,20 @@ export function createResearchTask(
       const loadedWorkerConfig = dependencies.configDir?.configDir
         ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
         : undefined;
-      const resolvedWorkerCommand = resolveWorkerForInvocation({
+      const resolvedWorker = resolveWorkerPatternForInvocation({
         commandName: "research",
         workerConfig: loadedWorkerConfig,
         source: sourceDocument,
-        cliWorkerCommand: workerCommand,
+        cliWorkerPattern: workerPattern,
         emit,
       });
+      const resolvedWorkerCommand = resolvedWorker.workerCommand;
+      const resolvedWorkerPattern = resolvedWorker.workerPattern;
 
       if (resolvedWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <command...> or -- <command>.",
+          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
         return 1;
       }
@@ -454,7 +451,6 @@ export function createResearchTask(
         commandName: "research",
         workerCommand: resolvedWorkerCommand,
         mode,
-        transport,
         source,
         keepArtifacts,
       });
@@ -465,16 +461,13 @@ export function createResearchTask(
           + resolvedWorkerCommand.join(" ")
           + " [mode="
           + mode
-          + ", transport="
-          + transport
           + "]",
       });
 
       const runResult = await dependencies.workerExecutor.runWorker({
-        command: [...resolvedWorkerCommand],
+        workerPattern: resolvedWorkerPattern,
         prompt,
         mode,
-        transport,
         trace,
         captureOutput: mode === "tui",
         cwd,

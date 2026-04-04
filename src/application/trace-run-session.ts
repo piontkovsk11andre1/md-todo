@@ -24,7 +24,6 @@ import type {
   ArtifactRunContext,
   ArtifactStoreStatus,
   ProcessRunMode,
-  PromptTransport,
   TraceWriterPort,
 } from "../domain/ports/index.js";
 import type { TaskContextMetrics } from "./task-context-resolution.js";
@@ -302,7 +301,7 @@ export function createTraceRunSession(config: {
   getTraceWriter: () => TraceWriterPort;
   source: string;
   mode: ProcessRunMode;
-  transport: PromptTransport;
+  transport: string;
   traceEnabled: boolean;
 }) {
   const sessionState = new TraceRunSessionState();

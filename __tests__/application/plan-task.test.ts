@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createPlanTask, type PlanTaskDependencies, type PlanTaskOptions } from "../../src/application/plan-task.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import type {
   ApplicationOutputEvent,
   ArtifactStore,
@@ -1528,12 +1529,17 @@ function createNoopFileLock(): FileLock {
   };
 }
 
-function createOptions(overrides: Partial<PlanTaskOptions> = {}): PlanTaskOptions {
+function createOptions(
+  overrides: Partial<PlanTaskOptions> & { workerCommand?: string[]; transport?: string } = {},
+): PlanTaskOptions {
+  const { workerCommand, transport: _transport, ...optionOverrides } = overrides;
+  void _transport;
+
   return {
     source: "roadmap.md",
     scanCount: 1,
     mode: "wait",
-    transport: "arg",
+    workerPattern: inferWorkerPatternFromCommand(workerCommand ?? ["opencode", "run"]),
     showAgentOutput: false,
     dryRun: false,
     printPrompt: false,
@@ -1544,7 +1550,6 @@ function createOptions(overrides: Partial<PlanTaskOptions> = {}): PlanTaskOption
     cliBlockTimeoutMs: undefined,
     varsFileOption: false,
     cliTemplateVarArgs: [],
-    workerCommand: ["opencode", "run"],
-    ...overrides,
+    ...optionOverrides,
   };
 }

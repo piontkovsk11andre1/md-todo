@@ -1,4 +1,5 @@
 import { type Task } from "../domain/parser.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import { handleTemplateCliFailure } from "./cli-block-handlers.js";
 import { checkTaskUsingFileSystem } from "./checkbox-operations.js";
@@ -13,7 +14,6 @@ import type {
   ArtifactStoreStatus,
   CommandExecutionOptions,
   CommandExecutor,
-  PromptTransport,
   TraceWriterPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -74,7 +74,6 @@ export async function completeTaskIteration(params: {
   hideHookOutput: boolean;
   maxRepairAttempts: number;
   allowRepair: boolean;
-  transport: PromptTransport;
   trace: boolean;
   cliBlockExecutor: CommandExecutor;
   cliExpansionEnabled: boolean;
@@ -86,6 +85,7 @@ export async function completeTaskIteration(params: {
   templateVarsWithTrace: ExtraTemplateVars;
   executionEnv?: Record<string, string>;
   automationCommand: string[];
+  automationWorkerPattern: ParsedWorkerPattern;
   shouldVerify: boolean;
   verificationPrompt: string;
   artifactContext: ArtifactContext;
@@ -113,7 +113,6 @@ export async function completeTaskIteration(params: {
     hideHookOutput,
     maxRepairAttempts,
     allowRepair,
-    transport,
     trace,
     cliBlockExecutor,
     cliExpansionEnabled,
@@ -125,6 +124,7 @@ export async function completeTaskIteration(params: {
     templateVarsWithTrace,
     executionEnv,
     automationCommand,
+    automationWorkerPattern,
     shouldVerify,
     verificationPrompt,
     artifactContext,
@@ -153,8 +153,7 @@ export async function completeTaskIteration(params: {
         contextBefore: expandedContextBefore,
         verifyTemplate: templates.verify,
         repairTemplate: templates.repair,
-        workerCommand: automationCommand,
-        transport,
+        workerPattern: automationWorkerPattern,
         configDir: dependencies.configDir?.configDir,
         maxRepairAttempts,
         allowRepair,

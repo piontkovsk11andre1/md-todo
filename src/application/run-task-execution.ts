@@ -23,12 +23,13 @@ import {
   isWorkingDirectoryClean,
 } from "./git-operations.js";
 import { runTaskIteration } from "./run-task-iteration.js";
-import { createCachedCommandExecutor } from "../infrastructure/cached-command-executor.js";
+import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import {
   getAutomationWorkerCommand,
   isOpenCodeWorkerCommand,
   type RunnerMode,
 } from "./run-task-worker-command.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { toRuntimeTaskMetadata } from "./task-context-resolution.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type {
@@ -42,7 +43,6 @@ import type {
   GitClient,
   PathOperationsPort,
   ProcessRunner,
-  PromptTransport as PortPromptTransport,
   MemoryResolverPort,
   ToolResolverPort,
   MemoryWriterPort,
@@ -62,7 +62,6 @@ import type {
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 
-export type PromptTransport = PortPromptTransport;
 type ArtifactContext = ArtifactRunContext;
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
@@ -110,7 +109,7 @@ export interface RunTaskDependencies {
 export interface RunTaskOptions {
   source: string;
   mode: RunnerMode;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   sortMode: SortMode;
   verify: boolean;
   onlyVerify: boolean;
@@ -122,7 +121,6 @@ export interface RunTaskOptions {
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   commitAfterComplete: boolean;
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
@@ -164,7 +162,7 @@ export function createRunTaskExecution(
     const {
       source,
       mode,
-      transport,
+      workerPattern,
       sortMode,
       verify,
       onlyVerify,
@@ -176,7 +174,6 @@ export function createRunTaskExecution(
       keepArtifacts,
       varsFileOption,
       cliTemplateVarArgs,
-      workerCommand,
       commitAfterComplete,
       commitMessageTemplate,
       onCompleteCommand,
@@ -221,8 +218,7 @@ export function createRunTaskExecution(
         createTraceWriter: dependencies.createTraceWriter,
         emit,
       }, {
-        transport,
-        workerCommand,
+        workerPattern,
       });
     }
 
@@ -316,7 +312,7 @@ export function createRunTaskExecution(
       getTraceWriter: () => state.traceWriter,
       source,
       mode,
-      transport,
+      transport: "file",
       traceEnabled: trace,
     });
 
@@ -362,7 +358,6 @@ export function createRunTaskExecution(
         traceRunSession,
         traceEnrichmentContext: state.traceEnrichmentContext,
         dependencies,
-        transport,
         emit,
       });
       traceRunSession.emitDeferredEvents();
@@ -494,7 +489,6 @@ export function createRunTaskExecution(
             },
             execution: {
               mode,
-              transport,
               keepArtifacts,
               printPrompt,
               dryRun,
@@ -510,7 +504,7 @@ export function createRunTaskExecution(
               trace,
             },
             worker: {
-              workerCommand,
+              workerPattern,
               loadedWorkerConfig,
             },
             verifyConfig: {
@@ -678,7 +672,6 @@ export function createRunTaskExecution(
           traceRunSession,
           traceEnrichmentContext: state.traceEnrichmentContext,
           dependencies,
-          transport,
           emit,
         });
         traceRunSession.emitDeferredEvents();

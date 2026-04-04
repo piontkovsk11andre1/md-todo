@@ -68,9 +68,8 @@ export type {
 /** Task-selection result and selector port contracts. */
 export type { TaskSelectionResult, TaskSelectorPort } from "./task-selector-port.js";
 
-/** Worker execution transport and option contracts. */
+/** Worker execution and option contracts. */
 export type {
-  PromptTransport,
   WorkerRunResult,
   WorkerExecutionOptions,
   InlineCliExecutionOptions,

@@ -20,10 +20,9 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
     async runWorker(options: WorkerExecutionOptions): Promise<WorkerRunResult> {
       // Forward domain options to the low-level runner without changing semantics.
       return runWorker({
-        command: options.command,
+        workerPattern: options.workerPattern,
         prompt: options.prompt,
         mode: options.mode,
-        transport: options.transport,
         trace: options.trace,
         captureOutput: options.captureOutput,
         cwd: options.cwd,
@@ -65,7 +64,6 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         // Propagate parent execution settings so nested runs inherit caller intent.
         rundownCommand: options?.rundownCommand,
         parentWorkerCommand: options?.parentWorkerCommand,
-        parentTransport: options?.parentTransport,
         parentKeepArtifacts: options?.parentKeepArtifacts,
         parentShowAgentOutput: options?.parentShowAgentOutput,
         parentIgnoreCliBlock: options?.parentIgnoreCliBlock,

@@ -6,18 +6,15 @@
  * - tui:      spawn the command with inherited stdio (interactive)
  * - detached: spawn the command and return immediately
  *
- * Supports two prompt transport mechanisms:
- * - file: write prompt to a .rundown runtime file and append the path as an argument
- * - arg:  append the prompt text directly as a trailing argument
+ * Prompt content is always staged in a runtime file and worker arguments are
+ * derived from parsed worker-pattern substitutions.
  */
 
-import os from "node:os";
 import path from "node:path";
 import spawn from "cross-spawn";
-import type {
-  ProcessRunMode as RunnerMode,
-  PromptTransport,
-} from "../domain/ports/index.js";
+import { expandWorkerPattern } from "../domain/worker-pattern.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
+import type { ProcessRunMode as RunnerMode } from "../domain/ports/index.js";
 import {
   beginRuntimePhase,
   completeRuntimePhase,
@@ -27,21 +24,21 @@ import {
   type RuntimePhase,
 } from "./runtime-artifacts.js";
 
-/** Re-exported runner mode and prompt transport types for infrastructure callers. */
-export type { RunnerMode, PromptTransport };
+/** Re-exported runner mode type for infrastructure callers. */
+export type { RunnerMode };
 
 /**
  * Configuration for launching the worker process and tracking its runtime artifacts.
  */
 export interface RunnerOptions {
   /** The command and its base arguments (everything after --). */
-  command: string[];
+  command?: string[];
+  /** Optional parsed worker pattern used to derive worker arguments. */
+  workerPattern?: ParsedWorkerPattern;
   /** The rendered prompt to deliver to the command. */
   prompt: string;
   /** Execution mode. Default: "wait". */
   mode?: RunnerMode;
-  /** How to pass the prompt. Default: "file". */
-  transport?: PromptTransport;
   /** Enable trace-aware runner behavior. */
   trace?: boolean;
   /** Capture stdout/stderr even for interactive runs. */
@@ -81,9 +78,9 @@ export interface RunnerResult {
  */
 export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
   const mode = options.mode ?? "wait";
-  const transport = options.transport ?? "file";
   const cwd = options.cwd ?? process.cwd();
   const configDir = options.configDir;
+  const baseCommand = options.workerPattern?.command ?? options.command ?? [];
   let ownedArtifactContext: RuntimeArtifactsContext | null = null;
   let artifactContext: RuntimeArtifactsContext;
 
@@ -96,9 +93,9 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
       cwd,
       configDir,
       commandName: "worker",
-      workerCommand: options.command,
+      workerCommand: baseCommand,
       mode,
-      transport,
+      transport: "pattern",
       keepArtifacts: options.keepArtifacts ?? false,
     });
     artifactContext = ownedArtifactContext;
@@ -109,22 +106,20 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
     phase: options.artifactPhase ?? "worker",
     phaseLabel: options.artifactPhaseLabel,
     prompt: options.prompt,
-    command: options.command,
+    command: baseCommand,
     mode,
-    transport,
+    transport: "pattern",
     notes: buildCaptureNotes(mode, options.captureOutput ?? false),
     extra: options.artifactExtra,
   });
 
-  // The prompt file is available only when file transport is active.
-  const transportPromptFile = transport === "file" ? phase.promptFile : null;
+  // The prompt file is always created and available for worker argument expansion.
+  const transportPromptFile = phase.promptFile;
   const args = buildWorkerArgs(
-    options.command,
-    options.prompt,
-    transport,
+    options.workerPattern,
+    baseCommand,
     transportPromptFile,
     cwd,
-    options.trace ?? false,
   );
 
   const [cmd, ...cmdArgs] = args;
@@ -171,110 +166,40 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
 }
 
 /**
- * Build the final worker command line by applying transport rules and OpenCode-specific behavior.
+ * Build the final worker command line by expanding worker pattern placeholders.
  */
 function buildWorkerArgs(
+  workerPattern: ParsedWorkerPattern | undefined,
   command: string[],
-  prompt: string,
-  transport: PromptTransport,
   promptFile: string | null,
   cwd: string,
-  trace: boolean,
 ): string[] {
   if (command.length === 0) {
     return [];
   }
 
-  if (isOpenCodeCommand(command[0])) {
-    return buildOpenCodeArgs(command, prompt, promptFile, cwd, trace);
+  if (!promptFile) {
+    throw new Error("Prompt file was not created for worker execution.");
   }
 
-  const args = [...command];
-  if (transport === "file") {
-    if (!promptFile) {
-      throw new Error("Prompt file transport requested but no prompt file was created.");
-    }
-    args.push(promptFile);
-  } else {
-    args.push(prompt);
-  }
+  const parsed = workerPattern ?? {
+    command,
+    usesBootstrap: command.some((token) => token.includes("$bootstrap")),
+    usesFile: command.some((token) => token.includes("$file")),
+    appendFile: !command.some((token) => token.includes("$bootstrap") || token.includes("$file")),
+  };
 
-  return args;
+  return expandWorkerPattern(parsed, buildBootstrapPrompt(promptFile, cwd), promptFile);
 }
 
 /**
- * Determine whether the executable target is OpenCode so tailored argument shaping can be applied.
+ * Build a universal bootstrap prompt that points the worker to the staged prompt file.
  */
-function isOpenCodeCommand(command: string): boolean {
-  const normalized = path.basename(command).toLowerCase();
-  return normalized === "opencode"
-    || normalized === "opencode.cmd"
-    || normalized === "opencode.exe"
-    || normalized === "opencode.ps1";
-}
-
-/**
- * Build command arguments for OpenCode run/TUI modes, including optional trace and bootstrap prompts.
- */
-function buildOpenCodeArgs(
-  command: string[],
-  prompt: string,
-  promptFile: string | null,
-  cwd: string,
-  trace: boolean,
-): string[] {
-  const [cmd, ...rest] = command;
-  const traceArgs = trace && !hasOpenCodeThinkingArg(rest) ? ["--thinking"] : [];
-
-  if (rest[0] === "run") {
-    const args = [cmd, ...rest, ...traceArgs];
-
-    if (promptFile) {
-      args.push(buildOpenCodeRunBootstrapPrompt());
-      args.push("--file", promptFile);
-      return args;
-    }
-
-    args.push(prompt);
-    return args;
-  }
-
-  if (promptFile) {
-    return [cmd, ...rest, ...traceArgs, buildOpenCodeTuiPromptArg(buildOpenCodeTuiBootstrapPrompt(promptFile, cwd))];
-  }
-
-  return [cmd, ...rest, ...traceArgs, buildOpenCodeTuiPromptArg(prompt)];
-}
-
-/**
- * Detect whether --thinking is already present to avoid duplicating trace flags.
- */
-function hasOpenCodeThinkingArg(args: string[]): boolean {
-  return args.some((arg) => arg === "--thinking" || arg.startsWith("--thinking="));
-}
-
-/**
- * Build the canonical bootstrap prompt for OpenCode `run` mode when using a prompt file.
- */
-function buildOpenCodeRunBootstrapPrompt(): string {
-  return "Read the attached Markdown file first. It contains the full task instructions and context for this run.";
-}
-
-/**
- * Build a TUI bootstrap prompt that points the agent to the staged prompt file.
- */
-function buildOpenCodeTuiBootstrapPrompt(tempFile: string, cwd: string): string {
-  const displayPath = path.relative(cwd, tempFile) || path.basename(tempFile);
+export function buildBootstrapPrompt(promptFilePath: string, cwd: string): string {
+  const displayPath = path.relative(cwd, promptFilePath) || path.basename(promptFilePath);
   const normalizedPath = displayPath.split(path.sep).join("/");
 
-  return `The full rendered rundown task prompt is staged in ${normalizedPath}. Open and read that file completely before taking any action, then continue the work in this session.`;
-}
-
-/**
- * Convert prompt text into OpenCode's `--prompt=` argument format.
- */
-function buildOpenCodeTuiPromptArg(prompt: string): string {
-  return `--prompt=${prompt}`;
+  return `Read the task prompt file at ${normalizedPath} and follow the instructions.`;
 }
 
 /**
@@ -321,27 +246,7 @@ function executeCommand(
         return;
       }
 
-      // On Windows, launch TUI in a new terminal window to avoid
-      // input-buffer issues with the parent console.
-      if (os.platform() === "win32") {
-        const child = spawn(
-          "cmd",
-          ["/c", "start", "/wait", '""', cmd, ...args],
-          {
-            stdio: "ignore",
-            cwd,
-            shell: false,
-            env: env ? { ...process.env, ...env } : process.env,
-          },
-        );
-        child.on("close", (code: number | null) => {
-          resolve({ exitCode: code, stdout: "", stderr: "" });
-        });
-        child.on("error", reject);
-        return;
-      }
-
-      // Non-Windows: inherit all stdio (interactive in same terminal)
+      // Inherit all stdio (interactive in same terminal)
       const child = spawn(cmd, args, {
         stdio: "inherit",
         cwd,

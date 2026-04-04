@@ -313,14 +313,13 @@ describe("executeRundownTask", () => {
     );
   });
 
-  it("forwards parent worker, transport and boolean flags when not overridden", async () => {
+  it("forwards parent worker and boolean flags when not overridden", async () => {
     process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js"];
     const child = createChildProcess();
     spawnMock.mockReturnValue(child);
 
     const promise = executeRundownTask("run", ["Child.md"], "/repo", {
       parentWorkerCommand: ["opencode", "run"],
-      parentTransport: "arg",
       parentKeepArtifacts: true,
       parentShowAgentOutput: true,
       parentIgnoreCliBlock: true,
@@ -345,8 +344,6 @@ describe("executeRundownTask", () => {
         "--worker",
         "opencode",
         "run",
-        "--transport",
-        "arg",
         "--keep-artifacts",
         "--show-agent-output",
         "--ignore-cli-block",
@@ -367,11 +364,10 @@ describe("executeRundownTask", () => {
 
     const promise = executeRundownTask(
       "run",
-      ["Child.md", "--worker", "child", "--transport=arg", "--keep-artifacts", "--show-agent-output"],
+      ["Child.md", "--worker", "child", "--keep-artifacts", "--show-agent-output"],
       "/repo",
       {
         parentWorkerCommand: ["parent", "run"],
-        parentTransport: "file",
         parentKeepArtifacts: true,
         parentShowAgentOutput: true,
         parentIgnoreCliBlock: true,
@@ -396,7 +392,6 @@ describe("executeRundownTask", () => {
         "Child.md",
         "--worker",
         "child",
-        "--transport=arg",
         "--keep-artifacts",
         "--show-agent-output",
         "--ignore-cli-block",
@@ -421,7 +416,6 @@ describe("executeRundownTask", () => {
       "/repo",
       {
         parentWorkerCommand: ["parent", "run"],
-        parentTransport: "file",
         parentKeepArtifacts: false,
         parentShowAgentOutput: true,
         parentIgnoreCliBlock: false,
@@ -448,8 +442,6 @@ describe("executeRundownTask", () => {
         "--worker",
         "parent",
         "run",
-        "--transport",
-        "file",
         "--verify",
         "--repair-attempts",
         "1",
@@ -542,7 +534,6 @@ describe("executeRundownTask", () => {
 
     const promise = executeRundownTask("make", ["Feature text", "3. Feature.md"], "/repo", {
       parentWorkerCommand: ["opencode", "run"],
-      parentTransport: "arg",
       parentKeepArtifacts: true,
       parentShowAgentOutput: true,
       parentIgnoreCliBlock: true,
@@ -568,8 +559,6 @@ describe("executeRundownTask", () => {
         "--worker",
         "opencode",
         "run",
-        "--transport",
-        "arg",
         "--keep-artifacts",
         "--show-agent-output",
         "--ignore-cli-block",

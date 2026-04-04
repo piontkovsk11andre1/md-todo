@@ -36,6 +36,10 @@ export function createListTasks(
 ): (options: ListTasksOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
 
+  function pluralize(count: number, singular: string, plural: string): string {
+    return count === 1 ? singular : plural;
+  }
+
   return async function listTasks(options: ListTasksOptions): Promise<number> {
     const { source, sortMode, includeAll } = options;
 
@@ -66,6 +70,7 @@ export function createListTasks(
       },
     });
     let count = 0;
+    let filesWithTasks = 0;
 
     for (const file of sorted) {
       const content = dependencies.fileSystem.readText(file);
@@ -73,16 +78,38 @@ export function createListTasks(
       // By default only unfinished tasks are listed unless includeAll is requested.
       const filtered = includeAll ? tasks : tasks.filter((task) => !task.checked);
 
-      for (const task of filtered) {
+      if (filtered.length === 0) {
+        continue;
+      }
+
+      filesWithTasks += 1;
+
+      if (count > 0) {
+        emit({ kind: "text", text: "" });
+      }
+
+      emit({ kind: "text", text: `${file} (${filtered.length} ${pluralize(filtered.length, "task", "tasks")})` });
+
+      for (const [index, task] of filtered.entries()) {
+        emit({ kind: "text", text: `${count + 1}.` });
         // Unchecked ancestors with pending descendants are marked as blocked.
         const blocked = !task.checked && hasUncheckedDescendants(task, tasks, { useChildren: true });
         emit({ kind: "task", task, blocked, children: task.children, subItems: task.subItems });
         count++;
+
+        if (index < filtered.length - 1) {
+          emit({ kind: "text", text: "" });
+        }
       }
     }
 
     if (count === 0) {
       emit({ kind: "info", message: "No tasks found." });
+    } else {
+      emit({
+        kind: "info",
+        message: `${count} ${pluralize(count, "task", "tasks")} across ${filesWithTasks} ${pluralize(filesWithTasks, "file", "files")}.`,
+      });
     }
 
     return 0;

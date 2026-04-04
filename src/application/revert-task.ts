@@ -62,6 +62,11 @@ interface RevertOperation {
   ref: string;
 }
 
+interface RevertProgressDescriptor {
+  phaseLabel: string;
+  detailPrefix: string;
+}
+
 /**
  * Builds the application-level `revert` command handler.
  *
@@ -267,14 +272,31 @@ export function createRevertTask(
 
       // Dry-run prints planned actions without mutating git history.
       if (dryRun) {
+        const dryRunProgress = buildRevertProgressDescriptor(method, true);
         emit({
           kind: "info",
           message: "Dry run - would revert " + executionRuns.length + " run"
             + (executionRuns.length === 1 ? "" : "s")
             + " using method=" + method + ".",
         });
-        for (const operation of executionOperations) {
+        for (const [index, operation] of executionOperations.entries()) {
           const run = operation.run;
+          const current = index + 1;
+          emit({
+            kind: "progress",
+            progress: {
+              label: dryRunProgress.phaseLabel,
+              current,
+              total: executionOperations.length,
+              unit: "runs",
+              detail: dryRunProgress.detailPrefix + " " + run.runId,
+            },
+          });
+          emit({
+            kind: "info",
+            message: "[" + current + "/" + executionOperations.length + "] "
+              + dryRunProgress.detailPrefix + " " + run.runId + ".",
+          });
           const refField = operation.type === "commit" ? "commit" : "preResetRef";
           emit({
             kind: "info",
@@ -329,16 +351,32 @@ export function createRevertTask(
 
       try {
         if (method === "revert") {
+          const executionProgress = buildRevertProgressDescriptor(method, false);
           // Replay `git revert --no-edit` per selected commit.
-          for (const operation of executionOperations) {
+          for (const [index, operation] of executionOperations.entries()) {
             if (operation.type !== "commit") {
               continue;
             }
 
             const run = operation.run;
             const commitSha = operation.ref;
+            const current = index + 1;
             attemptedRunIds.push(run.runId);
-            emit({ kind: "info", message: "Reverting commit " + commitSha + " (run " + run.runId + ")." });
+            emit({
+              kind: "progress",
+              progress: {
+                label: executionProgress.phaseLabel,
+                current,
+                total: executionOperations.length,
+                unit: "runs",
+                detail: executionProgress.detailPrefix + " " + run.runId,
+              },
+            });
+            emit({
+              kind: "info",
+              message: "[" + current + "/" + executionOperations.length + "] Reverting commit "
+                + commitSha + " (run " + run.runId + ").",
+            });
             try {
               await dependencies.gitClient.run(["revert", commitSha, "--no-edit"], cwd);
               successfulRunIds.push(run.runId);
@@ -357,10 +395,27 @@ export function createRevertTask(
             }
           }
         } else {
+          const executionProgress = buildRevertProgressDescriptor(method, false);
           // Record current HEAD before destructive reset to preserve rollback metadata.
           preResetRef = (await dependencies.gitClient.run(["rev-parse", "HEAD"], cwd)).trim();
-          for (const run of executionRuns) {
+          for (const [index, run] of executionRuns.entries()) {
             attemptedRunIds.push(run.runId);
+            const current = index + 1;
+            emit({
+              kind: "progress",
+              progress: {
+                label: executionProgress.phaseLabel,
+                current,
+                total: executionRuns.length,
+                unit: "runs",
+                detail: executionProgress.detailPrefix + " " + run.runId,
+              },
+            });
+            emit({
+              kind: "info",
+              message: "[" + current + "/" + executionRuns.length + "] "
+                + executionProgress.detailPrefix + " " + run.runId + ".",
+            });
           }
 
           // When reverting a prior reset, use the saved pre-reset ref directly.
@@ -448,6 +503,23 @@ export function createRevertTask(
         emit({ kind: "warn", message: "Failed to release file locks: " + String(error) });
       }
     }
+  };
+}
+
+function buildRevertProgressDescriptor(
+  method: RevertTaskOptions["method"],
+  dryRun: boolean,
+): RevertProgressDescriptor {
+  if (method === "reset") {
+    return {
+      phaseLabel: dryRun ? "Dry-run reset plan" : "Reset preparation",
+      detailPrefix: dryRun ? "Previewing reset target" : "Queueing reset target",
+    };
+  }
+
+  return {
+    phaseLabel: dryRun ? "Dry-run revert plan" : "Reverting runs",
+    detailPrefix: dryRun ? "Previewing run" : "Reverting run",
   };
 }
 

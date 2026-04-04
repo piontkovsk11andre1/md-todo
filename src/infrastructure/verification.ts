@@ -13,8 +13,9 @@ import {
   renderTemplate,
   type TemplateVars,
 } from "../domain/template.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
-import { runWorker, type RunnerMode, type PromptTransport } from "./runner.js";
+import { runWorker, type RunnerMode } from "./runner.js";
 import type { RuntimeArtifactsContext } from "./runtime-artifacts.js";
 import { createCliBlockExecutor } from "./cli-block-executor.js";
 
@@ -80,10 +81,9 @@ export interface VerifyOptions {
   source: string;
   contextBefore: string;
   template: string;
-  command: string[];
+  workerPattern: ParsedWorkerPattern;
   verificationStore: VerificationStore;
   mode?: RunnerMode;
-  transport?: PromptTransport;
   trace?: boolean;
   cwd?: string;
   configDir?: string;
@@ -147,10 +147,9 @@ export async function verify(options: VerifyOptions): Promise<boolean> {
 
   // Execute the verifier worker with the prepared prompt.
   const runResult = await runWorker({
-    command: options.command,
+    workerPattern: options.workerPattern,
     prompt,
     mode: options.mode ?? "wait",
-    transport: options.transport ?? "file",
     trace: options.trace,
     cwd: options.cwd,
     configDir: options.configDir,

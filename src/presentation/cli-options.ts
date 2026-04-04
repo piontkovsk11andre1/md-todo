@@ -1,26 +1,28 @@
-import { type ProcessRunMode, type PromptTransport } from "../domain/ports/index.js";
+import { type ProcessRunMode } from "../domain/ports/index.js";
 import type { SortMode } from "../domain/sorting.js";
 import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../domain/ports/command-executor.js";
+import {
+  inferWorkerPatternFromCommand,
+  parseWorkerPattern,
+  type ParsedWorkerPattern,
+} from "../domain/worker-pattern.js";
 import fs from "node:fs";
 
 type CliOptionMap = Record<string, string | string[] | boolean>;
 
 export interface SharedWorkerRuntimeOptions {
-  transport: PromptTransport;
   keepArtifacts: boolean;
   showAgentOutput: boolean;
   trace: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
+  workerPattern: ParsedWorkerPattern;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs: number;
   configDirOption?: string;
 }
 
-// Supported prompt transport backends accepted by the CLI.
-const PROMPT_TRANSPORTS: readonly PromptTransport[] = ["file", "arg"];
 // Supported sort modes for command output ordering.
 const SORT_MODES: readonly SortMode[] = ["name-sort", "none", "old-first", "new-first"];
 // Supported restore mechanisms for rollback-related commands.
@@ -103,17 +105,22 @@ export function collectOption(value: string, previous: string[]): string[] {
  */
 export function resolveWorkerCommand(
   worker: string | string[] | boolean | undefined,
-  getWorkerFromSeparator: () => string[],
-): string[] {
+  getWorkerFromSeparator: () => string | undefined,
+): ParsedWorkerPattern {
   if (Array.isArray(worker)) {
-    return worker;
+    return inferWorkerPatternFromCommand(worker);
   }
 
   if (typeof worker === "string") {
-    return [worker];
+    return parseWorkerPattern(worker);
   }
 
-  return getWorkerFromSeparator();
+  const workerFromSeparator = getWorkerFromSeparator();
+  if (typeof workerFromSeparator === "string") {
+    return parseWorkerPattern(workerFromSeparator);
+  }
+
+  return inferWorkerPatternFromCommand([]);
 }
 
 /**
@@ -121,16 +128,15 @@ export function resolveWorkerCommand(
  */
 export function resolveSharedWorkerRuntimeOptions(
   opts: CliOptionMap,
-  getWorkerFromSeparator: () => string[],
+  getWorkerFromSeparator: () => string | undefined,
 ): SharedWorkerRuntimeOptions {
   return {
-    transport: parsePromptTransport(opts.transport as string | undefined),
     keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
     showAgentOutput: resolveShowAgentOutputOption(opts),
     trace: Boolean(opts.trace as boolean | undefined),
     varsFileOption: opts.varsFile as string | boolean | undefined,
     cliTemplateVarArgs: (opts.var as string[] | undefined) ?? [],
-    workerCommand: resolveWorkerCommand(opts.worker, getWorkerFromSeparator),
+    workerPattern: resolveWorkerCommand(opts.worker, getWorkerFromSeparator),
     forceUnlock: Boolean(opts.forceUnlock as boolean | undefined),
     ignoreCliBlock: resolveIgnoreCliBlockFlag(opts),
     cliBlockTimeoutMs: parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined),
@@ -143,13 +149,6 @@ export function resolveSharedWorkerRuntimeOptions(
  */
 export function parseRunnerMode(value: string | undefined, allowed: readonly ProcessRunMode[]): ProcessRunMode {
   return parseEnumOption(value, "mode", allowed, "wait");
-}
-
-/**
- * Parses the prompt transport implementation to use for the run.
- */
-export function parsePromptTransport(value: string | undefined): PromptTransport {
-  return parseEnumOption(value, "transport", PROMPT_TRANSPORTS, "file");
 }
 
 /**

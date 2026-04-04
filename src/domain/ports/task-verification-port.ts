@@ -1,7 +1,7 @@
 import type { Task } from "../parser.js";
+import type { ParsedWorkerPattern } from "../worker-pattern.js";
 import type { CommandExecutionOptions, CommandExecutor } from "./command-executor.js";
 import type { ProcessRunMode } from "./process-runner.js";
-import type { PromptTransport } from "./worker-executor-port.js";
 
 /**
  * Defines the complete input required to verify a single migration task.
@@ -18,12 +18,10 @@ export interface TaskVerificationOptions {
   contextBefore: string;
   // Prompt template used to render the worker verification request.
   template: string;
-  // Command and arguments used to execute the verifier worker.
-  command: string[];
+  // Parsed worker pattern used to execute the verifier worker.
+  workerPattern: ParsedWorkerPattern;
   // Optional process execution mode (for example, inherited or captured output).
   mode?: ProcessRunMode;
-  // Optional transport channel for providing prompt content to the worker.
-  transport?: PromptTransport;
   // Enables verbose tracing output when true.
   trace?: boolean;
   // Working directory for worker execution.

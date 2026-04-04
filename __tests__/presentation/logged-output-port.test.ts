@@ -329,6 +329,38 @@ describe("createLoggedOutputPort", () => {
     }));
   });
 
+  it("persists plain text task and milestone messages when terminal output is animated", () => {
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: vi.fn() },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["run", "tasks.md"],
+        cwd: "/workspace",
+        pid: 321,
+        version: "1.2.3",
+        sessionId: "session-animated",
+      },
+      now: () => "2026-03-29T00:00:00.000Z",
+    });
+
+    port.emit({ kind: "info", message: "Next task: tasks.md:12 [#5] Tighten output tests" });
+    port.emit({ kind: "success", message: "All tasks completed (5 total)." });
+
+    expect(writer.write).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "info",
+      message: "Next task: tasks.md:12 [#5] Tighten output tests",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "success",
+      message: "All tasks completed (5 total).",
+    }));
+  });
+
   it("renders child task lines indented under the parent task", () => {
     const writer = {
       write: vi.fn(),

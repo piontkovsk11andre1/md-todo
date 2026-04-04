@@ -1,8 +1,8 @@
 import type {
   ConfigDirResult,
   ProcessRunMode,
-  PromptTransport,
 } from "../domain/ports/index.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import type {
   GlobalOutputEntryWriter,
   LoggedOutputContext,
@@ -45,14 +45,13 @@ export interface CliInvocationLogState {
  */
 export interface WorkerCommandInvocationOptions {
   mode: ProcessRunMode;
-  transport: PromptTransport;
+  workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;
   dryRun: boolean;
   printPrompt: boolean;
   keepArtifacts: boolean;
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
-  workerCommand: string[];
   trace: boolean;
   forceUnlock: boolean;
   ignoreCliBlock: boolean;

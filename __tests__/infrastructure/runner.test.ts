@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseWorkerPattern } from "../../src/domain/worker-pattern.js";
 
 const spawnMock = vi.fn();
 
@@ -22,7 +23,7 @@ describe("runWorker", () => {
     fs.rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("uses an attached prompt file plus a short bootstrap message for opencode run in file transport", async () => {
+  it("expands $bootstrap and $file in worker pattern arguments", async () => {
     let capturedPromptFile = "";
     let capturedPromptFileContent = "";
 
@@ -36,7 +37,7 @@ describe("runWorker", () => {
       child.stderr = new EventEmitter();
 
       const fileFlagIndex = args.indexOf("--file");
-      capturedPromptFile = args[fileFlagIndex + 1];
+      capturedPromptFile = args[fileFlagIndex + 1] ?? "";
       capturedPromptFileContent = fs.readFileSync(capturedPromptFile, "utf-8");
 
       queueMicrotask(() => {
@@ -50,10 +51,9 @@ describe("runWorker", () => {
     const prompt = "You are working on a project.\n\n## Task\n\nDo the thing.";
 
     const result = await runWorker({
-      command: ["opencode", "run"],
+      workerPattern: parseWorkerPattern("opencode run --prompt=$bootstrap --file $file"),
       prompt,
       mode: "wait",
-      transport: "file",
       cwd: workspace,
     });
 
@@ -63,7 +63,7 @@ describe("runWorker", () => {
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
     expect(args[0]).toBe("run");
-    expect(args[1]).toBe("Read the attached Markdown file first. It contains the full task instructions and context for this run.");
+    expect(args[1]).toMatch(/^--prompt=Read the task prompt file at .* and follow the instructions\.$/);
     expect(args).toContain("--file");
     expect(capturedPromptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
     expect(capturedPromptFileContent).toBe(prompt);
@@ -73,7 +73,7 @@ describe("runWorker", () => {
     expect(fs.existsSync(capturedPromptFile)).toBe(false);
   });
 
-  it("keeps pre-merged worker args before the prompt file for non-opencode file transport", async () => {
+  it("keeps pre-merged worker args before the prompt file for implicit file append", async () => {
     let capturedPromptFile = "";
 
     spawnMock.mockImplementation((_cmd: string, args: string[]) => {
@@ -99,7 +99,6 @@ describe("runWorker", () => {
       command: ["node", "worker.js", "--model", "gpt-5.3-codex"],
       prompt: "prompt body",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
     });
 
@@ -109,7 +108,7 @@ describe("runWorker", () => {
     expect(capturedPromptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
   });
 
-  it("keeps pre-merged worker args before --file prompt path for opencode run", async () => {
+  it("keeps pre-merged worker args before --file prompt path when pattern includes $file", async () => {
     let capturedPromptFile = "";
 
     spawnMock.mockImplementation((_cmd: string, args: string[]) => {
@@ -134,10 +133,9 @@ describe("runWorker", () => {
     const { runWorker } = await import("../../src/infrastructure/runner.js");
 
     await runWorker({
-      command: ["opencode", "run", "--model", "opus-4.6"],
+      workerPattern: parseWorkerPattern("opencode run --model opus-4.6 --file $file"),
       prompt: "prompt body",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
     });
 
@@ -147,14 +145,13 @@ describe("runWorker", () => {
       "run",
       "--model",
       "opus-4.6",
-      "Read the attached Markdown file first. It contains the full task instructions and context for this run.",
       "--file",
       capturedPromptFile,
     ]);
     expect(capturedPromptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
   });
 
-  it("keeps arg transport inline for opencode run", async () => {
+  it("appends prompt file for opencode run when no placeholders are provided", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -178,16 +175,17 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt,
       mode: "wait",
-      transport: "arg",
       cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
-    expect(args).toEqual(["run", prompt]);
+    expect(args).toHaveLength(2);
+    expect(args[0]).toBe("run");
+    expect(args[1]).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
   });
 
-  it("auto-appends --thinking for opencode when trace is enabled", async () => {
+  it("does not alter command tokens when trace is enabled", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -210,17 +208,17 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt: "trace prompt",
       mode: "wait",
-      transport: "arg",
       trace: true,
       cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
-    expect(args).toEqual(["run", "--thinking", "trace prompt"]);
+    expect(args).toHaveLength(2);
+    expect(args[0]).toBe("run");
   });
 
-  it("does not duplicate --thinking when already provided for opencode", async () => {
+  it("preserves explicit command arguments when trace is enabled", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -243,17 +241,18 @@ describe("runWorker", () => {
       command: ["opencode", "run", "--thinking"],
       prompt: "trace prompt",
       mode: "wait",
-      transport: "arg",
       trace: true,
       cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("opencode");
-    expect(args).toEqual(["run", "--thinking", "trace prompt"]);
+    expect(args).toHaveLength(3);
+    expect(args[0]).toBe("run");
+    expect(args[1]).toBe("--thinking");
   });
 
-  it("appends the prompt directly for non-opencode commands in arg transport", async () => {
+  it("appends prompt file path for non-opencode commands by default", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -276,13 +275,14 @@ describe("runWorker", () => {
       command: ["node", "script.js"],
       prompt: "inline prompt body",
       mode: "wait",
-      transport: "arg",
       cwd: workspace,
     });
 
     const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
     expect(cmd).toBe("node");
-    expect(args).toEqual(["script.js", "inline prompt body"]);
+    expect(args).toHaveLength(2);
+    expect(args[0]).toBe("script.js");
+    expect(args[1]).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
   });
 
   it("merges custom env into spawned worker process env", async () => {
@@ -312,7 +312,6 @@ describe("runWorker", () => {
         command: ["node", "script.js"],
         prompt: "inline prompt body",
         mode: "wait",
-        transport: "arg",
         cwd: workspace,
         env: {
           RUNDOWN_VAR_DB_HOST: "localhost",
@@ -332,7 +331,7 @@ describe("runWorker", () => {
     }
   });
 
-  it("uses a single --prompt=... argument for opencode tui in file transport", async () => {
+  it("uses inherited stdio for tui mode with prompt file argument", async () => {
     let capturedPromptFile = "";
     let capturedPromptFileContent = "";
 
@@ -361,27 +360,20 @@ describe("runWorker", () => {
       command: ["opencode"],
       prompt: "full prompt content",
       mode: "tui",
-      transport: "file",
       cwd: workspace,
     });
 
-    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
-    if (process.platform === "win32") {
-      expect(cmd).toBe("cmd");
-      expect(args.slice(0, 4)).toEqual(["/c", "start", "/wait", '""']);
-      expect(args[4]).toBe("opencode");
-      expect(args[5]).toMatch(/^--prompt=The full rendered rundown task prompt is staged in \.rundown\/runs\/run-.*\/01-worker\/prompt\.md\. Open and read that file completely before taking any action, then continue the work in this session\.$/);
-    } else {
-      expect(cmd).toBe("opencode");
-      expect(args).toHaveLength(1);
-      expect(args[0]).toMatch(/^--prompt=The full rendered rundown task prompt is staged in \.rundown\/runs\/run-.*\/01-worker\/prompt\.md\. Open and read that file completely before taking any action, then continue the work in this session\.$/);
-    }
+    const [cmd, args, spawnOptions] = spawnMock.mock.calls[0] as [string, string[], Record<string, unknown>];
+    expect(cmd).toBe("opencode");
+    expect(args).toHaveLength(1);
+    expect(args[0]).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
+    expect(spawnOptions).toEqual(expect.objectContaining({ stdio: "inherit", cwd: workspace, shell: false }));
     expect(capturedPromptFile).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
     expect(capturedPromptFileContent).toBe("full prompt content");
     expect(fs.existsSync(capturedPromptFile)).toBe(false);
   });
 
-  it("uses a single --prompt=... argument for opencode tui in arg transport", async () => {
+  it("keeps inherited stdio in tui mode for any platform", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
       const child = new EventEmitter() as EventEmitter & {
         stdout: EventEmitter;
@@ -405,18 +397,14 @@ describe("runWorker", () => {
       command: ["opencode"],
       prompt,
       mode: "tui",
-      transport: "arg",
       cwd: workspace,
     });
 
-    const [cmd, args] = spawnMock.mock.calls[0] as [string, string[]];
-    if (process.platform === "win32") {
-      expect(cmd).toBe("cmd");
-      expect(args).toEqual(["/c", "start", "/wait", '""', "opencode", `--prompt=${prompt}`]);
-    } else {
-      expect(cmd).toBe("opencode");
-      expect(args).toEqual([`--prompt=${prompt}`]);
-    }
+    const [cmd, args, spawnOptions] = spawnMock.mock.calls[0] as [string, string[], Record<string, unknown>];
+    expect(cmd).toBe("opencode");
+    expect(args).toHaveLength(1);
+    expect(args[0]).toMatch(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/);
+    expect(spawnOptions).toEqual(expect.objectContaining({ stdio: "inherit", cwd: workspace, shell: false }));
   });
 
   it("uses inherited stdio for non-Windows tui mode", async () => {
@@ -438,14 +426,13 @@ describe("runWorker", () => {
       command: ["opencode"],
       prompt: "interactive prompt",
       mode: "tui",
-      transport: "arg",
       cwd: workspace,
     });
 
     expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "" });
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
-      ["--prompt=interactive prompt"],
+      [expect.stringMatching(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/)],
       expect.objectContaining({ stdio: "inherit", cwd: workspace, shell: false, env: expect.any(Object) }),
     );
   });
@@ -475,7 +462,6 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt: "saved prompt",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
       keepArtifacts: true,
     });
@@ -516,7 +502,6 @@ describe("runWorker", () => {
       command: ["node", "worker.js"],
       prompt: "custom config prompt",
       mode: "wait",
-      transport: "arg",
       cwd: workspace,
       configDir,
       keepArtifacts: true,
@@ -524,7 +509,7 @@ describe("runWorker", () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       "node",
-      ["worker.js", "custom config prompt"],
+      ["worker.js", expect.stringMatching(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/)],
       expect.objectContaining({ stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false, env: expect.any(Object) }),
     );
 
@@ -563,7 +548,6 @@ describe("runWorker", () => {
       command: ["opencode"],
       prompt: "interactive prompt",
       mode: "tui",
-      transport: "arg",
       captureOutput: true,
       keepArtifacts: true,
       cwd: workspace,
@@ -576,7 +560,7 @@ describe("runWorker", () => {
     });
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
-      ["--prompt=interactive prompt"],
+      [expect.stringMatching(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/)],
       expect.objectContaining({ stdio: ["inherit", "pipe", "pipe"], cwd: workspace, shell: false, env: expect.any(Object) }),
     );
     expect(stdoutWriteSpy).toHaveBeenCalled();
@@ -621,7 +605,6 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt: "scan prompt",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
       keepArtifacts: true,
       artifactPhase: "plan",
@@ -658,7 +641,6 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt: "detached prompt",
       mode: "detached",
-      transport: "file",
       cwd: workspace,
     });
 
@@ -676,12 +658,11 @@ describe("runWorker", () => {
       command: [],
       prompt: "unused",
       mode: "wait",
-      transport: "arg",
       cwd: workspace,
     })).rejects.toThrow("No command specified after --");
   });
 
-  it("fails when file transport is requested but no prompt file was created", async () => {
+  it("fails when no prompt file was created", async () => {
     vi.resetModules();
     vi.doMock("../../src/infrastructure/runtime-artifacts.js", async () => {
       const actual = await vi.importActual<typeof import("../../src/infrastructure/runtime-artifacts.js")>("../../src/infrastructure/runtime-artifacts.js");
@@ -711,9 +692,8 @@ describe("runWorker", () => {
       command: ["node", "worker.js"],
       prompt: "prompt body",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
-    })).rejects.toThrow("Prompt file transport requested but no prompt file was created.");
+    })).rejects.toThrow("Prompt file was not created for worker execution.");
 
     vi.doUnmock("../../src/infrastructure/runtime-artifacts.js");
   });
@@ -744,7 +724,6 @@ describe("runWorker", () => {
       command: ["node", "worker.js"],
       prompt: "kept prompt",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
       keepArtifacts: true,
     })).rejects.toThrow("spawn failed");
@@ -789,7 +768,6 @@ describe("runWorker", () => {
       command: ["opencode", "run"],
       prompt: "ephemeral prompt",
       mode: "wait",
-      transport: "file",
       cwd: workspace,
     })).resolves.toMatchObject({
       exitCode: 0,

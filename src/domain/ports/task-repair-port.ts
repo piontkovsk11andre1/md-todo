@@ -1,7 +1,7 @@
 import type { Task } from "../parser.js";
+import type { ParsedWorkerPattern } from "../worker-pattern.js";
 import type { CommandExecutionOptions, CommandExecutor } from "./command-executor.js";
 import type { ProcessRunMode } from "./process-runner.js";
-import type { PromptTransport } from "./worker-executor-port.js";
 
 /**
  * Defines all inputs required to run a task repair cycle.
@@ -20,14 +20,12 @@ export interface TaskRepairOptions {
   repairTemplate: string;
   /** Template used to generate the verification prompt sent to the worker. */
   verifyTemplate: string;
-  /** Base command and arguments used to execute the worker process. */
-  command: string[];
+  /** Parsed worker pattern used to execute the worker process. */
+  workerPattern: ParsedWorkerPattern;
   /** Maximum number of repair attempts before the process stops. */
   maxRetries: number;
   /** Optional execution mode for the spawned process. */
   mode?: ProcessRunMode;
-  /** Optional transport strategy for delivering prompts to the worker. */
-  transport?: PromptTransport;
   /** Enables verbose trace output for debugging repair behavior. */
   trace?: boolean;
   /** Working directory used when executing repair and verification steps. */

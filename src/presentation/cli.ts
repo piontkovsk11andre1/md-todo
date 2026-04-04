@@ -60,7 +60,7 @@ const STALE_CALL_CLI_CACHE_RELATIVE_PATH = path.join("cache", "cli-blocks");
 type CliActionResult = number | Promise<number>;
 
 interface CliRuntimeState {
-  workerFromSeparator: string[];
+  workerFromSeparator: string | undefined;
   invocationLogState: CliInvocationLogState | undefined;
   invocationArgv: string[] | undefined;
   app: CliApp | undefined;
@@ -68,7 +68,7 @@ interface CliRuntimeState {
 
 // Shared mutable runtime state for the current CLI process invocation.
 const runtimeState: CliRuntimeState = {
-  workerFromSeparator: [],
+  workerFromSeparator: undefined,
   invocationLogState: undefined,
   invocationArgv: undefined,
   app: undefined,
@@ -134,7 +134,6 @@ program
   .description("Start an interactive discussion session for the next unchecked task.")
   .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
   .option("--mode <mode>", "Discuss execution mode: wait, tui", "tui")
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered discuss prompt and exit", false)
@@ -144,7 +143,7 @@ program
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring discuss locks", false)
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
     "--cli-block-timeout <ms>",
@@ -165,14 +164,13 @@ program
   .option("--last <n>", "Re-verify the last N completed runs")
   .option("--all", "Re-verify all completed runs", false)
   .option("--oldest-first", "Process selected runs in oldest-first order", false)
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
   .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would be executed without running it", false)
   .option("--print-prompt", "Print the rendered verify prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
     "--cli-block-timeout <ms>",
@@ -247,7 +245,6 @@ program
     String(DEFAULT_PLAN_DEEP),
   )
   .option("--mode <mode>", "Planner mode: wait", "wait")
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -257,7 +254,7 @@ program
   .option("--force-unlock", "Break stale source lockfiles before acquiring plan lock", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
     "--cli-block-timeout <ms>",
@@ -282,7 +279,6 @@ program
     "Max clean-session TODO coverage scans for the plan phase (default: 3)",
     String(DEFAULT_PLAN_SCAN_COUNT),
   )
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--dry-run", "Show what would run for research and plan without executing workers", false)
   .option("--print-prompt", "Print rendered research/plan prompts and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -291,7 +287,7 @@ program
   .option("--force-unlock", "Break stale source lockfiles before acquiring phase locks", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
     "--cli-block-timeout <ms>",
@@ -317,7 +313,6 @@ program
     String(DEFAULT_PLAN_SCAN_COUNT),
   )
   .option("--sort <sort>", "File sort mode for execution phase: name-sort, none, old-first, new-first", "name-sort")
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--verify", "Run verification after task execution (default)")
   .option("--no-verify", "Disable verification after task execution")
   .option("--only-verify", "Skip execution and run verification directly", false)
@@ -341,7 +336,7 @@ program
   .option("--reset-after", "Reset all checkboxes in the source file after the run completes", false)
   .option("--clean", "Shorthand for --redo --reset-after", false)
   .option("--rounds <n>", "Repeat clean cycles N times (default: 1)")
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option("--cache-cli-blocks", "Cache `cli` fenced block command output for the duration of this run", false)
   .option(
@@ -361,7 +356,6 @@ program
   .description("Enrich a Markdown document with implementation context and planning scaffolding.")
   .argument("[markdown-file...]", "Markdown document to enrich")
   .option("--mode <mode>", "Research mode: wait, tui", "wait")
-  .option("--transport <transport>", "Prompt transport: file, arg", "file")
   .option("--dry-run", "Show what would be researched without executing", false)
   .option("--print-prompt", "Print the rendered research prompt and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -370,7 +364,7 @@ program
   .option("--force-unlock", "Break stale source lockfiles before acquiring research lock", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
-  .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
     "--cli-block-timeout <ms>",
@@ -609,7 +603,6 @@ function validateUnsupportedMakeMode(argv: string[]): void {
 function configureRunLikeCommandOptions(command: Command): Command {
   return command
     .option("--mode <mode>", "Runner execution mode: wait, tui, detached", "wait")
-    .option("--transport <transport>", "Prompt transport: file, arg", "file")
     .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
     .option("--verify", "Run verification after task execution (default)")
     .option("--no-verify", "Disable verification after task execution")
@@ -635,7 +628,7 @@ function configureRunLikeCommandOptions(command: Command): Command {
     .option("--clean", "Shorthand for --redo --reset-after", false)
     .option("--rounds <n>", "Repeat clean cycles N times (default: 1)")
     .option("--force-unlock", "Break stale source lockfiles before acquiring run locks", false)
-    .option("--worker [command...]", "Optional worker command override (alternative to -- <command>)")
+    .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
     .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
     .option("--cache-cli-blocks", "Cache `cli` fenced block command output for the duration of this run", false)
     .option(

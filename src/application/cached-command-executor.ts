@@ -8,7 +8,7 @@ import type {
  * Creates a command executor decorator that memoizes results in memory.
  *
  * Cache keys are derived from `(command, cwd)`, so repeated executions of the
- * same command in the same directory return the cached `CommandResult`.
+ * same command in the same directory return a cached `CommandResult` clone.
  */
 export function createCachedCommandExecutor(delegate: CommandExecutor): CommandExecutor {
   const cache = new Map<string, CommandResult>();
@@ -32,16 +32,10 @@ export function createCachedCommandExecutor(delegate: CommandExecutor): CommandE
   };
 }
 
-/**
- * Builds a stable cache key for command execution input.
- */
 function buildCacheKey(command: string, cwd: string): string {
   return JSON.stringify([command, cwd]);
 }
 
-/**
- * Clones command results to prevent external mutation of cache entries.
- */
 function cloneResult(result: CommandResult): CommandResult {
   return {
     exitCode: result.exitCode,

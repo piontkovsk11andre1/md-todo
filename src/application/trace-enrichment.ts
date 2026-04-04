@@ -14,8 +14,8 @@ import type { Task } from "../domain/parser.js";
 import type {
   ArtifactRunContext,
   ArtifactStoreStatus,
-  PromptTransport,
 } from "../domain/ports/index.js";
+import { inferWorkerPatternFromCommand } from "../domain/worker-pattern.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ProjectTemplates } from "./project-templates.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
@@ -48,7 +48,6 @@ export async function runTraceEnrichment(params: {
     RunTaskDependencies,
     "fileSystem" | "pathOperations" | "workerExecutor" | "workingDirectory" | "configDir"
   >;
-  transport: PromptTransport;
   emit: EmitFn;
 }): Promise<void> {
   const {
@@ -58,7 +57,6 @@ export async function runTraceEnrichment(params: {
     traceRunSession,
     traceEnrichmentContext,
     dependencies,
-    transport,
     emit,
   } = params;
 
@@ -118,10 +116,9 @@ export async function runTraceEnrichment(params: {
   try {
     // Run the enrichment worker without recursive tracing to avoid nested trace noise.
     const enrichmentResult = await dependencies.workerExecutor.runWorker({
-      command: traceEnrichmentContext.worker,
+      workerPattern: inferWorkerPatternFromCommand(traceEnrichmentContext.worker),
       prompt: tracePrompt,
       mode: "wait",
-      transport,
       trace: false,
       cwd: dependencies.workingDirectory.cwd(),
       configDir: dependencies.configDir?.configDir,
