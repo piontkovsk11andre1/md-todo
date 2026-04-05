@@ -1,7 +1,8 @@
 import { type Task } from "../domain/parser.js";
 import type { TaskIntent } from "../domain/task-intent.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
-import { parsePlannerOutput, insertSubitems } from "../domain/planner.js";
+import { insertSubitems } from "../domain/planner.js";
+import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
   ArtifactRunContext,
@@ -402,7 +403,7 @@ export async function dispatchTaskExecution(params: {
       };
     }
 
-    const subitemLines = parsePlannerOutput(runResult.stdout);
+    const subitemLines = parseUncheckedTodoLines(runResult.stdout);
     if (subitemLines.length > 0) {
       const updatedSource = insertSubitems(source, task, subitemLines);
       dependencies.fileSystem.writeText(task.file, updatedSource);

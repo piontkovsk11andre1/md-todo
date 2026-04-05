@@ -18,7 +18,7 @@ import {
   withTemplateCliFailureAbort,
 } from "./cli-block-handlers.js";
 import { captureCheckboxState } from "./checkbox-operations.js";
-import { parsePlannerOutput } from "../domain/planner.js";
+import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
@@ -634,10 +634,10 @@ function hasCheckboxStateMutation(beforeSource: string, afterSource: string): bo
  */
 function listIntroducedUncheckedTodos(beforeSource: string, afterSource: string): string[] {
   const beforeCounts = new Map<string, number>();
-  const after = parsePlannerOutput(afterSource).map(normalizeUncheckedTodoIdentity);
+  const after = parseUncheckedTodoLines(afterSource).map(normalizeUncheckedTodoIdentity);
   const introduced: string[] = [];
 
-  for (const line of parsePlannerOutput(beforeSource).map(normalizeUncheckedTodoIdentity)) {
+  for (const line of parseUncheckedTodoLines(beforeSource).map(normalizeUncheckedTodoIdentity)) {
     beforeCounts.set(line, (beforeCounts.get(line) ?? 0) + 1);
   }
 

@@ -1,7 +1,7 @@
 import type { ToolHandlerFn } from "../ports/tool-handler-port.js";
 import type { ProcessRunMode } from "../ports/process-runner.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../template.js";
-import { parsePlannerOutput } from "../planner.js";
+import { parseUncheckedTodoLines } from "../todo-lines.js";
 
 /**
  * Built-in handler for `.md` template tools (the default tool-expansion behavior).
@@ -55,7 +55,7 @@ export function createTemplateToolHandler(template: string): ToolHandlerFn {
       }
     }
 
-    const childTasks = parsePlannerOutput(runResult.stdout);
+    const childTasks = parseUncheckedTodoLines(runResult.stdout);
     return {
       skipExecution: true,
       shouldVerify: false,

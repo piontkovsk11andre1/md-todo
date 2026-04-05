@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  insertPlannerTodos,
-  normalizePlannerTodoAdditions,
-  parsePlannerOutput,
   insertSubitems,
   computeChildIndent,
+  validatePlanEdit,
 } from "../../src/domain/planner.js";
 import type { Task } from "../../src/domain/parser.js";
 
@@ -26,56 +24,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     subItems: subItems ?? [],
   };
 }
-
-describe("parsePlannerOutput", () => {
-  it("extracts unchecked task lines from worker output", () => {
-    const output = [
-      "Here are the subtasks:",
-      "",
-      "- [ ] First step",
-      "- [ ] Second step",
-      "- [ ] Third step",
-      "",
-      "That should cover it.",
-    ].join("\n");
-
-    const items = parsePlannerOutput(output);
-    expect(items).toEqual([
-      "- [ ] First step",
-      "- [ ] Second step",
-      "- [ ] Third step",
-    ]);
-  });
-
-  it("handles * and + bullet markers", () => {
-    const output = "* [ ] Star item\n+ [ ] Plus item\n";
-    const items = parsePlannerOutput(output);
-    expect(items).toEqual(["* [ ] Star item", "+ [ ] Plus item"]);
-  });
-
-  it("strips leading whitespace from indented items", () => {
-    const output = "  - [ ] Indented item\n    - [ ] More indented\n";
-    const items = parsePlannerOutput(output);
-    expect(items).toEqual(["- [ ] Indented item", "- [ ] More indented"]);
-  });
-
-  it("ignores checked items", () => {
-    const output = "- [x] Done\n- [ ] Open\n";
-    const items = parsePlannerOutput(output);
-    expect(items).toEqual(["- [ ] Open"]);
-  });
-
-  it("ignores non-task lines", () => {
-    const output = "# Heading\n\nSome text\n- regular list\n- [ ] Task\n";
-    const items = parsePlannerOutput(output);
-    expect(items).toEqual(["- [ ] Task"]);
-  });
-
-  it("returns empty array for no tasks", () => {
-    expect(parsePlannerOutput("No tasks here.")).toEqual([]);
-    expect(parsePlannerOutput("")).toEqual([]);
-  });
-});
 
 describe("computeChildIndent", () => {
   it("adds two spaces for a top-level parent", () => {
@@ -216,312 +164,125 @@ describe("insertSubitems", () => {
   });
 });
 
-describe("normalizePlannerTodoAdditions", () => {
-  it("returns only normalized unchecked TODO additions", () => {
-    const output = [
-      "text",
-      "* [ ] First",
-      "+ [ ] Second",
-      "- [x] Done",
-    ].join("\n");
-
-    const additions = normalizePlannerTodoAdditions(output);
-    expect(additions).toEqual(["- [ ] First", "- [ ] Second"]);
-  });
-
-  it("deduplicates output and filters existing TODO lines", () => {
-    const output = [
-      "- [ ] Existing",
-      "* [ ] Existing",
-      "- [ ] New",
-      "- [ ] New",
-    ].join("\n");
-
-    const additions = normalizePlannerTodoAdditions(output, {
-      existingTodoLines: ["- [ ] Existing"],
-    });
-
-    expect(additions).toEqual(["- [ ] New"]);
-  });
-
-  it("treats whitespace-only text differences as duplicates", () => {
-    const output = [
-      "- [ ] Align   release   checklist",
-      "- [ ] Align release checklist",
-    ].join("\n");
-
-    const additions = normalizePlannerTodoAdditions(output);
-    expect(additions).toEqual(["- [ ] Align   release   checklist"]);
-  });
-});
-
-describe("insertPlannerTodos", () => {
-  it("appends TODOs to end of document when none exist", () => {
-    const source = [
-      "# Delivery Plan",
-      "",
-      "## Scope",
-      "Define the release boundaries.",
-      "",
-      "## Next Steps",
-      "Coordinate rollout.",
-      "",
-      "## Notes",
-      "Additional context.",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, "- [ ] Draft rollout plan\n- [ ] Confirm ownership\n", {
-      hasExistingTodos: false,
-    });
-
-    expect(result.insertedCount).toBe(2);
-    expect(result.updatedSource).toBe([
-      "# Delivery Plan",
-      "",
-      "## Scope",
-      "Define the release boundaries.",
-      "",
-      "## Next Steps",
-      "Coordinate rollout.",
-      "",
-      "## Notes",
-      "Additional context.",
-      "",
-      "- [ ] Draft rollout plan",
-      "- [ ] Confirm ownership",
-      "",
-    ].join("\n"));
-  });
-
-  it("appends TODOs at EOF when no headings are present", () => {
-    const source = "Release intent without sections.";
-
-    const result = insertPlannerTodos(source, "- [ ] Add milestone list\n", {
-      hasExistingTodos: false,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toBe("Release intent without sections.\n\n- [ ] Add milestone list\n");
-  });
-
-  it("appends TODOs at EOF when headings exist", () => {
-    const source = [
+describe("validatePlanEdit", () => {
+  it("accepts inserting unchecked items in the middle", () => {
+    const beforeSource = [
       "# Plan",
       "",
-      "## Scope",
-      "Define boundaries.",
-      "",
-      "## Notes",
-      "General context.",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, "- [ ] Rotate database credentials\n", {
-      hasExistingTodos: false,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toBe([
-      "# Plan",
-      "",
-      "## Scope",
-      "Define boundaries.",
-      "",
-      "## Notes",
-      "General context.",
-      "",
-      "- [ ] Rotate database credentials",
-      "",
-    ].join("\n"));
-  });
-
-  it("appends TODOs into the existing TODO list when one already exists", () => {
-    const source = [
-      "# Plan",
-      "",
-      "## TODO",
-      "- [ ] Existing",
-      "",
-      "## Notes",
-      "Keep this untouched.",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, "- [ ] Existing\n- [ ] New\n", {
-      hasExistingTodos: true,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toBe([
-      "# Plan",
-      "",
-      "## TODO",
-      "- [ ] Existing",
-      "- [ ] New",
-      "",
-      "## Notes",
-      "Keep this untouched.",
-      "",
-    ].join("\n"));
-    expect(result.updatedSource).not.toContain("Keep this untouched.\n\n- [ ] New");
-  });
-
-  it("deduplicates planner output and existing TODO entries", () => {
-    const source = "# Plan\n\n- [ ] Existing\n";
-    const output = "* [ ] Existing\n- [ ] New\n- [ ] New\n";
-
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toContain("- [ ] New\n");
-    expect(result.updatedSource.match(/- \[ \] New/g)).toHaveLength(1);
-    expect(result.rejected).toBe(false);
-  });
-
-  it("is idempotent when the same planner output is applied repeatedly", () => {
-    const source = [
-      "# Plan",
-      "",
-      "## TODO",
-      "- [ ] Existing",
-      "",
-    ].join("\n");
-    const output = "- [ ] Existing\n- [ ] Add migration tests\n";
-
-    const firstPass = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(firstPass.rejected).toBe(false);
-    expect(firstPass.insertedCount).toBe(1);
-    expect(firstPass.updatedSource.match(/- \[ \] Add migration tests/g)).toHaveLength(1);
-
-    const secondPass = insertPlannerTodos(firstPass.updatedSource, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(secondPass.rejected).toBe(false);
-    expect(secondPass.insertedCount).toBe(0);
-    expect(secondPass.updatedSource).toBe(firstPass.updatedSource);
-  });
-
-  it("does not duplicate existing TODO when only spacing differs", () => {
-    const source = "# Plan\n\n- [ ] Align release checklist\n";
-    const output = "- [ ] Align   release   checklist\n- [ ] New\n";
-
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource.match(/Align release checklist/g)).toHaveLength(1);
-    expect(result.updatedSource).toContain("- [ ] New\n");
-    expect(result.rejected).toBe(false);
-  });
-
-  it("rejects output that attempts to modify completion state of existing TODO lines", () => {
-    const source = "# Plan\n\n- [ ] Existing\n";
-    const output = "- [x] Existing\n- [ ] New\n";
-
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(result.rejected).toBe(true);
-    expect(result.insertedCount).toBe(0);
-    expect(result.updatedSource).toBe(source);
-    expect(result.rejectionReason).toContain("completion state");
-  });
-
-  it("rejects output that attempts to reorder existing TODO lines", () => {
-    const source = [
-      "# Plan",
-      "",
-      "- [ ] First",
-      "- [ ] Second",
-      "",
-    ].join("\n");
-    const output = [
-      "- [ ] Second",
       "- [ ] First",
       "- [ ] Third",
       "",
     ].join("\n");
-
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(result.rejected).toBe(true);
-    expect(result.insertedCount).toBe(0);
-    expect(result.updatedSource).toBe(source);
-    expect(result.rejectionReason).toContain("reorder");
-  });
-
-  it("rejects output that attempts to remove existing TODO lines", () => {
-    const source = [
+    const afterSource = [
       "# Plan",
       "",
-      "- [ ] First",
-      "- [ ] Second",
-      "",
-    ].join("\n");
-    const output = [
-      "- [ ] First",
-      "- [ ] Third",
-      "",
-    ].join("\n");
-
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
-
-    expect(result.rejected).toBe(true);
-    expect(result.insertedCount).toBe(0);
-    expect(result.updatedSource).toBe(source);
-    expect(result.rejectionReason).toContain("remove");
-  });
-
-  it("allows additive output that echoes existing TODO lines in document order", () => {
-    const source = [
-      "# Plan",
-      "",
-      "- [ ] First",
-      "- [ ] Second",
-      "",
-    ].join("\n");
-    const output = [
       "- [ ] First",
       "- [ ] Second",
       "- [ ] Third",
       "",
     ].join("\n");
 
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
+    const result = validatePlanEdit(beforeSource, afterSource);
 
-    expect(result.rejected).toBe(false);
-    expect(result.insertedCount).toBe(1);
-    expect(result.updatedSource).toContain("- [ ] Third\n");
+    expect(result).toEqual({
+      valid: true,
+      stats: {
+        added: 1,
+        removed: 0,
+        reordered: 0,
+      },
+    });
   });
 
-  it("rejects output that violates strict stdout TODO-list contract", () => {
-    const source = "# Plan\n\n- [ ] Existing\n";
-    const output = [
-      "Here are missing tasks:",
-      "- [ ] New",
-      "Thanks",
+  it("accepts reordering unchecked items and reports reorder stats", () => {
+    const beforeSource = [
+      "- [ ] First",
+      "- [ ] Second",
+      "- [ ] Third",
+      "",
+    ].join("\n");
+    const afterSource = [
+      "- [ ] Third",
+      "- [ ] First",
+      "- [ ] Second",
       "",
     ].join("\n");
 
-    const result = insertPlannerTodos(source, output, {
-      hasExistingTodos: true,
-    });
+    const result = validatePlanEdit(beforeSource, afterSource);
 
-    expect(result.rejected).toBe(true);
-    expect(result.insertedCount).toBe(0);
-    expect(result.updatedSource).toBe(source);
-    expect(result.rejectionReason).toContain("stdout contract");
+    expect(result.valid).toBe(true);
+    expect(result.stats.added).toBe(0);
+    expect(result.stats.removed).toBe(0);
+    expect(result.stats.reordered).toBeGreaterThan(0);
+  });
+
+  it("accepts removing unchecked items and reports removal stats", () => {
+    const beforeSource = [
+      "- [ ] Keep",
+      "- [ ] Remove me",
+      "- [ ] Keep too",
+      "",
+    ].join("\n");
+    const afterSource = [
+      "- [ ] Keep",
+      "- [ ] Keep too",
+      "",
+    ].join("\n");
+
+    const result = validatePlanEdit(beforeSource, afterSource);
+
+    expect(result).toEqual({
+      valid: true,
+      stats: {
+        added: 0,
+        removed: 1,
+        reordered: 0,
+      },
+    });
+  });
+
+  it("rejects transitions from unchecked to checked", () => {
+    const beforeSource = [
+      "- [ ] Keep open",
+      "- [ ] Do not check off",
+      "",
+    ].join("\n");
+    const afterSource = [
+      "- [ ] Keep open",
+      "- [x] Do not check off",
+      "",
+    ].join("\n");
+
+    const result = validatePlanEdit(beforeSource, afterSource);
+
+    expect(result.valid).toBe(false);
+    expect(result.rejectionReason).toContain("check off TODO items");
+  });
+
+  it("rejects removing checked items", () => {
+    const beforeSource = [
+      "- [x] Already done",
+      "- [ ] Still open",
+      "",
+    ].join("\n");
+    const afterSource = [
+      "- [ ] Still open",
+      "",
+    ].join("\n");
+
+    const result = validatePlanEdit(beforeSource, afterSource);
+
+    expect(result.valid).toBe(false);
+    expect(result.rejectionReason).toContain("remove checked TODO items");
+  });
+
+  it("rejects introducing checked items that did not exist before", () => {
+    const beforeSource = ["- [ ] Open", ""].join("\n");
+    const afterSource = ["- [ ] Open", "- [x] Historical note", ""].join("\n");
+
+    const result = validatePlanEdit(beforeSource, afterSource);
+
+    expect(result.valid).toBe(false);
+    expect(result.rejectionReason).toContain("check off TODO items");
   });
 });

@@ -2265,7 +2265,12 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(
       planWorkerScriptPath,
       [
-        "console.log('- [ ] Add release checklist');",
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(planRoadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('parity hidden plan stderr');",
       ].join("\n"),
       "utf-8",
@@ -3313,7 +3318,6 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(path.join(projectDir, "TODO.md"), "utf-8")).toBe("Seed from make");
     expect(result.logs.some((line) => line.includes("CUSTOM RESEARCH TEMPLATE"))).toBe(true);
     expect(result.logs.some((line) => line.includes("CUSTOM PLAN TEMPLATE"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Seed from make"))).toBe(true);
   });
 
   it("run expands cli blocks in custom templates after template variable substitution", async () => {
@@ -5888,8 +5892,10 @@ describe.sequential("CLI integration", () => {
     );
     const promptPath = path.join(workspace, ...relativePromptPath.split("/"));
     expect(fs.existsSync(promptPath)).toBe(true);
-    expect(fs.readFileSync(promptPath, "utf-8")).toContain("Deliver API workflow");
-    expect(result.logs.some((line) => line.includes("Inserted 1 TODO item"))).toBe(true);
+    const promptSource = fs.readFileSync(promptPath, "utf-8");
+    expect(promptSource).not.toContain("Deliver API workflow");
+    expect(promptSource).toContain("Edit the source file directly at: roadmap.md");
+    expect(result.logs.some((line) => line.includes("Planner made no file edits"))).toBe(true);
   });
 
   it("plan --print-prompt expands cli blocks in plan templates", async () => {
@@ -5944,10 +5950,12 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic hidden by default');",
-        "console.log('- [ ] Add release checklist');",
       ].join("\n"),
       "utf-8",
     );
@@ -5980,12 +5988,18 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(
       workerScriptPath,
       [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "const { spawnSync } = require('node:child_process');",
         "const subAgent = spawnSync(",
         "  process.execPath,",
         "  [",
         "    '-e',",
-        "    \"console.error('sub-agent diagnostic from nested worker'); console.log('- [ ] Add release checklist from sub-agent');\"",
+        "    \"console.error('sub-agent diagnostic from nested worker');\"",
         "  ],",
         "  { encoding: 'utf-8' },",
         ");",
@@ -5997,9 +6011,6 @@ describe.sequential("CLI integration", () => {
         "}",
         "if (subAgent.stderr) {",
         "  process.stderr.write(subAgent.stderr);",
-        "}",
-        "if (subAgent.stdout) {",
-        "  process.stdout.write(subAgent.stdout);",
         "}",
       ].join("\n"),
       "utf-8",
@@ -6055,10 +6066,12 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic hidden across tty states');",
-        "console.log('- [ ] Add release checklist');",
       ].join("\n"),
       "utf-8",
     );
@@ -6131,10 +6144,12 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic visible with flag');",
-        "console.log('- [ ] Add release checklist');",
       ].join("\n"),
       "utf-8",
     );
@@ -6169,10 +6184,12 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic visible across tty states');",
-        "console.log('- [ ] Add release checklist');",
       ].join("\n"),
       "utf-8",
     );
@@ -6246,10 +6263,12 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic hidden by explicit disable');",
-        "console.log('- [ ] Add release checklist');",
       ].join("\n"),
       "utf-8",
     );
@@ -6285,7 +6304,12 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(
       workerScriptPath,
       [
-        "console.log('- [ ] Add release checklist');",
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add release checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
+        "}",
         "console.error('planner diagnostic hidden via config defaults');",
       ].join("\n"),
       "utf-8",
@@ -6327,16 +6351,16 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
         `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
-        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
         "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
         "const current = Number.isFinite(previous) ? previous + 1 : 1;",
         "fs.writeFileSync(markerPath, String(current));",
-        "if (prompt.includes('- [ ] Add release checklist')) {",
+        "if (source.includes('- [ ] Add release checklist')) {",
         "  process.exit(0);",
         "}",
-        "console.log('- [ ] Add release checklist');",
+        "fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add release checklist\\n', 'utf-8');",
       ].join("\n"),
       "utf-8",
     );
@@ -6378,14 +6402,16 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
         `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
-        "void promptPath;",
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
         "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
         "const current = Number.isFinite(previous) ? previous + 1 : 1;",
         "fs.writeFileSync(markerPath, String(current));",
-        "console.log('- [ ] Existing task');",
-        "console.log('- [ ] Add CI checks');",
+        "if (source.includes('- [ ] Add CI checks')) {",
+        "  process.exit(0);",
+        "}",
+        "fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Add CI checks\\n', 'utf-8');",
       ].join("\n"),
       "utf-8",
     );
@@ -6430,18 +6456,22 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
         `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
-        "void fs.readFileSync(promptPath, 'utf-8');",
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
         "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
         "const current = Number.isFinite(previous) ? previous + 1 : 1;",
         "fs.writeFileSync(markerPath, String(current));",
         "if (current === 1) {",
-        "  console.log('- [ ] Add API checklist');",
+        "  if (!source.includes('- [ ] Add API checklist')) {",
+        "    fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Add API checklist\\n', 'utf-8');",
+        "  }",
         "  process.exit(0);",
         "}",
         "if (current === 2) {",
-        "  console.log('- [ ] Add rollback checklist');",
+        "  if (!source.includes('- [ ] Add rollback checklist')) {",
+        "    fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Add rollback checklist\\n', 'utf-8');",
+        "  }",
         "  process.exit(0);",
         "}",
         "process.exit(0);",
@@ -6485,10 +6515,14 @@ describe.sequential("CLI integration", () => {
       [
         "const fs = require('node:fs');",
         "const promptPath = process.argv[process.argv.length - 1];",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
         "const prompt = fs.readFileSync(promptPath, 'utf-8');",
         "if (prompt.includes('Parent task: Build release flow')) {",
-        "  console.log('- [ ] Define release steps');",
-        "  console.log('- [ ] Validate rollout');",
+        "  const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "  if (!source.includes('  - [ ] Define release steps')) {",
+        "    const updated = source.replace('- [ ] Build release flow\\n', '- [ ] Build release flow\\n  - [ ] Define release steps\\n  - [ ] Validate rollout\\n');",
+        "    fs.writeFileSync(roadmapPath, updated, 'utf-8');",
+        "  }",
         "}",
       ].join("\n"),
       "utf-8",
@@ -6529,26 +6563,26 @@ describe.sequential("CLI integration", () => {
       workerScriptPath,
       [
         "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
         `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
-        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
         "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
         "const current = Number.isFinite(previous) ? previous + 1 : 1;",
         "fs.writeFileSync(markerPath, String(current));",
-        "if (current === 2 && !prompt.includes('- [ ] Create API schema')) {",
+        "if (current === 2 && !source.includes('- [ ] Create API schema')) {",
         "  console.error('scan 2 did not receive markdown updates from scan 1');",
         "  process.exit(22);",
         "}",
-        "if (current === 3 && !prompt.includes('- [ ] Implement API handler')) {",
+        "if (current === 3 && !source.includes('- [ ] Implement API handler')) {",
         "  console.error('scan 3 did not receive markdown updates from scan 2');",
         "  process.exit(23);",
         "}",
         "if (current === 1) {",
-        "  console.log('- [ ] Create API schema');",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Create API schema\\n', 'utf-8');",
         "  process.exit(0);",
         "}",
         "if (current === 2) {",
-        "  console.log('- [ ] Implement API handler');",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Implement API handler\\n', 'utf-8');",
         "  process.exit(0);",
         "}",
         "process.exit(0);",
@@ -6580,7 +6614,7 @@ describe.sequential("CLI integration", () => {
     expect(updated.indexOf("- [ ] Create API schema")).toBeLessThan(updated.indexOf("- [ ] Implement API handler"));
   });
 
-  it("plan preserves artifacts and reports clear error for invalid worker output format", async () => {
+  it("plan ignores non-TODO worker stdout when no file edits are applied", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const workerScriptPath = path.join(workspace, "plan-worker-invalid-format.cjs");
@@ -6609,13 +6643,8 @@ describe.sequential("CLI integration", () => {
       workerScriptPath.replace(/\\/g, "/"),
     ], workspace);
 
-    expect(result.code).toBe(1);
-    expect(result.errors.some((line) => line.includes("stdout contract"))).toBe(true);
-    expect(result.errors.some((line) => line.includes("`- [ ]` syntax"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Runtime artifacts saved at"))).toBe(true);
-
-    const savedRuns = readSavedRunMetadata(workspace);
-    expect(savedRuns.some((run) => run.commandName === "plan" && run.status === "failed")).toBe(true);
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Planner made no file edits. No TODO items added."))).toBe(true);
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
     expect(updated).toBe("# Roadmap\n\n## Scope\n- [ ] Existing task\n");

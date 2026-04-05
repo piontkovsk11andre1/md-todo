@@ -3,168 +3,131 @@ import type { Task } from "./parser.js";
 /** Re-export the task shape used by planner insertion helpers. */
 export type { Task } from "./parser.js";
 
-/** Canonical unchecked TODO line emitted by planner output parsing. */
-export type PlannerSubitemLine = string;
-
-/** Options that control how planner TODO lines are inserted. */
-export interface InsertTodoOptions {
-  /** Indicates whether the source already contains TODO lines. */
-  hasExistingTodos: boolean;
+/** Aggregate change stats for unchecked TODO items in a plan edit. */
+export interface PlanEditStats {
+  added: number;
+  removed: number;
+  reordered: number;
 }
 
-/** Result of applying planner output to source Markdown content. */
-export interface InsertTodoResult {
-  /** Updated Markdown source after insertion succeeds or is skipped. */
-  updatedSource: string;
-  /** Number of newly inserted TODO lines. */
-  insertedCount: number;
-  /** Signals that insertion was rejected by additive/syntax guardrails. */
-  rejected: boolean;
-  /** Optional reason describing why planner output was rejected. */
+/** Result returned by plan-edit validation. */
+export interface ValidatePlanEditResult {
+  valid: boolean;
   rejectionReason?: string;
-}
-
-/** Options for normalizing planner additions against existing TODO items. */
-export interface NormalizePlannerTodoAdditionsOptions {
-  /** Existing TODO lines used to suppress duplicate planner suggestions. */
-  existingTodoLines?: Iterable<string>;
+  stats: PlanEditStats;
 }
 
 /**
- * Extracts unchecked Markdown TODO lines from planner stdout.
+ * Validates planner-authored document edits against checkbox safety rules.
  *
- * @param output Raw planner output text.
- * @returns Normalized list-item lines that use unchecked checkbox syntax.
+ * Rules:
+ * - Checked items cannot be removed.
+ * - Unchecked items cannot be converted to checked.
+ * - Unchecked items may be inserted, removed, or reordered.
  */
-export function parsePlannerOutput(output: string): PlannerSubitemLine[] {
-  const lines = output.split(/\r?\n/);
-  const taskPattern = /^\s*[-*+]\s+\[ \]\s+\S/;
+export function validatePlanEdit(beforeSource: string, afterSource: string): ValidatePlanEditResult {
+  const beforeLines = parseTodoCheckboxLines(beforeSource);
+  const afterLines = parseTodoCheckboxLines(afterSource);
 
-  return lines
-    .filter((line) => taskPattern.test(line))
-    .map((line) => line.replace(/^\s+/, ""));
-}
+  const beforeCheckedCounts = toCountMap(beforeLines.filter((line) => line.checked).map((line) => line.normalized));
+  const afterCheckedCounts = toCountMap(afterLines.filter((line) => line.checked).map((line) => line.normalized));
 
-/**
- * Inserts additive planner TODO lines into a Markdown source document.
- *
- * The insertion path enforces additive-only behavior, validates stdout
- * contract compliance, deduplicates against existing TODOs, and appends
- * additions at the end of the document.
- *
- * @param source Original Markdown source.
- * @param plannerOutput Raw output returned by the planner phase.
- * @param options Controls whether source already has TODO content.
- * @returns Insertion result including updated source and rejection metadata.
- */
-export function insertPlannerTodos(
-  source: string,
-  plannerOutput: string,
-  options: InsertTodoOptions,
-): InsertTodoResult {
-  // Reject outputs that attempt non-additive edits to existing TODO lines.
-  const rejectionReason = detectNonAdditivePlannerOutput(source, plannerOutput);
-  if (rejectionReason) {
-    return {
-      updatedSource: source,
-      insertedCount: 0,
-      rejected: true,
-      rejectionReason,
-    };
-  }
+  const beforeUnchecked = beforeLines.filter((line) => !line.checked).map((line) => line.normalized);
+  const afterUnchecked = afterLines.filter((line) => !line.checked).map((line) => line.normalized);
+  const beforeUncheckedCounts = toCountMap(beforeUnchecked);
+  const afterUncheckedCounts = toCountMap(afterUnchecked);
 
-  // Enforce planner stdout contract: only unchecked TODO list lines.
-  const stdoutContractReason = validatePlannerStdoutContract(plannerOutput);
-  if (stdoutContractReason) {
-    return {
-      updatedSource: source,
-      insertedCount: 0,
-      rejected: true,
-      rejectionReason: stdoutContractReason,
-    };
-  }
+  const stats = computeUncheckedStats(beforeUnchecked, afterUnchecked, beforeUncheckedCounts, afterUncheckedCounts);
 
-  // Normalize and remove duplicates against document and planner output.
-  const additions = normalizePlannerTodoAdditions(plannerOutput, {
-    existingTodoLines: parsePlannerOutput(source),
-  });
-  if (additions.length === 0) {
-    return { updatedSource: source, insertedCount: 0, rejected: false };
-  }
-
-  const eol = source.includes("\r\n") ? "\r\n" : "\n";
-
-  if (options.hasExistingTodos) {
-    return {
-      updatedSource: appendPlannerTodosToExistingList(source, additions, eol),
-      insertedCount: additions.length,
-      rejected: false,
-    };
-  }
-
-  const updatedSource = appendPlannerTodosAtEnd(source, additions, eol);
-  return { updatedSource, insertedCount: additions.length, rejected: false };
-}
-
-/**
- * Normalizes planner output into deduplicated unchecked TODO list lines.
- *
- * @param plannerOutput Raw planner output text.
- * @param options Optional existing TODO lines used for identity checks.
- * @returns Stable list of TODO additions ready for insertion.
- */
-export function normalizePlannerTodoAdditions(
-  plannerOutput: string,
-  options: NormalizePlannerTodoAdditionsOptions = {},
-): string[] {
-  const parsed = parsePlannerOutput(plannerOutput);
-  if (parsed.length === 0) {
-    return [];
-  }
-
-  const existing = new Set<string>();
-  for (const existingLine of options.existingTodoLines ?? []) {
-    const existingIdentity = normalizeTodoIdentity(existingLine);
-    if (existingIdentity.length > 0) {
-      existing.add(existingIdentity);
+  for (const [identity, beforeCount] of beforeCheckedCounts.entries()) {
+    const afterCount = afterCheckedCounts.get(identity) ?? 0;
+    if (afterCount < beforeCount) {
+      return {
+        valid: false,
+        rejectionReason: "Plan edit attempted to remove checked TODO items, which is not allowed.",
+        stats,
+      };
     }
   }
 
-  const seen = new Set<string>();
-  const deduped: string[] = [];
+  for (const [identity, afterCount] of afterCheckedCounts.entries()) {
+    const beforeCount = beforeCheckedCounts.get(identity) ?? 0;
+    if (afterCount > beforeCount) {
+      return {
+        valid: false,
+        rejectionReason: "Plan edit attempted to check off TODO items (`[ ]` to `[x]`), which is not allowed.",
+        stats,
+      };
+    }
+  }
 
-  for (const line of parsed) {
-    const normalized = normalizeTodoLine(line);
-    const identity = normalizeTodoIdentity(normalized);
-    if (identity.length === 0 || seen.has(identity) || existing.has(identity)) {
-      continue;
+  return {
+    valid: true,
+    stats,
+  };
+}
+
+function toCountMap(lines: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function computeUncheckedStats(
+  beforeUnchecked: string[],
+  afterUnchecked: string[],
+  beforeCounts: Map<string, number>,
+  afterCounts: Map<string, number>,
+): PlanEditStats {
+  const identities = new Set<string>([...beforeCounts.keys(), ...afterCounts.keys()]);
+  let added = 0;
+  let removed = 0;
+  let shared = 0;
+
+  for (const identity of identities) {
+    const beforeCount = beforeCounts.get(identity) ?? 0;
+    const afterCount = afterCounts.get(identity) ?? 0;
+    if (afterCount > beforeCount) {
+      added += afterCount - beforeCount;
+    } else if (beforeCount > afterCount) {
+      removed += beforeCount - afterCount;
     }
 
-    seen.add(identity);
-    deduped.push(normalized);
+    shared += Math.min(beforeCount, afterCount);
   }
 
-  return deduped;
+  const lcsLength = longestCommonSubsequenceLength(beforeUnchecked, afterUnchecked);
+  const reordered = Math.max(0, shared - lcsLength);
+
+  return { added, removed, reordered };
 }
 
-/** Normalizes list markers/checkboxes to canonical `- [ ]` TODO syntax. */
-function normalizeTodoLine(line: string): string {
-  return line.replace(/^\s*[-*+]\s+\[ \]\s+/, "- [ ] ").trim();
-}
-
-/** Builds a whitespace-insensitive identity key for TODO deduplication. */
-function normalizeTodoIdentity(line: string): string {
-  const normalizedLine = normalizeTodoLine(line);
-  if (normalizedLine.length === 0) {
-    return "";
+function longestCommonSubsequenceLength(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
   }
 
-  const content = normalizedLine.replace(/^- \[ \]\s+/, "").replace(/\s+/g, " ").trim();
-  if (content.length === 0) {
-    return "";
+  const previous = new Array<number>(right.length + 1).fill(0);
+  const current = new Array<number>(right.length + 1).fill(0);
+
+  for (let i = 1; i <= left.length; i += 1) {
+    for (let j = 1; j <= right.length; j += 1) {
+      if (left[i - 1] === right[j - 1]) {
+        current[j] = previous[j - 1] + 1;
+      } else {
+        current[j] = Math.max(previous[j], current[j - 1]);
+      }
+    }
+
+    for (let j = 0; j <= right.length; j += 1) {
+      previous[j] = current[j];
+      current[j] = 0;
+    }
   }
 
-  return `- [ ] ${content}`;
+  return previous[right.length] ?? 0;
 }
 
 /** Converts checked/unchecked checkbox lines into canonical unchecked form. */
@@ -172,92 +135,9 @@ function normalizeTodoCheckboxLine(line: string): string {
   return line.replace(/^\s*[-*+]\s+\[[ xX]\]\s+/, "- [ ] ").trim();
 }
 
-/**
- * Validates planner stdout against the TODO-only output contract.
- *
- * @param plannerOutput Raw planner output text.
- * @returns Rejection reason when invalid; otherwise `null`.
- */
-function validatePlannerStdoutContract(plannerOutput: string): string | null {
-  if (plannerOutput.trim().length === 0) {
-    return null;
-  }
-
-  const lines = plannerOutput.split(/\r?\n/);
-  const uncheckedTodoPattern = /^\s*[-*+]\s+\[ \]\s+\S/;
-
-  for (const line of lines) {
-    if (line.trim().length === 0) {
-      continue;
-    }
-
-    if (!uncheckedTodoPattern.test(line)) {
-      return "Planner output violated stdout contract. Return only unchecked TODO lines using `- [ ]` syntax.";
-    }
-  }
-
-  return null;
-}
-
 interface ParsedTodoCheckboxLine {
   normalized: string;
   checked: boolean;
-}
-
-/**
- * Detects non-additive planner behavior against existing TODO items.
- *
- * Disallows completion-state changes, partial echoing that implies removals,
- * and reordering of existing TODO lines.
- */
-function detectNonAdditivePlannerOutput(source: string, plannerOutput: string): string | null {
-  const existingTodos = parsePlannerOutput(source).map(normalizeTodoLine);
-  if (existingTodos.length === 0) {
-    return null;
-  }
-
-  const existingSet = new Set(existingTodos);
-  const checkboxLines = parseTodoCheckboxLines(plannerOutput);
-
-  for (const line of checkboxLines) {
-    if (!line.checked) {
-      continue;
-    }
-
-    if (existingSet.has(line.normalized)) {
-      return "Planner output attempted to change the completion state of existing TODO items. Only additive TODO operations are allowed.";
-    }
-  }
-
-  const echoedExistingInOutput = checkboxLines
-    .filter((line) => !line.checked && existingSet.has(line.normalized))
-    .map((line) => line.normalized);
-
-  if (
-    echoedExistingInOutput.length > 0
-    && !includesAllExistingTodos(existingTodos, echoedExistingInOutput)
-  ) {
-    return "Planner output attempted to remove existing TODO items. Only additive TODO operations are allowed.";
-  }
-
-  if (!isInDocumentOrder(existingTodos, echoedExistingInOutput)) {
-    return "Planner output attempted to reorder existing TODO items. Only additive TODO operations are allowed.";
-  }
-
-  return null;
-}
-
-/** Verifies that planner output echoed every existing TODO item. */
-function includesAllExistingTodos(existingInDocumentOrder: string[], echoedExistingInOutput: string[]): boolean {
-  const echoedSet = new Set(echoedExistingInOutput);
-
-  for (const existing of existingInDocumentOrder) {
-    if (!echoedSet.has(existing)) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 /** Parses checkbox list lines and records normalized content plus checked state. */
@@ -281,62 +161,6 @@ function parseTodoCheckboxLines(source: string): ParsedTodoCheckboxLine[] {
   return parsed;
 }
 
-/** Confirms planner-echoed existing TODO lines preserve original document order. */
-function isInDocumentOrder(existingInDocumentOrder: string[], echoedExistingInOutput: string[]): boolean {
-  if (echoedExistingInOutput.length <= 1) {
-    return true;
-  }
-
-  let fromIndex = 0;
-  for (const echoed of echoedExistingInOutput) {
-    const position = existingInDocumentOrder.indexOf(echoed, fromIndex);
-    if (position === -1) {
-      return false;
-    }
-    fromIndex = position + 1;
-  }
-
-  return true;
-}
-
-/**
- * Appends TODO lines to the end of a document with stable separation.
- *
- * @param source Original Markdown source.
- * @param additions Normalized TODO lines to append.
- * @param eol End-of-line sequence detected from source.
- * @returns Updated source with TODO block appended and trailing newline.
- */
-function appendPlannerTodosAtEnd(source: string, additions: string[], eol: string): string {
-  const sourceWithoutTrailingNewlines = source.replace(/(?:\r?\n)+$/g, "");
-  const separator = sourceWithoutTrailingNewlines.length === 0 ? "" : `${eol}${eol}`;
-  return sourceWithoutTrailingNewlines + separator + additions.join(eol) + eol;
-}
-
-/**
- * Appends TODO lines immediately after the last existing TODO checkbox line.
- *
- * Falls back to end-of-document insertion if no TODO checkbox can be located.
- */
-function appendPlannerTodosToExistingList(source: string, additions: string[], eol: string): string {
-  const lines = source.split(/\r?\n/);
-  const checkboxPattern = /^\s*[-*+]\s+\[[ xX]\]\s+\S/;
-  let lastTodoIndex = -1;
-
-  for (const [index, line] of lines.entries()) {
-    if (checkboxPattern.test(line)) {
-      lastTodoIndex = index;
-    }
-  }
-
-  if (lastTodoIndex === -1) {
-    return appendPlannerTodosAtEnd(source, additions, eol);
-  }
-
-  lines.splice(lastTodoIndex + 1, 0, ...additions);
-  const updatedSource = lines.join(eol);
-  return updatedSource.endsWith(eol) ? updatedSource : `${updatedSource}${eol}`;
-}
 
 /**
  * Computes two-space child indentation from a parent list-item line.
@@ -361,7 +185,7 @@ export function computeChildIndent(parentLine: string): string {
 export function insertSubitems(
   source: string,
   task: Task,
-  subitemLines: PlannerSubitemLine[],
+  subitemLines: string[],
 ): string {
   if (subitemLines.length === 0) return source;
 

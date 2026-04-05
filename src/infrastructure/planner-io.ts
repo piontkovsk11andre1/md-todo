@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import {
   insertSubitems,
-  parsePlannerOutput,
 } from "../domain/planner.js";
+import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import type { Task } from "../domain/parser.js";
 
 /**
@@ -13,7 +13,7 @@ import type { Task } from "../domain/parser.js";
  */
 export function applyPlannerOutput(task: Task, plannerOutput: string): number {
   // Parse the planner response into normalized subitem lines.
-  const subitemLines = parsePlannerOutput(plannerOutput);
+  const subitemLines = parseUncheckedTodoLines(plannerOutput);
   // Exit early when the planner produced no actionable items.
   if (subitemLines.length === 0) return 0;
 

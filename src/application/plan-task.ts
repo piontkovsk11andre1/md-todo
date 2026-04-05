@@ -5,9 +5,7 @@ import {
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { parseTasks } from "../domain/parser.js";
 import {
-  insertPlannerTodos,
-  insertSubitems,
-  parsePlannerOutput,
+  validatePlanEdit,
 } from "../domain/planner.js";
 import {
   buildMemoryTemplateVars,
@@ -120,7 +118,7 @@ const OPENCODE_CONTINUATION_ARG_PATTERN = /^--(?:continue|resume|session|thread|
 
 /**
  * Creates the plan task runner that expands templates, invokes the worker, and
- * inserts additive TODO items into the source Markdown document.
+ * validates worker-authored TODO edits in the source Markdown document.
  */
 export function createPlanTask(
   dependencies: PlanTaskDependencies,
@@ -208,7 +206,7 @@ export function createPlanTask(
         userVariables: formatTemplateVarsForPrompt(extraTemplateVars),
       };
 
-      // Read the Markdown source that will receive planner TODO insertions.
+      // Read the Markdown source that will receive planner edits.
       let documentSource: string;
       try {
         documentSource = dependencies.fileSystem.readText(source);
@@ -271,6 +269,7 @@ export function createPlanTask(
       ).plan;
       const deepPlanTemplate = DEFAULT_DEEP_PLAN_TEMPLATE;
 
+      const planPromptDocumentContext = buildPlanPromptDocumentContext(source);
       const vars: TemplateVars = {
         ...templateVarsWithUserVariables,
         ...buildMemoryTemplateVars({
@@ -279,10 +278,10 @@ export function createPlanTask(
         traceInstructions: getTraceInstructions(trace),
         task: documentIntent,
         file: source,
-        context: documentSource,
+        context: planPromptDocumentContext,
         taskIndex: 0,
         taskLine: 1,
-        source: documentSource,
+        source: planPromptDocumentContext,
         scanCount,
         existingTodoCount,
         hasExistingTodos: hasExistingTodos ? "true" : "false",
@@ -329,7 +328,7 @@ export function createPlanTask(
 
       // Print mode returns rendered scan/deep prompts without invoking workers.
       if (printPrompt) {
-        emit({ kind: "text", text: buildPlanScanPrompt(prompt, documentSource, 1, scanCount) });
+        emit({ kind: "text", text: buildPlanScanPrompt(prompt, source, 1, scanCount) });
         if (deep > 0) {
           const deepCandidates = collectDeepLeafCandidates(documentSource, source);
           if (deepCandidates.length === 0) {
@@ -345,7 +344,6 @@ export function createPlanTask(
             for (const parentTask of deepCandidates) {
               const deepPrompt = buildPlanDeepPrompt({
                 deepPlanTemplate,
-                latestDocumentSource: documentSource,
                 parentTask,
                 deepPass: 1,
                 deep,
@@ -377,7 +375,7 @@ export function createPlanTask(
         }
         emit({ kind: "info", message: "Dry run — would plan: " + resolvedWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Scan count: " + scanCount });
-        emit({ kind: "info", message: "Prompt length: " + buildPlanScanPrompt(prompt, documentSource, 1, scanCount).length + " chars" });
+        emit({ kind: "info", message: "Prompt length: " + buildPlanScanPrompt(prompt, source, 1, scanCount).length + " chars" });
         if (deep > 0) {
           const deepCandidates = collectDeepLeafCandidates(documentSource, source);
           emit({ kind: "info", message: "Deep count: " + deep });
@@ -393,7 +391,6 @@ export function createPlanTask(
             });
             const firstDeepPrompt = buildPlanDeepPrompt({
               deepPlanTemplate,
-              latestDocumentSource: documentSource,
               parentTask: deepCandidates[0]!,
               deepPass: 1,
               deep,
@@ -550,18 +547,10 @@ export function createPlanTask(
         let scansExecuted = 0;
         let convergenceOutcome: PlanConvergenceOutcome | null = null;
 
-        // Execute up to `scanCount` independent scans, reloading source each time.
+        // Execute up to `scanCount` independent scans using in-memory snapshots.
         for (let scanIndex = 1; scanIndex <= scanCount; scanIndex += 1) {
           const scanLabel = buildPlanScanLabel(scanIndex, scanCount);
-          try {
-            latestDocumentSource = dependencies.fileSystem.readText(source);
-          } catch {
-            emit({
-              kind: "error",
-              message: "Unable to reload Markdown document before scan " + scanIndex + ": " + source,
-            });
-            return finishPlan(3, "failed");
-          }
+          const scanBaseline = latestDocumentSource;
 
           emit({
             kind: "info",
@@ -570,7 +559,7 @@ export function createPlanTask(
           scansExecuted += 1;
 
           // Build per-scan prompt context and execute the planner worker.
-          const scanPrompt = buildPlanScanPrompt(prompt, latestDocumentSource, scanIndex, scanCount);
+          const scanPrompt = buildPlanScanPrompt(prompt, source, scanIndex, scanCount);
           emit({
             kind: "info",
             message: "Executing planner " + scanLabel + "...",
@@ -618,42 +607,40 @@ export function createPlanTask(
             return finishPlan(1, "execution-failed");
           }
 
-          // Empty output indicates there are no additional TODOs to add.
-          if (!runResult.stdout || runResult.stdout.trim().length === 0) {
-            convergenceOutcome = "converged";
-            if (scanIndex === 1) {
-              emit({ kind: "warn", message: "Planner produced no output. No TODO items added." });
-            } else {
-              emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": no additional TODO items proposed." });
-            }
-            break;
-          }
-
-          // Accept only additive TODO changes and reject destructive output.
-          const applyResult = applyPlannerOutput(latestDocumentSource, runResult.stdout);
-          if (applyResult.rejected) {
+          let editedDocumentSource: string;
+          try {
+            editedDocumentSource = dependencies.fileSystem.readText(source);
+          } catch {
             emit({
               kind: "error",
-              message: applyResult.rejectionReason ?? "Planner output was rejected because only additive TODO operations are allowed.",
+              message: "Unable to read Markdown document after scan " + scanIndex + ": " + source,
+            });
+            return finishPlan(3, "failed");
+          }
+
+          const validationResult = validatePlanEdit(scanBaseline, editedDocumentSource);
+          if (!validationResult.valid) {
+            dependencies.fileSystem.writeText(source, scanBaseline);
+            emit({
+              kind: "error",
+              message: validationResult.rejectionReason
+                ?? "Planner edit was rejected because checked TODO items were modified.",
             });
             return finishPlan(1, "failed");
           }
 
-          // Zero insertions from valid output also counts as convergence.
-          if (applyResult.insertedCount === 0) {
+          if (editedDocumentSource === scanBaseline) {
             convergenceOutcome = "converged";
             if (scanIndex === 1) {
-              emit({ kind: "warn", message: "Planner output contained no valid TODO items to add." });
+              emit({ kind: "warn", message: "Planner made no file edits. No TODO items added." });
             } else {
-              emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": no new TODO additions required." });
+              emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": file unchanged after worker edit." });
             }
             break;
           }
 
-          // Persist inserted TODO items before running the next scan.
-          latestDocumentSource = applyResult.updatedSource;
-          dependencies.fileSystem.writeText(source, latestDocumentSource);
-          insertedTotal += applyResult.insertedCount;
+          latestDocumentSource = editedDocumentSource;
+          insertedTotal += validationResult.stats.added;
         }
 
         // Execute additional deep passes to generate nested child TODO items.
@@ -691,7 +678,6 @@ export function createPlanTask(
               const deepTaskLabel = buildPlanDeepTaskLabel(deepPass, deep, deepTaskIndex + 1, deepCandidates.length);
               const deepPrompt = buildPlanDeepPrompt({
                 deepPlanTemplate,
-                latestDocumentSource,
                 parentTask,
                 deepPass,
                 deep,
@@ -745,21 +731,35 @@ export function createPlanTask(
                 return finishPlan(1, "execution-failed");
               }
 
-              const deepStdoutReason = validateDeepPlannerStdoutContract(runResult.stdout);
-              if (deepStdoutReason) {
-                emit({ kind: "error", message: deepStdoutReason });
+              let deepEditedDocumentSource: string;
+              try {
+                deepEditedDocumentSource = dependencies.fileSystem.readText(source);
+              } catch {
+                emit({
+                  kind: "error",
+                  message: "Unable to read Markdown document after deep pass " + deepPass + ", task " + (deepTaskIndex + 1) + ": " + source,
+                });
+                return finishPlan(3, "failed");
+              }
+
+              const validationResult = validatePlanEdit(latestDocumentSource, deepEditedDocumentSource);
+              if (!validationResult.valid) {
+                dependencies.fileSystem.writeText(source, latestDocumentSource);
+                emit({
+                  kind: "error",
+                  message: validationResult.rejectionReason
+                    ?? "Planner edit was rejected because checked TODO items were modified.",
+                });
                 return finishPlan(1, "failed");
               }
 
-              const deepSubitems = parsePlannerOutput(runResult.stdout);
-              if (deepSubitems.length === 0) {
+              if (deepEditedDocumentSource === latestDocumentSource) {
                 continue;
               }
 
-              latestDocumentSource = insertSubitems(latestDocumentSource, parentTask, deepSubitems);
-              dependencies.fileSystem.writeText(source, latestDocumentSource);
-              insertedTotal += deepSubitems.length;
-              deepPassInsertedCount += deepSubitems.length;
+              latestDocumentSource = deepEditedDocumentSource;
+              insertedTotal += validationResult.stats.added;
+              deepPassInsertedCount += validationResult.stats.added;
             }
 
             if (deepPassInsertedCount === 0) {
@@ -841,17 +841,6 @@ function finalizePlanArtifacts(
 }
 
 /**
- * Applies planner output with additive-only TODO insertion rules.
- */
-function applyPlannerOutput(
-  markdownSource: string,
-  plannerOutput: string,
-): { updatedSource: string; insertedCount: number; rejected: boolean; rejectionReason?: string } {
-  const hasExistingTodos = parseTasks(markdownSource).length > 0;
-  return insertPlannerTodos(markdownSource, plannerOutput, { hasExistingTodos });
-}
-
-/**
  * Builds structured convergence metadata for artifact finalization.
  */
 function buildPlanConvergenceMetadata(
@@ -881,18 +870,24 @@ function deriveDocumentIntent(source: string, fallbackPath: string): string {
 }
 
 /**
- * Builds the per-scan worker prompt with clean-session guidance and current source.
+ * Builds the per-scan worker prompt with clean-session guidance.
  */
 function buildPlanScanPrompt(
   basePrompt: string,
-  latestDocumentSource: string,
+  sourcePath: string,
   scanIndex: number,
   scanCount: number,
 ): string {
   const scanLabel = buildPlanScanLabel(scanIndex, scanCount);
-  const stableDocumentSource = normalizeScanDocumentSource(latestDocumentSource);
 
-  return `${basePrompt}\n\n## Scan Context\n\nScan label: ${scanLabel}\nScan pass ${scanIndex} of ${scanCount}.\n\nTreat this scan as a clean standalone worker session. Do not rely on prior prompt history or prior scan outputs beyond the current document state shown below.\n\nCurrent document state (normalized to LF newlines):\n\n\`\`\`markdown\n${stableDocumentSource}\n\`\`\`\n\nReturn ONLY missing TODO additions that are not already present in the current document.\nIf there are no missing TODO additions, return an empty response.`;
+  return `${basePrompt}\n\n## Scan Context\n\nScan label: ${scanLabel}\nScan pass ${scanIndex} of ${scanCount}.\n\nTreat this scan as a clean standalone worker session. Do not rely on prior prompt history or prior scan outputs.\n\nEdit the source file directly at: ${sourcePath}\n\nIf no useful TODO edits are needed, leave the file unchanged.`;
+}
+
+/**
+ * Provides plan-template context without embedding full document content.
+ */
+function buildPlanPromptDocumentContext(sourcePath: string): string {
+  return `Document source is intentionally omitted for plan scans. Read and edit the file directly at: ${sourcePath}`;
 }
 
 /**
@@ -946,59 +941,25 @@ function buildPlanDeepPhaseLabel(deepPass: number, taskIndex: number): string {
  */
 function buildPlanDeepPrompt(options: {
   deepPlanTemplate: string;
-  latestDocumentSource: string;
   parentTask: ReturnType<typeof parseTasks>[number];
   deepPass: number;
   deep: number;
 }): string {
-  const stableDocumentSource = normalizeScanDocumentSource(options.latestDocumentSource);
   const deepVars: TemplateVars = {
     traceInstructions: "",
     task: options.parentTask.text,
     file: options.parentTask.file,
-    context: stableDocumentSource,
+    context: buildPlanPromptDocumentContext(options.parentTask.file),
     taskIndex: options.parentTask.index,
     taskLine: options.parentTask.line,
-    source: stableDocumentSource,
+    source: buildPlanPromptDocumentContext(options.parentTask.file),
     parentTask: options.parentTask.text,
     parentTaskLine: options.parentTask.line,
     parentTaskDepth: options.parentTask.depth,
   };
 
   const renderedTemplate = renderTemplate(options.deepPlanTemplate, deepVars);
-  return `${renderedTemplate}\n\n## Deep Pass Context\n\nDeep pass ${options.deepPass} of ${options.deep}.\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs beyond the current document state shown above.\n\nReturn only missing child TODO additions for the selected parent task.`;
-}
-
-/**
- * Validates deep planner stdout against child TODO-only output rules.
- */
-function validateDeepPlannerStdoutContract(plannerOutput: string): string | null {
-  if (plannerOutput.trim().length === 0) {
-    return null;
-  }
-
-  const lines = plannerOutput.split(/\r?\n/);
-  const uncheckedTodoPattern = /^\s*[-*+]\s+\[ \]\s+\S/;
-
-  for (const line of lines) {
-    if (line.trim().length === 0) {
-      continue;
-    }
-
-    if (!uncheckedTodoPattern.test(line)) {
-      return "Deep planner output violated stdout contract. Return only unchecked TODO lines using `- [ ]` syntax.";
-    }
-  }
-
-  return null;
-}
-
-/**
- * Normalizes source text to LF newlines and guarantees a trailing newline.
- */
-function normalizeScanDocumentSource(source: string): string {
-  const normalized = source.replace(/\r\n?/g, "\n");
-  return normalized.endsWith("\n") ? normalized : `${normalized}\n`;
+  return `${renderedTemplate}\n\n## Deep Pass Context\n\nDeep pass ${options.deepPass} of ${options.deep}.\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
 }
 
 /**

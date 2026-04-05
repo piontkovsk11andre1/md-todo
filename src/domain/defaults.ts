@@ -229,30 +229,22 @@ ${DEFAULT_TEMPLATE_MEMORY_SECTION}
 
 ## Phase
 
-Plan full-document implementation coverage as additive TODO candidates.
+Edit the source Markdown file directly to improve plan coverage.
 
-Analyze the entire Markdown document and identify only actionable TODO items that are still missing.
-
-Return ONLY a Markdown list of unchecked task items using \`- [ ]\` syntax, one per missing TODO to add.
+Review \`{{file}}\` and insert missing actionable TODO items in logical locations.
 
 Rules:
-- Cover the document's implementation intent end-to-end; include only executable actions.
-- Each TODO should be a single clear action and specific enough to implement directly.
-- Only propose additive TODO candidates that are not already present.
-- Do not rewrite, reorder, delete, or mark existing TODO items as complete.
-- Do not include any other text, headings, or explanation.
-- Do not modify the source Markdown file.
-
-Example output format:
-
-- [ ] First concrete step
-- [ ] Second concrete step
-- [ ] Third concrete step
+- Add only unchecked TODO items using \`- [ ]\` syntax.
+- Insert new items where they fit best; you may add them in the middle of existing lists.
+- You may reorder unchecked \`- [ ]\` items when it improves execution flow.
+- Do not change any \`- [ ]\` item to \`- [x]\`.
+- Do not remove, rewrite, or move any completed \`- [x]\` item.
+- Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.
 {{traceInstructions}}
 `;
 
 /**
- * Default deep-plan prompt template used to propose missing additive child TODO
+ * Default deep-plan prompt template used to directly edit missing child TODO
  * items for a single parent task.
  */
 export const DEFAULT_DEEP_PLAN_TEMPLATE = `\
@@ -265,32 +257,19 @@ ${DEFAULT_TEMPLATE_MEMORY_SECTION}
 - Parent line: {{parentTaskLine}}
 - Parent depth: {{parentTaskDepth}}
 
-## Current document state
-
-{{source}}
-
 ## Phase
 
-Plan the next layer of child TODO items for the single parent task above.
+Edit the source Markdown file directly to improve child plan coverage for the parent task above.
 
-Return ONLY a Markdown list of unchecked child task items using \`- [ ]\` syntax,
-one per missing child TODO to add under the parent task.
+Review \`{{file}}\` and add missing unchecked child TODO items under this parent task.
 
 Rules:
-- Scope output strictly to child TODO items for the selected parent task.
-- Each child TODO should be a single clear action and specific enough to implement directly.
-- Only propose additive child TODO candidates that are not already present under the parent.
-- Do not include the parent task itself in output.
-- Do not include indentation; return plain \`- [ ]\` lines only.
-- Do not include any other text, headings, or explanation.
-- Do not rewrite, reorder, delete, or mark existing TODO items as complete.
-- Do not modify the source Markdown file.
-
-Example output format:
-
-- [ ] First concrete child step
-- [ ] Second concrete child step
-- [ ] Third concrete child step
+- Scope changes strictly to child TODO items under the selected parent task.
+- Add only unchecked TODO items using \`- [ ]\` syntax.
+- Insert new child items where they fit best under the parent; you may reorder unchecked child \`- [ ]\` items when it improves execution flow.
+- Do not change any \`- [ ]\` item to \`- [x]\`.
+- Do not remove, rewrite, or move any completed \`- [x]\` item.
+- Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.
 {{traceInstructions}}
 `;
 
