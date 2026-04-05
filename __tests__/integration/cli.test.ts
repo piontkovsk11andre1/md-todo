@@ -3387,7 +3387,7 @@ describe.sequential("CLI integration", () => {
       "later",
     ], workspace);
 
-    expect(result.code).toBe(0);
+    expect(result.code).toBe(1);
     const combinedOutput = [
       ...result.errors,
       ...result.logs,
@@ -3408,7 +3408,7 @@ describe.sequential("CLI integration", () => {
       "file-done",
     ], workspace);
 
-    expect(result.code).toBe(0);
+    expect(result.code).toBe(1);
     const combinedOutput = [
       ...result.errors,
       ...result.logs,
