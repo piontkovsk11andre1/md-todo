@@ -1353,6 +1353,38 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("rundown log --revertable"))).toBe(true);
   });
 
+  it("revert explains file-done final-artifact targeting for explicit non-final run ids", async () => {
+    const workspace = makeTempWorkspace();
+
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-file-done-nonfinal",
+      status: "completed",
+      startedAt: "2026-03-17T00:00:00.000Z",
+      extra: {
+        note: "file-done non-final artifact has no commitSha",
+      },
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-file-done-final",
+      status: "completed",
+      startedAt: "2026-03-17T00:01:00.000Z",
+      extra: {
+        commitSha: "abc123",
+      },
+    });
+
+    const result = await runCli([
+      "revert",
+      "--run",
+      "run-20260317T000000000Z-file-done-nonfinal",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("is not revertable because it does not include extra.commitSha"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--commit-mode file-done"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--run latest"))).toBe(true);
+  });
+
   it("revert succeeds for a single committed run created via CLI", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -2325,7 +2357,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("[1/1]") && line.includes("Write docs"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Verification failed:") && line.includes("Running repair (1 attempt(s))..."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
@@ -2352,7 +2384,8 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(true);
     expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Verification failed:"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Repair attempt 1 of 1: starting..."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
   });
@@ -2372,7 +2405,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Running verification..."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("[1/1]") && line.includes("Write docs"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
 
     const validationFiles = listFilesRecursively(workspace)
@@ -3340,7 +3373,51 @@ describe.sequential("CLI integration", () => {
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--commit Auto-commit checked task file after successful completion");
     expect(compactHelpOutput).toContain("--commit-message <template> Commit message template (supports {{task}} and {{file}})");
+    expect(compactHelpOutput).toContain("--commit-mode <mode> Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)");
     expect(compactHelpOutput).toContain("--on-complete <command> Run a shell command after successful task completion");
+  });
+
+  it("run rejects invalid --commit-mode values", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--commit-mode",
+      "later",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("invalid --commit-mode value: later")).toBe(true);
+    expect(combinedOutput.includes("allowed: per-task, file-done")).toBe(true);
+  });
+
+  it("run rejects --commit-mode file-done unless --all is enabled", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("invalid --commit-mode usage")).toBe(true);
+    expect(combinedOutput.includes("file-done is only supported with effective run-all (`run --all`, `all`, or implicit `--redo`/`--clean`)"))
+      .toBe(true);
   });
 
   it("call is registered and enforces clean, all, and cache-cli-blocks semantics", async () => {
@@ -3863,6 +3940,7 @@ describe.sequential("CLI integration", () => {
       dryRun: true,
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: true,
+      commitMode: "per-task",
       commitMessageTemplate: "done: {{task}}",
       onCompleteCommand: "node scripts/after.js",
     }));
@@ -3902,6 +3980,7 @@ describe.sequential("CLI integration", () => {
       dryRun: true,
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: false,
+      commitMode: "per-task",
       commitMessageTemplate: undefined,
       onCompleteCommand: undefined,
     }));
@@ -3946,6 +4025,7 @@ describe.sequential("CLI integration", () => {
       dryRun: true,
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       commitAfterComplete: true,
+      commitMode: "per-task",
       commitMessageTemplate: undefined,
       onCompleteCommand: undefined,
     }));
@@ -4346,6 +4426,456 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
   });
 
+  it("run --all file-done commit skips commit with warning outside a git repository and still completes the run", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo one"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo two"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo one");
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo two");
+  });
+
+  it("all alias file-done commit skips commit with warning outside a git repository and still completes the run", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    const result = await runCli([
+      "all",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo one"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo two"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo one");
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo two");
+  });
+
+  it("run --all file-done commit succeeds with exactly one final commit and stores commitSha only on the final saved run artifact", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--keep-artifacts",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Committed:"))).toHaveLength(1);
+
+    const commitDeltaCount = Number(execFileSync("git", ["rev-list", "--count", "HEAD~1..HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim());
+    expect(commitDeltaCount).toBe(1);
+
+    const headSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    const runArtifacts = readSavedRunMetadata(workspace)
+      .filter((run) => run.commandName === "run" && run.status === "completed");
+    expect(runArtifacts.length).toBe(2);
+
+    const runArtifactsWithCommitSha = runArtifacts.filter((run) => typeof run.extra?.commitSha === "string");
+    expect(runArtifactsWithCommitSha).toHaveLength(1);
+    expect(runArtifactsWithCommitSha[0]?.extra?.commitSha).toBe(headSha);
+  });
+
+  it("run --all file-done commit waits for inserted child and remaining tasks before committing", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "roadmap.md";
+    const roadmapPath = path.join(workspace, sourceName);
+    const workerScriptPath = path.join(workspace, "tool-expansion-worker.cjs");
+    const childTaskScriptPath = path.join(workspace, "child-task.cjs");
+    const finalTaskScriptPath = path.join(workspace, "final-task.cjs");
+    const childProbePath = path.join(workspace, "child-task-ran.txt");
+    const finalProbePath = path.join(workspace, "final-task-ran.txt");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "post-on-gitea.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(toolTemplatePath, "Request: {{payload}}\nContext:\n{{context}}\n", "utf-8");
+    fs.writeFileSync(
+      roadmapPath,
+      "- [ ] post-on-gitea: report auth flow\n- [ ] cli: node final-task.cjs\n",
+      "utf-8",
+    );
+    fs.writeFileSync(workerScriptPath, "console.log('- [ ] cli: node child-task.cjs');\n", "utf-8");
+    fs.writeFileSync(
+      childTaskScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(childProbePath.replace(/\\/g, "/"))}, 'ok\\n', 'utf-8');`,
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      finalTaskScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `fs.writeFileSync(${JSON.stringify(finalProbePath.replace(/\\/g, "/"))}, 'done\\n', 'utf-8');`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "run",
+      sourceName,
+      "--all",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: report auth flow"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node child-task.cjs"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node final-task.cjs"))).toBe(true);
+    expect(result.logs.filter((line) => line.includes("Committed:"))).toHaveLength(1);
+    expect(fs.existsSync(childProbePath)).toBe(true);
+    expect(fs.existsSync(finalProbePath)).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
+      "- [x] post-on-gitea: report auth flow",
+      "  - [x] cli: node child-task.cjs",
+      "- [x] cli: node final-task.cjs",
+      "",
+    ].join("\n"));
+
+    const commitDeltaCount = Number(execFileSync("git", ["rev-list", "--count", "HEAD~1..HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim());
+    expect(commitDeltaCount).toBe(1);
+
+    const statusPorcelain = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(statusPorcelain).toBe("");
+
+    const committedFiles = execFileSync("git", ["show", "--pretty=", "--name-only", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    });
+    expect(committedFiles).toContain("roadmap.md");
+    expect(committedFiles).toContain("child-task-ran.txt");
+    expect(committedFiles).toContain("final-task-ran.txt");
+
+    const headMessage = execFileSync("git", ["log", "-1", "--pretty=%B"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(headMessage).toContain("cli: node final-task.cjs");
+  });
+
+  it("run --all file-done commit with --reset-after commits after reset side effects and before lock release", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "roadmap.md";
+    const roadmapPath = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`).replace(/\\/g, "/");
+    const commitProbePath = path.join(workspace, "commit-observed-state.json");
+    const hookObserverPath = path.join(workspace, "pre-commit-observer.cjs");
+    const preCommitHookPath = path.join(workspace, ".git", "hooks", "pre-commit");
+    fs.writeFileSync(roadmapPath, "- [x] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    fs.writeFileSync(
+      hookObserverPath,
+      [
+        "const fs = require('node:fs');",
+        "const [probePath, observedLockPath, observedSourcePath] = process.argv.slice(2);",
+        "const observed = {",
+        "  lockExists: fs.existsSync(observedLockPath),",
+        "  sourceText: fs.readFileSync(observedSourcePath, 'utf-8'),",
+        "};",
+        "fs.writeFileSync(probePath, JSON.stringify(observed), 'utf-8');",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      preCommitHookPath,
+      [
+        "#!/bin/sh",
+        `node \"${hookObserverPath.replace(/\\/g, "/")}\" \"${commitProbePath.replace(/\\/g, "/")}\" \"${lockPath}\" \"${roadmapPath.replace(/\\/g, "/")}\"`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.chmodSync(preCommitHookPath, 0o755);
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "install pre-commit observer"], { cwd: workspace, stdio: "ignore" });
+    if (fs.existsSync(commitProbePath)) {
+      fs.rmSync(commitProbePath);
+    }
+
+    const result = await runCli([
+      "run",
+      sourceName,
+      "--all",
+      "--reset-after",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Committed:"))).toHaveLength(1);
+    expect(result.logs.some((line) => /Reset 3 checkbox(?:es)? in /.test(line) && line.includes(sourceName))).toBe(true);
+    expect(fs.existsSync(commitProbePath)).toBe(true);
+
+    const observed = JSON.parse(fs.readFileSync(commitProbePath, "utf-8")) as {
+      lockExists: boolean;
+      sourceText: string;
+    };
+    expect(observed.lockExists).toBe(true);
+    expect(observed.sourceText).toBe("- [ ] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n");
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Previously done\n- [ ] cli: echo one\n- [ ] cli: echo two\n");
+    expect(fs.existsSync(path.join(workspace, ".rundown", `${sourceName}.lock`))).toBe(false);
+  });
+
+  it("run --all file-done commit does not create a final commit when execution fails", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo ok\n- [ ] cli: exit 1\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const initialHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+
+    const finalHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(finalHeadSha).toBe(initialHeadSha);
+  });
+
+  it("run --all file-done commit does not create a final commit on verification failure", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] Write docs\n- [ ] Ship release\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const initialHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+      "--repair-attempts",
+      "0",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];const prompt=fs.readFileSync(p,'utf-8');if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK: verification mismatch');process.exit(0);}process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Verification failed"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+
+    const finalHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(finalHeadSha).toBe(initialHeadSha);
+  });
+
+  (process.env.CI || process.platform === "win32" ? it.skip : it)("run --all file-done commit does not create a final commit when interrupted", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: node -e \"setTimeout(() => process.exit(0), 5000)\"\n- [ ] cli: echo two\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const initialHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+
+    const runPromise = runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    try {
+      process.emit("SIGINT");
+    } catch {
+      // Handled by runCli's process.exit interception in test mode.
+    }
+
+    const result = await runPromise;
+
+    expect(result.code).toBe(130);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+
+    const finalHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(finalHeadSha).toBe(initialHeadSha);
+  });
+
+  it("run --all file-done commit does not create a final commit in dry-run mode", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const initialHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--dry-run",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+
+    const finalHeadSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim();
+    expect(finalHeadSha).toBe(initialHeadSha);
+  });
+
+  it("all alias file-done commit succeeds with exactly one final commit", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(roadmapPath, "- [ ] cli: echo one\n- [ ] cli: echo two\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "all",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo one"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: echo two"))).toBe(true);
+    expect(result.logs.filter((line) => line.includes("Committed:"))).toHaveLength(1);
+
+    const commitDeltaCount = Number(execFileSync("git", ["rev-list", "--count", "HEAD~1..HEAD"], {
+      cwd: workspace,
+      encoding: "utf-8",
+    }).trim());
+    expect(commitDeltaCount).toBe(1);
+  });
+
   it("run keeps exit code 0 when --on-complete exits non-zero", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
@@ -4488,6 +5018,83 @@ describe.sequential("CLI integration", () => {
 
     const roadmap = fs.readFileSync(roadmapPath, "utf-8");
     expect(roadmap).toContain("- [ ] cli: echo hello");
+  });
+
+  it("run --all file-done commit exits with 1 before execution when the worktree is dirty", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const otherFilePath = path.join(workspace, "src", "notes.txt");
+    const executedMarkerPath = path.join(workspace, "executed.txt");
+    fs.mkdirSync(path.dirname(otherFilePath), { recursive: true });
+    fs.writeFileSync(roadmapPath, "- [ ] cli: node -e \"require('node:fs').writeFileSync('executed.txt', 'ran')\"\n- [ ] cli: echo two\n", "utf-8");
+    fs.writeFileSync(otherFilePath, "before\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    // Simulate existing uncommitted changes before run starts.
+    fs.writeFileSync(otherFilePath, "after\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("--commit: working directory is not clean. Commit or stash changes before using --commit."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("Task checked:"))).toBe(false);
+    expect(fs.existsSync(executedMarkerPath)).toBe(false);
+
+    const roadmap = fs.readFileSync(roadmapPath, "utf-8");
+    expect(roadmap).toContain("- [ ] cli: node -e \"require('node:fs').writeFileSync('executed.txt', 'ran')\"");
+    expect(roadmap).toContain("- [ ] cli: echo two");
+  });
+
+  it("all alias file-done commit exits with 1 before execution when the worktree is dirty", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const otherFilePath = path.join(workspace, "src", "notes.txt");
+    const executedMarkerPath = path.join(workspace, "executed.txt");
+    fs.mkdirSync(path.dirname(otherFilePath), { recursive: true });
+    fs.writeFileSync(roadmapPath, "- [ ] cli: node -e \"require('node:fs').writeFileSync('executed.txt', 'ran')\"\n- [ ] cli: echo two\n", "utf-8");
+    fs.writeFileSync(otherFilePath, "before\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    // Simulate existing uncommitted changes before run starts.
+    fs.writeFileSync(otherFilePath, "after\n", "utf-8");
+
+    const result = await runCli([
+      "all",
+      "roadmap.md",
+      "--no-verify",
+      "--commit",
+      "--commit-mode",
+      "file-done",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("--commit: working directory is not clean. Commit or stash changes before using --commit."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
+    expect(result.logs.some((line) => line.includes("Task checked:"))).toBe(false);
+    expect(fs.existsSync(executedMarkerPath)).toBe(false);
+
+    const roadmap = fs.readFileSync(roadmapPath, "utf-8");
+    expect(roadmap).toContain("- [ ] cli: node -e \"require('node:fs').writeFileSync('executed.txt', 'ran')\"");
+    expect(roadmap).toContain("- [ ] cli: echo two");
   });
 
   it("run parses --commit-message without requiring --commit", async () => {

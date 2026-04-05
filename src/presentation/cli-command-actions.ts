@@ -10,11 +10,13 @@ import {
   parseRevertMethod,
   parseRounds,
   parseRunnerMode,
+  parseCommitMode,
   parsePlanDeep,
   parseScanCount,
   parseSortMode,
   resolveSharedWorkerRuntimeOptions,
   resolveShowAgentOutputOption,
+  resolveVerboseOption,
   resolveIgnoreCliBlockFlag,
   resolveNoRepairFlag,
   resolvePlanMarkdownFile,
@@ -126,6 +128,7 @@ export function createRunCommandAction({
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const commitMode = parseCommitMode(opts.commitMode as string | undefined);
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
@@ -143,6 +146,7 @@ export function createRunCommandAction({
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const cacheCliBlocks = Boolean(opts.cacheCliBlocks as boolean | undefined);
+    const verbose = resolveVerboseOption(opts);
 
     // Pass a normalized set of options to the domain application layer.
     return getApp().runTask({
@@ -163,6 +167,7 @@ export function createRunCommandAction({
       varsFileOption,
       cliTemplateVarArgs,
       commitAfterComplete,
+      commitMode,
       commitMessageTemplate,
       onCompleteCommand,
       onFailCommand,
@@ -176,6 +181,7 @@ export function createRunCommandAction({
       cliBlockTimeoutMs,
       ignoreCliBlock,
       cacheCliBlocks,
+      verbose,
     });
   };
 }
@@ -599,6 +605,7 @@ export function createDoCommandAction({
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
     const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const commitMode = "per-task" as const;
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
@@ -611,6 +618,7 @@ export function createDoCommandAction({
       throw new Error("--rounds requires --clean or both --redo and --reset-after.");
     }
     const cacheCliBlocks = Boolean(opts.cacheCliBlocks as boolean | undefined);
+    const verbose = resolveVerboseOption(opts);
 
     emitCliInfo(app, "Do phase 1/2: bootstrap (make)");
 
@@ -648,6 +656,7 @@ export function createDoCommandAction({
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
       commitAfterComplete,
+      commitMode,
       commitMessageTemplate,
       onCompleteCommand,
       onFailCommand,
@@ -661,6 +670,7 @@ export function createDoCommandAction({
       cliBlockTimeoutMs: sharedRuntimeOptions.cliBlockTimeoutMs,
       ignoreCliBlock: sharedRuntimeOptions.ignoreCliBlock,
       cacheCliBlocks,
+      verbose,
     });
   };
 }
@@ -734,6 +744,64 @@ export function createInitCommandAction({
 }: Pick<WorkerActionDependencies, "getApp">): () => CliActionResult {
   // Initialization has no runtime options beyond command invocation.
   return () => getApp().initProject();
+}
+
+/**
+ * Creates the `memory-validate` command action handler.
+ *
+ * The returned action maps CLI flags to the application `validateMemory` use case.
+ */
+export function createMemoryValidateCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (source: string, opts: CliOpts) => CliActionResult {
+  return (source: string, opts: CliOpts) => {
+    return getApp().validateMemory({
+      source,
+      fix: Boolean(opts.fix as boolean | undefined),
+      json: Boolean(opts.json as boolean | undefined),
+    });
+  };
+}
+
+/**
+ * Creates the `memory-view` command action handler.
+ *
+ * The returned action maps CLI flags to the application `viewMemory` use case.
+ */
+export function createMemoryViewCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (source: string, opts: CliOpts) => CliActionResult {
+  return (source: string, opts: CliOpts) => {
+    return getApp().viewMemory({
+      source,
+      json: Boolean(opts.json as boolean | undefined),
+      summary: Boolean(opts.summary as boolean | undefined),
+      all: Boolean(opts.all as boolean | undefined),
+    });
+  };
+}
+
+/**
+ * Creates the `memory-clean` command action handler.
+ *
+ * The returned action maps CLI flags to the application `cleanMemory` use case.
+ */
+export function createMemoryCleanCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (source: string, opts: CliOpts) => CliActionResult {
+  return (source: string, opts: CliOpts) => {
+    return getApp().cleanMemory({
+      source,
+      dryRun: Boolean(opts.dryRun as boolean | undefined),
+      orphans: Boolean(opts.orphans as boolean | undefined),
+      outdated: Boolean(opts.outdated as boolean | undefined),
+      olderThan: typeof opts.olderThan === "string" && opts.olderThan.trim().length > 0
+        ? opts.olderThan
+        : "90d",
+      all: Boolean(opts.all as boolean | undefined),
+      force: Boolean(opts.force as boolean | undefined),
+    });
+  };
 }
 
 /**

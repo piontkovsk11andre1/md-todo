@@ -48,6 +48,10 @@ interface IterationTaskContext {
   source: string;
   // File path used when resolving worker and template context.
   fileSource: string;
+  // Zero-based index of the current task within this run.
+  taskIndex: number;
+  // Cached total unchecked task count resolved before iteration starts.
+  totalTasks: number;
   // Related files that may be passed to worker execution.
   files: string[];
   // Parsed task selected for this iteration.
@@ -56,6 +60,9 @@ interface IterationTaskContext {
 
 interface IterationExecutionOptions {
   mode: RunnerMode;
+  verbose: boolean;
+  taskIndex: number;
+  totalTasks: number;
   keepArtifacts: boolean;
   printPrompt: boolean;
   dryRun: boolean;
@@ -211,19 +218,41 @@ export async function runTaskIteration(params: {
     emit,
   });
 
+  // Emit the per-task group boundary before any execution or validation occurs.
+  emit({
+    kind: "group-start",
+    label: formatTaskLabel(task),
+    counter: {
+      current: execution.taskIndex + 1,
+      total: execution.totalTasks,
+    },
+  });
+
+  if (execution.verbose) {
+    emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
+  }
+
+  const emitGroupFailure = (message: string): void => {
+    emit({ kind: "group-end", status: "failure", message });
+  };
+
   if (taskIntentDecision.intent === "memory-capture" && taskIntentDecision.hasEmptyPayload) {
+    const message = "Memory capture task requires payload text after the prefix (memory:, memorize:, remember:, inventory:).";
     emit({
       kind: "error",
-      message: "Memory capture task requires payload text after the prefix (memory:, memorize:, remember:, inventory:).",
+      message,
     });
+    emitGroupFailure(message);
     return { continueLoop: false, exitCode: 1 };
   }
 
   if (taskIntentDecision.intent === "tool-expansion" && taskIntentDecision.hasEmptyPayload) {
+    const message = "Tool task requires payload text after the prefix (<tool-name>:).";
     emit({
       kind: "error",
-      message: "Tool task requires payload text after the prefix (<tool-name>:).",
+      message,
     });
+    emitGroupFailure(message);
     return { continueLoop: false, exitCode: 1 };
   }
 
@@ -234,8 +263,6 @@ export async function runTaskIteration(params: {
       text: taskIntentDecision.normalizedTaskText,
     };
 
-  // Announce the next task before any execution or validation occurs.
-  emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
   const modifierProfile = extractPrefixModifierProfile(prefixChain);
   // Resolve the effective worker command using CLI, config, and task metadata.
   const resolvedWorker = resolveWorkerPatternForInvocation({
@@ -271,10 +298,12 @@ export async function runTaskIteration(params: {
     shouldVerify,
     onlyVerify,
   })) {
+    const message = "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.";
     emit({
       kind: "error",
-      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
+      message,
     });
+    emitGroupFailure(message);
     return { continueLoop: false, exitCode: 1 };
   }
 
@@ -296,6 +325,7 @@ export async function runTaskIteration(params: {
 
   // Resolve prompt templates and optional CLI blocks before dispatch.
   const sourceDir = dependencies.pathOperations.dirname(dependencies.pathOperations.resolve(task.file));
+  let promptPreparationFailureReason: string | null = null;
   const preparedPrompts = await prepareTaskPrompts({
     dependencies,
     task: taskForExecution,
@@ -323,11 +353,19 @@ export async function runTaskIteration(params: {
         execution.hideHookOutput,
         completion.extraTemplateVars,
       ),
-      async (failureMessage) => await lifecycle.failRun(1, "failed", failureMessage, 1),
+      async (failureMessage) => {
+        promptPreparationFailureReason = failureMessage;
+        return await lifecycle.failRun(1, "failed", failureMessage, 1);
+      },
     ),
   });
   // Respect early exits produced during prompt preparation.
   if ("earlyExitCode" in preparedPrompts) {
+    if (preparedPrompts.earlyExitCode !== 0) {
+      const failureMessage = promptPreparationFailureReason
+        ?? "Task failed during prompt preparation (exit " + preparedPrompts.earlyExitCode + ").";
+      emitGroupFailure(failureMessage);
+    }
     return { continueLoop: false, exitCode: preparedPrompts.earlyExitCode };
   }
 
@@ -346,12 +384,33 @@ export async function runTaskIteration(params: {
     resolvedWorkerCommand,
   });
   if (dryRunOrPrintPromptExitCode !== null) {
+    if (dryRunOrPrintPromptExitCode !== 0) {
+      emitGroupFailure(
+        "Task failed during dry-run or prompt rendering (exit "
+          + dryRunOrPrintPromptExitCode
+          + ").",
+      );
+    }
     return { continueLoop: false, exitCode: dryRunOrPrintPromptExitCode };
   }
 
   // Execution paths require a concrete artifact context for logging and storage.
   if (!state.artifactContext) {
-    throw new Error("Artifact context was not initialized before task execution.");
+    const message = "Artifact context was not initialized before task execution.";
+    emit({ kind: "error", message });
+    emitGroupFailure(message);
+    await afterTaskFailed(
+      dependencies,
+      taskForExecution,
+      source,
+      completion.onFailCommand,
+      execution.hideHookOutput,
+      completion.extraTemplateVars,
+    );
+    return {
+      continueLoop: false,
+      exitCode: await lifecycle.failRun(1, "failed", message, 1),
+    };
   }
   const selectedWorkerCommand = onlyVerify ? automationCommand : resolvedWorkerCommand;
   // Persist expanded prompt context for trace enrichment in later phases.
@@ -365,7 +424,9 @@ export async function runTaskIteration(params: {
 
   if (onlyVerify) {
     emit({ kind: "info", message: "Execution phase skipped; entering verification phase." });
-  } else {
+  }
+
+  if (execution.verbose) {
     emit({ kind: "info", message: "Starting execute phase..." });
   }
 
@@ -408,16 +469,9 @@ export async function runTaskIteration(params: {
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
   });
 
-  if (dispatchResult.kind === "ready-for-completion") {
-    if (dispatchResult.shouldVerify) {
-      emit({ kind: "info", message: "Execute phase finished; starting verify/repair phase..." });
-    } else {
-      emit({ kind: "info", message: "Execute phase finished; verification is disabled for this task." });
-    }
-  }
-
   // Convert execution failures into lifecycle failure handling with hooks.
   if (dispatchResult.kind === "execution-failed") {
+    emitGroupFailure(dispatchResult.executionFailureRunReason);
     return {
       continueLoop: false,
       exitCode: await handleDispatchFailure({
@@ -443,8 +497,16 @@ export async function runTaskIteration(params: {
     };
   }
 
+  if (execution.verbose) {
+    if (dispatchResult.shouldVerify) {
+      emit({ kind: "info", message: "Execute phase finished; starting verify/repair phase..." });
+    } else {
+      emit({ kind: "info", message: "Execute phase finished; verification is disabled for this task." });
+    }
+  }
+
   // Finish the iteration by running verification, repair, and completion hooks.
-  return completeTaskIteration({
+  const completionResult = await completeTaskIteration({
     dependencies,
     emit,
     state,
@@ -464,6 +526,7 @@ export async function runTaskIteration(params: {
     maxRepairAttempts: verifyConfig.maxRepairAttempts,
     allowRepair: verifyConfig.allowRepair,
     trace: execution.trace,
+    verbose: execution.verbose,
     cliBlockExecutor: prompts.cliBlockExecutor,
     cliExpansionEnabled: execution.cliExpansionEnabled,
     task: taskForExecution,
@@ -484,4 +547,10 @@ export async function runTaskIteration(params: {
     verificationFailureRunReason: dispatchResult.verificationFailureRunReason,
     toolExpansionInsertedChildCount: dispatchResult.toolExpansionInsertedChildCount,
   });
+
+  if (!completionResult.continueLoop && (completionResult.exitCode ?? 0) !== 0) {
+    emitGroupFailure(dispatchResult.verificationFailureRunReason);
+  }
+
+  return completionResult;
 }

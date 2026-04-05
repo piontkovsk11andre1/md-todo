@@ -1,5 +1,6 @@
 import type {
   GlobalOutputLogEntry,
+  GlobalOutputLogKind,
   GlobalOutputLogLevel,
   GlobalOutputLogStream,
 } from "../domain/global-output-log.js";
@@ -73,8 +74,12 @@ export function createLoggedOutputPort(options: CreateLoggedOutputPortOptions): 
 /**
  * Maps output event kinds to persisted log kind values.
  */
-function resolveLogKind(event: ApplicationOutputEvent): string {
+function resolveLogKind(event: ApplicationOutputEvent): GlobalOutputLogKind {
   switch (event.kind) {
+    case "group-start":
+      return "group-start";
+    case "group-end":
+      return "group-end";
     case "info":
       return "info";
     case "warn":
@@ -104,6 +109,8 @@ function resolveLogLevel(event: ApplicationOutputEvent): GlobalOutputLogLevel {
     case "error":
     case "stderr":
       return "error";
+    case "group-start":
+    case "group-end":
     case "info":
     case "success":
     case "progress":
@@ -122,6 +129,8 @@ function resolveLogStream(event: ApplicationOutputEvent): GlobalOutputLogStream 
     case "error":
     case "stderr":
       return "stderr";
+    case "group-start":
+    case "group-end":
     case "info":
     case "warn":
     case "success":
@@ -138,6 +147,12 @@ function resolveLogStream(event: ApplicationOutputEvent): GlobalOutputLogStream 
  */
 function resolveLogMessage(event: ApplicationOutputEvent): string {
   switch (event.kind) {
+    case "group-start": {
+      const counter = event.counter ? `[${event.counter.current}/${event.counter.total}] ` : "";
+      return `${counter}${event.label}`;
+    }
+    case "group-end":
+      return event.message ? `${event.status} - ${event.message}` : event.status;
     case "info":
     case "warn":
     case "error":

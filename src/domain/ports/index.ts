@@ -57,8 +57,23 @@ export type { SourceResolverPort } from "./source-resolver-port.js";
 /** Source-local memory metadata resolution contract. */
 export type { MemoryMetadata, MemoryResolverPort } from "./memory-resolver-port.js";
 
+/** Source-local memory body and index read contracts. */
+export type { MemoryFileInfo, MemoryReaderPort } from "./memory-reader-port.js";
+
+/** Source-local memory cleanup result contract. */
+export type { MemoryCleanResult } from "./memory-clean-port.js";
+
+/** Source-local memory validation issue and result contracts. */
+export type {
+  MemoryIssue,
+  MemoryIssueSeverity,
+  MemoryValidationResult,
+} from "./memory-validation-port.js";
+
 /** Source-local memory persistence contract for body and index writes. */
 export type {
+  MemoryIndexEntry,
+  MemoryIndexOrigin,
   MemoryWriteFailure,
   MemoryWriteInput,
   MemoryWriteSuccess,

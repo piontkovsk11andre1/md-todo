@@ -15,6 +15,13 @@ type MemoryIndexEntry = {
   updatedAt?: unknown;
   lastPrefix?: unknown;
   entryCount?: unknown;
+  origin?: unknown;
+};
+
+type MemoryIndexOrigin = {
+  taskText: string;
+  taskLine: number;
+  sourceHash?: string;
 };
 
 type MemoryIndex = Record<string, MemoryIndexEntry | string>;
@@ -75,12 +82,14 @@ export function createMemoryWriterAdapter(
         existingEntry,
         output: normalizedOutput,
         capturePrefix: input.capturePrefix,
+        originTask: input.originTask,
       });
       nextIndex[canonicalSourcePath] = {
         summary: indexEntry.summary,
         updatedAt: indexEntry.updatedAt,
         lastPrefix: indexEntry.lastPrefix,
         entryCount: indexEntry.entryCount,
+        origin: indexEntry.origin,
       };
 
       const indexWriteResult = writeJsonAtomically({
@@ -283,21 +292,94 @@ function composeMemoryIndexEntry(params: {
   existingEntry: MemoryIndexEntry | string | undefined;
   output: string;
   capturePrefix: string | undefined;
+  originTask: MemoryWriteInput["originTask"];
 }): {
   summary: string;
   updatedAt: string;
   lastPrefix?: string;
   entryCount: number;
+  origin?: MemoryIndexOrigin;
 } {
-  const { existingEntry, output, capturePrefix } = params;
+  const { existingEntry, output, capturePrefix, originTask } = params;
   const normalizedPrefix = normalizeCapturePrefix(capturePrefix);
+  const normalizedOrigin = normalizeOriginTask(originTask) ?? readPreviousOrigin(existingEntry);
 
   return {
     summary: summarizeMemoryOutput(output),
     updatedAt: new Date().toISOString(),
     lastPrefix: normalizedPrefix,
     entryCount: readPreviousEntryCount(existingEntry) + 1,
+    origin: normalizedOrigin,
   };
+}
+
+function normalizeOriginTask(
+  originTask: MemoryWriteInput["originTask"],
+): MemoryIndexOrigin | undefined {
+  if (!originTask) {
+    return undefined;
+  }
+
+  const taskText = originTask.text.trim();
+  if (taskText.length === 0) {
+    return undefined;
+  }
+
+  const taskLine = originTask.line;
+  if (!Number.isFinite(taskLine)) {
+    return undefined;
+  }
+
+  const normalizedTaskLine = Math.floor(taskLine);
+  if (normalizedTaskLine <= 0) {
+    return undefined;
+  }
+
+  return {
+    taskText,
+    taskLine: normalizedTaskLine,
+  };
+}
+
+function readPreviousOrigin(existingEntry: MemoryIndexEntry | string | undefined): MemoryIndexOrigin | undefined {
+  if (!existingEntry || typeof existingEntry !== "object") {
+    return undefined;
+  }
+
+  const origin = existingEntry.origin;
+  if (!origin || typeof origin !== "object") {
+    return undefined;
+  }
+
+  const originRecord = origin as {
+    taskText?: unknown;
+    taskLine?: unknown;
+    sourceHash?: unknown;
+  };
+
+  if (typeof originRecord.taskText !== "string") {
+    return undefined;
+  }
+  if (typeof originRecord.taskLine !== "number" || !Number.isFinite(originRecord.taskLine)) {
+    return undefined;
+  }
+
+  const normalizedTaskText = originRecord.taskText.trim();
+  const normalizedTaskLine = Math.floor(originRecord.taskLine);
+  if (normalizedTaskText.length === 0 || normalizedTaskLine <= 0) {
+    return undefined;
+  }
+
+  const normalizedOrigin: MemoryIndexOrigin = {
+    taskText: normalizedTaskText,
+    taskLine: normalizedTaskLine,
+  };
+
+  if (typeof originRecord.sourceHash === "string" && originRecord.sourceHash.length > 0) {
+    normalizedOrigin.sourceHash = originRecord.sourceHash;
+  }
+
+  return normalizedOrigin;
 }
 
 function readPreviousEntryCount(existingEntry: MemoryIndexEntry | string | undefined): number {

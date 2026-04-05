@@ -384,7 +384,16 @@ export async function dispatchTaskExecution(params: {
     );
     emitExecutionWorkerOutput(runResult.stdout, runResult.stderr);
 
-    if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+    if (runResult.exitCode === null) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage: "Tool expansion worker execution was interrupted before completion.",
+        executionFailureRunReason: "Tool expansion worker execution was interrupted.",
+        executionFailureExitCode: null,
+      };
+    }
+
+    if (runResult.exitCode !== 0) {
       return {
         kind: "execution-failed",
         executionFailureMessage: "Tool expansion worker exited with code " + runResult.exitCode + ".",
@@ -417,7 +426,7 @@ export async function dispatchTaskExecution(params: {
   }
 
   // Default branch executes the configured worker command for standard tasks.
-  emit({ kind: "info", message: "Running: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + "]" });
+  emit({ kind: "info", message: resolvedWorkerCommand.join(" ") + " [" + mode + "]" });
   const executePhaseTrace = traceRunSession.beginPhase("execute", resolvedWorkerCommand);
   traceRunSession.emitPromptMetrics(prompt, expandedContextBefore, "execute.md");
   const runResult = await dependencies.workerExecutor.runWorker({
@@ -460,7 +469,16 @@ export async function dispatchTaskExecution(params: {
   }
 
   // Non-zero worker exit codes are treated as execution failures.
-  if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+  if (runResult.exitCode === null) {
+    return {
+      kind: "execution-failed",
+      executionFailureMessage: "Worker execution was interrupted before completion.",
+      executionFailureRunReason: "Worker execution was interrupted.",
+      executionFailureExitCode: null,
+    };
+  }
+
+  if (runResult.exitCode !== 0) {
     return {
       kind: "execution-failed",
       executionFailureMessage: "Worker exited with code " + runResult.exitCode + ".",
@@ -472,6 +490,8 @@ export async function dispatchTaskExecution(params: {
   if (isMemoryCaptureTask) {
     const persistenceResult = persistMemoryCaptureOutput({
       sourcePath: task.file,
+      taskText: task.text,
+      taskLine: task.line,
       workerOutput: runResult.stdout,
       memoryCapturePrefix,
       dependencies,
@@ -608,7 +628,16 @@ function runIncludedFile(params: {
 
     emitExecutionWorkerOutput(includeRunResult.stdout, includeRunResult.stderr);
 
-    if (includeRunResult.exitCode !== 0 && includeRunResult.exitCode !== null) {
+    if (includeRunResult.exitCode === null) {
+      return {
+        ok: false as const,
+        message: "Included file execution was interrupted before completion: " + includedFile,
+        reason: "Included file execution was interrupted.",
+        exitCode: null,
+      };
+    }
+
+    if (includeRunResult.exitCode !== 0) {
       return {
         ok: false as const,
         message: "Included file execution failed with code " + includeRunResult.exitCode + ": " + includedFile,
@@ -665,12 +694,14 @@ function normalizeIncludePath(filePath: string): string {
 
 function persistMemoryCaptureOutput(params: {
   sourcePath: string;
+  taskText: string;
+  taskLine: number;
   workerOutput: string;
   memoryCapturePrefix?: "memory" | "memorize" | "remember" | "inventory";
   dependencies: RunTaskDependencies;
   emit: EmitFn;
 }): { ok: true } | { ok: false; message: string; reason: string } {
-  const { sourcePath, workerOutput, memoryCapturePrefix, dependencies, emit } = params;
+  const { sourcePath, taskText, taskLine, workerOutput, memoryCapturePrefix, dependencies, emit } = params;
   const normalizedOutput = workerOutput.trim();
   if (normalizedOutput.length === 0) {
     return {
@@ -692,6 +723,10 @@ function persistMemoryCaptureOutput(params: {
     sourcePath,
     workerOutput: normalizedOutput,
     capturePrefix: memoryCapturePrefix,
+    originTask: {
+      text: taskText,
+      line: taskLine,
+    },
   });
   if (!writeResult.ok) {
     if (writeResult.error.warningMessage) {

@@ -60,6 +60,10 @@ export function createMemoryHandler(memoryWriter?: MemoryWriterPort): ToolHandle
       sourcePath: context.task.file,
       workerOutput: normalizedOutput,
       capturePrefix: context.payload,
+      originTask: {
+        text: context.task.text,
+        line: context.task.line,
+      },
     });
 
     if (!writeResult.ok) {

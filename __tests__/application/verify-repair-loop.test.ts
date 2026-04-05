@@ -295,11 +295,11 @@ describe("verify-repair-loop output", () => {
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 1 failed: assertion failed in attempt 1",
+      message: "  Repair attempt 1 failed: assertion failed in attempt 1",
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 2 failed: type mismatch in payload.id",
+      message: "  Repair attempt 2 failed: type mismatch in payload.id",
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
@@ -359,15 +359,15 @@ describe("verify-repair-loop output", () => {
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 1 failed: attempt 1 failed: lint errors",
+      message: "  Repair attempt 1 failed: attempt 1 failed: lint errors",
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 2 failed: attempt 2 failed: type mismatch",
+      message: "  Repair attempt 2 failed: attempt 2 failed: type mismatch",
     });
     expect(output.emit).not.toHaveBeenCalledWith({
       kind: "warn",
-      message: expect.stringContaining("Repair attempt 3 failed:"),
+      message: expect.stringContaining("  Repair attempt 3 failed:"),
     });
   });
 
@@ -439,7 +439,7 @@ describe("verify-repair-loop output", () => {
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 1 failed: type mismatch in payload.id",
+      message: "  Repair attempt 1 failed: type mismatch in payload.id",
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
@@ -569,7 +569,7 @@ describe("verify-repair-loop output", () => {
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Repair attempt 1 failed: still failing post-repair",
+      message: "  Repair attempt 1 failed: still failing post-repair",
     });
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",

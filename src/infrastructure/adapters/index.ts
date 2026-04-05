@@ -91,6 +91,10 @@ export { createMemoryResolverAdapter } from "./memory-resolver-adapter.js";
  */
 export { createMemoryWriterAdapter } from "./memory-writer-adapter.js";
 /**
+ * Creates the source-local memory reader adapter.
+ */
+export { createMemoryReaderAdapter } from "./memory-reader-adapter.js";
+/**
  * Creates the project tool template resolver adapter.
  */
 export { createToolResolverAdapter } from "./tool-resolver-adapter.js";

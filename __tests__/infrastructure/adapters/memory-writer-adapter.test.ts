@@ -111,6 +111,265 @@ describe("createMemoryWriterAdapter", () => {
     expect(typeof entry?.updatedAt).toBe("string");
   });
 
+  it("populates origin metadata when origin task input is provided", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Captured origin metadata",
+      originTask: {
+        text: "memory: capture deployment notes",
+        line: 42,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(result.value.memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin?.taskText).toBe("memory: capture deployment notes");
+    expect(entry?.origin?.taskLine).toBe(42);
+  });
+
+  it("normalizes origin metadata by trimming task text and flooring line numbers", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Captured origin metadata",
+      originTask: {
+        text: "  memory: normalize origin   ",
+        line: 42.9,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(result.value.memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin?.taskText).toBe("memory: normalize origin");
+    expect(entry?.origin?.taskLine).toBe(42);
+  });
+
+  it("does not write origin metadata when origin task input is invalid", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Captured without valid origin",
+      originTask: {
+        text: "   ",
+        line: 0,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(result.value.memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin).toBeUndefined();
+  });
+
+  it("replaces prior origin metadata when a new valid origin task is provided", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const memoryDir = path.join(rootDir, ".rundown");
+    const memoryIndexPath = path.join(memoryDir, "memory-index.json");
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(memoryIndexPath, JSON.stringify({
+      [path.resolve(sourceFile)]: {
+        summary: "Previous summary",
+        updatedAt: new Date().toISOString(),
+        entryCount: 1,
+        origin: {
+          taskText: "memory: previous origin",
+          taskLine: 10,
+          sourceHash: "prev-hash",
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Captured with new origin",
+      originTask: {
+        text: "memory: new origin",
+        line: 24,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+        sourceHash?: string;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin?.taskText).toBe("memory: new origin");
+    expect(entry?.origin?.taskLine).toBe(24);
+    expect(entry?.origin?.sourceHash).toBeUndefined();
+  });
+
+  it("keeps prior origin metadata when provided origin task is invalid", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const memoryDir = path.join(rootDir, ".rundown");
+    const memoryIndexPath = path.join(memoryDir, "memory-index.json");
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(memoryIndexPath, JSON.stringify({
+      [path.resolve(sourceFile)]: {
+        summary: "Previous summary",
+        updatedAt: new Date().toISOString(),
+        entryCount: 1,
+        origin: {
+          taskText: "memory: previous origin",
+          taskLine: 10,
+          sourceHash: "prev-hash",
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Captured with invalid origin",
+      originTask: {
+        text: "   ",
+        line: 50,
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+        sourceHash?: string;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin?.taskText).toBe("memory: previous origin");
+    expect(entry?.origin?.taskLine).toBe(10);
+    expect(entry?.origin?.sourceHash).toBe("prev-hash");
+  });
+
+  it("preserves existing origin metadata when current write has no origin task", () => {
+    const rootDir = makeTempDir();
+    const sourceFile = path.join(rootDir, "tasks.md");
+    fs.writeFileSync(sourceFile, "- [ ] memory: capture\n", "utf-8");
+
+    const memoryDir = path.join(rootDir, ".rundown");
+    const memoryIndexPath = path.join(memoryDir, "memory-index.json");
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(memoryIndexPath, JSON.stringify({
+      [path.resolve(sourceFile)]: {
+        summary: "Previous summary",
+        updatedAt: new Date().toISOString(),
+        entryCount: 1,
+        origin: {
+          taskText: "memory: existing origin",
+          taskLine: 12,
+          sourceHash: "abc123",
+        },
+      },
+    }, null, 2), "utf-8");
+
+    const writer = createMemoryWriterAdapter({
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const result = writer.write({
+      sourcePath: sourceFile,
+      workerOutput: "Fresh summary",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+
+    const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, {
+      origin?: {
+        taskText?: string;
+        taskLine?: number;
+        sourceHash?: string;
+      };
+    }>;
+    const entry = index[path.resolve(sourceFile)];
+    expect(entry?.origin?.taskText).toBe("memory: existing origin");
+    expect(entry?.origin?.taskLine).toBe(12);
+    expect(entry?.origin?.sourceHash).toBe("abc123");
+  });
+
   it("appends new memory entries without destroying existing memory body", () => {
     const rootDir = makeTempDir();
     const sourceFile = path.join(rootDir, "tasks.md");

@@ -19,6 +19,21 @@ export type GlobalOutputLogLevel = "info" | "warn" | "error";
 export type GlobalOutputLogStream = "stdout" | "stderr";
 
 /**
+ * Event kinds captured in the global output log payload.
+ */
+export type GlobalOutputLogKind =
+  | "info"
+  | "warn"
+  | "error"
+  | "success"
+  | "progress"
+  | "task"
+  | "text"
+  | "stderr"
+  | "group-start"
+  | "group-end";
+
+/**
  * Structured representation of a single global output log line.
  */
 export interface GlobalOutputLogEntry {
@@ -29,7 +44,7 @@ export interface GlobalOutputLogEntry {
   // Process stream that produced the message.
   stream: GlobalOutputLogStream;
   // Event discriminator for downstream classification.
-  kind: string;
+  kind: GlobalOutputLogKind;
   // Human-readable output text after capture.
   message: string;
   // Executable name or command path that produced the output.
@@ -70,7 +85,7 @@ export function sanitizeGlobalOutputLogEntry(entry: GlobalOutputLogEntry): Globa
     ts: stripAnsi(entry.ts),
     level: entry.level,
     stream: entry.stream,
-    kind: stripAnsi(entry.kind),
+    kind: stripAnsi(entry.kind) as GlobalOutputLogKind,
     message: stripAnsi(entry.message),
     command: stripAnsi(entry.command),
     argv: entry.argv.map((arg) => stripAnsi(arg)),

@@ -30,7 +30,7 @@ export interface CompleteTaskIterationState {
   // Trace writer bound to the current artifact context.
   traceWriter: TraceWriterPort;
   // Deferred commit payload used when commit happens after the run completes.
-  deferredCommitContext: { task: Task; source: string } | null;
+  deferredCommitContext: { task: Task; source: string; artifactContext: ArtifactContext } | null;
   // Number of tasks completed in the current run session.
   tasksCompleted: number;
   // Marks whether the surrounding run loop has finished.
@@ -75,6 +75,7 @@ export async function completeTaskIteration(params: {
   maxRepairAttempts: number;
   allowRepair: boolean;
   trace: boolean;
+  verbose: boolean;
   cliBlockExecutor: CommandExecutor;
   cliExpansionEnabled: boolean;
   task: Task;
@@ -114,6 +115,7 @@ export async function completeTaskIteration(params: {
     maxRepairAttempts,
     allowRepair,
     trace,
+    verbose,
     cliBlockExecutor,
     cliExpansionEnabled,
     task,
@@ -161,6 +163,7 @@ export async function completeTaskIteration(params: {
         executionEnv,
         artifactContext,
         trace,
+        verbose,
         cliBlockExecutor,
         cliExecutionOptions: cliExecutionOptionsWithVerificationTemplateFailureAbort,
         cliExpansionEnabled,
@@ -210,6 +213,7 @@ export async function completeTaskIteration(params: {
   // Mark the task checkbox in the markdown source once iteration checks pass.
   checkTaskUsingFileSystem(task, dependencies.fileSystem);
   emit({ kind: "success", message: "Task checked: " + task.text });
+  emit({ kind: "group-end", status: "success" });
 
   // Tool expansions that inserted children should continue so newly inserted
   // subitems can be selected and executed before ending the run.
@@ -219,16 +223,22 @@ export async function completeTaskIteration(params: {
     return { continueLoop: true };
   }
 
+  const shouldDeferCommit = commitAfterComplete && deferCommitUntilPostRun;
+
   // Save commit context when commits are deferred to post-run lifecycle handling.
-  if (deferCommitUntilPostRun) {
-    state.deferredCommitContext = { task, source: sourceText };
+  if (shouldDeferCommit) {
+    state.deferredCommitContext = {
+      task,
+      source: sourceText,
+      artifactContext,
+    };
   }
   // Run completion hooks and optional immediate commit.
   const taskCompletionExtra = await afterTaskComplete(
     dependencies,
     task,
     sourceText,
-    commitAfterComplete && !deferCommitUntilPostRun,
+    commitAfterComplete && !shouldDeferCommit,
     commitMessageTemplate,
     onCompleteCommand,
     hideHookOutput,

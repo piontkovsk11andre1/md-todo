@@ -32,6 +32,10 @@ export type ApplicationOutputEvent =
   | { kind: "success"; message: string }
   // Structured progress event for in-flight lifecycle updates.
   | { kind: "progress"; progress: ApplicationProgressPayload }
+  // Marks the start of a grouped output block.
+  | { kind: "group-start"; label: string; counter?: { current: number; total: number } }
+  // Marks the end of a grouped output block.
+  | { kind: "group-end"; status: "success" | "failure"; message?: string }
   // Structured task payload for planner/task-list rendering.
   | { kind: "task"; task: Task; blocked?: boolean; children?: Task[]; subItems?: SubItem[] }
   // Raw text line intended for standard application output.

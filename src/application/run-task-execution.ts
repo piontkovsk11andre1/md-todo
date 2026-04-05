@@ -14,6 +14,7 @@ import {
   checkTaskUsingFileSystem,
   maybeResetFileCheckboxes,
 } from "./checkbox-operations.js";
+import { parseTasks } from "../domain/parser.js";
 import {
   afterTaskComplete,
   finalizeRunArtifacts,
@@ -122,6 +123,7 @@ export interface RunTaskOptions {
   varsFileOption: string | boolean | undefined;
   cliTemplateVarArgs: string[];
   commitAfterComplete: boolean;
+  commitMode: "per-task" | "file-done";
   commitMessageTemplate?: string;
   onCompleteCommand?: string;
   runAll: boolean;
@@ -137,6 +139,7 @@ export interface RunTaskOptions {
   cliBlockTimeoutMs?: number;
   ignoreCliBlock: boolean;
   cacheCliBlocks?: boolean;
+  verbose: boolean;
 }
 
 /**
@@ -175,6 +178,7 @@ export function createRunTaskExecution(
       varsFileOption,
       cliTemplateVarArgs,
       commitAfterComplete,
+      commitMode,
       commitMessageTemplate,
       onCompleteCommand,
       runAll,
@@ -190,6 +194,7 @@ export function createRunTaskExecution(
       cliBlockTimeoutMs,
       ignoreCliBlock,
       cacheCliBlocks,
+      verbose,
     } = options;
 
     const cliBlockExecutor = cacheCliBlocks
@@ -300,10 +305,13 @@ export function createRunTaskExecution(
     let artifactsFinalized = false;
     let runFailed = false;
     let unexpectedError: unknown;
+    let completedAllRoundsSuccessfully = false;
     let resolvedFiles: string[] = [];
     const pendingPreRunResetTraceEvents: Array<{ file: string; resetCount: number; dryRun: boolean }> = [];
-    // Defer commit until all post-run reset actions complete when required.
-    const deferCommitUntilPostRun = commitAfterComplete && resetAfter;
+    // Defer commit until post-run lifecycle when reset-after is active or when
+    // run-all commit timing is explicitly configured to commit once at file end.
+    const deferCommitUntilPostRun = commitAfterComplete
+      && (resetAfter || (effectiveRunAll && commitMode === "file-done"));
     let currentRound = 1;
     // Use an injectable timestamp provider for prompt/template rendering.
     const nowIso = (): string => new Date().toISOString();
@@ -456,12 +464,23 @@ export function createRunTaskExecution(
         }
       }
 
-      const runTaskLoop = async (
-        files: string[],
-        emitCompletionMessage: boolean,
-      ): Promise<number> => {
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
+    const runTaskLoop = async (
+      files: string[],
+      emitCompletionMessage: boolean,
+    ): Promise<number> => {
+      const totalTasks = files.reduce((count, file) => {
+        if (!dependencies.fileSystem.exists(file)) {
+          return count;
+        }
+
+        const source = dependencies.fileSystem.readText(file);
+        const uncheckedTasks = parseTasks(source, file).filter((task) => !task.checked).length;
+        return count + uncheckedTasks;
+      }, 0);
+      let currentTaskIndex = 0;
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
           // Select the next available task using the configured sort strategy.
           const result = dependencies.taskSelector.selectNextTask(files, sortMode);
           if (!result) {
@@ -484,11 +503,16 @@ export function createRunTaskExecution(
             context: {
               source,
               fileSource: result.source,
+              taskIndex: currentTaskIndex,
+              totalTasks,
               files,
               task: result.task,
             },
             execution: {
               mode,
+              verbose,
+              taskIndex: currentTaskIndex,
+              totalTasks,
               keepArtifacts,
               printPrompt,
               dryRun,
@@ -543,6 +567,7 @@ export function createRunTaskExecution(
               resetArtifacts,
             },
           });
+          currentTaskIndex++;
 
           if (!iterationResult.continueLoop) {
             return iterationResult.exitCode ?? 0;
@@ -618,6 +643,7 @@ export function createRunTaskExecution(
         });
       }
 
+      completedAllRoundsSuccessfully = true;
       return 0;
     } catch (error) {
       // Preserve unexpected errors so finalization can emit failed trace status.
@@ -638,9 +664,10 @@ export function createRunTaskExecution(
         }
       }
 
-      // Run deferred commit after all iterations and post-run reset actions finish.
-      if (state.deferredCommitContext && !runFailed) {
-        await afterTaskComplete(
+      // Run deferred commit after all iterations and post-run reset actions finish,
+      // but only when the full run completed successfully.
+      if (state.deferredCommitContext && completedAllRoundsSuccessfully && !runFailed && !unexpectedError) {
+        const deferredCompletionExtra = await afterTaskComplete(
           dependencies,
           state.deferredCommitContext.task,
           state.deferredCommitContext.source,
@@ -650,6 +677,14 @@ export function createRunTaskExecution(
           hideHookOutput,
           extraTemplateVars,
         );
+
+        if (deferredCompletionExtra) {
+          dependencies.artifactStore.finalize(state.deferredCommitContext.artifactContext, {
+            status: "completed",
+            preserve: keepArtifacts,
+            extra: deferredCompletionExtra,
+          });
+        }
       }
 
       // Best-effort lock cleanup to avoid stale lock files after command exit.

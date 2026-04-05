@@ -27,6 +27,7 @@ export interface SharedWorkerRuntimeOptions {
 const SORT_MODES: readonly SortMode[] = ["name-sort", "none", "old-first", "new-first"];
 // Supported restore mechanisms for rollback-related commands.
 const REVERT_METHODS = ["revert", "reset"] as const;
+const COMMIT_MODES = ["per-task", "file-done"] as const;
 // Default number of plan files scanned when no explicit value is provided.
 const DEFAULT_PLAN_SCAN_COUNT = 3;
 // Default additional nested plan depth passes.
@@ -405,6 +406,13 @@ export function parseRevertMethod(value: string | undefined): "revert" | "reset"
 }
 
 /**
+ * Parses commit timing mode used by run-style commands.
+ */
+export function parseCommitMode(value: string | undefined): "per-task" | "file-done" {
+  return parseEnumOption(value, "commit-mode", COMMIT_MODES, "per-task");
+}
+
+/**
  * Normalizes optional string input and treats blank values as undefined.
  */
 export function normalizeOptionalString(value: string | string[] | boolean | undefined): string | undefined {
@@ -456,4 +464,12 @@ export function resolveIgnoreCliBlockFlag(opts: Record<string, string | string[]
 export function resolveShowAgentOutputOption(opts: Record<string, string | string[] | boolean>): boolean {
   const showAgentOutputOpt = opts.showAgentOutput as boolean | undefined;
   return showAgentOutputOpt === true;
+}
+
+/**
+ * Resolves the verbose-output visibility option.
+ */
+export function resolveVerboseOption(opts: Record<string, string | string[] | boolean>): boolean {
+  const verboseOpt = opts.verbose as boolean | undefined;
+  return verboseOpt === true;
 }

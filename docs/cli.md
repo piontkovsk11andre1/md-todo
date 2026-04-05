@@ -165,6 +165,11 @@ Revertable run requirements:
 - The original run used `--keep-artifacts` so `run.json` still exists.
 - The original run metadata includes `extra.commitSha`.
 
+Commit timing affects revert granularity:
+
+- `--commit-mode per-task` (default) records one commit per successful task, so revert can target task-level completions.
+- `--commit-mode file-done` (effective run-all only) records one final commit for the completed run, so revert targets that run-level completion commit rather than each intermediate task.
+
 Options:
 
 | Option | Description | Default |
@@ -861,6 +866,7 @@ These options are available on `rundown run`.
 | Option | Description | Default |
 |---|---|---|
 | `--commit` | Auto-commit current worktree changes after successful completion (excluding transient `.rundown/runs` artifacts). | off |
+| `--commit-mode <per-task|file-done>` | Commit timing for `--commit`: `per-task` (default) or `file-done` (effective run-all only via `--all`/`all`/`--redo`/`--clean`). | `per-task` |
 | `--commit-message <template>` | Commit message template (supports `{{task}}` and `{{file}}`). | `rundown: complete "{{task}}" in {{file}}` |
 | `--on-complete <command>` | Run a shell command after successful task completion. | unset |
 | `--on-fail <command>` | Run a shell command when a task fails (execution or verification failure). | unset |
@@ -873,20 +879,25 @@ These options are available on `rundown run`.
 
 `--commit-message` is only applied when `--commit` is enabled.
 
-When `--commit` and `--reset-after` are combined, rundown applies post-run reset first, then commits so git captures the clean (all-unchecked) state.
+`--commit-mode` is only applied when `--commit` is enabled.
+
+`--commit-mode file-done` is only valid in effective run-all flows (`run --all`, `all`, or implicit-all via `--redo`/`--clean`).
+
+When `--commit` and `--reset-after` are combined, rundown applies post-run reset first, then performs the commit so git captures the clean (all-unchecked) state. In run-all with `--commit-mode file-done`, this is the deferred final commit.
 
 Examples:
 
 ```bash
 rundown run docs/todos/phase-3.md --commit -- opencode run
 rundown run docs/todos/phase-3.md --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
+rundown run docs/todos/phase-3.md --all --commit --commit-mode file-done -- opencode run
 rundown run docs/todos/phase-3.md --on-complete "git push" -- opencode run
 rundown run docs/todos/phase-3.md --commit --on-complete "npm run release:notes" -- opencode run
 rundown run docs/todos/phase-3.md --on-fail "node scripts/notify-failure.js" -- opencode run
 rundown run docs/todos/phase-3.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
 ```
 
-`--commit` stages and commits current worktree changes (excluding transient `.rundown/runs` artifacts), with a structured message tied to the completed task:
+`--commit` stages and commits current worktree changes (excluding transient `.rundown/runs` artifacts), with a structured message tied to the completed task context:
 
 ```
 rundown: complete "Rewrite the README intro" in docs/README.md
@@ -919,12 +930,19 @@ For `run`, source-file locks remain held for the full task lifecycle, including 
 - All tasks are complete — exits `0`.
 - A task fails execution or verification — exits `1` or `2`.
 
-`--on-complete` fires after each successful task. `--on-fail` fires once on the task that caused the loop to stop. `--commit` applies after each task.
+`--on-complete` fires after each successful task. `--on-fail` fires once on the task that caused the loop to stop.
+
+`--commit` timing in run-all mode:
+
+- `--commit --commit-mode per-task` (default): commit after each successful task.
+- `--commit --commit-mode file-done`: one deferred final commit after full successful run completion.
+- For `file-done`, deferred commit runs after `--reset-after` (if set) and before lock release.
+- For `file-done`, no final commit is attempted on early termination (execution failure, verification failure, interruption, cancellation) or on `--dry-run`.
 
 Example:
 
 ```bash
-rundown run roadmap.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
+rundown run roadmap.md --all --commit --commit-mode file-done --on-fail "node scripts/alert.js" -- opencode run
 ```
 
 ### Checkbox reset flags

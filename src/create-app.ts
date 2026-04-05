@@ -1,5 +1,17 @@
 import { createRunTask, type RunTaskOptions } from "./application/run-task.js";
 import { createDiscussTask, type DiscussTaskOptions } from "./application/discuss-task.js";
+import {
+  createViewMemory,
+  type ViewMemoryOptions,
+} from "./application/view-memory.js";
+import {
+  createValidateMemory,
+  type ValidateMemoryOptions,
+} from "./application/validate-memory.js";
+import {
+  createCleanMemory,
+  type CleanMemoryOptions,
+} from "./application/clean-memory.js";
 import { createPlanTask, type PlanTaskOptions as PlanTaskUseCaseOptions } from "./application/plan-task.js";
 import { createResearchTask, type ResearchTaskOptions as ResearchTaskUseCaseOptions } from "./application/research-task.js";
 import { createListTasks, type ListTasksOptions } from "./application/list-tasks.js";
@@ -24,9 +36,10 @@ import type {
   FileLock,
   FileSystem,
   GitClient,
+  MemoryReaderPort,
   MemoryResolverPort,
-  ToolResolverPort,
   MemoryWriterPort,
+  ToolResolverPort,
   ProcessRunner,
   PathOperationsPort,
   SourceResolverPort,
@@ -54,8 +67,9 @@ import {
   createFanoutTraceWriter,
   createCliBlockExecutor,
   createJsonlTraceWriter,
-  createMemoryWriterAdapter,
+  createMemoryReaderAdapter,
   createMemoryResolverAdapter,
+  createMemoryWriterAdapter,
   createToolResolverAdapter,
   createNodeFileSystem,
   createNoopTraceWriter,
@@ -81,6 +95,9 @@ type ReverifyTaskCommandOptions = Omit<ReverifyTaskOptions, "varsFileOption" | "
 export type App = {
   runTask: (options: RunTaskOptions) => Promise<number>;
   discussTask: (options: DiscussTaskOptions) => Promise<number>;
+  viewMemory: (options: ViewMemoryOptions) => Promise<number>;
+  validateMemory: (options: ValidateMemoryOptions) => Promise<number>;
+  cleanMemory: (options: CleanMemoryOptions) => Promise<number>;
   reverifyTask: (options: ReverifyTaskCommandOptions) => Promise<number>;
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
@@ -154,6 +171,7 @@ export interface AppPorts {
   workingDirectory: WorkingDirectoryPort;
   pathOperations: PathOperationsPort;
   memoryResolver: MemoryResolverPort;
+  memoryReader: MemoryReaderPort;
   toolResolver: ToolResolverPort;
   memoryWriter?: MemoryWriterPort;
   workerConfigPort: WorkerConfigPort;
@@ -185,6 +203,10 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     ?? createTaskRepairAdapter(verificationStore);
   const fileSystem = overrides.fileSystem ?? createNodeFileSystem();
   const memoryWriter = overrides.memoryWriter ?? createMemoryWriterAdapter({
+    fileSystem,
+    pathOperations,
+  });
+  const memoryReader = overrides.memoryReader ?? createMemoryReaderAdapter({
     fileSystem,
     pathOperations,
   });
@@ -220,6 +242,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     pathOperations,
     toolResolver,
     memoryResolver,
+    memoryReader,
     memoryWriter,
     workerConfigPort: overrides.workerConfigPort ?? createWorkerConfigAdapter(),
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
@@ -307,6 +330,28 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
 
         return createArtifactTraceWriter(ports, artifactContext);
       },
+      output: ports.output,
+    }),
+    validateMemory: (ports) => createValidateMemory({
+      sourceResolver: ports.sourceResolver,
+      memoryResolver: ports.memoryResolver,
+      memoryReader: ports.memoryReader,
+      fileSystem: ports.fileSystem,
+      pathOperations: ports.pathOperations,
+      output: ports.output,
+    }),
+    cleanMemory: (ports) => createCleanMemory({
+      sourceResolver: ports.sourceResolver,
+      memoryResolver: ports.memoryResolver,
+      memoryReader: ports.memoryReader,
+      fileSystem: ports.fileSystem,
+      pathOperations: ports.pathOperations,
+      output: ports.output,
+    }),
+    viewMemory: (ports) => createViewMemory({
+      sourceResolver: ports.sourceResolver,
+      memoryResolver: ports.memoryResolver,
+      memoryReader: ports.memoryReader,
       output: ports.output,
     }),
     reverifyTask: (ports) => createReverifyTask({
@@ -433,6 +478,9 @@ function createAppFromFactories(
   return {
     runTask: factories.runTask(ports),
     discussTask: factories.discussTask(ports),
+    viewMemory: factories.viewMemory(ports),
+    validateMemory: factories.validateMemory(ports),
+    cleanMemory: factories.cleanMemory(ports),
     reverifyTask: factories.reverifyTask(ports),
     revertTask: factories.revertTask(ports),
     planTask: factories.planTask(ports),

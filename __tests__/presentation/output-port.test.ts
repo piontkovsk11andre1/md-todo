@@ -170,14 +170,14 @@ describe("cliOutputPort", () => {
         current: 2,
         total: 5,
         unit: "attempts",
-        detail: "running verification",
+        detail: "checking",
       },
     });
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const output = stripAnsi(logSpy.mock.calls[0]?.[0] as string);
     expect(output).toContain("⏳");
-    expect(output).toContain("Verify phase (2/5 attempts) — running verification");
+    expect(output).toContain("Verify phase (2/5 attempts) — checking");
   });
 
   it("renders interactive spinner/progress updates in TTY mode", () => {
@@ -270,6 +270,178 @@ describe("cliOutputPort", () => {
       const output = stripAnsi(logSpy.mock.calls[0]?.[0] as string);
       expect(output).toContain("⏳");
       expect(output).toContain("Delegated rundown run — still running");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  it("renders grouped output with box lines in TTY mode", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({
+        kind: "group-start",
+        label: "Add include-cycle protection...",
+        counter: { current: 4, total: 10 },
+      });
+      cliOutputPort.emit({ kind: "info", message: "opencode run [wait]" });
+      cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+      expect(logSpy).toHaveBeenCalledTimes(3);
+      const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
+      expect(lines[0]).toBe("┌ [4/10] Add include-cycle protection...");
+      expect(lines[1]).toBe("│  ℹ opencode run [wait]");
+      expect(lines[2]).toBe("└ ✔ Done");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  it("renders grouped output with flat prefix in non-TTY mode", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: false,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({
+        kind: "group-start",
+        label: "Add typed ToolFrontmatter schema parsing/validation...",
+        counter: { current: 2, total: 10 },
+      });
+      cliOutputPort.emit({ kind: "info", message: "opencode run [wait]" });
+      cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+      expect(logSpy).toHaveBeenCalledTimes(3);
+      const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
+      expect(lines[0]).toBe("[2/10] Add typed ToolFrontmatter schema parsing/validation...");
+      expect(lines[1]).toBe("    ℹ opencode run [wait]");
+      expect(lines[2]).toBe("✔ Done");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  it("renders group-end success in non-TTY mode", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    process.env.CI = "true";
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const output = stripAnsi(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toBe("✔ Done");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  it("renders group-end failure with message in TTY mode", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({ kind: "group-end", status: "failure", message: "repairs exhausted" });
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      const output = stripAnsi(logSpy.mock.calls[0]?.[0] as string);
+      expect(output).toBe("└ ✖ Failed — repairs exhausted");
     } finally {
       if (previousCi === undefined) {
         delete process.env.CI;

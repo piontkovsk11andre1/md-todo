@@ -105,6 +105,23 @@ describe("revert-task", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("run-reverify"))).toBe(false);
   });
 
+  it("returns a file-done guidance error for explicit completed runs without commitSha", async () => {
+    const runs: ArtifactRunMetadata[] = [
+      createRunMetadata({ runId: "run-file-done-nonfinal", status: "completed" }),
+      createRunMetadata({ runId: "run-file-done-final", status: "completed", commitSha: "sha-final" }),
+    ];
+
+    const { revertTask, events, gitClient } = createDependencies(runs);
+
+    const code = await revertTask(createOptions({ runId: "run-file-done-nonfinal" }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("run-file-done-nonfinal"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("--commit-mode file-done"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("--run latest"))).toBe(true);
+    expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
+  });
+
   it("applies --last after filtering revertable runs", async () => {
     const runs: ArtifactRunMetadata[] = [
       createRunMetadata({ runId: "run-1-no-sha", status: "completed" }),

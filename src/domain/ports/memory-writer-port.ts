@@ -8,6 +8,39 @@ export interface MemoryWriteInput {
   workerOutput: string;
   // Optional memory prefix alias used by the task (for example: memory, remember).
   capturePrefix?: string;
+  // Optional source-task metadata used to track the memory entry origin.
+  originTask?: {
+    text: string;
+    line: number;
+  };
+}
+
+/**
+ * Origin metadata for a memory entry captured from a source task.
+ */
+export interface MemoryIndexOrigin {
+  // Original task checkbox text used to capture this memory entry.
+  taskText: string;
+  // 1-based source line number where the task was captured.
+  taskLine: number;
+  // Optional source content hash captured at memory-write time.
+  sourceHash?: string;
+}
+
+/**
+ * Persisted memory index metadata for a source document.
+ */
+export interface MemoryIndexEntry {
+  // Short human-readable summary of the latest memory entry.
+  summary: string;
+  // ISO timestamp for the most recent memory update.
+  updatedAt: string;
+  // Prefix used to capture the latest memory entry.
+  lastPrefix?: string;
+  // Total number of entries currently present in the memory body file.
+  entryCount: number;
+  // Optional origin details for the task that created the latest entry.
+  origin?: MemoryIndexOrigin;
 }
 
 /**

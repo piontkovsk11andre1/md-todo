@@ -47,9 +47,26 @@ describe("resolve-worker", () => {
     ]);
     expect(events.some((event) => event.kind === "warn"
       && event.message === "\"profile: ignored\" as a task sub-item is not supported — use it as a parent list item or in file frontmatter.")).toBe(true);
+  });
+
+  it("emits worker source description only when verbose is true", () => {
+    const events: ApplicationOutputEvent[] = [];
+
+    resolveWorkerForInvocation({
+      commandName: "discuss",
+      workerConfig: {
+        defaults: {
+          worker: ["opencode", "run"],
+        },
+      },
+      source: "- [ ] discuss item\n",
+      cliWorkerCommand: [],
+      emit: (event) => events.push(event),
+      verbose: true,
+    });
+
     expect(events.some((event) => event.kind === "info"
-      && event.message
-      === "Worker: opencode run --base 1 --model opus-4.6 --model gpt-5.3-codex (profile \"fast\" via directive)")).toBe(true);
+      && event.message === "opencode run (from config defaults)")).toBe(true);
   });
 
   it("does not emit config worker resolution feedback when CLI worker is provided", () => {
@@ -68,7 +85,7 @@ describe("resolve-worker", () => {
     });
 
     expect(command).toEqual(["custom", "worker"]);
-    expect(events.some((event) => event.kind === "info" && event.message.startsWith("Worker: "))).toBe(false);
+    expect(events.some((event) => event.kind === "info")).toBe(false);
   });
 
   it("uses fallback worker command when config and CLI resolve to empty", () => {

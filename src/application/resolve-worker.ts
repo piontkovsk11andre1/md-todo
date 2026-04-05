@@ -22,6 +22,7 @@ interface ResolveWorkerForInvocationInput {
   cliWorkerCommand: string[];
   fallbackWorkerCommand?: string[];
   emit?: ApplicationOutputPort["emit"];
+  verbose?: boolean;
   taskIntent?: TaskIntent;
   toolName?: string;
 }
@@ -35,6 +36,7 @@ interface ResolveWorkerPatternForInvocationInput {
   cliWorkerPattern?: ParsedWorkerPattern;
   fallbackWorkerCommand?: string[];
   emit?: ApplicationOutputPort["emit"];
+  verbose?: boolean;
   taskIntent?: TaskIntent;
   toolName?: string;
 }
@@ -149,13 +151,17 @@ export function resolveWorkerForInvocation(input: ResolveWorkerForInvocationInpu
   );
   const resolvedWorkerCommand = [...resolvedWorker.worker, ...resolvedWorker.workerArgs];
   if (resolvedWorkerCommand.length > 0) {
-    // Emit source diagnostics only when CLI did not explicitly set the worker.
-    if (!hasCliWorkerCommand && input.emit) {
+    // Emit source diagnostics only in verbose mode when CLI did not explicitly set the worker.
+    if (input.verbose && !hasCliWorkerCommand && input.emit) {
       const sourceDescription = describeConfigResolutionSource(input, frontmatterProfile);
-      if (sourceDescription) {
+      const workerCommandLabel = resolvedWorkerCommand.join(" ");
+      if (workerCommandLabel.length > 0) {
+        const verboseSourceDescription = input.verbose && sourceDescription
+          ? ` (${sourceDescription})`
+          : "";
         input.emit({
           kind: "info",
-          message: `Worker: ${resolvedWorkerCommand.join(" ")} (${sourceDescription})`,
+          message: `${workerCommandLabel}${verboseSourceDescription}`,
         });
       }
     }
@@ -199,6 +205,7 @@ export function resolveWorkerPatternForInvocation(
     cliWorkerCommand,
     fallbackWorkerCommand: input.fallbackWorkerCommand,
     emit: input.emit,
+    verbose: input.verbose,
     taskIntent: input.taskIntent,
     toolName: input.toolName,
   });

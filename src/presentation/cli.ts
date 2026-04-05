@@ -5,6 +5,7 @@ import type { ProcessRunMode } from "../domain/ports/index.js";
 import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../domain/ports/command-executor.js";
 import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import { collectOption } from "./cli-options.js";
+import { drainAnimationQueue } from "./output-port.js";
 import { registerLockReleaseSignalHandlers } from "./cli-lock-handlers.js";
 import {
   configureCommanderOutputHandlers,
@@ -37,6 +38,9 @@ import {
   createListCommandAction,
   createLogCommandAction,
   createMakeCommandAction,
+  createMemoryViewCommandAction,
+  createMemoryCleanCommandAction,
+  createMemoryValidateCommandAction,
   createNextCommandAction,
   createPlanCommandAction,
   createResearchCommandAction,
@@ -52,6 +56,7 @@ const DISCUSS_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
 const RESEARCH_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
 const MAKE_MODES: readonly ProcessRunMode[] = ["wait"];
 const DO_MODES: readonly ProcessRunMode[] = ["wait"];
+const COMMIT_MODES = ["per-task", "file-done"] as const;
 const DEFAULT_PLAN_SCAN_COUNT = 3;
 const DEFAULT_PLAN_DEEP = 0;
 const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
@@ -379,6 +384,38 @@ program
   })));
 
 program
+  .command("memory-view")
+  .description("Display memory entries for a source file.")
+  .argument("<source>", "File, directory, or glob to scan for Markdown memory")
+  .option("--json", "Print memory entries as JSON", false)
+  .option("--summary", "Show only index summaries (no body content)", false)
+  .option("--all", "Show memory for all matched files", false)
+  .allowUnknownOption(false)
+  .action(withCliAction(createMemoryViewCommandAction({ getApp })));
+
+program
+  .command("memory-validate")
+  .description("Check memory consistency and report issues.")
+  .argument("<source>", "File, directory, or glob to scan for Markdown memory")
+  .option("--fix", "Auto-fix recoverable memory issues", false)
+  .option("--json", "Print validation report as JSON", false)
+  .allowUnknownOption(false)
+  .action(withCliAction(createMemoryValidateCommandAction({ getApp })));
+
+program
+  .command("memory-clean")
+  .description("Remove orphaned, outdated, or invalid memory.")
+  .argument("<source>", "File, directory, or glob to scan for Markdown memory")
+  .option("--dry-run", "Show what would be removed without removing", false)
+  .option("--orphans", "Remove only orphaned memories", false)
+  .option("--outdated", "Remove memories older than threshold", false)
+  .option("--older-than <duration>", "Age threshold for --outdated (for example: 30d, 6m)", "90d")
+  .option("--all", "Remove all memory for matched sources", false)
+  .option("--force", "Skip confirmation prompts", false)
+  .allowUnknownOption(false)
+  .action(withCliAction(createMemoryCleanCommandAction({ getApp })));
+
+program
   .command("unlock")
   .description("Manually release a stale source lockfile.")
   .argument("<source>", "Markdown source file path used to derive <config-dir>/locks/<basename>.lock")
@@ -436,6 +473,7 @@ function withCliAction<Args extends unknown[]>(
 
       // Command actions return an exit code that is normalized through terminate().
       const exitCode = await action(...args);
+      await drainAnimationQueue();
       terminate(exitCode);
     } catch (err) {
       // Preserve intentional process termination behavior used in tests and command flow control.
@@ -497,6 +535,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
     validateUnsupportedResearchScanCount(rundownArgs);
     validateUnsupportedMakeMode(rundownArgs);
     validateUnsupportedDoMode(rundownArgs);
+    validateRunCommitModeOption(rundownArgs);
   } catch (error) {
     emitCliFatalError(error, runtimeState.invocationLogState);
     terminate(1);
@@ -619,9 +658,15 @@ function configureRunLikeCommandOptions(command: Command): Command {
     .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
     .option("--commit", "Auto-commit checked task file after successful completion", false)
     .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
+    .option(
+      "--commit-mode <mode>",
+      "Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)",
+      "per-task",
+    )
     .option("--on-complete <command>", "Run a shell command after successful task completion")
     .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
     .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
+    .option("-v, --verbose", "Show detailed per-phase run diagnostics (within grouped output)", false)
     .option("--all", "Run all tasks sequentially instead of stopping after one (alias: all)", false)
     .option("--redo", "Reset all checkboxes in the source file before running", false)
     .option("--reset-after", "Reset all checkboxes in the source file after the run completes", false)
@@ -655,6 +700,30 @@ function validateUnsupportedDoMode(argv: string[]): void {
 }
 
 /**
+ * Validates --commit-mode values and run-all-only usage for `run`.
+ */
+function validateRunCommitModeOption(argv: string[]): void {
+  if (resolveInvocationCommand(argv) !== "run") {
+    return;
+  }
+
+  const commitMode = resolveCommitModeOptionValue(argv);
+  if (commitMode === undefined) {
+    return;
+  }
+
+  if (!COMMIT_MODES.includes(commitMode as (typeof COMMIT_MODES)[number])) {
+    throw new Error(`Invalid --commit-mode value: ${commitMode}. Allowed: ${COMMIT_MODES.join(", ")}.`);
+  }
+
+  if (commitMode === "file-done" && !hasEffectiveRunAllOption(argv)) {
+    throw new Error(
+      "Invalid --commit-mode usage: file-done is only supported with effective run-all (`run --all`, `all`, or implicit `--redo`/`--clean`).",
+    );
+  }
+}
+
+/**
  * Resolves the effective --mode option value from argv tokens.
  */
 function resolveModeOptionValue(argv: string[]): string | undefined {
@@ -682,6 +751,60 @@ function resolveModeOptionValue(argv: string[]): string | undefined {
   }
 
   return mode;
+}
+
+/**
+ * Resolves the effective --commit-mode option value from argv tokens.
+ */
+function resolveCommitModeOptionValue(argv: string[]): string | undefined {
+  let commitMode: string | undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+
+    if (token === "--") {
+      break;
+    }
+
+    if (token === "--commit-mode") {
+      const nextToken = argv[index + 1];
+      if (nextToken !== undefined && nextToken !== "--") {
+        commitMode = nextToken;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (token.startsWith("--commit-mode=")) {
+      commitMode = token.slice("--commit-mode=".length);
+    }
+  }
+
+  return commitMode;
+}
+
+/**
+ * Determines whether effective run-all mode is enabled before worker argument delegation.
+ */
+function hasEffectiveRunAllOption(argv: string[]): boolean {
+  for (const token of argv) {
+    if (token === "--") {
+      break;
+    }
+
+    if (
+      token === "--all"
+      || token.startsWith("--all=")
+      || token === "--redo"
+      || token.startsWith("--redo=")
+      || token === "--clean"
+      || token.startsWith("--clean=")
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

@@ -27,6 +27,7 @@ describe("CLI run option normalization", () => {
     ], runTask);
 
     expect(call.commitAfterComplete).toBe(false);
+    expect(call.commitMode).toBe("per-task");
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
     expect(call.onFailCommand).toBeUndefined();
@@ -111,6 +112,7 @@ describe("CLI run option normalization", () => {
     ], runTask);
 
     expect(call.commitAfterComplete).toBe(true);
+    expect(call.commitMode).toBe("per-task");
     expect(call.commitMessageTemplate).toBeUndefined();
     expect(call.onCompleteCommand).toBeUndefined();
     expect(call.onFailCommand).toBeUndefined();
@@ -134,9 +136,61 @@ describe("CLI run option normalization", () => {
     ], runTask);
 
     expect(call.commitAfterComplete).toBe(true);
+    expect(call.commitMode).toBe("per-task");
     expect(call.commitMessageTemplate).toBe("done: {{task}}");
     expect(call.onCompleteCommand).toBe("node scripts/after.js");
     expect(call.onFailCommand).toBe("node scripts/handle-fail.js");
+  });
+
+  it("passes explicit file-done commit mode for run --all", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--all",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.commitMode).toBe("file-done");
+    expect(call.runAll).toBe(true);
+  });
+
+  it("accepts file-done commit mode with --redo implicit-all", async () => {
+    const runTask = vi.fn(async () => 0);
+    const redoCall = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--redo",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(redoCall.commitMode).toBe("file-done");
+    expect(redoCall.redo).toBe(true);
+  });
+
+  it("accepts file-done commit mode with --clean implicit-all", async () => {
+    const runTask = vi.fn(async () => 0);
+    const cleanCall = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--clean",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(cleanCall.commitMode).toBe("file-done");
+    expect(cleanCall.clean).toBe(true);
   });
 
   it("passes --all flag to run task", async () => {
@@ -443,6 +497,22 @@ describe("CLI run option normalization", () => {
     expect(call.source).toBe("tasks.md");
     expect(call.verify).toBe(true);
     expect(call.keepArtifacts).toBe(true);
+    expect(call.runAll).toBe(true);
+  });
+
+  it("accepts file-done commit mode when using all alias", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "all",
+      "tasks.md",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.commitMode).toBe("file-done");
     expect(call.runAll).toBe(true);
   });
 

@@ -280,6 +280,138 @@ describe("createLoggedOutputPort", () => {
     });
   });
 
+  it("formats group boundary messages for structured logs", () => {
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: vi.fn() },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["all"],
+        cwd: "/workspace",
+        pid: 789,
+        version: "1.2.3",
+        sessionId: "session-groups",
+      },
+      now: () => "2026-03-28T14:00:00.000Z",
+    });
+
+    port.emit({
+      kind: "group-start",
+      label: "Add include-cycle protection",
+      counter: { current: 4, total: 10 },
+    });
+    port.emit({
+      kind: "group-end",
+      status: "failure",
+      message: "repairs exhausted",
+    });
+    port.emit({
+      kind: "group-end",
+      status: "success",
+    });
+
+    expect(writer.write).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      level: "info",
+      stream: "stdout",
+      kind: "group-start",
+      message: "[4/10] Add include-cycle protection",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      level: "info",
+      stream: "stdout",
+      kind: "group-end",
+      message: "failure - repairs exhausted",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      level: "info",
+      stream: "stdout",
+      kind: "group-end",
+      message: "success",
+    }));
+  });
+
+  it("maps group boundary events to kind, level, stream, and message", () => {
+    const outputEmit = vi.fn();
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: outputEmit },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["all"],
+        cwd: "/workspace",
+        pid: 790,
+        version: "1.2.3",
+        sessionId: "session-group-mapping",
+      },
+      now: () => "2026-03-28T14:05:00.000Z",
+    });
+
+    const events: ApplicationOutputEvent[] = [
+      {
+        kind: "group-start",
+        label: "Task without counter",
+      },
+      {
+        kind: "group-start",
+        label: "Task with counter",
+        counter: { current: 2, total: 5 },
+      },
+      {
+        kind: "group-end",
+        status: "success",
+      },
+      {
+        kind: "group-end",
+        status: "failure",
+        message: "repairs exhausted",
+      },
+    ];
+
+    for (const event of events) {
+      port.emit(event);
+    }
+
+    expect(outputEmit).toHaveBeenCalledTimes(events.length);
+    expect(outputEmit).toHaveBeenNthCalledWith(1, events[0]);
+    expect(outputEmit).toHaveBeenNthCalledWith(2, events[1]);
+    expect(outputEmit).toHaveBeenNthCalledWith(3, events[2]);
+    expect(outputEmit).toHaveBeenNthCalledWith(4, events[3]);
+
+    expect(writer.write).toHaveBeenCalledTimes(events.length);
+    expect(writer.write).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "group-start",
+      level: "info",
+      stream: "stdout",
+      message: "Task without counter",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "group-start",
+      level: "info",
+      stream: "stdout",
+      message: "[2/5] Task with counter",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      kind: "group-end",
+      level: "info",
+      stream: "stdout",
+      message: "success",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      kind: "group-end",
+      level: "info",
+      stream: "stdout",
+      message: "failure - repairs exhausted",
+    }));
+  });
+
   it("formats progress messages safely when counters are invalid or non-positive", () => {
     const writer = {
       write: vi.fn(),

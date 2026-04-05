@@ -311,7 +311,7 @@ describe("run-task orchestration", () => {
 
     expect(code).toBe(0);
     expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
-    expect(events.some((event) => event.kind === "info" && event.message.includes("Running:"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("opencode run [wait]"))).toBe(true);
   });
 
   it("forwards worker stdout/stderr when --show-agent-output is enabled", async () => {
@@ -860,6 +860,727 @@ describe("run-task orchestration", () => {
     expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(3);
     const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
     expect(commitCalls).toHaveLength(1);
+  });
+
+  it("commits once after the final successful round in file-done mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      if (!source.includes("- [ ] cli: echo hello")) {
+        return null;
+      }
+
+      return {
+        task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        redo: true,
+        resetAfter: true,
+        rounds: 3,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledTimes(3);
+    const commitCallIndex = vi.mocked(dependencies.gitClient.run).mock.calls.findIndex(([args]) => args[0] === "commit");
+    expect(commitCallIndex).toBeGreaterThanOrEqual(0);
+    const commitOrder = vi.mocked(dependencies.gitClient.run).mock.invocationCallOrder[commitCallIndex];
+    const lastWorkerOrder = vi.mocked(dependencies.workerExecutor.executeInlineCli).mock.invocationCallOrder.at(-1);
+    expect(lastWorkerOrder).toBeDefined();
+    expect(commitOrder).toBeGreaterThan(lastWorkerOrder as number);
+  });
+
+  it("skips deferred file-done commit when later rounds do not complete", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo hello\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      selectCallCount += 1;
+      if (selectCallCount === 1) {
+        return {
+          task: { ...createInlineTask(taskFile, "cli: echo hello"), index: 0, line: 1 },
+          source: "tasks.md",
+          contextBefore: "",
+        };
+      }
+
+      return null;
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        redo: true,
+        resetAfter: true,
+        rounds: 2,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(3);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(0);
+  });
+
+  it("commits per task during run-all when commit mode is per-task", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "per-task",
+      }),
+    );
+
+    expect(code).toBe(0);
+    const commitIndices = vi.mocked(dependencies.gitClient.run).mock.calls
+      .map(([args], index) => ({ args, index }))
+      .filter((entry) => entry.args[0] === "commit")
+      .map((entry) => entry.index);
+    expect(commitIndices).toHaveLength(2);
+
+    const firstCommitOrder = vi.mocked(dependencies.gitClient.run).mock.invocationCallOrder[commitIndices[0]];
+    const secondWorkerOrder = vi.mocked(dependencies.workerExecutor.executeInlineCli).mock.invocationCallOrder[1];
+    expect(secondWorkerOrder).toBeDefined();
+    expect(firstCommitOrder).toBeLessThan(secondWorkerOrder as number);
+  });
+
+  it("defers --commit in run-all mode when commit mode is file-done", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    const commitIndices = vi.mocked(dependencies.gitClient.run).mock.calls
+      .map(([args], index) => ({ args, index }))
+      .filter((entry) => entry.args[0] === "commit")
+      .map((entry) => entry.index);
+    expect(commitIndices).toHaveLength(1);
+
+    const commitOrder = vi.mocked(dependencies.gitClient.run).mock.invocationCallOrder[commitIndices[0]];
+    const lastWorkerOrder = vi.mocked(dependencies.workerExecutor.executeInlineCli).mock.invocationCallOrder.at(-1);
+    expect(lastWorkerOrder).toBeDefined();
+    expect(commitOrder).toBeGreaterThan(lastWorkerOrder as number);
+  });
+
+  it("keeps deferred file-done commit failures non-fatal", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const gitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "commit") {
+          throw new Error("commit blocked");
+        }
+        return "";
+      }),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient,
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(gitClient.run).toHaveBeenCalledWith(expect.arrayContaining(["commit"]), cwd);
+    expect(events).toContainEqual({ kind: "warn", message: "--commit failed: Error: commit blocked" });
+    expect(dependencies.fileLock.releaseAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses standard commit templating and git excludes for deferred file-done final commit", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const gitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+          return "true";
+        }
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return cwd;
+        }
+        if (args[0] === "rev-parse" && args[1] === "HEAD") {
+          return "sha-final";
+        }
+        return "";
+      }),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient,
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+        commitMessageTemplate: "done {{task}} @ {{file}}",
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(gitClient.run).toHaveBeenCalledWith(
+      [
+        "add",
+        "-A",
+        "--",
+        ":/",
+        ":(top,exclude).rundown/runs/**",
+        ":(top,exclude).rundown/logs/**",
+        ":(top,exclude).rundown/*.lock",
+        ":(glob,exclude)**/.rundown/*.lock",
+      ],
+      cwd,
+    );
+    expect(gitClient.run).toHaveBeenCalledWith(
+      ["commit", "-m", "done cli: echo two @ tasks.md"],
+      cwd,
+    );
+  });
+
+  it("records deferred file-done commit metadata only on the final artifact", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        keepArtifacts: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    const finalizeCalls = vi.mocked(dependencies.artifactStore.finalize).mock.calls;
+    const callsWithCommitSha = finalizeCalls.filter(([, options]) => {
+      const extra = options.extra as Record<string, unknown> | undefined;
+      return typeof extra?.["commitSha"] === "string";
+    });
+    expect(callsWithCommitSha).toHaveLength(1);
+    const lastFinalizeCall = finalizeCalls.at(-1);
+    expect(lastFinalizeCall).toBeDefined();
+    expect(lastFinalizeCall?.[1].extra).toEqual(expect.objectContaining({ commitSha: "true" }));
+    const firstFinalizeExtra = finalizeCalls[0]?.[1].extra as Record<string, unknown> | undefined;
+    const secondFinalizeExtra = finalizeCalls[1]?.[1].extra as Record<string, unknown> | undefined;
+    expect(firstFinalizeExtra?.["commitSha"]).toBeUndefined();
+    expect(secondFinalizeExtra?.["commitSha"]).toBeUndefined();
+  });
+
+  it("defers --commit when --redo implies run-all with file-done mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: false,
+        redo: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(1);
+  });
+
+  it("keeps single-task --commit behavior immediate when commit mode is file-done", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo hello"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] cli: echo hello\n" }),
+      gitClient: createGitClientMock(),
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(0);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(1);
+    const commitOrder = vi.mocked(dependencies.gitClient.run).mock.invocationCallOrder[
+      vi.mocked(dependencies.gitClient.run).mock.calls.findIndex(([args]) => args[0] === "commit")
+    ];
+    const finalizeOrder = vi.mocked(dependencies.artifactStore.finalize).mock.invocationCallOrder[0];
+    expect(commitOrder).toBeLessThan(finalizeOrder);
+  });
+
+  it("skips deferred file-done commit when run-all exits early with failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+    dependencies.workerExecutor.executeInlineCli = vi
+      .fn(async () => ({ exitCode: 0, stdout: "", stderr: "" }))
+      .mockImplementationOnce(async () => ({ exitCode: 0, stdout: "", stderr: "" }))
+      .mockImplementationOnce(async () => ({ exitCode: 9, stdout: "", stderr: "boom" }));
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(1);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(0);
+  });
+
+  it("skips deferred file-done commit when run-all exits early with verification failure", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] build one\n- [ ] build two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "build one", line: 1, index: 0 },
+      { text: "build two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    dependencies.taskVerification.verify = vi
+      .fn(async () => ({ valid: true }))
+      .mockImplementationOnce(async () => ({ valid: true }))
+      .mockImplementationOnce(async () => ({ valid: false }));
+    dependencies.verificationStore.read = vi.fn(() => "verification failed");
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+        verify: true,
+      }),
+    );
+
+    expect(code).toBe(2);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(0);
+  });
+
+  it("skips deferred file-done commit when run-all worker execution is interrupted", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] build one\n- [ ] build two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "build one", line: 1, index: 0 },
+      { text: "build two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    let workerCallCount = 0;
+    dependencies.workerExecutor.runWorker = vi.fn(async (): Promise<{ exitCode: number | null; stdout: string; stderr: string }> => {
+      workerCallCount += 1;
+      if (workerCallCount === 2) {
+        return { exitCode: null, stdout: "", stderr: "interrupted" };
+      }
+
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: false,
+        runAll: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+      }),
+    );
+
+    expect(code).toBe(1);
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(0);
+  });
+
+  it("skips deferred file-done commit when run-all throws unexpectedly", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] cli: echo one\n- [ ] cli: echo two\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createInlineTask(taskFile, "cli: echo one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    let selectCallCount = 0;
+    const tasks = [
+      { text: "cli: echo one", line: 1, index: 0 },
+      { text: "cli: echo two", line: 2, index: 1 },
+    ];
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      if (selectCallCount >= tasks.length) {
+        return null;
+      }
+
+      const nextTask = tasks[selectCallCount];
+      selectCallCount += 1;
+      return {
+        task: {
+          ...createInlineTask(taskFile, nextTask.text),
+          index: nextTask.index,
+          line: nextTask.line,
+        },
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+    dependencies.workerExecutor.executeInlineCli = vi
+      .fn(async () => ({ exitCode: 0, stdout: "", stderr: "" }))
+      .mockImplementationOnce(async () => ({ exitCode: 0, stdout: "", stderr: "" }))
+      .mockImplementationOnce(async () => {
+        throw new Error("worker interrupted");
+      });
+
+    await expect(
+      createRunTask(dependencies)(
+        createOptions({
+          verify: false,
+          runAll: true,
+          commitAfterComplete: true,
+          commitMode: "file-done",
+        }),
+      ),
+    ).rejects.toThrow("worker interrupted");
+
+    const commitCalls = vi.mocked(dependencies.gitClient.run).mock.calls.filter(([args]) => args[0] === "commit");
+    expect(commitCalls).toHaveLength(0);
   });
 
   it("releases locks before unexpected-error artifact finalization", async () => {

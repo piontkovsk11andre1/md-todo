@@ -90,6 +90,33 @@ Rationale for this decision:
 
 As a result, upward config discovery and `--config-dir` affect templates, vars, runs, and logs, but do **not** relocate per-source lockfiles.
 
+## Run-all commit timing (decision)
+
+`rundown run` keeps `--commit` task-scoped by default. To support "commit once when the file is done" without breaking existing automation, commit timing is an explicit mode choice:
+
+- `--commit-mode per-task|file-done`
+- default: `per-task`
+
+Contract:
+
+- `per-task` preserves current behavior: commit after each successful completed task.
+- `file-done` applies only to effective run-all flows (`run --all`, `all`, and implicit-all via `--redo` / `--clean`).
+- in single-task runs, behavior stays unchanged; `file-done` has no timing effect beyond `per-task` behavior.
+- `file-done` performs one deferred commit only after the full run succeeds.
+- when `--reset-after` is enabled, reset runs before the deferred final commit.
+- deferred final commit runs before source lock release.
+- no deferred final commit on early termination (execution failure, verification failure, cancellation, interruption, dry-run).
+
+Multi-round contract (`--rounds > 1`):
+
+- `file-done` produces a single commit after the final successful round, not one commit per round.
+
+Artifact/revert contract for `file-done`:
+
+- the final successful run artifact in that run-all lifecycle records `extra.commitSha`.
+- earlier per-task artifacts from that same lifecycle do not backfill `extra.commitSha`.
+- revert remains deterministic and run-artifact based, but file-done mode is revertable at run-level (final artifact), not at per-task granularity.
+
 ## Sources
 
 `rundown` can scan:
@@ -317,8 +344,13 @@ If no unique match is found, `reverify` exits with code `3` and leaves Markdown 
 
 This command only works for runs that were completed with both:
 
-- `--commit` (so a task-specific commit exists), and
+- `--commit` (so the run lifecycle recorded a commit SHA), and
 - `--keep-artifacts` (so `run.json` and `extra.commitSha` are still available).
+
+Revert granularity follows commit timing:
+
+- `--commit-mode per-task` records one commit per successful task, so each completed task run can be reverted independently.
+- `--commit-mode file-done` (effective run-all only) records one commit at full run completion, so revert is available at run-level for that final artifact rather than per intermediate task.
 
 Target selection mirrors the historical-run pattern used by `reverify`:
 

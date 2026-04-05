@@ -3,3 +3,4 @@ dist/
 .rundown/
 coverage/
 migrations/
+.claude/

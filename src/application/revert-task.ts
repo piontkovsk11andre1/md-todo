@@ -49,6 +49,7 @@ export interface RevertTaskOptions {
 const NO_REVERTABLE_RUNS_BASE_MESSAGE = "No revertable runs found. The original run must be completed with --commit and --keep-artifacts so run.json contains extra.commitSha.";
 // Extra discovery hint appended when there are runs that can be inspected in logs.
 const REVERTABLE_LOG_HINT = "See `rundown log --revertable` for eligible runs.";
+const FILE_DONE_FINAL_RUN_HINT = "If this run came from `--commit --commit-mode file-done` in an effective run-all flow, only the final successful run artifact records extra.commitSha. Use that final run id or `--run latest`.";
 
 /**
  * Normalized git target resolved from a saved run.
@@ -136,6 +137,21 @@ export function createRevertTask(
       .map(resolveRevertOperation)
       .filter((operation): operation is RevertOperation => operation !== null);
     if (revertOperations.length === 0) {
+      const selectedRun = selectedRuns[0];
+      const selectedRunIsSingleCompletedRunWithoutCommitSha = !hasMultiRunSelection
+        && runId !== "latest"
+        && selectedRun !== undefined
+        && selectedRun.status === "completed"
+        && getCommitSha(selectedRun) === null;
+      if (selectedRunIsSingleCompletedRunWithoutCommitSha) {
+        emit({
+          kind: "error",
+          message: "Run " + selectedRun.runId + " is not revertable because it does not include extra.commitSha. "
+            + FILE_DONE_FINAL_RUN_HINT,
+        });
+        return 3;
+      }
+
       emit({
         kind: "error",
         message: buildNoRevertableRunsMessage(completedRuns.length > 0),

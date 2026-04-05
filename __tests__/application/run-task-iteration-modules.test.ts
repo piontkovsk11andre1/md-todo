@@ -4,12 +4,16 @@ import { prepareTaskPrompts } from "../../src/application/prepare-task-prompts.j
 import { handleDryRunOrPrintPrompt } from "../../src/application/dry-run-dispatch.js";
 import { dispatchTaskExecution } from "../../src/application/task-execution-dispatch.js";
 import { completeTaskIteration } from "../../src/application/complete-task-iteration.js";
+import { runTaskIteration } from "../../src/application/run-task-iteration.js";
 import { runTraceEnrichment } from "../../src/application/trace-enrichment.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
 import { includeHandler } from "../../src/domain/builtin-tools/include.js";
+import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import * as verifyRepairLoopModule from "../../src/application/verify-repair-loop.js";
 import * as runLifecycleModule from "../../src/application/run-lifecycle.js";
 import * as checkboxOperationsModule from "../../src/application/checkbox-operations.js";
+import * as taskExecutionDispatchModule from "../../src/application/task-execution-dispatch.js";
+import * as completeTaskIterationModule from "../../src/application/complete-task-iteration.js";
 import type { Task } from "../../src/domain/parser.js";
 import {
   createDependencies,
@@ -356,6 +360,394 @@ describe("dry-run-dispatch", () => {
     expect(emit).toHaveBeenCalledWith({ kind: "text", text: "cli: npm test" });
   });
 
+});
+
+describe("run-task-iteration", () => {
+  it("emits group-start with task counter before dispatching task execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Ship release\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const emit = (event: Parameters<typeof runTaskIteration>[0]["emit"] extends (arg: infer T) => void ? T : never) => {
+      events.push(event);
+    };
+
+    const dispatchSpy = vi.spyOn(taskExecutionDispatchModule, "dispatchTaskExecution").mockImplementation(async () => {
+      expect(events[0]).toEqual(expect.objectContaining({
+        kind: "group-start",
+        counter: {
+          current: 3,
+          total: 10,
+        },
+      }));
+      if (events[0]?.kind === "group-start") {
+        expect(events[0].label).toContain("Ship release");
+      }
+      return {
+        kind: "ready-for-completion",
+        shouldVerify: true,
+        cliExecutionOptionsForVerification: undefined,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+      };
+    });
+
+    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration").mockResolvedValue({
+      continueLoop: false,
+      exitCode: 0,
+    });
+
+    const traceRunSession = createTraceRunSession({
+      getTraceWriter: () => dependencies.traceWriter,
+      source: "tasks.md",
+      mode: "wait",
+      transport: "file",
+      traceEnabled: false,
+    });
+
+    await runTaskIteration({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+        artifactContext: null,
+        traceEnrichmentContext: null,
+      },
+      context: {
+        source: "- [ ] Ship release",
+        fileSource: "- [ ] Ship release",
+        taskIndex: 2,
+        totalTasks: 10,
+        files: [taskFile],
+        task,
+      },
+      execution: {
+        mode: "wait",
+        verbose: false,
+        taskIndex: 2,
+        totalTasks: 10,
+        keepArtifacts: true,
+        printPrompt: false,
+        dryRun: false,
+        dryRunSuppressesCliExpansion: false,
+        cliExpansionEnabled: true,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        forceExecute: false,
+        showAgentOutput: false,
+        hideHookOutput: false,
+        trace: false,
+      },
+      worker: {
+        workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+        loadedWorkerConfig: undefined,
+      },
+      verifyConfig: {
+        configuredOnlyVerify: false,
+        configuredShouldVerify: true,
+        maxRepairAttempts: 0,
+        allowRepair: false,
+      },
+      completion: {
+        effectiveRunAll: false,
+        commitAfterComplete: false,
+        deferCommitUntilPostRun: false,
+        commitMessageTemplate: undefined,
+        onCompleteCommand: undefined,
+        onFailCommand: undefined,
+        extraTemplateVars: {},
+      },
+      prompts: {
+        extraTemplateVars: {},
+        cliExecutionOptions: undefined,
+        cliBlockExecutor: {
+          execute: vi.fn(async () => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          })),
+        },
+        nowIso: () => "2026-01-01T00:00:00.000Z",
+      },
+      traceConfig: {
+        traceRunSession,
+        pendingPreRunResetTraceEvents: [],
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+      },
+      lifecycle: {
+        failRun: vi.fn(async () => 1),
+        finishRun: vi.fn(async () => 0),
+        resetArtifacts: vi.fn(),
+      },
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    expect(completeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("emits group-end success after task completion", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Ship release\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const emit = (event: Parameters<typeof runTaskIteration>[0]["emit"] extends (arg: infer T) => void ? T : never) => {
+      events.push(event);
+    };
+
+    vi.spyOn(taskExecutionDispatchModule, "dispatchTaskExecution").mockResolvedValue({
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: undefined,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+    });
+
+    const traceRunSession = createTraceRunSession({
+      getTraceWriter: () => dependencies.traceWriter,
+      source: "tasks.md",
+      mode: "wait",
+      transport: "file",
+      traceEnabled: false,
+    });
+
+    await runTaskIteration({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+        artifactContext: null,
+        traceEnrichmentContext: null,
+      },
+      context: {
+        source: "- [ ] Ship release",
+        fileSource: "- [ ] Ship release",
+        taskIndex: 0,
+        totalTasks: 1,
+        files: [taskFile],
+        task,
+      },
+      execution: {
+        mode: "wait",
+        verbose: false,
+        taskIndex: 0,
+        totalTasks: 1,
+        keepArtifacts: true,
+        printPrompt: false,
+        dryRun: false,
+        dryRunSuppressesCliExpansion: false,
+        cliExpansionEnabled: true,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        forceExecute: false,
+        showAgentOutput: false,
+        hideHookOutput: false,
+        trace: false,
+      },
+      worker: {
+        workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+        loadedWorkerConfig: undefined,
+      },
+      verifyConfig: {
+        configuredOnlyVerify: false,
+        configuredShouldVerify: true,
+        maxRepairAttempts: 0,
+        allowRepair: false,
+      },
+      completion: {
+        effectiveRunAll: false,
+        commitAfterComplete: false,
+        deferCommitUntilPostRun: false,
+        commitMessageTemplate: undefined,
+        onCompleteCommand: undefined,
+        onFailCommand: undefined,
+        extraTemplateVars: {},
+      },
+      prompts: {
+        extraTemplateVars: {},
+        cliExecutionOptions: undefined,
+        cliBlockExecutor: {
+          execute: vi.fn(async () => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          })),
+        },
+        nowIso: () => "2026-01-01T00:00:00.000Z",
+      },
+      traceConfig: {
+        traceRunSession,
+        pendingPreRunResetTraceEvents: [],
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+      },
+      lifecycle: {
+        failRun: vi.fn(async () => 1),
+        finishRun: vi.fn(async () => 0),
+        resetArtifacts: vi.fn(),
+      },
+    });
+
+    const taskCheckedEventIndex = events.findIndex((event) => event.kind === "success" && event.message === "Task checked: Ship release");
+    expect(taskCheckedEventIndex).toBeGreaterThanOrEqual(0);
+    expect(events[taskCheckedEventIndex + 1]).toEqual({ kind: "group-end", status: "success" });
+  });
+
+  it("emits group-end failure when task execution fails", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Ship release\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const emit = (event: Parameters<typeof runTaskIteration>[0]["emit"] extends (arg: infer T) => void ? T : never) => {
+      events.push(event);
+    };
+
+    vi.spyOn(taskExecutionDispatchModule, "dispatchTaskExecution").mockResolvedValue({
+      kind: "execution-failed",
+      executionFailureMessage: "Worker exited with code 2.",
+      executionFailureRunReason: "execution-failed",
+      executionFailureExitCode: 2,
+    });
+
+    const traceRunSession = createTraceRunSession({
+      getTraceWriter: () => dependencies.traceWriter,
+      source: "tasks.md",
+      mode: "wait",
+      transport: "file",
+      traceEnabled: false,
+    });
+
+    const failRun = vi.fn(async () => 2);
+
+    await runTaskIteration({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+        artifactContext: null,
+        traceEnrichmentContext: null,
+      },
+      context: {
+        source: "- [ ] Ship release",
+        fileSource: "- [ ] Ship release",
+        taskIndex: 0,
+        totalTasks: 1,
+        files: [taskFile],
+        task,
+      },
+      execution: {
+        mode: "wait",
+        verbose: false,
+        taskIndex: 0,
+        totalTasks: 1,
+        keepArtifacts: true,
+        printPrompt: false,
+        dryRun: false,
+        dryRunSuppressesCliExpansion: false,
+        cliExpansionEnabled: true,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        forceExecute: false,
+        showAgentOutput: false,
+        hideHookOutput: false,
+        trace: false,
+      },
+      worker: {
+        workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+        loadedWorkerConfig: undefined,
+      },
+      verifyConfig: {
+        configuredOnlyVerify: false,
+        configuredShouldVerify: true,
+        maxRepairAttempts: 0,
+        allowRepair: false,
+      },
+      completion: {
+        effectiveRunAll: false,
+        commitAfterComplete: false,
+        deferCommitUntilPostRun: false,
+        commitMessageTemplate: undefined,
+        onCompleteCommand: undefined,
+        onFailCommand: undefined,
+        extraTemplateVars: {},
+      },
+      prompts: {
+        extraTemplateVars: {},
+        cliExecutionOptions: undefined,
+        cliBlockExecutor: {
+          execute: vi.fn(async () => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          })),
+        },
+        nowIso: () => "2026-01-01T00:00:00.000Z",
+      },
+      traceConfig: {
+        traceRunSession,
+        pendingPreRunResetTraceEvents: [],
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+      },
+      lifecycle: {
+        failRun,
+        finishRun: vi.fn(async () => 0),
+        resetArtifacts: vi.fn(),
+      },
+    });
+
+    expect(events).toContainEqual({
+      kind: "group-end",
+      status: "failure",
+      message: "execution-failed",
+    });
+    expect(failRun).toHaveBeenCalledWith(1, "execution-failed", "execution-failed", 2);
+  });
 });
 
 describe("task-execution-dispatch", () => {
@@ -1025,7 +1417,7 @@ describe("task-execution-dispatch", () => {
 
     expect(result.kind).toBe("ready-for-completion");
     expect(events.some((event) => event.kind === "text" || event.kind === "stderr")).toBe(false);
-    expect(events.some((event) => event.kind === "info" && event.message.includes("Running: opencode run"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("opencode run [wait]"))).toBe(true);
   });
 
   it("preserves default execute-and-verify lifecycle metadata for non-memory tasks", async () => {
@@ -1337,6 +1729,10 @@ describe("task-execution-dispatch", () => {
       sourcePath: task.file,
       workerOutput: "Captured release context",
       capturePrefix: "remember",
+      originTask: {
+        text: task.text,
+        line: task.line,
+      },
     });
   });
 
@@ -2176,6 +2572,180 @@ describe("complete-task-iteration", () => {
     expect(failRun).toHaveBeenCalledWith(2, "verification-failed", "Verification failed.", 2);
   });
 
+  it("keeps per-task commit immediate when commit is enabled without deferral", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] Ship release\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({ commit: "ok" });
+    vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+    const finishRun = vi.fn(async () => 0);
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: true,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: "done: {{task}}",
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      transport: "file",
+      trace: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task,
+      sourceText: "- [ ] Ship release",
+      expandedSource: "- [ ] Ship release",
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      shouldVerify: false,
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0 });
+    expect(state.deferredCommitContext).toBeNull();
+    expect(afterTaskCompleteSpy).toHaveBeenCalledWith(
+      dependencies,
+      task,
+      "- [ ] Ship release",
+      true,
+      "done: {{task}}",
+      undefined,
+      false,
+      {},
+    );
+    expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, { commit: "ok" });
+  });
+
+  it("does not queue deferred commit context when commit is disabled", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] Ship release\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({});
+    vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: true,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: true,
+      commitMessageTemplate: "done: {{task}}",
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      transport: "file",
+      trace: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task,
+      sourceText: "- [ ] Ship release",
+      expandedSource: "- [ ] Ship release",
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      shouldVerify: false,
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: true });
+    expect(state.deferredCommitContext).toBeNull();
+    expect(afterTaskCompleteSpy).toHaveBeenCalledWith(
+      dependencies,
+      task,
+      "- [ ] Ship release",
+      false,
+      "done: {{task}}",
+      undefined,
+      false,
+      {},
+    );
+  });
+
   it("completes task and continues loop when run-all is enabled", async () => {
     const fileSystem = createInMemoryFileSystem({
       [task.file]: "- [ ] Ship release\n",
@@ -2193,7 +2763,7 @@ describe("complete-task-iteration", () => {
       runCompleted: false,
     };
 
-    vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({ commit: "ok" });
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({ commit: "ok" });
     vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
     const finishRun = vi.fn(async () => 0);
     const resetArtifacts = vi.fn();
@@ -2255,7 +2825,24 @@ describe("complete-task-iteration", () => {
     expect(state.deferredCommitContext).toEqual({
       task,
       source: "- [ ] Ship release",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
     });
+    expect(afterTaskCompleteSpy).toHaveBeenCalledWith(
+      dependencies,
+      task,
+      "- [ ] Ship release",
+      false,
+      "done: {{task}}",
+      undefined,
+      false,
+      {},
+    );
     expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, { commit: "ok" });
     expect(resetArtifacts).toHaveBeenCalledTimes(1);
   });

@@ -32,7 +32,16 @@ const progressRenderState: ProgressRenderState = {
   latestProgress: null,
 };
 
+let groupDepth = 0;
+
 let animatedLineQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Waits for all queued line animations to finish before returning.
+ */
+export function drainAnimationQueue(): Promise<void> {
+  return animatedLineQueue;
+}
 
 /**
  * Applies a dimmed terminal style to supporting status text.
@@ -136,7 +145,8 @@ async function renderCascadeLine(prefix: string, message: string): Promise<void>
  * Determines whether an info line should be rendered with a reveal effect.
  */
 function shouldAnimateInfoMessage(message: string): boolean {
-  return message.startsWith("Next task:") || message.startsWith("Planning document:");
+  void message;
+  return false;
 }
 
 /**
@@ -152,6 +162,43 @@ function shouldAnimateSuccessMessage(message: string): boolean {
  */
 function shouldCascadeSuccessMessage(message: string): boolean {
   return message.startsWith("Created ");
+}
+
+/**
+ * Returns the active group line prefix for nested task output.
+ */
+function groupLinePrefix(): string {
+  if (groupDepth <= 0) {
+    return "";
+  }
+
+  return isInteractiveProgressEnabled() ? "│  " : "    ";
+}
+
+/**
+ * Prefixes a single-line message when rendering inside a task group.
+ */
+function withGroupPrefix(message: string): string {
+  return `${groupLinePrefix()}${message}`;
+}
+
+/**
+ * Prefixes each line of a multiline message when rendering inside a task group.
+ */
+function withGroupPrefixMultiline(message: string): string {
+  const prefix = groupLinePrefix();
+  if (prefix === "") {
+    return message;
+  }
+
+  const normalized = message.replace(/\r\n/g, "\n");
+  const hasTrailingNewline = normalized.endsWith("\n");
+  const lines = normalized.split("\n");
+  if (hasTrailingNewline) {
+    lines.pop();
+  }
+  const prefixed = lines.map((line) => `${prefix}${line}`).join("\n");
+  return hasTrailingNewline ? `${prefixed}\n` : prefixed;
 }
 
 /**
@@ -333,33 +380,65 @@ export const cliOutputPort: ApplicationOutputPort = {
   emit(event: ApplicationOutputEvent): void {
     // Delegate formatting by event kind to keep each output path explicit.
     switch (event.kind) {
+      case "group-start": {
+        flushProgressLine();
+        const counter = event.counter ? `[${event.counter.current}/${event.counter.total}] ` : "";
+        if (isInteractiveProgressEnabled()) {
+          console.log(`┌ ${counter}${event.label}`);
+        } else {
+          console.log(`${counter}${event.label}`);
+        }
+        groupDepth = 1;
+        return;
+      }
+      case "group-end": {
+        flushProgressLine();
+        const isSuccess = event.status === "success";
+        const statusLabel = isSuccess ? `${pc.green("✔")} Done` : `${pc.red("✖")} Failed`;
+        const suffix = event.message ? ` — ${event.message}` : "";
+
+        if (isInteractiveProgressEnabled()) {
+          console.log(`└ ${statusLabel}${suffix}`);
+        } else {
+          console.log(`${statusLabel}${suffix}`);
+        }
+
+        groupDepth = 0;
+        return;
+      }
       case "info":
         flushProgressLine();
-        if (isInteractiveLineAnimationEnabled() && shouldAnimateInfoMessage(event.message)) {
-          enqueueAnimatedLine(() => renderTypedLine(pc.blue("ℹ"), styleInfoMessage(event.message)));
-          return;
+        {
+          const linePrefix = withGroupPrefix(pc.blue("ℹ"));
+          if (isInteractiveLineAnimationEnabled() && shouldAnimateInfoMessage(event.message)) {
+            enqueueAnimatedLine(() => renderTypedLine(linePrefix, styleInfoMessage(event.message)));
+            return;
+          }
+          console.log(`${linePrefix} ${styleInfoMessage(event.message)}`);
         }
-        console.log(pc.blue("ℹ") + " " + styleInfoMessage(event.message));
         return;
       case "warn":
         flushProgressLine();
-        console.log(pc.yellow("⚠") + " " + event.message);
+        console.log(withGroupPrefix(`${pc.yellow("⚠")} ${event.message}`));
         return;
       case "error":
         flushProgressLine();
-        console.error(pc.red("✖") + " " + event.message);
+        console.error(withGroupPrefix(`${pc.red("✖")} ${event.message}`));
         return;
       case "success":
         flushProgressLine();
-        if (isInteractiveLineAnimationEnabled() && shouldCascadeSuccessMessage(event.message)) {
-          enqueueAnimatedLine(() => renderCascadeLine(pc.green("✔"), event.message));
-          return;
+        {
+          const linePrefix = withGroupPrefix(pc.green("✔"));
+          if (isInteractiveLineAnimationEnabled() && shouldCascadeSuccessMessage(event.message)) {
+            enqueueAnimatedLine(() => renderCascadeLine(linePrefix, event.message));
+            return;
+          }
+          if (isInteractiveLineAnimationEnabled() && shouldAnimateSuccessMessage(event.message)) {
+            enqueueAnimatedLine(() => renderTypedLine(linePrefix, event.message));
+            return;
+          }
+          console.log(`${linePrefix} ${event.message}`);
         }
-        if (isInteractiveLineAnimationEnabled() && shouldAnimateSuccessMessage(event.message)) {
-          enqueueAnimatedLine(() => renderTypedLine(pc.green("✔"), event.message));
-          return;
-        }
-        console.log(pc.green("✔") + " " + event.message);
         return;
       case "progress":
         if (isInteractiveProgressEnabled()) {
@@ -392,11 +471,11 @@ export const cliOutputPort: ApplicationOutputPort = {
         return;
       case "text":
         flushProgressLine();
-        console.log(event.text);
+        console.log(withGroupPrefixMultiline(event.text));
         return;
       case "stderr":
         flushProgressLine();
-        process.stderr.write(event.text);
+        process.stderr.write(withGroupPrefixMultiline(event.text));
         return;
       default:
         return;

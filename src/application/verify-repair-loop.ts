@@ -46,6 +46,7 @@ export interface VerifyRepairLoopInput {
   executionEnv?: Record<string, string>;
   artifactContext: ArtifactContext;
   trace: boolean;
+  verbose?: boolean;
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
   cliExpansionEnabled?: boolean;
@@ -67,6 +68,8 @@ export async function runVerifyRepairLoop(
   input: VerifyRepairLoopInput,
 ): Promise<VerifyRepairLoopResult> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const repairIndent = "  ";
+  const indentRepairMessage = (message: string): string => `${repairIndent}${message}`;
   const formatRepairAttempt = (attemptNumber: number): string => "Repair attempt "
     + attemptNumber + " of " + input.maxRepairAttempts;
   // Trace events are tied to a run id derived from artifact context.
@@ -154,8 +157,10 @@ export async function runVerifyRepairLoop(
   };
 
   // Always run one initial verification before considering repairs.
-  emit({ kind: "info", message: "Verify phase: running initial verification (attempt 1)." });
-  emit({ kind: "info", message: "Running verification..." });
+  if (input.verbose) {
+    emit({ kind: "info", message: "Verify phase: running initial verification (attempt 1)." });
+    emit({ kind: "info", message: "Running verification..." });
+  }
 
   const initialVerificationStartedAt = Date.now();
   const { valid, formatWarning } = await dependencies.taskVerification.verify({
@@ -197,7 +202,9 @@ export async function runVerifyRepairLoop(
     dependencies.verificationStore.remove(input.task);
     emitVerificationEfficiency();
     emit({ kind: "success", message: "Verify phase complete: verification passed on initial attempt." });
-    emit({ kind: "success", message: "Verification passed." });
+    if (input.verbose) {
+      emit({ kind: "success", message: "Verification passed." });
+    }
     return { valid: true, failureReason: null };
   }
 
@@ -213,7 +220,6 @@ export async function runVerifyRepairLoop(
 
   // Enter repair mode after a failed initial verification.
   const repairWarningReason = initialFailureReason ?? "Verification failed (no details).";
-  emit({ kind: "info", message: "Verify phase complete: initial verification failed." });
   emit({
     kind: "warn",
     message: "Verification failed: " + repairWarningReason + ". Running repair (" + input.maxRepairAttempts + " attempt(s))...",
@@ -225,7 +231,7 @@ export async function runVerifyRepairLoop(
     attempts += 1;
     repairAttempts = attempts;
     emitRepairAttempt(attempts, previousFailure);
-    emit({ kind: "info", message: formatRepairAttempt(attempts) + ": starting..." });
+    emit({ kind: "info", message: indentRepairMessage(formatRepairAttempt(attempts) + ": starting...") });
 
     // Each repair invocation performs one repair cycle and one verification pass.
     const repairStartedAt = Date.now();
@@ -264,18 +270,18 @@ export async function runVerifyRepairLoop(
       emitRepairOutcome(true, attempts);
       dependencies.verificationStore.remove(input.task);
       emitVerificationEfficiency();
-      emit({ kind: "info", message: formatRepairAttempt(attempts) + ": passed verification." });
-      emit({ kind: "success", message: "Repair succeeded after " + attempts + " attempt(s)." });
+      emit({ kind: "info", message: indentRepairMessage(formatRepairAttempt(attempts) + ": passed verification.") });
+      emit({ kind: "success", message: indentRepairMessage("Repair succeeded after " + attempts + " attempt(s).") });
       return { valid: true, failureReason: null };
     }
 
     emit({
       kind: "info",
-      message: formatRepairAttempt(attempts) + ": failed verification.",
+      message: indentRepairMessage(formatRepairAttempt(attempts) + ": failed verification."),
     });
     emit({
       kind: "warn",
-      message: "Repair attempt " + attempts + " failed: " + (repairFailureReason ?? "Verification failed (no details)."),
+      message: indentRepairMessage("Repair attempt " + attempts + " failed: " + (repairFailureReason ?? "Verification failed (no details).")),
     });
 
     previousFailure = repairFailureReason ?? "Verification failed (no details).";

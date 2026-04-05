@@ -139,6 +139,20 @@ Custom commit messages:
 rundown run docs/ --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
 ```
 
+Run all tasks and commit once at file completion:
+
+```bash
+rundown run docs/ --all --commit --commit-mode file-done -- opencode run
+```
+
+Run all tasks and keep one commit per completed task:
+
+```bash
+rundown run docs/ --all --commit --commit-mode per-task -- opencode run
+```
+
+`per-task` remains the default commit mode; pass it explicitly in automation when you want that behavior to be stable and obvious.
+
 ## 10. Post-completion hooks
 
 Run any command after a task completes. Task metadata is available as environment variables.
@@ -185,6 +199,8 @@ rundown revert --run latest -- opencode run
 ```
 
 `revert` requires the original run to have been executed with both `--commit` and `--keep-artifacts`; otherwise no revertable run metadata is available.
+
+If the original run used `--commit-mode file-done` in run-all mode, revert applies to the single final run-level commit (not each intermediate task).
 
 ## 14. Concurrent run protection on one source file
 
