@@ -608,6 +608,7 @@ Built-in handler aliases:
 
 - Verify-only: `verify:`, `confirm:`, `check:`
 - Memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- Fast execution (skip verification): `fast:`, `raw:`
 - Include markdown file execution: `include:`
 
 Built-in modifier:
@@ -628,6 +629,13 @@ Composition rules:
 - Modifier tools apply left-to-right and patch execution context.
 - Handler tools are terminal and run task behavior.
 - Modifier-only chains still run default execution/verification with the patched context.
+
+Intent prefix notes:
+
+- `fast:` and `raw:` are aliases that force execution without verification for that task (the inverse of `verify:`).
+- `fast:` / `raw:` can also be used as directive parents (`- fast:` / `- raw:`) so child checkbox tasks inherit fast-execution intent.
+- Prefix detection is case-insensitive and allows whitespace around `:`.
+- For mixed intent prefixes, the first explicit prefix in task text wins (for example `verify: fast: ...` stays verify-only, `fast: verify: ...` stays fast-execution).
 
 ## Memory capture prefixes
 
@@ -692,7 +700,7 @@ Execution behavior for `.md` tools:
 Resolution rules:
 
 - Project `.js` tools are resolved first and can override built-ins.
-- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, `include:`, `profile:`).
+- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, `include:`, `profile:`).
 - Project `.md` tools are resolved after built-ins (for non-built-in names).
 - Tool matching is case-insensitive and checks the text before the first `:`.
 - Unknown prefixes fall back to normal `execute-and-verify` behavior.
@@ -715,6 +723,7 @@ With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and e
 - `--no-verify` — skip verification
 - `--only-verify` — verify without executing first
 - verify-only task text auto-skips execute phase (for example `verify: ...`, `confirm: ...`, `check: ...`)
+- fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`), even when global `--verify` is enabled
 - `--force-execute` — override verify-only auto-skip and run execute phase anyway
 - `--repair-attempts <n>` — retry repair up to `n` times
 - `--no-repair` — disable repair explicitly

@@ -146,6 +146,7 @@ Supported directive parents:
 
 - `profile: <name>`: children inherit that profile.
 - `verify:` / `confirm:` / `check:`: children are treated as verify-only tasks.
+- `fast:` / `raw:`: children execute with verification suppressed.
 
 Example:
 
@@ -163,6 +164,13 @@ Colon prefixes on checkbox text are also supported for verify-only intent:
 
 ```markdown
 - [ ] verify: docs are up to date
+```
+
+Fast execution aliases are also supported on checkbox text:
+
+```markdown
+- [ ] fast: update changelog headings
+- [ ] raw: regenerate API docs summary
 ```
 
 ## Unified prefix tool chain
@@ -193,6 +201,7 @@ Built-in handler aliases:
 
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- fast execution (skip verification): `fast:`, `raw:`
 - include task file: `include:`
 
 Built-in modifier:
@@ -236,10 +245,15 @@ Template variables:
 Resolution and precedence:
 
 - Project `.js` tools in `toolDirs` are checked first and can override built-ins.
-- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, `include:`, `profile:`).
+- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, `include:`, `profile:`).
 - Project `.md` tools are checked after built-ins (for non-built-in tool names).
 - Unknown prefixes do not error; they fall back to normal task execution.
 - Empty payload for handler tools is invalid and fails fast.
+
+Intent precedence notes:
+
+- Explicit text prefixes are classified in this order: verify -> memory -> fast/raw -> tool-expansion -> default execute+verify.
+- For mixed explicit prefixes, the first prefix in task text wins (`verify: fast: ...` remains verify-only; `fast: verify: ...` remains fast-execution).
 
 Special parser-level prefixes:
 

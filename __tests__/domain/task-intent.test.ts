@@ -87,6 +87,38 @@ describe("classifyTaskIntent", () => {
     expect(classifyTaskIntent("inventory: \r\n ", noToolResolver).hasEmptyPayload).toBe(true);
   });
 
+  it("classifies fast: and raw: prefixes as fast-execution", () => {
+    const fastDecision = classifyTaskIntent("fast: run release script", noToolResolver);
+    expect(fastDecision.intent).toBe("fast-execution");
+    expect(fastDecision.reason).toBe("explicit fast marker");
+    expect(fastDecision.normalizedTaskText).toBe("run release script");
+
+    const rawDecision = classifyTaskIntent("raw: run release script", noToolResolver);
+    expect(rawDecision.intent).toBe("fast-execution");
+    expect(rawDecision.reason).toBe("explicit fast marker");
+    expect(rawDecision.normalizedTaskText).toBe("run release script");
+  });
+
+  it("matches fast aliases case-insensitively with colon spacing", () => {
+    expect(classifyTaskIntent("FAST: compile docs", noToolResolver).intent).toBe("fast-execution");
+    expect(classifyTaskIntent("Raw : refresh fixtures", noToolResolver).intent).toBe("fast-execution");
+    expect(classifyTaskIntent("fAsT:\tdeploy preview", noToolResolver).intent).toBe("fast-execution");
+  });
+
+  it("trims fast payload text and flags empty payloads", () => {
+    expect(classifyTaskIntent("  fast:   run smoke tests  ", noToolResolver).normalizedTaskText).toBe("run smoke tests");
+    expect(classifyTaskIntent("raw:\n  collect logs", noToolResolver).normalizedTaskText).toBe("collect logs");
+
+    expect(classifyTaskIntent("fast:", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("raw:   ", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("FAST :\n\t", noToolResolver).hasEmptyPayload).toBe(true);
+  });
+
+  it("does not classify plain text containing fast/raw words as fast-execution", () => {
+    expect(classifyTaskIntent("fast forward these docs", noToolResolver).intent).toBe("execute-and-verify");
+    expect(classifyTaskIntent("raw logs were truncated", noToolResolver).intent).toBe("execute-and-verify");
+  });
+
   it("does not classify non-prefix memory words as memory-capture", () => {
     const decision = classifyTaskIntent("Document memory:pressure behavior in scheduler", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
@@ -197,5 +229,39 @@ describe("classifyTaskIntent", () => {
     const decision = classifyTaskIntent("memory: capture context", toolResolver);
     expect(decision.intent).toBe("memory-capture");
     expect(decision.memoryCapturePrefix).toBe("memory");
+  });
+
+  it("applies intent precedence in order: verify -> memory -> fast -> tool -> default", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: (toolName) => toolName === "fast" || toolName === "deploy"
+        ? {
+          name: toolName,
+          kind: "handler",
+          templatePath: `/workspace/.rundown/tools/${toolName}.md`,
+          template: "{{payload}}",
+        }
+        : undefined,
+      listKnownToolNames: () => ["fast", "deploy"],
+    };
+
+    expect(classifyTaskIntent("verify: fast: check output", toolResolver).intent).toBe("verify-only");
+    expect(classifyTaskIntent("memory: fast: capture context", toolResolver).intent).toBe("memory-capture");
+    expect(classifyTaskIntent("fast: deploy to prod", toolResolver).intent).toBe("fast-execution");
+    expect(classifyTaskIntent("deploy: release candidate", toolResolver).intent).toBe("tool-expansion");
+    expect(classifyTaskIntent("just implement the feature", toolResolver).intent).toBe("execute-and-verify");
+  });
+
+  it("uses the first recognized intent prefix for mixed-prefix inputs", () => {
+    const verifyFirst = classifyTaskIntent("verify: fast: run smoke checks", noToolResolver);
+    expect(verifyFirst.intent).toBe("verify-only");
+    expect(verifyFirst.normalizedTaskText).toBe("verify: fast: run smoke checks");
+
+    const fastFirst = classifyTaskIntent("fast: verify: run smoke checks", noToolResolver);
+    expect(fastFirst.intent).toBe("fast-execution");
+    expect(fastFirst.normalizedTaskText).toBe("verify: run smoke checks");
+
+    const memoryFirst = classifyTaskIntent("memory: fast: capture release notes", noToolResolver);
+    expect(memoryFirst.intent).toBe("memory-capture");
+    expect(memoryFirst.normalizedTaskText).toBe("fast: capture release notes");
   });
 });

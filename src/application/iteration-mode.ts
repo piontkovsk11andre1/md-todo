@@ -6,6 +6,18 @@ import { parsePrefixChain, type PrefixChain } from "../domain/prefix-chain.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
+function applyInheritedTaskIntent(taskIntent: TaskIntentDecision, inheritedIntent: Task["intent"]): TaskIntentDecision {
+  if (!inheritedIntent || taskIntent.intent !== "execute-and-verify") {
+    return taskIntent;
+  }
+
+  return {
+    ...taskIntent,
+    intent: inheritedIntent,
+    reason: "inherited directive intent",
+  };
+}
+
 /**
  * Represents the effective verification behavior for a single task iteration.
  *
@@ -43,23 +55,31 @@ export function resolveIterationVerificationMode(params: {
     emit,
   } = params;
 
-  // Classify the task text so verify-only directives can influence iteration mode.
-  const taskIntent = classifyTaskIntent(task.text, toolResolver);
+  // Classify explicit text prefixes, then apply any inherited parser directive intent.
+  const taskIntent = applyInheritedTaskIntent(
+    classifyTaskIntent(task.text, toolResolver),
+    task.intent,
+  );
   // Parse the unified prefix chain for tool-based dispatch.
   const prefixChain = parsePrefixChain(task.text, toolResolver);
 
   // Determine verify-only from either legacy intent or prefix chain handler.
   const prefixChainIsVerifyOnly = prefixChain.handler?.tool.frontmatter?.skipExecution === true
     && prefixChain.handler?.tool.frontmatter?.shouldVerify === true;
-  // Enter verify-only mode when globally configured or when task intent requires it.
-  const onlyVerify = configuredOnlyVerify
-    || (taskIntent.intent === "verify-only" && !forceExecute)
-    || (prefixChainIsVerifyOnly && !forceExecute);
-  // Verification is required whenever verify mode is configured or verify-only is active.
-  const shouldVerify = configuredShouldVerify || onlyVerify;
+  const isFastExecution = taskIntent.intent === "fast-execution";
+  const isTaskIntentVerifyOnly = taskIntent.intent === "verify-only";
+  const hasTaskDerivedVerifyOnly = isTaskIntentVerifyOnly || prefixChainIsVerifyOnly;
+  const shouldSkipExecutionForVerifyOnly = hasTaskDerivedVerifyOnly && !forceExecute;
+  // Enter verify-only mode when globally configured or when task intent requires it,
+  // unless the task is explicitly marked as fast-execution.
+  const onlyVerify = !isFastExecution
+    && (configuredOnlyVerify || shouldSkipExecutionForVerifyOnly);
+  // Verification is required whenever verify mode is configured or verify-only is active,
+  // except for explicit fast-execution tasks.
+  const shouldVerify = !isFastExecution && (configuredShouldVerify || onlyVerify);
 
   // Explain verify-only intent handling when it is task-derived (not globally forced).
-  if (!configuredOnlyVerify && (taskIntent.intent === "verify-only" || prefixChainIsVerifyOnly)) {
+  if (!isFastExecution && !configuredOnlyVerify && hasTaskDerivedVerifyOnly) {
     if (forceExecute) {
       // Inform the user that explicit force-execute overrides verify-only intent.
       emit({ kind: "info", message: "Task classified as verify-only (" + taskIntent.reason + "), but --force-execute is enabled; running execution." });
@@ -67,6 +87,10 @@ export function resolveIterationVerificationMode(params: {
       // Inform the user that execution is skipped because verify-only intent is honored.
       emit({ kind: "info", message: "Task classified as verify-only (" + taskIntent.reason + "); skipping execution." });
     }
+  }
+
+  if (isFastExecution && (configuredShouldVerify || configuredOnlyVerify || hasTaskDerivedVerifyOnly)) {
+    emit({ kind: "info", message: "Task uses fast/raw intent (" + taskIntent.reason + "); skipping verification." });
   }
 
   return { onlyVerify, shouldVerify, taskIntentDecision: taskIntent, prefixChain };

@@ -256,6 +256,16 @@ export async function runTaskIteration(params: {
     return { continueLoop: false, exitCode: 1 };
   }
 
+  if (taskIntentDecision.intent === "fast-execution" && taskIntentDecision.hasEmptyPayload) {
+    const message = "Fast task has no payload text; skipping.";
+    emit({
+      kind: "warn",
+      message,
+    });
+    emit({ kind: "group-end", status: "success" });
+    return { continueLoop: false, exitCode: 0 };
+  }
+
   const taskForExecution = taskIntentDecision.normalizedTaskText === task.text
     ? task
     : {

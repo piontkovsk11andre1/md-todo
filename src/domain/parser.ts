@@ -105,10 +105,14 @@ const FRONTMATTER_KEY_VALUE_PATTERN = /^\s*([^:#\s][^:]*)\s*:\s*(.*)$/;
 const PROFILE_DIRECTIVE_PATTERN = /^profile\s*:\s*(.+)$/i;
 // Detects directive list items that switch tasks to verify-only intent.
 const VERIFY_DIRECTIVE_PATTERN = /^(?:verify|confirm|check)\s*:\s*$/i;
+// Detects directive list items that switch tasks to fast-execution intent.
+const FAST_DIRECTIVE_PATTERN = /^(?:fast|raw)\s*:\s*$/i;
 // Detects explicit verify-only task prefixes with payload text.
 const VERIFY_TASK_PREFIX_PATTERN = /^(?:verify|confirm|check)\s*:/i;
 // Detects memory-capture task prefixes with payload text.
 const MEMORY_TASK_PREFIX_PATTERN = /^(?:memory|memorize|remember|inventory)\s*:/i;
+// Detects fast-execution task prefixes with payload text.
+const FAST_TASK_PREFIX_PATTERN = /^(?:fast|raw)\s*:/i;
 
 /** Context inherited while walking nested directive list items. */
 interface DirectiveContext {
@@ -274,7 +278,7 @@ function walkForTasks(
       subItems: [],
     };
 
-    if (directiveContext.intent) {
+    if (directiveContext.intent && !isIntentClassifiedPrefixTaskText(text)) {
       task.intent = directiveContext.intent;
     }
     if (directiveContext.directiveProfile) {
@@ -350,7 +354,11 @@ function isIntentClassifiedPrefixTaskText(taskText: string): boolean {
     return false;
   }
 
-  if (VERIFY_TASK_PREFIX_PATTERN.test(normalized) || MEMORY_TASK_PREFIX_PATTERN.test(normalized)) {
+  if (
+    VERIFY_TASK_PREFIX_PATTERN.test(normalized)
+    || MEMORY_TASK_PREFIX_PATTERN.test(normalized)
+    || FAST_TASK_PREFIX_PATTERN.test(normalized)
+  ) {
     return true;
   }
 
@@ -380,6 +388,10 @@ function parseDirectiveParent(text: string): DirectiveContext {
 
   if (VERIFY_DIRECTIVE_PATTERN.test(text)) {
     return { intent: "verify-only" };
+  }
+
+  if (FAST_DIRECTIVE_PATTERN.test(text)) {
+    return { intent: "fast-execution" };
   }
 
   return {};

@@ -120,6 +120,76 @@ describe("run-task orchestration", () => {
     }));
   });
 
+  it.each(["fast:", "raw:"])(
+    "keeps verification side effects enabled for non-fast tasks in the same run-all batch when first task uses %s",
+    async (fastPrefix) => {
+      const cwd = "/workspace";
+      const taskFile = path.join(cwd, "tasks.md");
+      const fastTaskText = `${fastPrefix} Draft release summary`;
+      const nonFastTaskText = "Ship release notes";
+      const { dependencies, events } = createDependencies({
+        cwd,
+        task: createTask(taskFile, fastTaskText),
+        fileSystem: createInMemoryFileSystem({
+          [taskFile]: `- [ ] ${fastTaskText}\n- [ ] ${nonFastTaskText}\n`,
+        }),
+        gitClient: createGitClientMock(),
+      });
+
+      let selectCallCount = 0;
+      const tasks = [
+        { text: fastTaskText, line: 1, index: 0 },
+        { text: nonFastTaskText, line: 2, index: 1 },
+      ];
+      dependencies.taskSelector.selectNextTask = vi.fn(() => {
+        if (selectCallCount >= tasks.length) {
+          return null;
+        }
+
+        const nextTask = tasks[selectCallCount];
+        selectCallCount += 1;
+        return {
+          task: {
+            ...createTask(taskFile, nextTask.text),
+            index: nextTask.index,
+            line: nextTask.line,
+          },
+          source: "tasks.md",
+          contextBefore: "",
+        };
+      });
+
+      const code = await createRunTask(dependencies)(
+        createOptions({
+          runAll: true,
+          verify: true,
+        }),
+      );
+
+      expect(code).toBe(0);
+      expect(dependencies.taskVerification.verify).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(dependencies.taskVerification.verify).mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        task: expect.objectContaining({
+          text: nonFastTaskText,
+        }),
+      }));
+
+      expect(dependencies.verificationStore.remove).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(dependencies.verificationStore.remove).mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+        text: nonFastTaskText,
+      }));
+
+      expect(events).toContainEqual({
+        kind: "info",
+        message: "Task uses fast/raw intent (explicit fast marker); skipping verification.",
+      });
+      expect(events).toContainEqual({
+        kind: "success",
+        message: "Verify phase complete: verification passed on initial attempt.",
+      });
+    },
+  );
+
   it("passes intent-resolved memory worker to execution for memory-capture tasks", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

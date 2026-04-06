@@ -217,6 +217,7 @@ Built-in handler aliases:
 
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
+- fast execution (skip verification): `fast:`, `raw:`
 - file composition: `include:`
 
 Built-in modifier:
@@ -227,6 +228,13 @@ Modifier and handler composition:
 
 - `profile: fast, verify: tests pass`
 - `profile: complex; memory: capture design tradeoffs`
+- `fast: ship release notes without verification`
+
+Intent precedence notes:
+
+- `fast:` / `raw:` are per-task aliases that disable verification for that task (inverse of `verify:`).
+- `fast:` / `raw:` support directive-parent inheritance (`- fast:` / `- raw:`) for child checkboxes.
+- Mixed explicit intent prefixes follow first-prefix precedence (`verify: fast: ...` -> verify-only, `fast: verify: ...` -> fast-execution).
 
 Modifiers patch context left-to-right; the terminal handler executes behavior. If only modifiers are present, rundown uses default execute+verify with the modified context.
 

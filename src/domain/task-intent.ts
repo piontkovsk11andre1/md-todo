@@ -3,7 +3,7 @@ import type { ToolResolverPort } from "./ports/tool-resolver-port.js";
 /**
  * Supported execution intents inferred from task wording.
  */
-export type TaskIntent = "verify-only" | "memory-capture" | "tool-expansion" | "execute-and-verify";
+export type TaskIntent = "verify-only" | "memory-capture" | "tool-expansion" | "fast-execution" | "execute-and-verify";
 
 /**
  * Decision payload returned after classifying task intent.
@@ -29,6 +29,8 @@ export interface TaskIntentDecision {
 const EXPLICIT_VERIFY_PREFIX = /^(verify|confirm|check)\s*:/i;
 // Prefix marker that requests memory capture execution semantics.
 const MEMORY_CAPTURE_PREFIX = /^(memory|memorize|remember|inventory)\s*:\s*/i;
+// Prefix marker that requests execution without verification.
+const FAST_EXECUTION_PREFIX = /^(fast|raw)\s*:/i;
 
 function extractMemoryCaptureParts(taskText: string): {
   payload: string;
@@ -103,6 +105,17 @@ export function classifyTaskIntent(taskText: string, toolResolver?: ToolResolver
       normalizedTaskText: memoryCapture.payload,
       hasEmptyPayload: memoryCapture.payload.length === 0,
       memoryCapturePrefix: memoryCapture.prefix,
+    };
+  }
+
+  const fastExecutionPrefixMatch = normalized.match(FAST_EXECUTION_PREFIX);
+  if (fastExecutionPrefixMatch) {
+    const payload = normalized.slice(fastExecutionPrefixMatch[0].length).trim();
+    return {
+      intent: "fast-execution",
+      reason: "explicit fast marker",
+      normalizedTaskText: payload,
+      hasEmptyPayload: payload.length === 0,
     };
   }
 

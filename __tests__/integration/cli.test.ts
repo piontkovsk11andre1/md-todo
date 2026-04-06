@@ -688,6 +688,265 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
   });
 
+  it.each(["fast", "raw"])("run executes %s-prefixed tasks without verification when --verify is enabled", async (prefix) => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), `- [ ] ${prefix}: release docs are consistent\n`, "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--dry-run",
+      "--worker",
+      "opencode",
+      "run",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("would run verification"))).toBe(false);
+  });
+
+  it.each(["fast", "raw"])("run skips empty %s payload tasks and surfaces warning output", async (prefix) => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "empty-fast-payload-worker.cjs");
+    const workerProbePath = path.join(workspace, "empty-fast-payload-worker-ran.txt");
+
+    fs.writeFileSync(roadmapPath, `- [ ] ${prefix}:   \n`, "utf-8");
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      `fs.writeFileSync(${JSON.stringify(workerProbePath.replace(/\\/g, "/"))}, 'ran\\n', 'utf-8');`,
+      "process.exit(0);",
+      "",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("Fast task has no payload text; skipping.")).toBe(true);
+    expect(fs.existsSync(workerProbePath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(`- [ ] ${prefix}:   \n`);
+  });
+
+  it.each(["fast", "raw"])("run mixed %s/normal plans verify only the normal task under --verify", async (prefix) => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "verify-probe-worker.mjs");
+    const phaseLogPath = path.join(workspace, ".worker-phase.log");
+    const normalizedWorkerScriptPath = workerScriptPath.replace(/\\/g, "/");
+
+    fs.writeFileSync(workerScriptPath, [
+      "import fs from 'node:fs';",
+      "import path from 'node:path';",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      "const phaseLogPath = path.join(process.cwd(), '.worker-phase.log');",
+      "if (prompt.includes('Verify whether the selected task is complete.')) {",
+      "  fs.appendFileSync(phaseLogPath, 'verify\\n');",
+      "  console.log('OK');",
+      "  process.exit(0);",
+      "}",
+      "fs.appendFileSync(phaseLogPath, 'execute\\n');",
+      "process.exit(0);",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(roadmapPath, [
+      `- [ ] ${prefix}: release docs are consistent`,
+      "- [ ] finalize release notes",
+      "",
+    ].join("\n"), "utf-8");
+
+    const fastTaskResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(fastTaskResult.code).toBe(0);
+    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    expect(fastTaskResult.logs.some((line) => line.includes(`node ${normalizedWorkerScriptPath} [wait]`))).toBe(true);
+    expect(fastTaskResult.logs.some((line) => line.includes("Running tool:"))).toBe(false);
+    const phasesAfterFastTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterFastTask.filter((phase) => phase === "execute")).toHaveLength(1);
+    expect(phasesAfterFastTask.filter((phase) => phase === "verify")).toHaveLength(0);
+
+    const normalTaskResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(normalTaskResult.code).toBe(0);
+    const phasesAfterNormalTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterNormalTask.filter((phase) => phase === "execute")).toHaveLength(2);
+    expect(phasesAfterNormalTask.filter((phase) => phase === "verify")).toHaveLength(1);
+  });
+
+  it.each(["fast", "raw"])("run inherits %s directives for child tasks and skips verification under --verify", async (prefix) => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "verify-probe-worker-inherited-fast.mjs");
+    const phaseLogPath = path.join(workspace, ".worker-phase.log");
+    const normalizedWorkerScriptPath = workerScriptPath.replace(/\\/g, "/");
+
+    fs.writeFileSync(workerScriptPath, [
+      "import fs from 'node:fs';",
+      "import path from 'node:path';",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      "const phaseLogPath = path.join(process.cwd(), '.worker-phase.log');",
+      "if (prompt.includes('Verify whether the selected task is complete.')) {",
+      "  fs.appendFileSync(phaseLogPath, 'verify\\n');",
+      "  console.log('OK');",
+      "  process.exit(0);",
+      "}",
+      "fs.appendFileSync(phaseLogPath, 'execute\\n');",
+      "process.exit(0);",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(roadmapPath, [
+      `- ${prefix}:`,
+      "  - [ ] ship release docs",
+      "  - [ ] audit changelog links",
+      "",
+    ].join("\n"), "utf-8");
+
+    const firstChildResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(firstChildResult.code).toBe(0);
+    const phasesAfterFirstChild = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterFirstChild.filter((phase) => phase === "execute")).toHaveLength(1);
+    expect(phasesAfterFirstChild.filter((phase) => phase === "verify")).toHaveLength(0);
+
+    const secondChildResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(secondChildResult.code).toBe(0);
+    const phasesAfterSecondChild = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterSecondChild.filter((phase) => phase === "execute")).toHaveLength(2);
+    expect(phasesAfterSecondChild.filter((phase) => phase === "verify")).toHaveLength(0);
+  });
+
+  it.each(["fast", "raw"])("run keeps verify/memory prefix behavior unchanged when %s aliases are present", async (prefix) => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "verify-memory-regression-worker.cjs");
+    const phaseLogPath = path.join(workspace, ".worker-phase.log");
+    const normalizedWorkerScriptPath = workerScriptPath.replace(/\\/g, "/");
+
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      "const phaseLogPath = path.join(process.cwd(), '.worker-phase.log');",
+      "if (prompt.includes('Verify whether the selected task is complete.')) {",
+      "  fs.appendFileSync(phaseLogPath, 'verify\\n');",
+      "  console.log('OK');",
+      "  process.exit(0);",
+      "}",
+      "fs.appendFileSync(phaseLogPath, 'execute\\n');",
+      "console.log('Captured release context');",
+      "process.exit(0);",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(roadmapPath, [
+      `- [ ] ${prefix}: prep release context`,
+      "- [ ] verify: release docs are consistent",
+      "- [ ] memory: capture release context",
+      "",
+    ].join("\n"), "utf-8");
+
+    const fastTaskResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(fastTaskResult.code).toBe(0);
+    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    const phasesAfterFastTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterFastTask.filter((phase) => phase === "execute")).toHaveLength(1);
+    expect(phasesAfterFastTask.filter((phase) => phase === "verify")).toHaveLength(0);
+
+    const verifyTaskResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(verifyTaskResult.code).toBe(0);
+    const phasesAfterVerifyTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(phasesAfterVerifyTask.filter((phase) => phase === "execute")).toHaveLength(1);
+    expect(phasesAfterVerifyTask.filter((phase) => phase === "verify")).toHaveLength(1);
+
+    const memoryTaskResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      normalizedWorkerScriptPath,
+    ], workspace);
+
+    expect(memoryTaskResult.code).toBe(0);
+    expect(memoryTaskResult.logs.some((line) => line.includes("Task checked: capture release context"))).toBe(true);
+
+    const memoryFilePath = path.join(workspace, ".rundown", "roadmap.md.memory.md");
+    const memoryIndexPath = path.join(workspace, ".rundown", "memory-index.json");
+    const canonicalSourcePath = path.resolve(roadmapPath);
+
+    expect(fs.existsSync(memoryFilePath)).toBe(true);
+    expect(fs.existsSync(memoryIndexPath)).toBe(true);
+    expect(fs.readFileSync(memoryFilePath, "utf-8")).toContain("Captured release context");
+
+    const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, { summary?: string }>;
+    expect(index[canonicalSourcePath]?.summary).toBe("Captured release context");
+  });
+
   it("run keeps directive-based profile behavior for verify tasks during migration", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(

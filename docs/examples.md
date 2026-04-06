@@ -377,6 +377,7 @@ Markdown:
 
 ```md
 - [ ] verify: release checklist is complete
+- [ ] fast: regenerate release notes snippets
 - [ ] profile: fast, verify: docs examples are accurate
 - [ ] profile: complex; memory: capture migration assumptions
 - [ ] include: ./release-subtasks.md
@@ -386,6 +387,8 @@ What happens:
 
 1. `verify:` / `confirm:` / `check:` run verify-only behavior.
 2. `memory:` / `memorize:` / `remember:` / `inventory:` run capture + persist, then verify.
-3. `profile:` applies as a modifier and composes with downstream handler tools.
-4. `include:` executes tasks from a cloned artifacts copy of the target markdown file and auto-checks include on success.
-5. Unknown prefixes are treated as normal task text and do not fail resolution.
+3. `fast:` / `raw:` run execution without verification for that task (inverse of verify-only).
+4. `profile:` applies as a modifier and composes with downstream handler tools.
+5. `include:` executes tasks from a cloned artifacts copy of the target markdown file and auto-checks include on success.
+6. When mixed explicit intent prefixes appear in task text, the first explicit prefix wins (`verify: fast: ...` is verify-only; `fast: verify: ...` is fast-execution).
+7. Unknown prefixes are treated as normal task text and do not fail resolution.
