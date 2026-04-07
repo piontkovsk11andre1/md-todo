@@ -229,6 +229,48 @@ export function parseRounds(value: string | undefined): number {
 }
 
 /**
+ * Parses loop cooldown seconds as milliseconds between iterations.
+ */
+export function parseCooldown(value: string): number {
+  const seconds = parseIntOption(value, {
+    optionName: "cooldown",
+    allowUndefined: false,
+    min: 1,
+    integerLabel: "positive integer",
+    safeIntegerLabel: "safe positive integer",
+  });
+
+  return seconds * 1000;
+}
+
+/**
+ * @deprecated Use `parseCooldown` instead.
+ */
+export function parseLoopCooldownSeconds(value: string | undefined): number {
+  return parseIntOption(value, {
+    optionName: "cooldown",
+    defaultValue: 60,
+    allowUndefined: false,
+    min: 0,
+    integerLabel: "non-negative integer",
+    safeIntegerLabel: "safe non-negative integer",
+  });
+}
+
+/**
+ * Parses optional loop iteration cap.
+ */
+export function parseLoopIterations(value: string | undefined): number | undefined {
+  return parseIntOption(value, {
+    optionName: "iterations",
+    allowUndefined: true,
+    min: 1,
+    integerLabel: "positive integer",
+    safeIntegerLabel: "safe positive integer",
+  });
+}
+
+/**
  * Validates and resolves the single Markdown file expected by the `plan` command.
  */
 export function resolvePlanMarkdownFile(markdownFiles: string[]): string {

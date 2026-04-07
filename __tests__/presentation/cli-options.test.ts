@@ -11,6 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("../../src/create-app.js");
+  vi.doUnmock("../../src/infrastructure/cancellable-sleep.js");
   vi.doUnmock("../../src/infrastructure/adapters/config-dir-adapter.js");
   vi.doUnmock("../../src/infrastructure/adapters/global-output-log-writer.js");
 });
@@ -562,6 +563,341 @@ describe("CLI run option normalization", () => {
     expect(call.resetAfter).toBe(true);
     expect(call.runAll).toBe(true);
     expect(call.cacheCliBlocks).toBe(true);
+  });
+
+  it("loop enforces call semantics for each iteration", async () => {
+    const runTask = vi.fn(async () => 0);
+    const calls = await invokeLoopAndCaptureRunCalls([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "1",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      source: "tasks.md",
+      clean: true,
+      redo: true,
+      resetAfter: true,
+      runAll: true,
+      cacheCliBlocks: true,
+    });
+  });
+
+  it("loop runs bounded iterations", async () => {
+    const runTask = vi.fn(async () => 0);
+    const calls = await invokeLoopAndCaptureRunCalls([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "3",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(calls).toHaveLength(3);
+  });
+
+  it("loop releases held locks after each iteration before cooldown", async () => {
+    const runTask = vi.fn(async () => 0);
+    const releaseAllLocks = vi.fn();
+    const result = await invokeLoopAndCaptureRunCallsAndLockReleaseCount([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask, releaseAllLocks);
+
+    expect(result.calls).toHaveLength(2);
+    expect(releaseAllLocks).toHaveBeenCalledTimes(2);
+  });
+
+  it("loop still releases locks when an iteration throws", async () => {
+    const runTask = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(0)
+      .mockRejectedValueOnce(new Error("boom"));
+    const releaseAllLocks = vi.fn();
+    const exitCode = await invokeLoopAndCaptureExitCodeWithLockRelease([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "3",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask, releaseAllLocks);
+
+    expect(exitCode).toBe(1);
+    expect(releaseAllLocks).toHaveBeenCalledTimes(2);
+  });
+
+  it("loop emits iteration start and completion status messages", async () => {
+    const runTask = vi.fn(async () => 0);
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(infoMessages).toContain("Loop iteration 1 starting...");
+    expect(infoMessages).toContain("Loop iteration 1 completed - starting next iteration immediately.");
+    expect(infoMessages).toContain("Loop iteration 2 starting...");
+    expect(infoMessages).toContain("Loop iteration 2 completed - reached iteration limit; stopping.");
+  });
+
+  it("loop emits a final summary for bounded successful iterations", async () => {
+    const runTask = vi.fn(async () => 0);
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(infoMessages).toContain("Loop summary: total iterations=2, succeeded=2, failed=0.");
+  });
+
+  it("loop emits cooldown status with remaining time", async () => {
+    const runTask = vi.fn(async () => 0);
+    const cancellableSleep = vi.fn(() => ({
+      promise: Promise.resolve(),
+      cancel: () => {},
+    }));
+
+    vi.doMock("../../src/infrastructure/cancellable-sleep.js", () => ({
+      cancellableSleep,
+    }));
+
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "2",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(infoMessages).toContain("Loop cooldown: 2s remaining before iteration 2.");
+    expect(infoMessages).toContain("Loop cooldown: 1s remaining before iteration 2.");
+    expect(cancellableSleep).toHaveBeenCalledTimes(2);
+    expect(cancellableSleep).toHaveBeenNthCalledWith(1, 1000);
+    expect(cancellableSleep).toHaveBeenNthCalledWith(2, 1000);
+  });
+
+  it("loop exits with code 0 on SIGINT during cooldown", async () => {
+    const runTask = vi.fn(async () => 0);
+    const cancellableSleep = vi.fn(() => {
+      process.emit("SIGINT");
+      return {
+        promise: Promise.resolve(),
+        cancel: () => {},
+      };
+    });
+
+    vi.doMock("../../src/infrastructure/cancellable-sleep.js", () => ({
+      cancellableSleep,
+    }));
+
+    const exitCode = await invokeRunAndCaptureExitCode([
+      "loop",
+      "tasks.md",
+      "--cooldown",
+      "5",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("loop rejects interactive --mode values such as tui before first iteration", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      const exitCode = await invokeRunAndCaptureExitCode([
+        "loop",
+        "tasks.md",
+        "--mode",
+        "tui",
+        "--iterations",
+        "1",
+        "--cooldown",
+        "0",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(exitCode).toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --mode value: tui"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Allowed: wait"));
+      expect(runTask).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("loop stops on failed iteration by default", async () => {
+    const runTask = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
+
+    const exitCode = await invokeRunAndCaptureExitCode([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "3",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).toHaveBeenCalledTimes(2);
+    expect(exitCode).toBe(2);
+  });
+
+  it("loop propagates execution failure exit code when stopping on error", async () => {
+    const runTask = vi.fn<() => Promise<number>>().mockResolvedValueOnce(1);
+
+    const exitCode = await invokeRunAndCaptureExitCode([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "3",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(exitCode).toBe(1);
+  });
+
+  it("loop continues after failures with --continue-on-error", async () => {
+    const runTask = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
+
+    const exitCode = await invokeRunAndCaptureExitCode([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--continue-on-error",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).toHaveBeenCalledTimes(2);
+    expect(exitCode).toBe(0);
+  });
+
+  it("loop emits a final summary when stopping on failure", async () => {
+    const runTask = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
+
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "3",
+      "--cooldown",
+      "0",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(infoMessages).toContain("Loop summary: total iterations=2, succeeded=1, failed=1.");
+  });
+
+  it("loop emits a final summary with failures when continuing on error", async () => {
+    const runTask = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(0);
+
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--continue-on-error",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(infoMessages).toContain("Loop summary: total iterations=2, succeeded=1, failed=1.");
   });
 
   it("passes force-execute option to run task", async () => {
@@ -3906,6 +4242,168 @@ async function invokePlanAndCaptureExitCode(args: string[], planTask: ReturnType
   }
 
   throw new Error("Expected CLI exit");
+}
+
+async function invokeLoopAndCaptureRunCalls(args: string[], runTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall[]> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  return runTask.mock.calls.map((call) => withLegacyWorkerCommand(call[0] as RunTaskCall));
+}
+
+async function invokeLoopAndCaptureRunCallsAndLockReleaseCount(
+  args: string[],
+  runTask: ReturnType<typeof vi.fn>,
+  releaseAllLocks: ReturnType<typeof vi.fn>,
+): Promise<{ calls: RunTaskCall[] }> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+      releaseAllLocks,
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  return {
+    calls: runTask.mock.calls.map((call) => withLegacyWorkerCommand(call[0] as RunTaskCall)),
+  };
+}
+
+async function invokeLoopAndCaptureExitCodeWithLockRelease(
+  args: string[],
+  runTask: ReturnType<typeof vi.fn>,
+  releaseAllLocks: ReturnType<typeof vi.fn>,
+): Promise<number> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+      releaseAllLocks,
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    const match = /CLI exited with code (\d+)/.exec(message);
+    if (match) {
+      return Number(match[1]);
+    }
+    if (/process\.exit unexpectedly called/.test(message)) {
+      return 1;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
+}
+
+interface CapturedOutputEvent {
+  kind: string;
+  message: string;
+}
+
+async function invokeLoopAndCaptureOutputEvents(
+  args: string[],
+  runTask: ReturnType<typeof vi.fn>,
+): Promise<CapturedOutputEvent[]> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  const events: CapturedOutputEvent[] = [];
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+      emitOutput: vi.fn((event: CapturedOutputEvent) => {
+        events.push(event);
+      }),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  return events;
 }
 
 async function invokeListAndCaptureCall(args: string[], listTasks: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {

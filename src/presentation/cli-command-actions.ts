@@ -7,6 +7,8 @@ import {
   parseForceAttempts,
   parseLastCount,
   parseLimitCount,
+  parseLoopCooldownSeconds,
+  parseLoopIterations,
   parseRepairAttempts,
   parseRevertMethod,
   parseRounds,
@@ -25,6 +27,7 @@ import {
   resolveMakeMarkdownFile,
   resolveVerifyFlag,
 } from "./cli-options.js";
+import { cancellableSleep } from "../infrastructure/cancellable-sleep.js";
 import {
   inferWorkerPatternFromCommand,
   parseWorkerPattern,
@@ -59,6 +62,11 @@ interface RunActionDependencies extends WorkerActionDependencies {
 }
 
 type CallActionDependencies = RunActionDependencies;
+
+interface LoopActionDependencies extends WorkerActionDependencies {
+  runnerModes: readonly ProcessRunMode[];
+  setLoopSignalExitCode?: (code: number) => void;
+}
 
 interface DiscussActionDependencies extends WorkerActionDependencies {
   discussModes: readonly ProcessRunMode[];
@@ -212,6 +220,207 @@ export function createCallCommandAction({
     clean: true,
     cacheCliBlocks: true,
   });
+}
+
+/**
+ * Creates the `loop` command action handler.
+ *
+ * The returned action repeatedly runs `call` semantics with optional bounds,
+ * cooldown delay, and configurable failure handling.
+ */
+export function createLoopCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+  runnerModes,
+  setLoopSignalExitCode,
+}: LoopActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
+  return async (source: string, opts: CliOpts) => {
+    const app = getApp();
+    const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
+    const sortMode = parseSortMode(opts.sort as string | undefined);
+    const verify = resolveVerifyFlag(opts);
+    const onlyVerify = Boolean(opts.onlyVerify as boolean | undefined);
+    const forceExecute = Boolean(opts.forceExecute as boolean | undefined);
+    const forceAttempts = parseForceAttempts(opts.forceAttempts as string | undefined);
+    const noRepair = resolveNoRepairFlag(opts);
+    const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
+    const dryRun = Boolean(opts.dryRun as boolean | undefined);
+    const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
+    const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
+    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const commitMode = parseCommitMode(opts.commitMode as string | undefined);
+    const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
+    const onCompleteCommand = normalizeOptionalString(opts.onComplete);
+    const onFailCommand = normalizeOptionalString(opts.onFail);
+    const rounds = parseRounds(opts.rounds as string | undefined);
+    const verbose = resolveVerboseOption(opts);
+    const iterations = parseLoopIterations(opts.iterations as string | undefined);
+    const cooldownSeconds = parseLoopCooldownSeconds(opts.cooldown as string | undefined);
+    const cooldownMs = cooldownSeconds * 1000;
+    const continueOnError = Boolean(opts.continueOnError as boolean | undefined);
+    const hasBoundedIterations = typeof iterations === "number";
+    let iteration = 0;
+    let succeededIterations = 0;
+    let failedIterations = 0;
+    let loopExitCode = 0;
+    let cancelActiveCooldown: (() => void) | undefined;
+
+    const cancelLoopCooldownOnShutdown = () => {
+      cancelActiveCooldown?.();
+    };
+
+    process.prependListener("SIGINT", cancelLoopCooldownOnShutdown);
+    process.prependListener("SIGTERM", cancelLoopCooldownOnShutdown);
+
+    try {
+
+      while (!hasBoundedIterations || iteration < iterations) {
+        iteration += 1;
+        emitCliInfo(app, `Loop iteration ${iteration} starting...`);
+
+        let iterationExitCode = 1;
+        try {
+          iterationExitCode = normalizeLoopIterationExitCode(await app.runTask({
+            source,
+            mode,
+            workerPattern: sharedRuntimeOptions.workerPattern,
+            sortMode,
+            verify,
+            onlyVerify,
+            forceExecute,
+            forceAttempts,
+            noRepair,
+            repairAttempts,
+            dryRun,
+            printPrompt,
+            keepArtifacts: sharedRuntimeOptions.keepArtifacts,
+            trace: sharedRuntimeOptions.trace,
+            traceOnly,
+            varsFileOption: sharedRuntimeOptions.varsFileOption,
+            cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
+            commitAfterComplete,
+            commitMode,
+            commitMessageTemplate,
+            onCompleteCommand,
+            onFailCommand,
+            showAgentOutput: sharedRuntimeOptions.showAgentOutput,
+            runAll: true,
+            redo: true,
+            resetAfter: true,
+            clean: true,
+            rounds,
+            forceUnlock: sharedRuntimeOptions.forceUnlock,
+            cliBlockTimeoutMs: sharedRuntimeOptions.cliBlockTimeoutMs,
+            ignoreCliBlock: sharedRuntimeOptions.ignoreCliBlock,
+            cacheCliBlocks: true,
+            verbose,
+          }));
+        } finally {
+          releaseLoopHeldLocks(app);
+        }
+        const isSuccess = iterationExitCode === 0;
+        const reachedIterationLimit = hasBoundedIterations && iteration >= iterations;
+
+        if (!isSuccess) {
+          failedIterations += 1;
+          if (!continueOnError) {
+            app.emitOutput?.({
+              kind: "warn",
+              message: `Loop iteration ${iteration} failed with exit code ${iterationExitCode}; stopping loop.`,
+            });
+            loopExitCode = iterationExitCode;
+            break;
+          }
+
+          if (reachedIterationLimit) {
+            emitCliInfo(app, `Loop iteration ${iteration} failed with exit code ${iterationExitCode}; reached iteration limit, stopping.`);
+            break;
+          }
+
+          if (cooldownMs > 0) {
+            app.emitOutput?.({
+              kind: "warn",
+              message: `Loop iteration ${iteration} failed with exit code ${iterationExitCode}; cooling down for ${cooldownSeconds}s before retry.`,
+            });
+            const cooldownInterruptedBy = await emitLoopCooldownCountdown({
+              app,
+              cooldownSeconds,
+              nextIteration: iteration + 1,
+              onInterrupt: (signal) => {
+                if (signal === "SIGINT") {
+                  setLoopSignalExitCode?.(0);
+                }
+              },
+              setActiveCooldownCanceller: (cancel) => {
+                cancelActiveCooldown = cancel;
+              },
+            });
+            if (cooldownInterruptedBy === "SIGINT") {
+              break;
+            }
+          } else {
+            app.emitOutput?.({
+              kind: "warn",
+              message: `Loop iteration ${iteration} failed with exit code ${iterationExitCode}; starting next iteration immediately.`,
+            });
+          }
+          continue;
+        }
+
+        succeededIterations += 1;
+
+        if (reachedIterationLimit) {
+          emitCliInfo(app, `Loop iteration ${iteration} completed - reached iteration limit; stopping.`);
+          break;
+        }
+
+        if (cooldownMs > 0) {
+          emitCliInfo(app, `Loop iteration ${iteration} completed - cooling down for ${cooldownSeconds}s...`);
+          const cooldownInterruptedBy = await emitLoopCooldownCountdown({
+            app,
+            cooldownSeconds,
+            nextIteration: iteration + 1,
+            onInterrupt: (signal) => {
+              if (signal === "SIGINT") {
+                setLoopSignalExitCode?.(0);
+              }
+            },
+            setActiveCooldownCanceller: (cancel) => {
+              cancelActiveCooldown = cancel;
+            },
+          });
+          if (cooldownInterruptedBy === "SIGINT") {
+            break;
+          }
+        } else {
+          emitCliInfo(app, `Loop iteration ${iteration} completed - starting next iteration immediately.`);
+        }
+      }
+
+      emitCliInfo(
+        app,
+        `Loop summary: total iterations=${iteration}, succeeded=${succeededIterations}, failed=${failedIterations}.`,
+      );
+
+      return loopExitCode;
+    } finally {
+      cancelActiveCooldown = undefined;
+      process.off("SIGINT", cancelLoopCooldownOnShutdown);
+      process.off("SIGTERM", cancelLoopCooldownOnShutdown);
+    }
+  };
+}
+
+function releaseLoopHeldLocks(app: CliApp): void {
+  try {
+    app.releaseAllLocks?.();
+  } catch (error) {
+    app.emitOutput?.({
+      kind: "warn",
+      message: "Loop failed to release file locks between iterations: " + String(error),
+    });
+  }
 }
 
 /**
@@ -747,6 +956,72 @@ function normalizeMakePhaseExitCode(exitCode: number): number {
   }
 
   return 1;
+}
+
+/**
+ * Preserves valid loop-iteration exit codes while falling back to a generic execution failure.
+ */
+function normalizeLoopIterationExitCode(exitCode: number): number {
+  if (Number.isSafeInteger(exitCode) && exitCode >= 0) {
+    return exitCode;
+  }
+
+  return 1;
+}
+
+interface LoopCooldownCountdownOptions {
+  app: CliApp;
+  cooldownSeconds: number;
+  nextIteration: number;
+  onInterrupt?: (signal: NodeJS.Signals) => void;
+  setActiveCooldownCanceller?: (cancel: (() => void) | undefined) => void;
+}
+
+async function emitLoopCooldownCountdown({
+  app,
+  cooldownSeconds,
+  nextIteration,
+  onInterrupt,
+  setActiveCooldownCanceller,
+}: LoopCooldownCountdownOptions): Promise<NodeJS.Signals | undefined> {
+  let interruptedBySignal: NodeJS.Signals | undefined;
+  let activeSleep: ReturnType<typeof cancellableSleep> | undefined;
+
+  const interruptCooldown = (signal: NodeJS.Signals) => {
+    interruptedBySignal = signal;
+    onInterrupt?.(signal);
+    activeSleep?.cancel();
+  };
+
+  const sigintListener = () => {
+    interruptCooldown("SIGINT");
+  };
+  const sigtermListener = () => {
+    interruptCooldown("SIGTERM");
+  };
+
+  process.prependOnceListener("SIGINT", sigintListener);
+  process.prependOnceListener("SIGTERM", sigtermListener);
+
+  for (let remainingSeconds = cooldownSeconds; remainingSeconds > 0; remainingSeconds -= 1) {
+    if (interruptedBySignal) {
+      break;
+    }
+    emitCliInfo(app, `Loop cooldown: ${remainingSeconds}s remaining before iteration ${nextIteration}.`);
+    activeSleep = cancellableSleep(1000);
+    setActiveCooldownCanceller?.(() => {
+      activeSleep?.cancel();
+    });
+    await activeSleep.promise;
+    activeSleep = undefined;
+    setActiveCooldownCanceller?.(undefined);
+  }
+
+  setActiveCooldownCanceller?.(undefined);
+  process.off("SIGINT", sigintListener);
+  process.off("SIGTERM", sigtermListener);
+
+  return interruptedBySignal;
 }
 
 /**

@@ -19,6 +19,7 @@ interface LockReleaseApp {
 interface LockReleaseHandlerDependencies {
   terminate: (code: number) => never;
   getAppForCleanup: () => LockReleaseApp | undefined;
+  resolveExitCodeForSignal?: (signal: NodeJS.Signals) => number | undefined;
 }
 
 interface LockReleaseHandlerState {
@@ -41,6 +42,7 @@ function getLockReleaseHandlerState(): LockReleaseHandlerState {
           process.exit(code);
         },
         getAppForCleanup: () => undefined,
+        resolveExitCodeForSignal: () => undefined,
       },
     };
   }
@@ -96,11 +98,13 @@ function hasRegisteredLockReleaseExitHandler(): boolean {
 export function registerLockReleaseSignalHandlers({
   terminate,
   getAppForCleanup,
+  resolveExitCodeForSignal,
 }: LockReleaseHandlerDependencies): void {
   // Refresh dependencies so existing handlers always use latest app reference.
   getLockReleaseHandlerState().dependencies = {
     terminate,
     getAppForCleanup,
+    resolveExitCodeForSignal,
   };
 
   if (!hasRegisteredLockReleaseHandler("SIGINT")) {
@@ -108,7 +112,7 @@ export function registerLockReleaseSignalHandlers({
       const dependencies = resolveLockReleaseHandlerDependencies();
       // Exit code 130 indicates termination by Ctrl+C (SIGINT).
       releaseHeldFileLocksBestEffort(dependencies.getAppForCleanup);
-      dependencies.terminate(130);
+      dependencies.terminate(dependencies.resolveExitCodeForSignal?.("SIGINT") ?? 130);
     }, { [LOCK_RELEASE_SIGNAL_HANDLER_MARKER]: true });
     process.on("SIGINT", sigintHandler);
   }
@@ -118,7 +122,7 @@ export function registerLockReleaseSignalHandlers({
       const dependencies = resolveLockReleaseHandlerDependencies();
       // Exit code 143 indicates termination by SIGTERM.
       releaseHeldFileLocksBestEffort(dependencies.getAppForCleanup);
-      dependencies.terminate(143);
+      dependencies.terminate(dependencies.resolveExitCodeForSignal?.("SIGTERM") ?? 143);
     }, { [LOCK_RELEASE_SIGNAL_HANDLER_MARKER]: true });
     process.on("SIGTERM", sigtermHandler);
   }

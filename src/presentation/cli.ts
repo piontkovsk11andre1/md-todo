@@ -32,6 +32,7 @@ import { normalizeExitCode } from "../domain/exit-codes.js";
 import {
   createArtifactsCommandAction,
   createCallCommandAction,
+  createLoopCommandAction,
   createDiscussCommandAction,
   createDoCommandAction,
   createInitCommandAction,
@@ -57,6 +58,7 @@ const DISCUSS_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
 const RESEARCH_MODES: readonly ProcessRunMode[] = ["wait", "tui"];
 const MAKE_MODES: readonly ProcessRunMode[] = ["wait"];
 const DO_MODES: readonly ProcessRunMode[] = ["wait"];
+const LOOP_MODES: readonly ProcessRunMode[] = ["wait"];
 const COMMIT_MODES = ["per-task", "file-done"] as const;
 const DEFAULT_PLAN_SCAN_COUNT = 3;
 const DEFAULT_PLAN_DEEP = 0;
@@ -79,6 +81,7 @@ interface CliRuntimeState {
   invocationLogState: CliInvocationLogState | undefined;
   invocationArgv: string[] | undefined;
   app: CliApp | undefined;
+  loopSignalExitCode: number | undefined;
 }
 
 // Shared mutable runtime state for the current CLI process invocation.
@@ -87,6 +90,7 @@ const runtimeState: CliRuntimeState = {
   invocationLogState: undefined,
   invocationArgv: undefined,
   app: undefined,
+  loopSignalExitCode: undefined,
 };
 
 const program = new Command();
@@ -148,6 +152,26 @@ configureRunLikeCommandOptions(callCommand)
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     runnerModes: RUNNER_MODES,
+  })));
+
+const loopCommand = program
+  .command("loop")
+  .description("Run full clean call passes repeatedly with an optional cooldown between iterations.")
+  .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
+  .option("--cooldown <seconds>", "Cooldown delay in seconds between iterations", "60")
+  .option("--iterations <n>", "Stop after N iterations (default: unlimited)")
+  .option("--continue-on-error", "Continue loop after iteration failure", false)
+  .configureHelp({ showGlobalOptions: true });
+
+configureRunLikeCommandOptions(loopCommand)
+  .allowUnknownOption(false)
+  .action(withCliAction(createLoopCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+    runnerModes: LOOP_MODES,
+    setLoopSignalExitCode: (code) => {
+      runtimeState.loopSignalExitCode = code;
+    },
   })));
 
 program
@@ -516,6 +540,19 @@ function withCliAction<Args extends unknown[]>(
   };
 }
 
+function consumeLoopSignalExitCode(signal: NodeJS.Signals): number | undefined {
+  if (resolveInvocationCommand(runtimeState.invocationArgv ?? process.argv.slice(2)) !== "loop") {
+    return undefined;
+  }
+
+  const exitCode = runtimeState.loopSignalExitCode;
+  runtimeState.loopSignalExitCode = undefined;
+  if (signal === "SIGINT" && exitCode === 0) {
+    return 0;
+  }
+  return undefined;
+}
+
 /**
  * Parses CLI arguments, prepares invocation context, and executes the selected command.
  *
@@ -531,6 +568,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   // Reset invocation-scoped state so each parse call starts from a clean baseline.
   runtimeState.app = undefined;
   runtimeState.invocationArgv = rewrittenArgv;
+  runtimeState.loopSignalExitCode = undefined;
   runtimeState.invocationLogState = createCliInvocationLogState(rewrittenArgv, {
     cliVersion,
     createSessionId,
@@ -556,6 +594,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   registerLockReleaseSignalHandlers({
     terminate,
     getAppForCleanup: () => runtimeState.app,
+    resolveExitCodeForSignal: (signal) => consumeLoopSignalExitCode(signal),
   });
   runtimeState.workerFromSeparator = workerCommandArgs;
 
@@ -564,6 +603,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
     validateUnsupportedResearchScanCount(rundownArgs);
     validateUnsupportedMakeMode(rundownArgs);
     validateUnsupportedDoMode(rundownArgs);
+    validateUnsupportedLoopMode(rundownArgs);
     validateRunCommitModeOption(rundownArgs);
   } catch (error) {
     emitCliFatalError(error, runtimeState.invocationLogState, runtimeState.app?.emitOutput);
@@ -724,6 +764,22 @@ function configureRunLikeCommandOptions(command: Command): Command {
  */
 function validateUnsupportedDoMode(argv: string[]): void {
   if (resolveInvocationCommand(argv) !== "do") {
+    return;
+  }
+
+  const mode = resolveModeOptionValue(argv);
+  if (mode === undefined || mode === "wait") {
+    return;
+  }
+
+  throw new Error(`Invalid --mode value: ${mode}. Allowed: wait.`);
+}
+
+/**
+ * Rejects interactive or detached execution modes for `loop`.
+ */
+function validateUnsupportedLoopMode(argv: string[]): void {
+  if (resolveInvocationCommand(argv) !== "loop") {
     return;
   }
 

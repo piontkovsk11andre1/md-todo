@@ -4020,6 +4020,116 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--cache-cli-blocks Cache `cli` fenced block command output for the duration of this run");
   });
 
+  it("loop --help includes loop and run-style options", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["loop", "roadmap.md", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--cooldown <seconds> Cooldown delay in seconds between iterations");
+    expect(compactHelpOutput).toContain("--iterations <n> Stop after N iterations (default: unlimited)");
+    expect(compactHelpOutput).toContain("--continue-on-error Continue loop after iteration failure");
+    expect(compactHelpOutput).toContain("--worker <pattern> Optional worker pattern override (alternative to -- <command>)");
+    expect(compactHelpOutput).toContain("--no-verify Disable verification after task execution");
+  });
+
+  it("loop rejects non-wait modes before execution", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "loop",
+      "roadmap.md",
+      "--mode",
+      "tui",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("invalid --mode value: tui")).toBe(true);
+    expect(combinedOutput.includes("allowed: wait")).toBe(true);
+    expect(combinedOutput.includes("unknown command")).toBe(false);
+  });
+
+  it("loop forwards run-style options to inner call execution", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "loop-forwarded-worker.cjs");
+    fs.writeFileSync(roadmapPath, "- [ ] ship release docs\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      "process.exit(0);\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "loop",
+      "roadmap.md",
+      "--iterations",
+      "1",
+      "--cooldown",
+      "0",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Loop iteration 1 starting"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: ship release docs"))).toBe(true);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] ship release docs\n");
+  });
+
+  it("loop runs multiple iterations and respects cooldown delay", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "loop-cooldown-worker.cjs");
+    const probePath = path.join(workspace, "loop-cooldown-probe.log");
+    fs.writeFileSync(roadmapPath, "- [ ] ship release docs\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const probePath = ${JSON.stringify(probePath.replace(/\\/g, "/"))};`,
+        "fs.appendFileSync(probePath, String(Date.now()) + '\\n', 'utf-8');",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "loop",
+      "roadmap.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "1",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    const timestamps = fs.readFileSync(probePath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => Number.parseInt(line, 10))
+      .filter((value) => Number.isFinite(value));
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Loop iteration 1 starting"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Loop iteration 2 starting"))).toBe(true);
+    expect(timestamps).toHaveLength(2);
+    expect((timestamps[1] ?? 0) - (timestamps[0] ?? 0)).toBeGreaterThanOrEqual(900);
+  });
+
   it("call removes stale on-disk cli cache artifacts at startup", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
