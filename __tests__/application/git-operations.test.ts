@@ -33,6 +33,9 @@ describe("git-operations", () => {
         if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
           return "/repo";
         }
+        if (args[0] === "check-ignore") {
+          throw new Error("not ignored");
+        }
         return "";
       }),
     };
@@ -65,6 +68,9 @@ describe("git-operations", () => {
         if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
           return "/repo";
         }
+        if (args[0] === "check-ignore") {
+          throw new Error("not ignored");
+        }
         return "";
       }),
     };
@@ -94,7 +100,7 @@ describe("git-operations", () => {
     );
 
     expect(gitClient.run).toHaveBeenNthCalledWith(
-      2,
+      3,
       [
         "add",
         "-A",
@@ -107,7 +113,7 @@ describe("git-operations", () => {
       ],
       "/repo",
     );
-    expect(gitClient.run).toHaveBeenNthCalledWith(3, ["commit", "-m", "done"], "/repo");
+    expect(gitClient.run).toHaveBeenNthCalledWith(4, ["commit", "-m", "done"], "/repo");
   });
 
   it("formats commit message template variables", () => {
@@ -137,7 +143,12 @@ describe("git-operations", () => {
 
   it("handles repo-relative exclude resolution and path guards", async () => {
     const gitClient: GitClient = {
-      run: vi.fn(async () => "/repo"),
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "check-ignore") {
+          throw new Error("not ignored");
+        }
+        return "/repo";
+      }),
     };
     await expect(resolveGitArtifactAndLockExcludes(
       gitClient,
@@ -155,5 +166,52 @@ describe("git-operations", () => {
     expect(isPathInsideRepo("../x")).toBe(false);
     expect(isPathInsideRepo("/abs/path")).toBe(false);
     expect(isPathInsideRepo("docs/tasks.md")).toBe(true);
+  });
+
+  it("returns empty excludes when config directory is gitignored", async () => {
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return "/repo";
+        }
+        // check-ignore exits 0 (resolves) when the path IS ignored.
+        if (args[0] === "check-ignore") {
+          return "";
+        }
+        return "";
+      }),
+    };
+    await expect(resolveGitArtifactAndLockExcludes(
+      gitClient,
+      "/repo",
+      { configDir: "/repo/.rundown", isExplicit: false },
+      pathOperations,
+    )).resolves.toEqual([]);
+  });
+
+  it("includes excludes when config directory is not gitignored", async () => {
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+          return "/repo";
+        }
+        // check-ignore exits non-zero (rejects) when path is NOT ignored.
+        if (args[0] === "check-ignore") {
+          throw new Error("not ignored");
+        }
+        return "";
+      }),
+    };
+    await expect(resolveGitArtifactAndLockExcludes(
+      gitClient,
+      "/repo",
+      { configDir: "/repo/.rundown", isExplicit: false },
+      pathOperations,
+    )).resolves.toEqual([
+      ":(top,exclude).rundown/runs/**",
+      ":(top,exclude).rundown/logs/**",
+      ":(top,exclude).rundown/*.lock",
+      ":(glob,exclude)**/.rundown/*.lock",
+    ]);
   });
 });

@@ -97,6 +97,17 @@ export async function resolveGitArtifactAndLockExcludes(
     return excludes;
   }
 
+  // When the config directory is covered by .gitignore, explicit exclude
+  // pathspecs are unnecessary (git already skips ignored paths) and cause
+  // `git add` to fail with "The following paths are ignored" errors.
+  try {
+    await gitClient.run(["check-ignore", "-q", relativeConfigDir], cwd);
+    // check-ignore exits 0 when the path is ignored — no excludes needed.
+    return [];
+  } catch {
+    // Non-zero exit means the path is NOT ignored — add explicit excludes.
+  }
+
   // Prioritize top-level exclusions for known artifact folders and root lock files.
   excludes.unshift(
     `:(top,exclude)${relativeConfigDir}/runs/**`,
