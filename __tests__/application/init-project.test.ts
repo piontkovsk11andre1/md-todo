@@ -61,6 +61,96 @@ describe("init-project", () => {
       "{}\n",
     );
   });
+
+  it("writes worker into config.json when --worker is provided", async () => {
+    const { dependencies, fileSystem } = createDependencies();
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject({ worker: "opencode" });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.rundown/config.json",
+      JSON.stringify({ defaults: { worker: ["opencode"] } }, null, 2) + "\n",
+    );
+  });
+
+  it("writes default empty config.json when --worker is not provided", async () => {
+    const { dependencies, fileSystem } = createDependencies();
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject();
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.rundown/config.json",
+      "{}\n",
+    );
+  });
+
+  it("creates .gitignore with .rundown when --gitignore is set and no .gitignore exists", async () => {
+    const { dependencies, fileSystem, events } = createDependencies();
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject({ gitignore: true });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.gitignore",
+      ".rundown\n",
+    );
+    expect(events).toContainEqual({ kind: "success", message: "Created .gitignore with .rundown" });
+  });
+
+  it("appends .rundown to existing .gitignore when not already present", async () => {
+    const { dependencies, fileSystem, events } = createDependencies();
+    // Simulate an existing .gitignore
+    const existingContent = "node_modules\ndist\n";
+    vi.mocked(fileSystem.exists).mockImplementation((p: string) => p === "/workspace/.gitignore");
+    vi.mocked(fileSystem.readText).mockReturnValue(existingContent);
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject({ gitignore: true });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.gitignore",
+      "node_modules\ndist\n.rundown\n",
+    );
+    expect(events).toContainEqual({ kind: "success", message: "Added .rundown to .gitignore" });
+  });
+
+  it("skips .gitignore update when .rundown is already listed", async () => {
+    const { dependencies, fileSystem, events } = createDependencies();
+    const existingContent = "node_modules\n.rundown\ndist\n";
+    vi.mocked(fileSystem.exists).mockImplementation((p: string) => p === "/workspace/.gitignore");
+    vi.mocked(fileSystem.readText).mockReturnValue(existingContent);
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject({ gitignore: true });
+
+    expect(code).toBe(0);
+    // Should NOT write to .gitignore
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/.gitignore",
+      expect.any(String),
+    );
+    expect(events).toContainEqual({ kind: "warn", message: ".gitignore already contains .rundown, skipping." });
+  });
+
+  it("does not touch .gitignore when --gitignore is not set", async () => {
+    const { dependencies, fileSystem } = createDependencies();
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject();
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.exists)).not.toHaveBeenCalledWith("/workspace/.gitignore");
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/.gitignore",
+      expect.any(String),
+    );
+  });
 });
 
 function createDependencies(overrides: {

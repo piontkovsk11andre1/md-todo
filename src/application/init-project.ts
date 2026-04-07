@@ -17,6 +17,11 @@ import type { FileSystem } from "../domain/ports/file-system.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { PathOperationsPort } from "../domain/ports/path-operations-port.js";
 
+export interface InitProjectOptions {
+  worker?: string;
+  gitignore?: boolean;
+}
+
 /**
  * Dependencies required to initialize a project configuration workspace.
  *
@@ -39,7 +44,7 @@ export interface InitProjectDependencies {
  */
 export function createInitProject(
   dependencies: InitProjectDependencies,
-): () => Promise<number> {
+): (options?: InitProjectOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   // Render paths relative to the current working directory unless config is explicit.
@@ -63,7 +68,7 @@ export function createInitProject(
    * Existing files are preserved and reported as skipped. Missing files are
    * created with built-in defaults.
    */
-  return async function initProject(): Promise<number> {
+  return async function initProject(options: InitProjectOptions = {}): Promise<number> {
     // Use explicit config dir when provided; otherwise default to .rundown.
     const configDir = dependencies.configDir?.isExplicit
       ? dependencies.configDir.configDir
@@ -103,7 +108,31 @@ export function createInitProject(
     write("research.md", DEFAULT_RESEARCH_TEMPLATE);
     write("trace.md", DEFAULT_TRACE_TEMPLATE);
     write("vars.json", DEFAULT_VARS_FILE_CONTENT);
-    write("config.json", DEFAULT_CONFIG_CONTENT);
+
+    // Generate config content: embed worker when provided, otherwise use default.
+    const configContent = options.worker
+      ? JSON.stringify({ defaults: { worker: [options.worker] } }, null, 2) + "\n"
+      : DEFAULT_CONFIG_CONTENT;
+    write("config.json", configContent);
+
+    // Append .rundown to .gitignore when requested.
+    if (options.gitignore) {
+      const gitignorePath = dependencies.pathOperations.resolve(".gitignore");
+      if (dependencies.fileSystem.exists(gitignorePath)) {
+        const existing = dependencies.fileSystem.readText(gitignorePath);
+        const lines = existing.split("\n");
+        if (lines.some((line) => line.trim() === CONFIG_DIR_NAME)) {
+          emit({ kind: "warn", message: `.gitignore already contains ${CONFIG_DIR_NAME}, skipping.` });
+        } else {
+          const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+          dependencies.fileSystem.writeText(gitignorePath, existing + separator + CONFIG_DIR_NAME + "\n");
+          emit({ kind: "success", message: `Added ${CONFIG_DIR_NAME} to .gitignore` });
+        }
+      } else {
+        dependencies.fileSystem.writeText(gitignorePath, CONFIG_DIR_NAME + "\n");
+        emit({ kind: "success", message: `Created .gitignore with ${CONFIG_DIR_NAME}` });
+      }
+    }
 
     emit({ kind: "success", message: `Initialized ${displayConfigDir}/ with default templates.` });
     return 0;

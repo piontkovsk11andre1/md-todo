@@ -17,7 +17,7 @@ import { createResearchTask, type ResearchTaskOptions as ResearchTaskUseCaseOpti
 import { createListTasks, type ListTasksOptions } from "./application/list-tasks.js";
 import { createNextTask, type NextTaskOptions } from "./application/next-task.js";
 import { createUnlockTask, type UnlockTaskOptions } from "./application/unlock-task.js";
-import { createInitProject } from "./application/init-project.js";
+import { createInitProject, type InitProjectOptions } from "./application/init-project.js";
 import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
 import { createLogRuns, type LogRunsOptions } from "./application/log-runs.js";
@@ -106,7 +106,7 @@ export type App = {
   listTasks: (options: ListTasksOptions) => Promise<number>;
   nextTask: (options: NextTaskOptions) => Promise<number>;
   logRuns: (options: LogRunsOptions) => number;
-  initProject: () => Promise<number>;
+  initProject: (options?: InitProjectOptions) => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
   emitOutput?: (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
   releaseAllLocks?: () => void;

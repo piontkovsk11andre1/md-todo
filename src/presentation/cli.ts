@@ -436,6 +436,8 @@ program
 program
   .command("init")
   .description("Create a .rundown/ directory with default templates (plan, execute, verify, repair, trace), scaffold tools/, and initialize vars.json/config.json as empty JSON objects. Use --config-dir to control where it is created.")
+  .option("--worker <command>", "Set default worker CLI command in config.json")
+  .option("--gitignore", "Add .rundown to .gitignore", false)
   .action(withCliAction(createInitCommandAction({ getApp })));
 
 program

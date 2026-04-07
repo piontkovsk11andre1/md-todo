@@ -761,9 +761,8 @@ export function createUnlockCommandAction({
  */
 export function createInitCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): () => CliActionResult {
-  // Initialization has no runtime options beyond command invocation.
-  return () => getApp().initProject();
+}: Pick<WorkerActionDependencies, "getApp">): (options: { worker?: string; gitignore?: boolean }) => CliActionResult {
+  return (options) => getApp().initProject({ worker: options.worker, gitignore: options.gitignore });
 }
 
 /**
