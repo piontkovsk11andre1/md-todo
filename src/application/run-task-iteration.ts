@@ -304,10 +304,28 @@ export async function runTaskIteration(params: {
   const resolvedWorkerCommand = resolvedWorker.workerCommand;
   const resolvedWorkerPattern = resolvedWorker.workerPattern;
   // Build the automation command variant used for verification-only execution.
-  const automationCommand = getAutomationWorkerCommand(resolvedWorkerCommand, execution.mode);
-  const automationWorkerPattern = resolvedWorkerCommand.length === automationCommand.length
-    && resolvedWorkerCommand.every((token, index) => token === automationCommand[index])
-    ? resolvedWorkerPattern
+  // Verification always runs in "wait" mode, so when the execution mode is "tui"
+  // the worker must be re-resolved with mode "wait" to pick workers.default
+  // instead of workers.tui.
+  const verificationWorker = execution.mode === "tui"
+    ? resolveWorkerPatternForInvocation({
+      commandName: "run",
+      workerConfig: worker.loadedWorkerConfig,
+      source: fileSource,
+      task: taskForExecution,
+      modifierProfile,
+      cliWorkerPattern: worker.workerPattern,
+      taskIntent: taskIntentDecision.intent,
+      toolName: taskIntentDecision.toolName,
+      emit,
+      mode: "wait",
+    })
+    : resolvedWorker;
+  const verificationWorkerCommand = verificationWorker.workerCommand;
+  const automationCommand = getAutomationWorkerCommand(verificationWorkerCommand, "wait");
+  const automationWorkerPattern = verificationWorkerCommand.length === automationCommand.length
+    && verificationWorkerCommand.every((token, index) => token === automationCommand[index])
+    ? verificationWorker.workerPattern
     : {
       command: [...automationCommand],
       usesBootstrap: automationCommand.some((token) => token.includes("$bootstrap")),
