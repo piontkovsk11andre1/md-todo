@@ -133,5 +133,16 @@ export type {
   ToolHandlerFn,
 } from "./tool-handler-port.js";
 
+/** Interactive prompting contracts for question-style tools. */
+export type {
+  InteractiveChoice,
+  InteractiveTextPromptRequest,
+  InteractiveSelectPromptRequest,
+  InteractiveConfirmPromptRequest,
+  InteractivePromptRequest,
+  InteractivePromptResult,
+  InteractiveInputPort,
+} from "./interactive-input-port.js";
+
 /** Trace writer contract used for structured execution telemetry. */
 export type { TraceWriterPort } from "./trace-writer-port.js";

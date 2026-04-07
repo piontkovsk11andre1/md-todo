@@ -2527,6 +2527,35 @@ describe("CLI plan and utility command normalization", () => {
     }
   });
 
+  it("do forwards interactive question context to run phase via runAll execution", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-runall-question-"));
+    const markdownFile = path.join(tempRoot, "8. Do something.md");
+
+    try {
+      const result = await invokeDoAndCaptureCalls([
+        "do",
+        "please do something",
+        markdownFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask, researchTask, planTask);
+
+      expect(result.exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        source: markdownFile,
+        runAll: true,
+        mode: "wait",
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("make writes seed text verbatim, including quotes, newlines, and shell characters", async () => {
     const seedText = [
       "He said, \"keep 'all' symbols\".",

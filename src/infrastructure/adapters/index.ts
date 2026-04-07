@@ -99,6 +99,10 @@ export { createMemoryReaderAdapter } from "./memory-reader-adapter.js";
  */
 export { createToolResolverAdapter } from "./tool-resolver-adapter.js";
 /**
+ * Creates the terminal-backed interactive input adapter.
+ */
+export { createTerminalInteractiveInputAdapter } from "./interactive-input-adapter.js";
+/**
  * Creates the configuration directory adapter.
  */
 export { createConfigDirAdapter } from "./config-dir-adapter.js";

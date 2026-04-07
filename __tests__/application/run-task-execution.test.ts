@@ -1315,4 +1315,286 @@ describe("run-task-execution helpers", () => {
     expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "warn" && event.message.includes("Force retry"))).toBe(false);
   });
+
+  it("re-parses task context after tool updates so downstream tasks see new sub-items", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] answerinject: Which module should we improve?\n- [ ] inspect: confirm answer visibility\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "answerinject: Which module should we improve?"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return {
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    let inspectObservedAnswer = false;
+    dependencies.toolResolver = {
+      resolve: (toolName) => {
+        if (toolName === "answerinject") {
+          return {
+            name: "answerinject",
+            kind: "handler",
+            handler: async (context) => {
+              const source = context.fileSystem.readText(context.task.file);
+              const lines = source.split("\n");
+              const taskLineIndex = context.task.line - 1;
+              lines.splice(taskLineIndex + 1, 0, "  - answer: CliResourceModule");
+              context.fileSystem.writeText(context.task.file, lines.join("\n"));
+              return {
+                skipExecution: true,
+                shouldVerify: false,
+              };
+            },
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          };
+        }
+
+        if (toolName === "inspect") {
+          return {
+            name: "inspect",
+            kind: "handler",
+            handler: async (context) => {
+              const injectedTask = context.allTasks?.find((task) => task.text.startsWith("answerinject:"));
+              inspectObservedAnswer = injectedTask?.subItems.some((subItem) => subItem.text === "answer: CliResourceModule")
+                ?? false;
+              return inspectObservedAnswer
+                ? { skipExecution: true, shouldVerify: false }
+                : {
+                  exitCode: 1,
+                  failureMessage: "Downstream tool did not observe injected answer sub-item.",
+                  failureReason: "Updated task context did not include injected answer sub-item.",
+                };
+            },
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          };
+        }
+
+        return undefined;
+      },
+      listKnownToolNames: () => ["answerinject", "inspect"],
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, runAll: true }));
+
+    expect(code).toBe(0);
+    expect(inspectObservedAnswer).toBe(true);
+    expect(fileSystem.readText(taskFile)).toContain("  - answer: CliResourceModule");
+  });
+
+  it("pauses --all execution until interactive question input resolves", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] question: Which module should we improve?\n- [ ] inspect: verify answer\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "question: Which module should we improve?"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return {
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    let resolvePrompt: ((value: { value: string; usedDefault: boolean; interactive: boolean }) => void) | undefined;
+    const prompt = vi.fn(() => new Promise<{ value: string; usedDefault: boolean; interactive: boolean }>((resolve) => {
+      resolvePrompt = resolve;
+    }));
+
+    let inspectRan = false;
+    dependencies.toolResolver = {
+      resolve: (toolName) => {
+        if (toolName === "question") {
+          return {
+            name: "question",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+            handler: async (context) => {
+              const answer = (await prompt()).value;
+              const source = context.fileSystem.readText(context.task.file);
+              const lines = source.split("\n");
+              const questionLineIndex = context.task.line - 1;
+              lines.splice(questionLineIndex + 1, 0, `  - answer: ${answer}`);
+              context.fileSystem.writeText(context.task.file, lines.join("\n"));
+              return { skipExecution: true, shouldVerify: false };
+            },
+          };
+        }
+
+        if (toolName === "inspect") {
+          return {
+            name: "inspect",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+            handler: async () => {
+              inspectRan = true;
+              return { skipExecution: true, shouldVerify: false };
+            },
+          };
+        }
+
+        return undefined;
+      },
+      listKnownToolNames: () => ["question", "inspect"],
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const runPromise = runTask(createOptions({ verify: false, runAll: true }));
+
+    for (let attempt = 0; attempt < 20 && prompt.mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(inspectRan).toBe(false);
+
+    resolvePrompt?.({
+      value: "CliResourceModule",
+      usedDefault: false,
+      interactive: true,
+    });
+
+    await expect(runPromise).resolves.toBe(0);
+    expect(inspectRan).toBe(true);
+    expect(fileSystem.readText(taskFile)).toContain("  - answer: CliResourceModule");
+  });
+
+  it("pauses independently for multiple sequential question tasks", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] question: Which module should we improve?\n- [ ] question: Which area should we harden?\n- [ ] inspect: verify answers\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "question: Which module should we improve?"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return {
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      };
+    });
+
+    const promptResolvers: Array<(value: { value: string; usedDefault: boolean; interactive: boolean }) => void> = [];
+    const prompt = vi.fn(() => new Promise<{ value: string; usedDefault: boolean; interactive: boolean }>((resolve) => {
+      promptResolvers.push(resolve);
+    }));
+
+    let inspectRan = false;
+    dependencies.toolResolver = {
+      resolve: (toolName) => {
+        if (toolName === "question") {
+          return {
+            name: "question",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+            handler: async (context) => {
+              const answer = (await prompt()).value;
+              const source = context.fileSystem.readText(context.task.file);
+              const lines = source.split("\n");
+              const questionLineIndex = context.task.line - 1;
+              lines.splice(questionLineIndex + 1, 0, `  - answer: ${answer}`);
+              context.fileSystem.writeText(context.task.file, lines.join("\n"));
+              return { skipExecution: true, shouldVerify: false };
+            },
+          };
+        }
+
+        if (toolName === "inspect") {
+          return {
+            name: "inspect",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+            handler: (context) => {
+              inspectRan = true;
+              const questionTasks = context.allTasks?.filter((task) => task.text.startsWith("question:")) ?? [];
+              const hasFirstAnswer = questionTasks.some((task) => task.subItems.some((subItem) => subItem.text === "answer: CliResourceModule"));
+              const hasSecondAnswer = questionTasks.some((task) => task.subItems.some((subItem) => subItem.text === "answer: ParserModule"));
+              return hasFirstAnswer && hasSecondAnswer
+                ? Promise.resolve({ skipExecution: true, shouldVerify: false })
+                : Promise.resolve({
+                  exitCode: 1,
+                  failureMessage: "Inspect task did not observe both question answers.",
+                  failureReason: "Expected each sequential question to persist its own answer before continuing.",
+                });
+            },
+          };
+        }
+
+        return undefined;
+      },
+      listKnownToolNames: () => ["question", "inspect"],
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const runPromise = runTask(createOptions({ verify: false, runAll: true }));
+
+    for (let attempt = 0; attempt < 20 && prompt.mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(prompt).toHaveBeenCalledTimes(1);
+    expect(inspectRan).toBe(false);
+
+    promptResolvers[0]?.({
+      value: "CliResourceModule",
+      usedDefault: false,
+      interactive: true,
+    });
+
+    for (let attempt = 0; attempt < 20 && prompt.mock.calls.length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    expect(prompt).toHaveBeenCalledTimes(2);
+    expect(inspectRan).toBe(false);
+
+    promptResolvers[1]?.({
+      value: "ParserModule",
+      usedDefault: false,
+      interactive: true,
+    });
+
+    await expect(runPromise).resolves.toBe(0);
+    expect(inspectRan).toBe(true);
+    expect(fileSystem.readText(taskFile)).toContain("  - answer: CliResourceModule");
+    expect(fileSystem.readText(taskFile)).toContain("  - answer: ParserModule");
+  });
 });

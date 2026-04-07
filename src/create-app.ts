@@ -70,6 +70,7 @@ import {
   createMemoryReaderAdapter,
   createMemoryResolverAdapter,
   createMemoryWriterAdapter,
+  createTerminalInteractiveInputAdapter,
   createToolResolverAdapter,
   createNodeFileSystem,
   createNoopTraceWriter,
@@ -212,11 +213,13 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     fileSystem,
     pathOperations,
   });
+  const interactiveInput = createTerminalInteractiveInputAdapter();
   const toolResolver = overrides.toolResolver ?? createToolResolverAdapter({
     fileSystem,
     pathOperations,
     configDir,
     memoryWriter,
+    interactiveInput,
   });
   const memoryResolver = overrides.memoryResolver ?? createMemoryResolverAdapter({
     fileSystem,

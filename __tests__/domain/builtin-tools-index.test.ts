@@ -23,4 +23,8 @@ describe("builtin tools registry", () => {
       expect(alias?.frontmatter).toEqual(end?.frontmatter);
     }
   });
+
+  it("does not statically register question because it needs injected interactive input", () => {
+    expect(resolveBuiltinTool("question")).toBeUndefined();
+  });
 });

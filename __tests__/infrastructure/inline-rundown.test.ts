@@ -94,6 +94,31 @@ describe("executeRundownTask", () => {
     );
   });
 
+  it("inherits stdin for delegated runs so nested include prompts stay interactive", async () => {
+    process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js", "run", "Parent.md"];
+    const child = createChildProcess();
+    spawnMock.mockReturnValue(child);
+
+    const promise = executeRundownTask("run", ["includes/child.md", "--all"], "/repo");
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      "/usr/local/bin/node",
+      ["/repo/dist/cli.js", "run", "includes/child.md", "--all"],
+      expect.objectContaining({
+        cwd: "/repo",
+        stdio: ["inherit", "pipe", "pipe"],
+        shell: false,
+      }),
+    );
+  });
+
   it("supports explicit delegated run subcommand without double-prefixing", async () => {
     process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js", "run", "Parent.md"];
     const child = createChildProcess();

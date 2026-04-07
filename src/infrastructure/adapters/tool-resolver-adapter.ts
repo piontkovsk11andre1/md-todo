@@ -3,9 +3,11 @@ import type { FileSystem } from "../../domain/ports/file-system.js";
 import type { PathOperationsPort } from "../../domain/ports/path-operations-port.js";
 import type { ToolDefinition, ToolResolverPort } from "../../domain/ports/tool-resolver-port.js";
 import type { ToolFrontmatter } from "../../domain/ports/tool-handler-port.js";
+import type { InteractiveInputPort } from "../../domain/ports/interactive-input-port.js";
 import type { MemoryWriterPort } from "../../domain/ports/memory-writer-port.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../domain/builtin-tools/index.js";
 import { createMemoryHandler } from "../../domain/builtin-tools/memory.js";
+import { createQuestionHandler } from "../../domain/builtin-tools/question.js";
 import { createTemplateToolHandler } from "../../domain/builtin-tools/template-tool.js";
 
 const TOOLS_DIRECTORY_NAME = "tools";
@@ -32,6 +34,7 @@ export interface ToolResolverAdapterDependencies {
   pathOperations: PathOperationsPort;
   configDir: ConfigDirResult | undefined;
   memoryWriter?: MemoryWriterPort;
+  interactiveInput?: InteractiveInputPort;
 }
 
 /**
@@ -52,6 +55,7 @@ export function createToolResolverAdapter(
   // Construct dynamic built-in tools that require dependencies.
   const memoryAliases = ["memory", "memorize", "remember", "inventory"];
   const memoryHandler = createMemoryHandler(dependencies.memoryWriter);
+  const questionHandler = createQuestionHandler(dependencies.interactiveInput);
   const dynamicBuiltins = new Map<string, ToolDefinition>();
   for (const alias of memoryAliases) {
     dynamicBuiltins.set(alias, {
@@ -61,6 +65,12 @@ export function createToolResolverAdapter(
       frontmatter: { shouldVerify: true },
     });
   }
+  dynamicBuiltins.set("question", {
+    name: "question",
+    kind: "handler",
+    handler: questionHandler,
+    frontmatter: { skipExecution: true, shouldVerify: false },
+  });
 
   const staticBuiltinToolNames = listBuiltinToolNames();
 
@@ -88,7 +98,7 @@ export function createToolResolverAdapter(
   }
 
   function listKnownToolNames(): readonly string[] {
-    const known = new Set<string>([...staticBuiltinToolNames, ...memoryAliases]);
+    const known = new Set<string>([...staticBuiltinToolNames, ...dynamicBuiltins.keys()]);
     for (const toolsDir of getConfiguredToolDirectories()) {
       try {
         for (const entry of dependencies.fileSystem.readdir(toolsDir)) {

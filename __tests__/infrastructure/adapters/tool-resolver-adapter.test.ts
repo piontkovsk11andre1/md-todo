@@ -261,6 +261,7 @@ describe("createToolResolverAdapter", () => {
     const knownToolNames = resolver.listKnownToolNames();
     expect(knownToolNames).toContain("verify");
     expect(knownToolNames).toContain("memory");
+    expect(knownToolNames).toContain("question");
     expect(knownToolNames).toContain("end");
     expect(knownToolNames).toContain("return");
     expect(knownToolNames).toContain("skip");
@@ -329,8 +330,36 @@ describe("createToolResolverAdapter", () => {
 
     const knownToolNames = resolver.listKnownToolNames();
     expect(knownToolNames).toContain("end");
+    expect(knownToolNames).toContain("question");
     expect(knownToolNames).toContain("alpha");
     expect(knownToolNames).toContain("beta");
+  });
+
+  it("resolves question as a dynamic built-in handler", async () => {
+    const rootDir = makeTempDir();
+    const configDir = path.join(rootDir, ".rundown");
+    fs.mkdirSync(path.join(configDir, "tools"), { recursive: true });
+
+    const resolver = createToolResolverAdapter({
+      configDir: {
+        configDir,
+        isExplicit: false,
+      },
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    const tool = resolver.resolve("question");
+    expect(tool).toMatchObject({
+      name: "question",
+      kind: "handler",
+      frontmatter: {
+        skipExecution: true,
+        shouldVerify: false,
+      },
+    });
+
+    expect(typeof tool?.handler).toBe("function");
   });
 
   it("applies config.json tools override over .md frontmatter defaults", () => {
