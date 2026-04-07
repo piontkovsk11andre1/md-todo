@@ -2424,6 +2424,7 @@ describe("discuss-task", () => {
       source: "tasks.md",
       dryRun: true,
       workerCommand: ["opencode", "run"],
+      verbose: true,
     }));
 
     expect(code).toBe(0);
@@ -2462,6 +2463,7 @@ describe("discuss-task", () => {
       mode: "wait",
       transport: "arg",
       workerCommand: ["opencode", "run"],
+      verbose: true,
     }));
 
     expect(code).toBe(0);

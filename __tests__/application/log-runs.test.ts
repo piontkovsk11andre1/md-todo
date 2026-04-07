@@ -58,6 +58,10 @@ describe("log-runs", () => {
         kind: "text",
         text: "run-20260328T110 | 30m ago | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
       },
+      {
+        kind: "info",
+        message: "2 runs listed.",
+      },
     ]);
   });
 
@@ -72,11 +76,12 @@ describe("log-runs", () => {
     const code = logRuns({ revertable: true, json: false });
 
     expect(code).toBe(0);
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toEqual({
       kind: "text",
       text: "run-a | 10m ago | [completed] | Do work | source=roadmap.md:3 | command=run | sha=aaa111 | revertable=yes",
     });
+    expect(events[1]).toEqual({ kind: "info", message: "1 run listed." });
   });
 
   it("applies command filter and limit", () => {
@@ -90,11 +95,12 @@ describe("log-runs", () => {
     const code = logRuns({ revertable: false, commandName: "RUN", limit: 1, json: false });
 
     expect(code).toBe(0);
-    expect(events).toHaveLength(1);
+    expect(events).toHaveLength(2);
     expect(events[0]).toEqual({
       kind: "text",
       text: "run-1 | 10m ago | [completed] | Do work | source=roadmap.md:3 | command=run | sha=sha-1 | revertable=yes",
     });
+    expect(events[1]).toEqual({ kind: "info", message: "1 run listed." });
   });
 
   it("returns JSON entries when --json is set", () => {

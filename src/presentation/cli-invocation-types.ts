@@ -64,4 +64,5 @@ export interface WorkerCommandInvocationOptions {
  */
 export interface ResearchCommandInvocationOptions extends WorkerCommandInvocationOptions {
   source: string;
+  verbose?: boolean;
 }

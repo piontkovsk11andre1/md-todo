@@ -28,7 +28,12 @@ import {
   withTemplateCliFailureAbort,
 } from "./cli-block-handlers.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
-import { countTraceLines, pluralize } from "./run-task-utils.js";
+import {
+  countTraceLines,
+  formatNoItemsFoundIn,
+  formatSuccessFailureSummary,
+  pluralize,
+} from "./run-task-utils.js";
 import {
   createOutputVolumeEvent,
   createPhaseCompletedEvent,
@@ -112,6 +117,7 @@ export interface PlanTaskOptions {
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
+  verbose?: boolean;
 }
 
 const OPENCODE_CONTINUATION_ARG_PATTERN = /^--(?:continue|resume|session|thread|conversation)(?:=|$)/i;
@@ -143,6 +149,7 @@ export function createPlanTask(
       forceUnlock,
       ignoreCliBlock,
       cliBlockTimeoutMs,
+      verbose = false,
     } = options;
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
       ? undefined
@@ -244,7 +251,7 @@ export function createPlanTask(
           ? "Detected " + existingTodoCount + " "
             + pluralize(existingTodoCount, "existing TODO item", "existing TODO items")
             + " in document."
-          : "No existing TODO items detected in document.",
+          : formatNoItemsFoundIn("existing TODO items", "document"),
       });
 
       // Planner execution requires a resolved worker command.
@@ -540,16 +547,27 @@ export function createPlanTask(
       };
 
       try {
-        emit({
-          kind: "info",
-          message: "Running planner: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + "]",
-        });
+        if (verbose) {
+          emit({
+            kind: "info",
+            message: "Running planner: " + resolvedWorkerCommand.join(" ") + " [mode=" + mode + "]",
+          });
+        }
 
         // Track mutable scan-loop state for convergence reporting and totals.
         let latestDocumentSource = documentSource;
         let insertedTotal = 0;
         let scansExecuted = 0;
         let convergenceOutcome: PlanConvergenceOutcome | null = null;
+        let planSuccessCount = 0;
+        let planFailureCount = 0;
+
+        const emitPlanSummary = (): void => {
+          emit({
+            kind: "info",
+            message: formatSuccessFailureSummary("Plan operation", planSuccessCount, planFailureCount),
+          });
+        };
 
         // Execute up to `scanCount` independent scans using in-memory snapshots.
         for (let scanIndex = 1; scanIndex <= scanCount; scanIndex += 1) {
@@ -566,22 +584,27 @@ export function createPlanTask(
           });
 
           const emitScanFailure = (message: string): void => {
+            planFailureCount += 1;
             emit({ kind: "group-end", status: "failure", message });
           };
 
           try {
-            emit({
-              kind: "info",
-              message: "Planning " + scanLabel + ".",
-            });
+            if (verbose) {
+              emit({
+                kind: "info",
+                message: "Planning " + scanLabel + ".",
+              });
+            }
             scansExecuted += 1;
 
             // Build per-scan prompt context and execute the planner worker.
             const scanPrompt = buildPlanScanPrompt(prompt, source, scanIndex, scanCount);
-            emit({
-              kind: "info",
-              message: "Executing planner " + scanLabel + "...",
-            });
+            if (verbose) {
+              emit({
+                kind: "info",
+                message: "Executing planner " + scanLabel + "...",
+              });
+            }
             const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
             const runResult = await dependencies.workerExecutor.runWorker({
               workerPattern: resolvedWorkerPattern,
@@ -600,12 +623,14 @@ export function createPlanTask(
                 scanLabel,
               },
             });
-            emit({
-              kind: "info",
-              message: "Planner " + scanLabel + " completed (exit "
-                + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
-                + ").",
-            });
+            if (verbose) {
+              emit({
+                kind: "info",
+                message: "Planner " + scanLabel + " completed (exit "
+                  + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
+                  + ").",
+              });
+            }
             completePlanPhaseTrace(
               planPhaseTrace,
               runResult.exitCode,
@@ -624,6 +649,7 @@ export function createPlanTask(
               const message = "Planner worker exited with code " + runResult.exitCode + " during scan " + scanIndex + ".";
               emit({ kind: "error", message });
               emitScanFailure(message);
+              emitPlanSummary();
               return finishPlan(1, "execution-failed");
             }
 
@@ -637,6 +663,7 @@ export function createPlanTask(
                 message,
               });
               emitScanFailure(message);
+              emitPlanSummary();
               return finishPlan(3, "failed");
             }
 
@@ -650,6 +677,7 @@ export function createPlanTask(
                 message,
               });
               emitScanFailure(message);
+              emitPlanSummary();
               return finishPlan(1, "failed");
             }
 
@@ -660,17 +688,20 @@ export function createPlanTask(
               } else {
                 emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": file unchanged after worker edit." });
               }
+              planSuccessCount += 1;
               emit({ kind: "group-end", status: "success" });
               break;
             }
 
             latestDocumentSource = editedDocumentSource;
             insertedTotal += validationResult.stats.added;
+            planSuccessCount += 1;
             emit({ kind: "group-end", status: "success" });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             emit({ kind: "error", message });
             emitScanFailure(message);
+            emitPlanSummary();
             throw error;
           }
         }
@@ -685,6 +716,7 @@ export function createPlanTask(
                 kind: "error",
                 message: "Unable to reload Markdown document before deep pass " + deepPass + ": " + source,
               });
+              emitPlanSummary();
               return finishPlan(3, "failed");
             }
 
@@ -698,11 +730,13 @@ export function createPlanTask(
               break;
             }
 
-            emit({
-              kind: "info",
-              message: "Running deep pass " + deepPass + " of " + deep + " for " + deepCandidates.length + " "
-                + pluralize(deepCandidates.length, "parent task", "parent tasks") + ".",
-            });
+            if (verbose) {
+              emit({
+                kind: "info",
+                message: "Running deep pass " + deepPass + " of " + deep + " for " + deepCandidates.length + " "
+                  + pluralize(deepCandidates.length, "parent task", "parent tasks") + ".",
+              });
+            }
 
             let deepPassInsertedCount = 0;
 
@@ -716,10 +750,12 @@ export function createPlanTask(
                 deep,
               });
 
-              emit({
-                kind: "info",
-                message: "Executing planner " + deepTaskLabel + " for parent line " + parentTask.line + "...",
-              });
+              if (verbose) {
+                emit({
+                  kind: "info",
+                  message: "Executing planner " + deepTaskLabel + " for parent line " + parentTask.line + "...",
+                });
+              }
 
               const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
               const runResult = await dependencies.workerExecutor.runWorker({
@@ -761,6 +797,8 @@ export function createPlanTask(
                   kind: "error",
                   message: "Planner worker exited with code " + runResult.exitCode + " during deep pass " + deepPass + ", task " + (deepTaskIndex + 1) + ".",
                 });
+                planFailureCount += 1;
+                emitPlanSummary();
                 return finishPlan(1, "execution-failed");
               }
 
@@ -772,6 +810,8 @@ export function createPlanTask(
                   kind: "error",
                   message: "Unable to read Markdown document after deep pass " + deepPass + ", task " + (deepTaskIndex + 1) + ": " + source,
                 });
+                planFailureCount += 1;
+                emitPlanSummary();
                 return finishPlan(3, "failed");
               }
 
@@ -783,8 +823,12 @@ export function createPlanTask(
                   message: validationResult.rejectionReason
                     ?? "Planner edit was rejected because checked TODO items were modified.",
                 });
+                planFailureCount += 1;
+                emitPlanSummary();
                 return finishPlan(1, "failed");
               }
+
+              planSuccessCount += 1;
 
               if (deepEditedDocumentSource === latestDocumentSource) {
                 continue;
@@ -813,6 +857,8 @@ export function createPlanTask(
         const convergenceMetadata = convergenceOutcome
           ? buildPlanConvergenceMetadata(scanCount, scansExecuted, convergenceOutcome)
           : undefined;
+
+        emitPlanSummary();
 
         // Return success when no insertions are needed after all scans.
         if (insertedTotal === 0) {

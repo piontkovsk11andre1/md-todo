@@ -747,7 +747,7 @@ describe("run-task orchestration", () => {
 
     expect(code).toBe(0);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Round 1/1"))).toBe(false);
-    expect(events.some((event) => event.kind === "success" && event.message.includes("All tasks completed (1 total)."))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("All tasks completed (1 task total)."))).toBe(true);
     expect(events.some((event) => event.kind === "success" && event.message.includes("rounds completed successfully"))).toBe(false);
   });
 

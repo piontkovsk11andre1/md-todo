@@ -374,7 +374,7 @@ describe("research-task", () => {
     });
 
     const researchTask = createResearchTask(dependencies);
-    const code = await researchTask(createOptions({ source: markdownFile }));
+    const code = await researchTask(createOptions({ source: markdownFile, verbose: true }));
 
     expect(code).toBe(0);
     expect(vi.mocked(artifactStore.createContext)).toHaveBeenCalledWith({

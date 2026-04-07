@@ -40,7 +40,7 @@ import {
 } from "./task-context-resolution.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
-import { formatNoItemsFound, formatNoItemsFoundFor, pluralize } from "./run-task-utils.js";
+import { formatNoItemsFound, formatNoItemsFoundFor, formatSuccessFailureSummary, pluralize } from "./run-task-utils.js";
 import type {
   ArtifactStoreStatus,
   ArtifactRunMetadata,
@@ -112,6 +112,7 @@ export interface ReverifyTaskOptions {
   trace: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
+  verbose?: boolean;
 }
 
 /**
@@ -140,6 +141,7 @@ export function createReverifyTask(
       trace,
       ignoreCliBlock,
       cliBlockTimeoutMs,
+      verbose = false,
     } = options;
     const varsFilePath = resolveTemplateVarsFilePath(
       varsFileOption,
@@ -259,7 +261,9 @@ export function createReverifyTask(
         return { exitCode: 3, status: null };
       }
 
-      emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
+      if (verbose) {
+        emit({ kind: "info", message: "Re-verify task: " + formatTaskLabel(taskContext.task) });
+      }
 
       // Load verify/repair templates from config or built-in defaults.
       const templates = loadProjectTemplatesFromPorts(
@@ -529,6 +533,21 @@ export function createReverifyTask(
 
     // Process selected runs sequentially and stop at the first failure.
     let tasksReverified = 0;
+    let runFailureCount = 0;
+    let reverifySummaryEmitted = false;
+
+    const emitReverifySummary = (): void => {
+      if (reverifySummaryEmitted) {
+        return;
+      }
+
+      emit({
+        kind: "info",
+        message: formatSuccessFailureSummary("Re-verify pass", tasksReverified, runFailureCount),
+      });
+      reverifySummaryEmitted = true;
+    };
+
     for (const [index, run] of targetRuns.entries()) {
       emit({
         kind: "group-start",
@@ -543,15 +562,18 @@ export function createReverifyTask(
       try {
         result = await reverifyOneRun(run);
       } catch (error) {
+        runFailureCount += 1;
         emit({
           kind: "group-end",
           status: "failure",
           message: "Re-verify failed for " + run.runId + ".",
         });
+        emitReverifySummary();
         throw error;
       }
 
       if (result.exitCode !== 0) {
+        runFailureCount += 1;
         emit({
           kind: "group-end",
           status: "failure",
@@ -564,6 +586,7 @@ export function createReverifyTask(
               + " successful task(s).",
           });
         }
+        emitReverifySummary();
         return result.exitCode;
       }
 
@@ -577,6 +600,8 @@ export function createReverifyTask(
         message: "Re-verified " + tasksReverified + " tasks successfully.",
       });
     }
+
+    emitReverifySummary();
 
     return 0;
   };

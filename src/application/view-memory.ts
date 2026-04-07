@@ -5,7 +5,7 @@ import type {
   SourceResolverPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
-import { formatNoItemsFound, formatNoItemsFoundMatching } from "./run-task-utils.js";
+import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
 
 /**
  * Dependencies required to resolve and render source-local memory.
@@ -88,6 +88,7 @@ export function createViewMemory(
       renderMemoryEntry(entry, options.summary, emit);
     }
 
+    emit({ kind: "info", message: memoryEntries.length + " " + pluralize(memoryEntries.length, "source", "sources") + " with memory listed." });
     return 0;
   };
 }

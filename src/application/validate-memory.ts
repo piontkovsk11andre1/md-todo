@@ -11,7 +11,7 @@ import type {
   SourceResolverPort,
 } from "../domain/ports/index.js";
 import type { MemoryIndexEntry, MemoryIndexOrigin } from "../domain/ports/memory-writer-port.js";
-import { formatNoItemsFoundMatching } from "./run-task-utils.js";
+import { formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
 
 const MEMORY_INDEX_FILE_NAME = "memory-index.json";
 const MEMORY_FILE_SUFFIX = ".memory.md";
@@ -102,9 +102,10 @@ export function createValidateMemory(
     if (options.json) {
       emit({ kind: "text", text: JSON.stringify(reports, null, 2) });
     } else if (reports.length === 0) {
-      emit({ kind: "success", message: "Memory validation passed." });
+      emit({ kind: "success", message: "Memory validation passed. " + contexts.length + " " + pluralize(contexts.length, "source", "sources") + " checked." });
     } else {
       renderReports(reports, emit);
+      emit({ kind: "warn", message: reports.length + " " + pluralize(reports.length, "source", "sources") + " with issues out of " + contexts.length + " checked." });
     }
 
     return reports.length === 0 ? 0 : 1;

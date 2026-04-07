@@ -237,6 +237,7 @@ export function createDiscussCommandAction({
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
+    const verbose = resolveVerboseOption(opts);
     const normalizedSource = typeof source === "string" && source.trim().length > 0
       ? source
       : "";
@@ -262,6 +263,7 @@ export function createDiscussCommandAction({
       forceUnlock,
       ignoreCliBlock,
       cliBlockTimeoutMs,
+      verbose,
     });
   };
 }
@@ -293,6 +295,7 @@ export function createReverifyCommandAction({
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
+    const verbose = resolveVerboseOption(opts);
 
     // Execute the re-verification workflow in the application layer.
     return getApp().reverifyTask({
@@ -311,6 +314,7 @@ export function createReverifyCommandAction({
       trace,
       ignoreCliBlock,
       cliBlockTimeoutMs,
+      verbose,
     });
   };
 }
@@ -448,6 +452,7 @@ export function createPlanCommandAction({
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
+    const verbose = resolveVerboseOption(opts);
 
     // Trigger planning in the app layer with a normalized payload.
     return getApp().planTask({
@@ -466,6 +471,7 @@ export function createPlanCommandAction({
       cliBlockTimeoutMs,
       varsFileOption,
       cliTemplateVarArgs,
+      verbose,
     });
   };
 }
@@ -496,6 +502,7 @@ export function createResearchCommandAction({
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
 
+    const verbose = resolveVerboseOption(opts);
     const request: ResearchCommandInvocationOptions = {
       source: markdownFile,
       mode,
@@ -511,6 +518,7 @@ export function createResearchCommandAction({
       configDirOption: normalizeOptionalString(opts.configDir),
       varsFileOption,
       cliTemplateVarArgs,
+      verbose,
     };
 
     return getApp().researchTask(request);
@@ -537,6 +545,7 @@ export function createMakeCommandAction({
     const dryRun = Boolean(opts.dryRun as boolean | undefined);
     const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
+    const verbose = resolveVerboseOption(opts);
 
     createSeedMarkdownFile(targetMarkdownFile, seedText);
 
@@ -557,6 +566,7 @@ export function createMakeCommandAction({
       configDirOption: sharedRuntimeOptions.configDirOption,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
+      verbose,
     }));
 
     if (researchCode !== 0) {
@@ -581,6 +591,7 @@ export function createMakeCommandAction({
       cliBlockTimeoutMs: sharedRuntimeOptions.cliBlockTimeoutMs,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
       cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
+      verbose,
     }));
   };
 }

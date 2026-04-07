@@ -331,7 +331,7 @@ describe("plan-task", () => {
     expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning document:"))).toBe(true);
-    expect(events.some((event) => event.kind === "info" && event.message.includes("No existing TODO items detected"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("No existing TODO items found in document"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(true);
   });
 
@@ -951,7 +951,7 @@ describe("plan-task", () => {
       });
 
     const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3, verbose: true }));
 
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(3);

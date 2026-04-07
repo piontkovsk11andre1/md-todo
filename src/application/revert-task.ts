@@ -6,7 +6,13 @@ import {
   isWorkingDirectoryClean,
   resolveGitArtifactAndLockExcludes,
 } from "./git-operations.js";
-import { formatNoItemsFound, formatNoItemsFoundFor, formatTaskLabel, pluralize } from "./run-task-utils.js";
+import {
+  formatNoItemsFound,
+  formatNoItemsFoundFor,
+  formatSuccessFailureSummary,
+  formatTaskLabel,
+  pluralize,
+} from "./run-task-utils.js";
 import type {
   ArtifactRunMetadata,
   ArtifactStore,
@@ -371,6 +377,13 @@ export function createRevertTask(
       const successfulRunIds: string[] = [];
       const attemptedRunIds: string[] = [];
       let failedRunId: string | null = null;
+      let runFailureCount = 0;
+      const emitRevertSummary = (): void => {
+        emit({
+          kind: "info",
+          message: formatSuccessFailureSummary("Revert operation", successfulRunIds.length, runFailureCount),
+        });
+      };
       // Captures HEAD before reset so follow-up operations can be reverted later.
       let preResetRef: string | null = null;
 
@@ -414,6 +427,7 @@ export function createRevertTask(
               emit({ kind: "group-end", status: "success" });
             } catch (error) {
               failedRunId = run.runId;
+              runFailureCount += 1;
               const groupFailureMessage = "Revert failed for " + run.runId + ".";
               emit({
                 kind: "group-end",
@@ -427,6 +441,8 @@ export function createRevertTask(
                     + " successful run(s).",
                 });
               }
+
+              emitRevertSummary();
 
               const failureMessage = error instanceof Error ? error.message : String(error);
               throw new Error("Failed to revert run " + run.runId + " (" + commitSha + "): " + failureMessage);
@@ -474,6 +490,8 @@ export function createRevertTask(
           }
           successfulRunIds.push(...executionRuns.map((run) => run.runId));
         }
+
+        emitRevertSummary();
 
         // Persist success metadata so this revert can itself be audited/reverted later.
         dependencies.artifactStore.finalize(artifactContext, {

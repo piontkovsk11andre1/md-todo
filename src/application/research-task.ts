@@ -22,7 +22,7 @@ import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
-import { pluralize } from "./run-task-utils.js";
+import { formatSuccessFailureSummary, pluralize } from "./run-task-utils.js";
 import type {
   ArtifactRunContext,
   ArtifactStore,
@@ -89,6 +89,7 @@ export interface ResearchTaskOptions {
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
   configDirOption?: string;
+  verbose?: boolean;
 }
 
 /**
@@ -101,25 +102,6 @@ export function createResearchTask(
   dependencies: ResearchTaskDependencies,
 ): (options: ResearchTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
-
-  const emitResearchGroupStart = (label: string): void => {
-    emit({
-      kind: "group-start",
-      label,
-      counter: {
-        current: 1,
-        total: 1,
-      },
-    });
-  };
-
-  const emitResearchGroupSuccess = (): void => {
-    emit({ kind: "group-end", status: "success" });
-  };
-
-  const emitResearchGroupFailure = (message: string): void => {
-    emit({ kind: "group-end", status: "failure", message });
-  };
 
   return async function researchTask(options: ResearchTaskOptions): Promise<number> {
     const {
@@ -136,7 +118,47 @@ export function createResearchTask(
       showAgentOutput,
       keepArtifacts,
       forceUnlock,
+      verbose = false,
     } = options;
+    let researchSuccessCount = 0;
+    let researchFailureCount = 0;
+    let researchGroupStarted = false;
+    let researchSummaryEmitted = false;
+
+    const emitResearchGroupStart = (label: string): void => {
+      researchGroupStarted = true;
+      emit({
+        kind: "group-start",
+        label,
+        counter: {
+          current: 1,
+          total: 1,
+        },
+      });
+    };
+
+    const emitResearchGroupSuccess = (): void => {
+      researchSuccessCount += 1;
+      emit({ kind: "group-end", status: "success" });
+    };
+
+    const emitResearchGroupFailure = (message: string): void => {
+      researchFailureCount += 1;
+      emit({ kind: "group-end", status: "failure", message });
+    };
+
+    const emitResearchSummary = (): void => {
+      if (!researchGroupStarted || researchSummaryEmitted) {
+        return;
+      }
+
+      emit({
+        kind: "info",
+        message: formatSuccessFailureSummary("Research turn", researchSuccessCount, researchFailureCount),
+      });
+      researchSummaryEmitted = true;
+    };
+
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
       ? undefined
       : { timeoutMs: cliBlockTimeoutMs };
@@ -286,6 +308,8 @@ export function createResearchTask(
         const message = error instanceof Error ? error.message : String(error);
         emitResearchGroupFailure(message);
         throw error;
+      } finally {
+        emitResearchSummary();
       }
     };
 
@@ -496,14 +520,16 @@ export function createResearchTask(
           keepArtifacts,
         });
 
-        emit({
-          kind: "info",
-          message: "Running research worker: "
-            + resolvedWorkerCommand.join(" ")
-            + " [mode="
-            + mode
-            + "]",
-        });
+        if (verbose) {
+          emit({
+            kind: "info",
+            message: "Running research worker: "
+              + resolvedWorkerCommand.join(" ")
+              + " [mode="
+              + mode
+              + "]",
+          });
+        }
 
         const runResult = await dependencies.workerExecutor.runWorker({
           workerPattern: resolvedWorkerPattern,
@@ -519,12 +545,14 @@ export function createResearchTask(
           artifactPhaseLabel: "research",
         });
 
-        emit({
-          kind: "info",
-          message: "Research worker completed (exit "
-            + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
-            + ").",
-        });
+        if (verbose) {
+          emit({
+            kind: "info",
+            message: "Research worker completed (exit "
+              + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
+              + ").",
+          });
+        }
 
         if (mode === "wait" && showAgentOutput && runResult.stderr) {
           emit({ kind: "stderr", text: runResult.stderr });
@@ -610,6 +638,8 @@ export function createResearchTask(
         const message = error instanceof Error ? error.message : String(error);
         emitResearchGroupFailure(message);
         throw error;
+      } finally {
+        emitResearchSummary();
       }
     } finally {
       if (artifactContext && !artifactsFinalized) {

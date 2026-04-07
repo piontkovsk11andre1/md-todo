@@ -152,6 +152,7 @@ export function createManageArtifacts(
       emit({ kind: "text", text: "  started: " + run.startedAt });
     }
 
+    emit({ kind: "info", message: runs.length + " " + pluralize(runs.length, "artifact run", "artifact runs") + " listed." });
     return 0;
   };
 }

@@ -252,6 +252,7 @@ describe.sequential("CLI integration", () => {
     const result = await runCli([
       "reverify",
       "--dry-run",
+      "--verbose",
       "--worker",
       "opencode",
       "run",
@@ -1413,6 +1414,7 @@ describe.sequential("CLI integration", () => {
     const result = await runCli([
       "reverify",
       "--dry-run",
+      "--verbose",
       "--worker",
       "opencode",
       "run",
@@ -1587,6 +1589,7 @@ describe.sequential("CLI integration", () => {
       "--all",
       "--oldest-first",
       "--no-repair",
+      "--verbose",
       "--",
       "node",
       "-e",
@@ -4090,6 +4093,7 @@ describe.sequential("CLI integration", () => {
       "discuss",
       sourceName,
       "--keep-artifacts",
+      "--verbose",
       "--",
       "node",
       "-e",
@@ -5657,7 +5661,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(3);
-    expect(result.logs.some((line) => line.includes("All tasks completed (3 total)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("All tasks completed (3 tasks total)"))).toBe(true);
     const content = fs.readFileSync(roadmapPath, "utf-8");
     expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
   });
@@ -5683,7 +5687,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
     expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
-    expect(result.logs.some((line) => line.includes("All tasks completed (2 total)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("All tasks completed (2 tasks total)"))).toBe(true);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] Draft release notes\n- [x] Publish release\n");
   });
 
@@ -5717,7 +5721,7 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("projects/alpha/roadmap.md"))).toBe(true);
     expect(result.logs.some((line) => /Reset 1 checkbox(?:es)? in /.test(line) && line.includes("projects/beta/roadmap.md"))).toBe(true);
     expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(4);
-    expect(result.logs.some((line) => line.includes("All tasks completed (4 total)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("All tasks completed (4 tasks total)"))).toBe(true);
     expect(fs.readFileSync(alphaSourcePath, "utf-8")).toBe("- [x] Alpha done\n- [x] Alpha next\n");
     expect(fs.readFileSync(betaSourcePath, "utf-8")).toBe("- [x] Beta done\n- [x] Beta next\n");
   });
@@ -5881,7 +5885,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(3);
-    expect(result.logs.some((line) => line.includes("All tasks completed (3 total)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("All tasks completed (3 tasks total)"))).toBe(true);
     const content = fs.readFileSync(roadmapPath, "utf-8");
     expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
   });
@@ -6724,13 +6728,14 @@ describe.sequential("CLI integration", () => {
       "roadmap.md",
       "--scan-count",
       "3",
+      "--verbose",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("No existing TODO items detected in document"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("No existing TODO items found in document"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-03"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-03"))).toBe(true);
     expect(result.logs.some((line) => line.includes("converged at scan 2"))).toBe(true);
@@ -6775,6 +6780,7 @@ describe.sequential("CLI integration", () => {
       "roadmap.md",
       "--scan-count",
       "4",
+      "--verbose",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
@@ -6836,6 +6842,7 @@ describe.sequential("CLI integration", () => {
     const result = await runCli([
       "plan",
       "roadmap.md",
+      "--verbose",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
@@ -6889,6 +6896,7 @@ describe.sequential("CLI integration", () => {
       "1",
       "--deep",
       "2",
+      "--verbose",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
@@ -6949,6 +6957,7 @@ describe.sequential("CLI integration", () => {
       "roadmap.md",
       "--scan-count",
       "4",
+      "--verbose",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),

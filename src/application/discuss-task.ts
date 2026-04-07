@@ -32,7 +32,14 @@ import {
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
-import { formatNoItemsFound, formatNoItemsFoundFor, formatNoItemsFoundMatching, formatTaskLabel, pluralize } from "./run-task-utils.js";
+import {
+  formatNoItemsFound,
+  formatNoItemsFoundFor,
+  formatNoItemsFoundMatching,
+  formatSuccessFailureSummary,
+  formatTaskLabel,
+  pluralize,
+} from "./run-task-utils.js";
 import {
   resolveTaskContextFromRuntimeMetadata,
   validateRuntimeTaskMetadata,
@@ -151,6 +158,7 @@ export interface DiscussTaskOptions {
   forceUnlock: boolean;
   ignoreCliBlock: boolean;
   cliBlockTimeoutMs?: number;
+  verbose?: boolean;
 }
 
 /**
@@ -193,6 +201,7 @@ export function createDiscussTask(
       cliTemplateVarArgs,
       workerPattern,
       cliBlockTimeoutMs,
+      verbose = false,
     } = options;
     const varsFilePath = resolveTemplateVarsFilePath(
       varsFileOption,
@@ -227,6 +236,21 @@ export function createDiscussTask(
     let lockTargets: string[] = [];
     let discussionTurnStarted = false;
     let discussionTurnEnded = false;
+    let discussionSuccessCount = 0;
+    let discussionFailureCount = 0;
+    let discussionSummaryEmitted = false;
+
+    const emitDiscussionSummary = (): void => {
+      if (!discussionTurnStarted || discussionSummaryEmitted) {
+        return;
+      }
+
+      emit({
+        kind: "info",
+        message: formatSuccessFailureSummary("Discuss turn", discussionSuccessCount, discussionFailureCount),
+      });
+      discussionSummaryEmitted = true;
+    };
 
     if (runId) {
       selectedRun = runId === "latest"
@@ -455,16 +479,18 @@ export function createDiscussTask(
         }
       }
 
-      if (finishedRunPromptContext) {
-        emit({
-          kind: "info",
-          message: "Finished task: " + formatTaskLabel(taskContext.task)
-            + " (run "
-            + finishedRunPromptContext.run.runId
-            + ")",
-        });
-      } else {
-        emit({ kind: "info", message: "Next task: " + formatTaskLabel(taskContext.task) });
+      if (verbose) {
+        if (finishedRunPromptContext) {
+          emit({
+            kind: "info",
+            message: "Finished task: " + formatTaskLabel(taskContext.task)
+              + " (run "
+              + finishedRunPromptContext.run.runId
+              + ")",
+          });
+        } else {
+          emit({ kind: "info", message: "Next task: " + formatTaskLabel(taskContext.task) });
+        }
       }
 
       if (printPrompt) {
@@ -558,10 +584,12 @@ export function createDiscussTask(
 
       try {
         // Invoke worker in TUI mode to collect discussion output.
-        emit({
-          kind: "info",
-          message: "Running discussion worker: " + resolvedWorkerCommand.join(" ") + " [mode=tui]",
-        });
+        if (verbose) {
+          emit({
+            kind: "info",
+            message: "Running discussion worker: " + resolvedWorkerCommand.join(" ") + " [mode=tui]",
+          });
+        }
         const result = await dependencies.workerExecutor.runWorker({
           workerPattern: resolvedWorkerPattern,
           prompt,
@@ -574,12 +602,14 @@ export function createDiscussTask(
           artifactContext,
           artifactPhase: "discuss",
         });
-        emit({
-          kind: "info",
-          message: "Discussion worker completed (exit "
-            + (result.exitCode === null ? "null" : String(result.exitCode))
-            + ").",
-        });
+        if (verbose) {
+          emit({
+            kind: "info",
+            message: "Discussion worker completed (exit "
+              + (result.exitCode === null ? "null" : String(result.exitCode))
+              + ").",
+          });
+        }
 
         // Detect and immediately revert checkbox edits introduced by the discussion step.
         const checkboxMutations = detectCheckboxMutations(lockTargets, beforeCheckboxStateByFile, dependencies.fileSystem);
@@ -649,6 +679,7 @@ export function createDiscussTask(
             message,
           });
           emitDiscussionTurnFailure(message);
+          discussionFailureCount += 1;
           discussionTurnEnded = true;
           return 1;
         }
@@ -658,18 +689,21 @@ export function createDiscussTask(
             const message = "Discussion failed: worker exited without a code.";
             emit({ kind: "error", message });
             emitDiscussionTurnFailure(message);
+            discussionFailureCount += 1;
             discussionTurnEnded = true;
             return 1;
           } else {
             const message = "Discussion exited with code " + result.exitCode + ".";
             emit({ kind: "error", message });
             emitDiscussionTurnFailure(message);
+            discussionFailureCount += 1;
             discussionTurnEnded = true;
             return result.exitCode;
           }
         }
 
         emitDiscussionTurnSuccess();
+        discussionSuccessCount += 1;
         discussionTurnEnded = true;
         emit({ kind: "success", message: "Discussion completed." });
         return 0;
@@ -677,9 +711,12 @@ export function createDiscussTask(
         if (discussionTurnStarted && !discussionTurnEnded) {
           const message = error instanceof Error ? error.message : String(error);
           emitDiscussionTurnFailure(message);
+          discussionFailureCount += 1;
           discussionTurnEnded = true;
         }
         throw error;
+      } finally {
+        emitDiscussionSummary();
       }
     } finally {
       // Flush trace output and release all source locks on every exit path.

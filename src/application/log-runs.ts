@@ -7,7 +7,7 @@ import type {
 } from "../domain/ports/index.js";
 import { formatRelativeTimestamp } from "../domain/relative-time.js";
 import { toCompactRunId } from "../domain/run-id.js";
-import { formatNoItemsFound } from "./run-task-utils.js";
+import { formatNoItemsFound, pluralize } from "./run-task-utils.js";
 
 /**
  * Dependencies required to list and render previously completed runs.
@@ -96,6 +96,7 @@ export function createLogRuns(
       emit({ kind: "text", text: formatLogLine(entry) });
     }
 
+    emit({ kind: "info", message: entries.length + " " + pluralize(entries.length, "run", "runs") + " listed." });
     return 0;
   };
 }

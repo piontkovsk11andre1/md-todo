@@ -47,7 +47,7 @@ describe("manage-artifacts", () => {
     expect(directoryOpener.openDirectory).not.toHaveBeenCalled();
     expect(events).toContainEqual({
       kind: "error",
-      message: "No saved runtime artifact run found for: missing-run",
+      message: "No saved runtime artifact run found for: missing-run.",
     });
   });
 
@@ -172,6 +172,10 @@ describe("manage-artifacts", () => {
         kind: "text",
         text: "  started: 2026-03-20T12:00:00.000Z",
       },
+      {
+        kind: "info",
+        message: "1 artifact run listed.",
+      },
     ]);
   });
 
@@ -201,6 +205,10 @@ describe("manage-artifacts", () => {
       {
         kind: "text",
         text: "  started: 2026-03-20T12:00:00.000Z",
+      },
+      {
+        kind: "info",
+        message: "1 artifact run listed.",
       },
     ]);
   });
