@@ -35,6 +35,16 @@ export interface RunLifecycleDependencies {
   configDir: ConfigDirResult | undefined;
 }
 
+export class OnCompleteHookError extends Error {
+  readonly exitCode: number | null;
+
+  constructor(message: string, exitCode: number | null) {
+    super(message);
+    this.name = "OnCompleteHookError";
+    this.exitCode = exitCode;
+  }
+}
+
 /**
  * Executes the optional failure hook after a task iteration fails.
  *
@@ -101,6 +111,7 @@ export async function afterTaskComplete(
   onCompleteCommand: string | undefined,
   hideHookOutput: boolean,
   extraTemplateVars: ExtraTemplateVars,
+  failOnCompleteHookError: boolean = false,
 ): Promise<Record<string, unknown> | undefined> {
   const cwd = dependencies.workingDirectory.cwd();
   const emit = dependencies.output.emit.bind(dependencies.output);
@@ -158,10 +169,20 @@ export async function afterTaskComplete(
       }
 
       if (!result.success) {
-        emit({ kind: "warn", message: "--on-complete hook exited with code " + result.exitCode });
+        const message = "--on-complete hook exited with code " + result.exitCode;
+        emit({ kind: "warn", message });
+        if (failOnCompleteHookError) {
+          throw new OnCompleteHookError(message, result.exitCode);
+        }
       }
     } catch (error) {
+      if (error instanceof OnCompleteHookError) {
+        throw error;
+      }
       emit({ kind: "warn", message: "--on-complete hook failed: " + String(error) });
+      if (failOnCompleteHookError) {
+        throw new OnCompleteHookError("--on-complete hook failed: " + String(error), null);
+      }
     }
   }
 

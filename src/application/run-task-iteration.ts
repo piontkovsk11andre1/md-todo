@@ -63,6 +63,8 @@ interface IterationExecutionOptions {
   verbose: boolean;
   taskIndex: number;
   totalTasks: number;
+  forceAttempts: number;
+  forceStrippedTaskText?: string;
   keepArtifacts: boolean;
   printPrompt: boolean;
   dryRun: boolean;
@@ -76,6 +78,12 @@ interface IterationExecutionOptions {
   showAgentOutput: boolean;
   hideHookOutput: boolean;
   trace: boolean;
+  forceRetryMetadata?: {
+    attemptNumber: number;
+    maxAttempts: number;
+    previousRunId: string;
+    previousExitCode: number;
+  };
 }
 
 interface IterationWorkerConfig {
@@ -204,16 +212,27 @@ export async function runTaskIteration(params: {
   prompts: IterationPromptConfig;
   traceConfig: IterationTraceConfig;
   lifecycle: IterationLifecycle;
-}): Promise<{ continueLoop: boolean; exitCode?: number }> {
+}): Promise<{
+  continueLoop: boolean;
+  exitCode?: number;
+  forceRetryableFailure?: boolean;
+}> {
   const { dependencies, emit, state, context, execution, worker, verifyConfig, completion, prompts, traceConfig, lifecycle } = params;
   const { source, fileSource, files, task } = context;
+  const taskTextForExecution = execution.forceStrippedTaskText ?? task.text;
+  const taskForIntent = taskTextForExecution === task.text
+    ? task
+    : {
+      ...task,
+      text: taskTextForExecution,
+    };
 
   // Decide whether this iteration should execute, verify, or do both.
   const { onlyVerify, shouldVerify, taskIntentDecision, prefixChain } = resolveIterationVerificationMode({
     configuredOnlyVerify: verifyConfig.configuredOnlyVerify,
     configuredShouldVerify: verifyConfig.configuredShouldVerify,
     forceExecute: execution.forceExecute,
-    task,
+    task: taskForIntent,
     toolResolver: dependencies.toolResolver,
     emit,
   });
@@ -257,7 +276,7 @@ export async function runTaskIteration(params: {
       message,
     });
     emitGroupFailure(message);
-    return { continueLoop: false, exitCode: 1 };
+    return { continueLoop: false, exitCode: 1, forceRetryableFailure: false };
   }
 
   if (taskIntentDecision.intent === "tool-expansion" && taskIntentDecision.hasEmptyPayload) {
@@ -267,7 +286,7 @@ export async function runTaskIteration(params: {
       message,
     });
     emitGroupFailure(message);
-    return { continueLoop: false, exitCode: 1 };
+    return { continueLoop: false, exitCode: 1, forceRetryableFailure: false };
   }
 
   if (taskIntentDecision.intent === "fast-execution" && taskIntentDecision.hasEmptyPayload) {
@@ -277,15 +296,18 @@ export async function runTaskIteration(params: {
       message,
     });
     emitGroupSuccess();
-    return { continueLoop: false, exitCode: 0 };
+    return { continueLoop: false, exitCode: 0, forceRetryableFailure: false };
   }
 
-  const taskForExecution = taskIntentDecision.normalizedTaskText === task.text
-    ? task
+  const taskForExecution = taskIntentDecision.normalizedTaskText === taskForIntent.text
+    ? taskForIntent
     : {
-      ...task,
+      ...taskForIntent,
       text: taskIntentDecision.normalizedTaskText,
     };
+  const taskForLifecycle = execution.forceStrippedTaskText === undefined
+    ? taskForExecution
+    : task;
 
   const modifierProfile = extractPrefixModifierProfile(prefixChain);
   // Resolve the effective worker command using CLI, config, and task metadata.
@@ -347,7 +369,7 @@ export async function runTaskIteration(params: {
       message,
     });
     emitGroupFailure(message);
-    return { continueLoop: false, exitCode: 1 };
+    return { continueLoop: false, exitCode: 1, forceRetryableFailure: false };
   }
 
   // Initialize artifact and trace context only for real execution modes.
@@ -360,7 +382,7 @@ export async function runTaskIteration(params: {
       mode: execution.mode,
       transport: "pattern",
       source,
-      task: toRuntimeTaskMetadata(taskForExecution, fileSource),
+      task: toRuntimeTaskMetadata(taskForLifecycle, fileSource),
       keepArtifacts: execution.keepArtifacts,
     });
     state.traceWriter = dependencies.createTraceWriter(execution.trace, state.artifactContext);
@@ -369,6 +391,7 @@ export async function runTaskIteration(params: {
   // Resolve prompt templates and optional CLI blocks before dispatch.
   const sourceDir = dependencies.pathOperations.dirname(dependencies.pathOperations.resolve(task.file));
   let promptPreparationFailureReason: string | null = null;
+  let promptPreparationFailedInTemplateCli = false;
   const preparedPrompts = await prepareTaskPrompts({
     dependencies,
     task: taskForExecution,
@@ -387,31 +410,36 @@ export async function runTaskIteration(params: {
     emit,
     onTemplateCliFailure: async (error: unknown): Promise<number | null> => await handleTemplateCliFailure(
       error,
-      emit,
-      async () => await afterTaskFailed(
-        dependencies,
-        taskForExecution,
-        source,
-        completion.onFailCommand,
-        execution.hideHookOutput,
+        emit,
+        async () => await afterTaskFailed(
+          dependencies,
+          taskForLifecycle,
+          source,
+          completion.onFailCommand,
+          execution.hideHookOutput,
         completion.extraTemplateVars,
       ),
       async (failureMessage) => {
         promptPreparationFailureReason = failureMessage;
+        promptPreparationFailedInTemplateCli = true;
         return await lifecycle.failRun(1, "failed", failureMessage, 1);
       },
     ),
   });
   // Respect early exits produced during prompt preparation.
   if ("earlyExitCode" in preparedPrompts) {
-    if (preparedPrompts.earlyExitCode !== 0) {
-      const failureMessage = promptPreparationFailureReason
-        ?? "Task failed during prompt preparation (exit " + preparedPrompts.earlyExitCode + ").";
-      emitGroupFailure(failureMessage);
-    } else {
-      emitGroupSuccess();
-    }
-    return { continueLoop: false, exitCode: preparedPrompts.earlyExitCode };
+      if (preparedPrompts.earlyExitCode !== 0) {
+        const failureMessage = promptPreparationFailureReason
+          ?? "Task failed during prompt preparation (exit " + preparedPrompts.earlyExitCode + ").";
+        emitGroupFailure(failureMessage);
+      } else {
+        emitGroupSuccess();
+      }
+    return {
+      continueLoop: false,
+      exitCode: preparedPrompts.earlyExitCode,
+      forceRetryableFailure: preparedPrompts.earlyExitCode !== 0 && promptPreparationFailedInTemplateCli,
+    };
   }
 
   // Handle print and dry-run flows without executing the worker command.
@@ -448,21 +476,22 @@ export async function runTaskIteration(params: {
     emitGroupFailure(message);
     await afterTaskFailed(
       dependencies,
-      taskForExecution,
+      taskForLifecycle,
       source,
       completion.onFailCommand,
       execution.hideHookOutput,
       completion.extraTemplateVars,
     );
-    return {
-      continueLoop: false,
-      exitCode: await lifecycle.failRun(1, "failed", message, 1),
-    };
+      return {
+        continueLoop: false,
+        exitCode: await lifecycle.failRun(1, "failed", message, 1),
+        forceRetryableFailure: false,
+      };
   }
   const selectedWorkerCommand = onlyVerify ? automationCommand : resolvedWorkerCommand;
   // Persist expanded prompt context for trace enrichment in later phases.
   state.traceEnrichmentContext = {
-    task: taskForExecution,
+    task: taskForLifecycle,
     source: preparedPrompts.expandedSource,
     contextBefore: preparedPrompts.expandedContextBefore,
     worker: selectedWorkerCommand,
@@ -514,6 +543,7 @@ export async function runTaskIteration(params: {
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace:
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+    forceRetryMetadata: execution.forceRetryMetadata,
   });
 
   // Convert execution failures into lifecycle failure handling with hooks.
@@ -521,11 +551,12 @@ export async function runTaskIteration(params: {
     emitGroupFailure(dispatchResult.executionFailureRunReason);
     return {
       continueLoop: false,
+      forceRetryableFailure: dispatchResult.forceRetryableFailure === true,
       exitCode: await handleDispatchFailure({
         dispatchResult,
         emit,
         dependencies,
-        task: taskForExecution,
+        task: taskForLifecycle,
         source,
         onFailCommand: completion.onFailCommand,
         hideHookOutput: execution.hideHookOutput,
@@ -541,6 +572,7 @@ export async function runTaskIteration(params: {
     emitGroupSuccess();
     return {
       continueLoop: false,
+      forceRetryableFailure: false,
       exitCode: await lifecycle.finishRun(0, "detached", true),
     };
   }
@@ -577,7 +609,8 @@ export async function runTaskIteration(params: {
     verbose: execution.verbose,
     cliBlockExecutor: prompts.cliBlockExecutor,
     cliExpansionEnabled: execution.cliExpansionEnabled,
-    task: taskForExecution,
+    task: taskForLifecycle,
+    verificationTask: taskForExecution,
     sourceText: source,
     expandedSource: preparedPrompts.expandedSource,
     expandedContextBefore: preparedPrompts.expandedContextBefore,
@@ -595,9 +628,14 @@ export async function runTaskIteration(params: {
     verificationFailureRunReason: dispatchResult.verificationFailureRunReason,
     skipRemainingSiblingsReason: dispatchResult.skipRemainingSiblingsReason,
     toolExpansionInsertedChildCount: dispatchResult.toolExpansionInsertedChildCount,
+    failOnCompleteHookError: execution.forceStrippedTaskText !== undefined,
   });
 
-  if (!completionResult.continueLoop && (completionResult.exitCode ?? 0) !== 0) {
+  if (completionResult.groupEnded === true) {
+    groupEnded = true;
+  }
+
+  if (!completionResult.continueLoop && (completionResult.exitCode ?? 0) !== 0 && !groupEnded) {
     emitGroupFailure(dispatchResult.verificationFailureRunReason);
   } else if (!completionResult.continueLoop && !groupEnded) {
     emitGroupSuccess();

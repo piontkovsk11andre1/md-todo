@@ -60,6 +60,7 @@ const DO_MODES: readonly ProcessRunMode[] = ["wait"];
 const COMMIT_MODES = ["per-task", "file-done"] as const;
 const DEFAULT_PLAN_SCAN_COUNT = 3;
 const DEFAULT_PLAN_DEEP = 0;
+const DEFAULT_FORCE_ATTEMPTS = 2;
 const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
 const STALE_CALL_CLI_CACHE_RELATIVE_PATH = path.join("cache", "cli-blocks");
 const EXIT_CODES_HELP_TEXT = [
@@ -347,6 +348,11 @@ program
   .option("--no-verify", "Disable verification after task execution")
   .option("--only-verify", "Skip execution and run verification directly", false)
   .option("--force-execute", "Force execute phase even for verify-only task text", false)
+  .option(
+    "--force-attempts <n>",
+    "Default outer retry attempts for force:-prefixed tasks",
+    String(DEFAULT_FORCE_ATTEMPTS),
+  )
   .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
   .option("--no-repair", "Disable repair even when repair attempts are set")
   .option("--dry-run", "Show what would run for bootstrap and execution without executing workers", false)
@@ -671,6 +677,11 @@ function configureRunLikeCommandOptions(command: Command): Command {
     .option("--no-verify", "Disable verification after task execution")
     .option("--only-verify", "Skip execution and run verification directly", false)
     .option("--force-execute", "Force execute phase even for verify-only task text", false)
+    .option(
+      "--force-attempts <n>",
+      "Default outer retry attempts for force:-prefixed tasks",
+      String(DEFAULT_FORCE_ATTEMPTS),
+    )
     .option("--repair-attempts <n>", "Max repair attempts on verification failure", "1")
     .option("--no-repair", "Disable repair even when repair attempts are set")
     .option("--dry-run", "Show what would be executed without running it", false)

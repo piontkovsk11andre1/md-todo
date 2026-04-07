@@ -115,7 +115,9 @@ export async function executeToolChain(
     // Handle child task insertion.
     if (result.childTasks && result.childTasks.length > 0) {
       const source = context.fileSystem.readText(context.task.file);
-      const updatedSource = insertSubitems(source, context.task, result.childTasks);
+      const updatedSource = insertSubitems(source, context.task, result.childTasks, {
+        dedupeWithExisting: true,
+      });
       context.fileSystem.writeText(context.task.file, updatedSource);
       emit({
         kind: "info",

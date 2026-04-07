@@ -109,6 +109,78 @@ describe("insertSubitems", () => {
     expect(insertSubitems(source, task, [])).toBe(source);
   });
 
+  it("dedupes against existing immediate children when enabled", () => {
+    const source = [
+      "- [ ] Parent",
+      "  - [ ] Existing A",
+      "  - [ ] Existing B",
+      "- [ ] Other",
+    ].join("\n");
+    const task = makeTask({ line: 1 });
+
+    const result = insertSubitems(source, task, [
+      "- [ ] Existing A",
+      "- [ ] New Child",
+    ], {
+      dedupeWithExisting: true,
+    });
+
+    expect(result).toBe([
+      "- [ ] Parent",
+      "  - [ ] New Child",
+      "  - [ ] Existing A",
+      "  - [ ] Existing B",
+      "- [ ] Other",
+    ].join("\n"));
+  });
+
+  it("dedupes only one matching duplicate occurrence", () => {
+    const source = [
+      "- [ ] Parent",
+      "  - [ ] Existing",
+      "- [ ] Other",
+    ].join("\n");
+    const task = makeTask({ line: 1 });
+
+    const result = insertSubitems(source, task, [
+      "- [ ] Existing",
+      "- [ ] Existing",
+    ], {
+      dedupeWithExisting: true,
+    });
+
+    expect(result).toBe([
+      "- [ ] Parent",
+      "  - [ ] Existing",
+      "  - [ ] Existing",
+      "- [ ] Other",
+    ].join("\n"));
+  });
+
+  it("does not dedupe against deeper descendants", () => {
+    const source = [
+      "- [ ] Parent",
+      "  - [ ] Child",
+      "    - [ ] Nested",
+      "- [ ] Other",
+    ].join("\n");
+    const task = makeTask({ line: 1 });
+
+    const result = insertSubitems(source, task, [
+      "- [ ] Nested",
+    ], {
+      dedupeWithExisting: true,
+    });
+
+    expect(result).toBe([
+      "- [ ] Parent",
+      "  - [ ] Nested",
+      "  - [ ] Child",
+      "    - [ ] Nested",
+      "- [ ] Other",
+    ].join("\n"));
+  });
+
   it("normalizes various bullet markers to dash", () => {
     const source = "- [ ] Parent";
     const task = makeTask({ line: 1 });

@@ -186,6 +186,9 @@ export function insertSubitems(
   source: string,
   task: Task,
   subitemLines: string[],
+  options?: {
+    dedupeWithExisting?: boolean;
+  },
 ): string {
   if (subitemLines.length === 0) return source;
 
@@ -199,13 +202,71 @@ export function insertSubitems(
 
   const parentLine = lines[parentLineIndex]!;
   const indent = computeChildIndent(parentLine);
+  const dedupeWithExisting = options?.dedupeWithExisting === true;
 
-  const indented = subitemLines.map((item) => {
+  const existingImmediateChildCounts = dedupeWithExisting
+    ? collectImmediateChildCounts(lines, parentLineIndex, indent)
+    : new Map<string, number>();
+
+  const indented: string[] = [];
+  for (const item of subitemLines) {
     const text = item.replace(/^[-*+]\s+/, "");
-    return `${indent}- ${text}`;
-  });
+    const insertedLine = `${indent}- ${text}`;
+    if (!dedupeWithExisting) {
+      indented.push(insertedLine);
+      continue;
+    }
+
+    const normalized = normalizeTodoChildLine(insertedLine);
+    const existingCount = existingImmediateChildCounts.get(normalized) ?? 0;
+    if (existingCount > 0) {
+      existingImmediateChildCounts.set(normalized, existingCount - 1);
+      continue;
+    }
+
+    indented.push(insertedLine);
+  }
+
+  if (indented.length === 0) {
+    return source;
+  }
 
   lines.splice(parentLineIndex + 1, 0, ...indented);
 
   return lines.join(eol);
+}
+
+function collectImmediateChildCounts(lines: string[], parentLineIndex: number, childIndent: string): Map<string, number> {
+  const parentIndentLength = (lines[parentLineIndex]?.match(/^(\s*)/)?.[1] ?? "").length;
+  const childIndentLength = childIndent.length;
+  const counts = new Map<string, number>();
+
+  for (let index = parentLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    const leadingWhitespaceLength = (line.match(/^(\s*)/)?.[1] ?? "").length;
+    if (leadingWhitespaceLength <= parentIndentLength) {
+      break;
+    }
+
+    if (leadingWhitespaceLength !== childIndentLength) {
+      continue;
+    }
+
+    if (!/^\s*[-*+]\s+/.test(line)) {
+      continue;
+    }
+
+    const normalized = normalizeTodoChildLine(line);
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
+function normalizeTodoChildLine(line: string): string {
+  return line.replace(/^\s*[-*+]\s+/, "- ").trim();
 }

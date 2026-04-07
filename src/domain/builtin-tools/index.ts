@@ -3,6 +3,7 @@ import { endHandler } from "./end.js";
 import { verifyHandler } from "./verify.js";
 import { includeHandler } from "./include.js";
 import { profileHandler } from "./profile.js";
+import { forceHandler } from "./force.js";
 
 /**
  * Static registry of built-in tool definitions.
@@ -68,6 +69,11 @@ const BUILTIN_TOOLS: Record<string, ToolDefinition> = {
     name: "profile",
     kind: "modifier",
     handler: profileHandler,
+  },
+  force: {
+    name: "force",
+    kind: "modifier",
+    handler: forceHandler,
   },
 };
 

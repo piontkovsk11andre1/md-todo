@@ -29,6 +29,7 @@ import {
   isWorkingDirectoryClean,
 } from "./git-operations.js";
 import { runTaskIteration } from "./run-task-iteration.js";
+import { extractForceModifier } from "../domain/prefix-chain.js";
 import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
 import {
@@ -121,6 +122,7 @@ export interface RunTaskOptions {
   verify: boolean;
   onlyVerify: boolean;
   forceExecute: boolean;
+  forceAttempts: number;
   noRepair: boolean;
   repairAttempts: number;
   dryRun: boolean;
@@ -176,6 +178,7 @@ export function createRunTaskExecution(
       verify,
       onlyVerify,
       forceExecute,
+      forceAttempts,
       noRepair,
       repairAttempts,
       dryRun,
@@ -203,7 +206,7 @@ export function createRunTaskExecution(
       verbose,
     } = options;
 
-    const cliBlockExecutor = cacheCliBlocks
+    let cliBlockExecutor = cacheCliBlocks
       ? createCachedCommandExecutor(defaultCliBlockExecutor)
       : defaultCliBlockExecutor;
 
@@ -267,6 +270,7 @@ export function createRunTaskExecution(
 
     // Resolve effective verification/repair behavior from CLI flags.
     const runBehavior = resolveRunBehavior({ verify, onlyVerify, noRepair, repairAttempts });
+    void forceAttempts;
     const configuredShouldVerify = runBehavior.shouldVerify;
     const configuredOnlyVerify = runBehavior.onlyVerify;
     const allowRepair = runBehavior.allowRepair;
@@ -508,80 +512,201 @@ export function createRunTaskExecution(
             return EXIT_CODE_NO_WORK;
           }
 
-          // Execute one full task iteration and inspect control-flow instructions.
-          const iterationResult = await runTaskIteration({
-            dependencies,
-            emit,
-            state,
-            context: {
-              source,
-              fileSource: result.source,
-              taskIndex: currentTaskIndex,
-              totalTasks,
-              files,
-              task: result.task,
-            },
-            execution: {
-              mode,
-              verbose,
-              taskIndex: currentTaskIndex,
-              totalTasks,
-              keepArtifacts,
-              printPrompt,
-              dryRun,
-              dryRunSuppressesCliExpansion,
-              cliExpansionEnabled,
-              ignoreCliBlock,
-              verify,
-              noRepair,
-              repairAttempts,
-              forceExecute,
-              showAgentOutput,
-              hideHookOutput,
-              trace,
-            },
-            worker: {
-              workerPattern,
-              loadedWorkerConfig,
-            },
-            verifyConfig: {
-              configuredOnlyVerify,
-              configuredShouldVerify,
-              maxRepairAttempts,
-              allowRepair,
-            },
-            completion: {
-              effectiveRunAll,
-              commitAfterComplete,
-              deferCommitUntilPostRun,
-              commitMessageTemplate,
-              onCompleteCommand,
-              onFailCommand,
-              extraTemplateVars,
-            },
-            prompts: {
-              extraTemplateVars: templateVarsWithUserVariables,
-              cliExecutionOptions,
-              cliBlockExecutor,
-              executionEnv: rundownVarEnv,
-              nowIso,
-            },
-            traceConfig: {
-              traceRunSession,
-              pendingPreRunResetTraceEvents,
-              roundContext: {
-                currentRound,
-                totalRounds: rounds,
-              },
-            },
-            lifecycle: {
-              failRun,
-              finishRun,
-              resetArtifacts,
-            },
-          });
-          currentTaskIndex++;
+          const initialForceExtraction = extractForceModifier(result.task.text, dependencies.toolResolver);
+          const maxTaskAttempts = initialForceExtraction.isForce
+            ? initialForceExtraction.maxAttempts
+            : 1;
+          const forceTaskIdentity = {
+            filePath: result.task.file,
+            line: result.task.line,
+          };
+          let selectedTaskResult = result;
+          let activeForceExtraction = initialForceExtraction;
+          let attempt = 0;
+          let forceRetryMetadata: {
+            attemptNumber: number;
+            maxAttempts: number;
+            previousRunId: string;
+            previousExitCode: number;
+          } | undefined;
+          let iterationResult: Awaited<ReturnType<typeof runTaskIteration>> | undefined;
 
+          while (attempt < maxTaskAttempts) {
+            attempt++;
+            const isFinalAttempt = attempt >= maxTaskAttempts;
+
+            if (attempt > 1 && initialForceExtraction.isForce) {
+              const refreshedSelection = dependencies.taskSelector.selectTaskByLocation(
+                forceTaskIdentity.filePath,
+                forceTaskIdentity.line,
+              );
+              if (!refreshedSelection) {
+                emit({
+                  kind: "error",
+                  message: "Force retry aborted: original task at "
+                    + forceTaskIdentity.filePath
+                    + ":"
+                    + forceTaskIdentity.line
+                    + " is no longer selectable.",
+                });
+                return EXIT_CODE_FAILURE;
+              }
+
+              selectedTaskResult = refreshedSelection;
+              activeForceExtraction = extractForceModifier(
+                refreshedSelection.task.text,
+                dependencies.toolResolver,
+              );
+
+              if (selectedTaskResult.task.checked) {
+                emit({
+                  kind: "info",
+                  message: "Force retry stopped: task is already checked at "
+                    + forceTaskIdentity.filePath
+                    + ":"
+                    + forceTaskIdentity.line
+                    + ".",
+                });
+                state.tasksCompleted++;
+                iterationResult = {
+                  continueLoop: effectiveRunAll,
+                  exitCode: 0,
+                  forceRetryableFailure: false,
+                };
+                break;
+              }
+            }
+
+            // Intermediate `force:` retries intentionally bypass `failRun()` so we
+            // do not run `finishRun()`/trace enrichment for attempts that will be
+            // discarded. Final attempt failures still flow through `failRun()`.
+            const attemptFailRun = initialForceExtraction.isForce && !isFinalAttempt
+              ? async (code: number): Promise<number> => code
+              : failRun;
+
+            // Execute one full task iteration and inspect control-flow instructions.
+            iterationResult = await runTaskIteration({
+              dependencies,
+              emit,
+              state,
+              context: {
+                source,
+                fileSource: selectedTaskResult.source,
+                taskIndex: currentTaskIndex,
+                totalTasks,
+                files,
+                task: selectedTaskResult.task,
+              },
+              execution: {
+                mode,
+                verbose,
+                taskIndex: currentTaskIndex,
+                totalTasks,
+                forceAttempts,
+                forceStrippedTaskText: activeForceExtraction.isForce
+                  ? activeForceExtraction.strippedText
+                  : undefined,
+                keepArtifacts,
+                printPrompt,
+                dryRun,
+                dryRunSuppressesCliExpansion,
+                cliExpansionEnabled,
+                ignoreCliBlock,
+                verify,
+                noRepair,
+                repairAttempts,
+                forceExecute,
+                showAgentOutput,
+                hideHookOutput,
+                trace,
+                forceRetryMetadata,
+              },
+              worker: {
+                workerPattern,
+                loadedWorkerConfig,
+              },
+              verifyConfig: {
+                configuredOnlyVerify,
+                configuredShouldVerify,
+                maxRepairAttempts,
+                allowRepair,
+              },
+              completion: {
+                effectiveRunAll,
+                commitAfterComplete,
+                deferCommitUntilPostRun,
+                commitMessageTemplate,
+                onCompleteCommand,
+                onFailCommand,
+                extraTemplateVars,
+              },
+              prompts: {
+                extraTemplateVars: templateVarsWithUserVariables,
+                cliExecutionOptions,
+                cliBlockExecutor,
+                executionEnv: rundownVarEnv,
+                nowIso,
+              },
+              traceConfig: {
+                traceRunSession,
+                pendingPreRunResetTraceEvents,
+                roundContext: {
+                  currentRound,
+                  totalRounds: rounds,
+                },
+              },
+              lifecycle: {
+                failRun: attemptFailRun,
+                finishRun,
+                resetArtifacts,
+              },
+            });
+
+            const exitCode = iterationResult.exitCode ?? 0;
+            const didFail = !iterationResult.continueLoop && exitCode !== 0;
+            const shouldRetryForceAttempt = didFail
+              && initialForceExtraction.isForce
+              && iterationResult.forceRetryableFailure === true
+              && !isFinalAttempt;
+            if (!shouldRetryForceAttempt) {
+              if (!iterationResult.continueLoop) {
+                return exitCode;
+              }
+              break;
+            }
+
+            emit({
+              kind: "warn",
+              message: "Force retry "
+                + (attempt + 1)
+                + " of "
+                + maxTaskAttempts
+                + " — restarting task iteration from scratch",
+            });
+            const previousRunId = state.artifactContext?.runId ?? traceRunSession.getRunId();
+            forceRetryMetadata = typeof previousRunId === "string" && previousRunId.length > 0
+              ? {
+                attemptNumber: attempt + 1,
+                maxAttempts: maxTaskAttempts,
+                previousRunId,
+                previousExitCode: exitCode,
+              }
+              : undefined;
+            runFailed = false;
+            state.runCompleted = false;
+            dependencies.verificationStore.remove(selectedTaskResult.task);
+            state.deferredCommitContext = null;
+            resetArtifacts();
+            if (cacheCliBlocks) {
+              cliBlockExecutor = createCachedCommandExecutor(defaultCliBlockExecutor);
+            }
+          }
+
+          if (!iterationResult) {
+            continue;
+          }
+
+          currentTaskIndex++;
           if (!iterationResult.continueLoop) {
             return iterationResult.exitCode ?? 0;
           }

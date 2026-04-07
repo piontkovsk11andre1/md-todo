@@ -16,6 +16,7 @@ export type TraceSchemaVersion = typeof TRACE_SCHEMA_VERSION;
  */
 export type TraceEventType =
   | "run.started"
+  | "force.retry"
   | "round.started"
   | "round.completed"
   | "discussion.started"
@@ -116,6 +117,16 @@ export interface RoundStartedPayload {
 export interface RoundCompletedPayload {
   current_round: number;
   total_rounds: number;
+}
+
+/**
+ * Payload for `force.retry` events.
+ */
+export interface ForceRetryPayload {
+  attempt_number: number;
+  max_attempts: number;
+  previous_run_id: string;
+  previous_exit_code: number;
 }
 
 /**
@@ -391,6 +402,10 @@ export interface RunCompletedPayload {
  */
 export type RunStartedEvent = TraceEventBase<"run.started", RunStartedPayload>;
 /**
+ * Strongly typed event shape for `force.retry`.
+ */
+export type ForceRetryEvent = TraceEventBase<"force.retry", ForceRetryPayload>;
+/**
  * Strongly typed event shape for `round.started`.
  */
 export type RoundStartedEvent = TraceEventBase<"round.started", RoundStartedPayload>;
@@ -504,6 +519,7 @@ export type RunCompletedEvent = TraceEventBase<"run.completed", RunCompletedPayl
  */
 export type TraceEvent =
   | RunStartedEvent
+  | ForceRetryEvent
   | RoundStartedEvent
   | RoundCompletedEvent
   | DiscussionStartedEvent
@@ -578,6 +594,25 @@ export function createRunStartedEvent(input: {
     timestamp: input.timestamp,
     run_id: input.run_id,
     event_type: "run.started",
+    payload: input.payload,
+  });
+}
+
+/**
+ * Creates a `force.retry` trace event.
+ *
+ * @param input Required metadata and payload for the event.
+ * @returns Typed `force.retry` event.
+ */
+export function createForceRetryEvent(input: {
+  timestamp: string;
+  run_id: string;
+  payload: ForceRetryPayload;
+}): ForceRetryEvent {
+  return createTraceEvent({
+    timestamp: input.timestamp,
+    run_id: input.run_id,
+    event_type: "force.retry",
     payload: input.payload,
   });
 }

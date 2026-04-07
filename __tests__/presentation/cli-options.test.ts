@@ -421,6 +421,7 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--reset-after Reset all checkboxes in the source file after the run completes");
     expect(compactHelpOutput).toContain("--clean Shorthand for --redo --reset-after");
     expect(compactHelpOutput).toContain("--rounds <n> Repeat clean cycles N times (default: 1)");
+    expect(compactHelpOutput).toContain("--force-attempts <n> Default outer retry attempts for force:-prefixed tasks");
     expect(compactHelpOutput).toContain("--quiet Suppress info-level output");
   });
 
@@ -575,6 +576,34 @@ describe("CLI run option normalization", () => {
     ], runTask);
 
     expect(call.forceExecute).toBe(true);
+  });
+
+  it("passes force-attempts option to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--force-attempts",
+      "4",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.forceAttempts).toBe(4);
+  });
+
+  it("defaults force-attempts to 2 when omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.forceAttempts).toBe(2);
   });
 
   it("passes force-unlock option to run task", async () => {
@@ -1352,6 +1381,24 @@ describe("CLI reverify option normalization", () => {
 
     expect(reverifyTask).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --repair-attempts value: two"));
+  });
+
+  it("logs a CLI error and exits with code 1 on invalid force-attempts", async () => {
+    const runTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeRunAndExpectExit([
+      "run",
+      "tasks.md",
+      "--force-attempts",
+      "bad",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --force-attempts value: bad"));
   });
 
   it("logs a CLI error and exits with code 1 on unsafe repair attempts", async () => {

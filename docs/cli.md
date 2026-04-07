@@ -533,6 +533,8 @@ Stale lock recovery:
 
 When `--trace` is enabled on `run`, `discuss`, `reverify`, or `plan`, each artifact trace event (including LLM/worker-derived stages such as `agent.signals`, `agent.thinking`, and `analysis.summary`) is also appended to `<config-dir>/logs/trace.jsonl` as a cumulative stream.
 
+For `force:` retries in `run`, each retry attempt creates a separate artifact run with a distinct run identifier (`runId` in docs, serialized as `run_id` in trace records). Attempts are separate runs (N retries => N runs), not sub-attempts inside one run. The new attempt emits a `force.retry` event carrying `previous_run_id` and `previous_exit_code` so trace consumers can correlate attempts to the prior run.
+
 Promtail note: configure this file as a scrape target to ingest a single cumulative CLI output stream across all runs.
 
 First-iteration constraints: rundown does not implement built-in rotation or compression for this file, and it does not backfill older run output into this global stream. Manage retention with external log rotation or downstream pipeline policy.
@@ -701,7 +703,7 @@ Execution behavior for `.md` tools:
 Resolution rules:
 
 - Project `.js` tools are resolved first and can override built-ins.
-- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, end aliases, `include:`, `profile:`).
+- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, end aliases, `include:`, `profile:`, `force:`).
 - Project `.md` tools are resolved after built-ins (for non-built-in names).
 - Tool matching is case-insensitive and checks the text before the first `:`.
 - Unknown prefixes fall back to normal `execute-and-verify` behavior.
@@ -726,6 +728,11 @@ With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and e
 - verify-only task text auto-skips execute phase (for example `verify: ...`, `confirm: ...`, `check: ...`)
 - fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`), even when global `--verify` is enabled
 - `--force-execute` — override verify-only auto-skip and run execute phase anyway
+- `force: <task>` — wrap a task in an outer retry loop that reruns the full iteration on retryable failure
+- `force: <attempts>, <task>` — same as above with per-task retry limit override
+- `--force-attempts <n>` — default outer retry attempts for `force:` tasks when count is omitted
+- `--force-execute` and `force:` are independent: `--force-execute` decides whether verify-only text still runs execution, while `force:` decides whether a failed iteration is retried
+- `force:` is a no-op in `--mode detached`: detached task dispatch returns immediate success (`continueLoop: false`, `exitCode: 0`), so outer retries never trigger
 - `--repair-attempts <n>` — retry repair up to `n` times
 - `--no-repair` — disable repair explicitly
 
@@ -966,6 +973,7 @@ rundown run roadmap.md --all --commit --commit-mode file-done --on-fail "node sc
 - `--clean` is a convenience alias for `--redo --reset-after`.
 - `--redo`, `--reset-after`, and `--clean` cannot be combined with `--only-verify` (returns exit code `1`).
 - With `--dry-run`, reset phases are reported but files are not mutated.
+- With `--rounds > 1`, each round is an independent clean pass; `force:` outer retries are scoped per task within the current round and do not carry retry state into later rounds.
 
 Examples:
 
@@ -991,6 +999,7 @@ Behavior notes:
 - For `run`, `--print-prompt` and `--dry-run` target the execute prompt by default.
 - For `run --only-verify`, `--print-prompt` and `--dry-run` target the verify prompt instead.
 - For `reverify`, `--print-prompt` and `--dry-run` target the verify prompt for the resolved historical task.
+- `force:` outer retries are inert in `--dry-run` and `--print-prompt` flows for `run`: those modes return exit `0` after rendering/output-only handling, so no retry attempts are triggered.
 - For `reverify --all` or `reverify --last <n>`, `--print-prompt` is not supported and returns exit code `1`; use `--dry-run` to inspect all selected runs.
 - For `plan`, both flags apply to the planner prompt.
 - For `make`, both flags apply to the research/plan phase prompts.

@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   normalizeOptionalString,
   parseCliBlockTimeout,
+  parseForceAttempts,
   parseLastCount,
   parseLimitCount,
   parseRepairAttempts,
@@ -117,6 +118,7 @@ export function createRunCommandAction({
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean);
     const forceExecute = Boolean(opts.forceExecute as boolean);
+    const forceAttempts = parseForceAttempts(opts.forceAttempts as string | undefined);
     const noRepair = resolveNoRepairFlag(opts);
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const dryRun = opts.dryRun as boolean;
@@ -157,6 +159,7 @@ export function createRunCommandAction({
       verify,
       onlyVerify,
       forceExecute,
+      forceAttempts,
       noRepair,
       repairAttempts,
       dryRun,
@@ -623,6 +626,7 @@ export function createDoCommandAction({
     const verify = resolveVerifyFlag(opts);
     const onlyVerify = Boolean(opts.onlyVerify as boolean | undefined);
     const forceExecute = Boolean(opts.forceExecute as boolean | undefined);
+    const forceAttempts = parseForceAttempts(opts.forceAttempts as string | undefined);
     const noRepair = resolveNoRepairFlag(opts);
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
@@ -668,6 +672,7 @@ export function createDoCommandAction({
       verify,
       onlyVerify,
       forceExecute,
+      forceAttempts,
       noRepair,
       repairAttempts,
       dryRun,

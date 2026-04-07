@@ -1236,7 +1236,7 @@ describe("run-task-iteration", () => {
       },
     });
 
-    expect(result).toEqual({ continueLoop: false, exitCode: 0 });
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, forceRetryableFailure: false });
     expect(events).toContainEqual({ kind: "warn", message: "Fast task has no payload text; skipping." });
     expect(events).toContainEqual({ kind: "group-end", status: "success" });
     expect(dispatchSpy).not.toHaveBeenCalled();
@@ -2116,6 +2116,7 @@ describe("task-execution-dispatch", () => {
       executionFailureMessage: "Worker exited with code 7.",
       executionFailureRunReason: "Worker exited with a non-zero code.",
       executionFailureExitCode: 7,
+      forceRetryableFailure: true,
     });
 
     const cliTask = createInlineTask(path.join(cwd, "tasks-cli.md"), "cli: npm test");
@@ -3145,7 +3146,7 @@ describe("complete-task-iteration", () => {
       extraTemplateVars: {},
     });
 
-    expect(result).toEqual({ continueLoop: false, exitCode: 2 });
+    expect(result).toEqual({ continueLoop: false, exitCode: 2, forceRetryableFailure: true });
     expect(emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Verification failed. Task not checked.\nmissing tests",

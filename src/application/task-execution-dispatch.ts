@@ -48,6 +48,7 @@ export type TaskExecutionDispatchResult =
     executionFailureMessage: string;
     executionFailureRunReason: string;
     executionFailureExitCode: number | null;
+    forceRetryableFailure?: boolean;
   }
   | {
     kind: "detached";
@@ -94,6 +95,12 @@ export async function dispatchTaskExecution(params: {
   executionEnv?: Record<string, string>;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: CommandExecutionOptions | undefined;
+  forceRetryMetadata?: {
+    attemptNumber: number;
+    maxAttempts: number;
+    previousRunId: string;
+    previousExitCode: number;
+  };
 }): Promise<TaskExecutionDispatchResult> {
   const {
     dependencies,
@@ -129,6 +136,7 @@ export async function dispatchTaskExecution(params: {
     executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
+    forceRetryMetadata,
   } = params;
 
   // Compute richer task context metrics only when trace collection is enabled.
@@ -149,6 +157,14 @@ export async function dispatchTaskExecution(params: {
     isVerifyOnly: onlyVerify,
     contextBefore: expandedContextBefore,
   });
+  if (forceRetryMetadata) {
+    traceRunSession.emitForceRetry({
+      attemptNumber: forceRetryMetadata.attemptNumber,
+      maxAttempts: forceRetryMetadata.maxAttempts,
+      previousRunId: forceRetryMetadata.previousRunId,
+      previousExitCode: forceRetryMetadata.previousExitCode,
+    });
+  }
   traceRunSession.emitRoundStarted(roundContext.currentRound, roundContext.totalRounds);
   // Flush queued pre-run reset trace events into the active run.
   if (pendingPreRunResetTraceEvents.length > 0) {
@@ -253,6 +269,7 @@ export async function dispatchTaskExecution(params: {
             executionFailureMessage: includeExecution.message,
             executionFailureRunReason: includeExecution.reason,
             executionFailureExitCode: includeExecution.exitCode,
+            forceRetryableFailure: true,
           };
         }
       }
@@ -316,6 +333,7 @@ export async function dispatchTaskExecution(params: {
         executionFailureMessage: "Inline CLI exited with code " + cliResult.exitCode,
         executionFailureRunReason: "Inline CLI exited with a non-zero code.",
         executionFailureExitCode: cliResult.exitCode,
+        forceRetryableFailure: true,
       };
     }
 
@@ -409,12 +427,15 @@ export async function dispatchTaskExecution(params: {
         executionFailureMessage: "Tool expansion worker exited with code " + runResult.exitCode + ".",
         executionFailureRunReason: "Tool expansion worker exited with a non-zero code.",
         executionFailureExitCode: runResult.exitCode,
+        forceRetryableFailure: true,
       };
     }
 
     const subitemLines = parseUncheckedTodoLines(runResult.stdout);
     if (subitemLines.length > 0) {
-      const updatedSource = insertSubitems(source, task, subitemLines);
+      const updatedSource = insertSubitems(source, task, subitemLines, {
+        dedupeWithExisting: true,
+      });
       dependencies.fileSystem.writeText(task.file, updatedSource);
       emit({
         kind: "info",
@@ -495,6 +516,7 @@ export async function dispatchTaskExecution(params: {
       executionFailureMessage: "Worker exited with code " + runResult.exitCode + ".",
       executionFailureRunReason: "Worker exited with a non-zero code.",
       executionFailureExitCode: runResult.exitCode,
+      forceRetryableFailure: true,
     };
   }
 
@@ -514,6 +536,7 @@ export async function dispatchTaskExecution(params: {
         executionFailureMessage: persistenceResult.message,
         executionFailureRunReason: persistenceResult.reason,
         executionFailureExitCode: 1,
+        forceRetryableFailure: true,
       };
     }
   }

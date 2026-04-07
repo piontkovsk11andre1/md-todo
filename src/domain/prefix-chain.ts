@@ -22,6 +22,76 @@ export interface PrefixChain {
   remainingText: string;
 }
 
+export interface ForceModifierExtraction {
+  isForce: boolean;
+  maxAttempts: number;
+  strippedText: string;
+}
+
+const DEFAULT_FORCE_ATTEMPTS = 2;
+
+/**
+ * Extracts a leading `force:` modifier from task text before full prefix-chain parsing.
+ *
+ * Parsing grammar (case-insensitive):
+ * - `force: <payload>`
+ * - `force: <attempts>, <payload>`
+ *
+ * Where:
+ * - `<attempts>` is one or more decimal digits and is only parsed when followed by `,`.
+ * - Without a comma (`force: 3`), `3` is treated as task text payload.
+ * - Nested `force:` prefixes are not recursively extracted; only the first leading
+ *   `force:` is handled and any additional `force:` remains in `strippedText`.
+ */
+export function extractForceModifier(
+  taskText: string,
+  toolResolver?: ToolResolverPort,
+): ForceModifierExtraction {
+  const trimmed = taskText.trim();
+  const prefixMatch = trimmed.match(/^force\s*:\s*/i);
+  if (!prefixMatch) {
+    return {
+      isForce: false,
+      maxAttempts: DEFAULT_FORCE_ATTEMPTS,
+      strippedText: trimmed,
+    };
+  }
+
+  const forceTool = toolResolver?.resolve("force");
+  if (forceTool && forceTool.kind !== "modifier") {
+    return {
+      isForce: false,
+      maxAttempts: DEFAULT_FORCE_ATTEMPTS,
+      strippedText: trimmed,
+    };
+  }
+
+  const payload = trimmed.slice(prefixMatch[0].length).trim();
+  const attemptsWithPayloadMatch = payload.match(/^(\d+)\s*,\s*(.*)$/s);
+  if (!attemptsWithPayloadMatch) {
+    return {
+      isForce: true,
+      maxAttempts: DEFAULT_FORCE_ATTEMPTS,
+      strippedText: payload,
+    };
+  }
+
+  const parsedAttempts = Number.parseInt(attemptsWithPayloadMatch[1], 10);
+  if (!Number.isFinite(parsedAttempts) || parsedAttempts < 1) {
+    return {
+      isForce: true,
+      maxAttempts: DEFAULT_FORCE_ATTEMPTS,
+      strippedText: payload,
+    };
+  }
+
+  return {
+    isForce: true,
+    maxAttempts: parsedAttempts,
+    strippedText: attemptsWithPayloadMatch[2].trim(),
+  };
+}
+
 /**
  * Extracts the first `toolName:` prefix from text, if it resolves to a known tool.
  */

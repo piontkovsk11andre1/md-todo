@@ -1,5 +1,6 @@
 import type { Task } from "../domain/parser.js";
 import {
+  createForceRetryEvent,
   createAnalysisSummaryEvent,
   createAgentSignalsEvent,
   createAgentThinkingEvent,
@@ -380,6 +381,32 @@ export function createTraceRunSession(config: {
     },
 
     beginPhase,
+
+    /**
+     * Emits a force-retry boundary event that links retry attempts by run id.
+     */
+    emitForceRetry(params: {
+      attemptNumber: number;
+      maxAttempts: number;
+      previousRunId: string;
+      previousExitCode: number;
+    }): void {
+      const runId = sessionState.getRunId();
+      if (!runId) {
+        return;
+      }
+
+      config.getTraceWriter().write(createForceRetryEvent({
+        timestamp: nowIso(),
+        run_id: runId,
+        payload: {
+          attempt_number: params.attemptNumber,
+          max_attempts: params.maxAttempts,
+          previous_run_id: params.previousRunId,
+          previous_exit_code: params.previousExitCode,
+        },
+      }));
+    },
 
     /**
      * Emits a round-started boundary event for multi-round clean execution.

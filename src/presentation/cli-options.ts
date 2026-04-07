@@ -173,6 +173,20 @@ export function parseRepairAttempts(value: string | undefined): number {
 }
 
 /**
+ * Parses default outer retry attempts for force-prefixed tasks.
+ */
+export function parseForceAttempts(value: string | undefined): number {
+  return parseIntOption(value, {
+    optionName: "force-attempts",
+    defaultValue: 2,
+    allowUndefined: false,
+    min: 1,
+    integerLabel: "positive integer",
+    safeIntegerLabel: "safe positive integer",
+  });
+}
+
+/**
  * Parses the plan scan count with a positive minimum bound.
  */
 export function parseScanCount(value: string | undefined): number {

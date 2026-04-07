@@ -4,6 +4,7 @@ import {
   createAnalysisSummaryEvent,
   createDiscussionCompletedEvent,
   createDiscussionStartedEvent,
+  createForceRetryEvent,
   createAgentSignalsEvent,
   createAgentThinkingEvent,
   createAgentToolUsageEvent,
@@ -68,6 +69,30 @@ describe("trace event factory functions", () => {
       task_text: "Create trace tests",
       task_file: "TODO.md",
       task_line: 247,
+    });
+  });
+
+  it("creates force.retry event with schema version and required payload fields", () => {
+    const event = createForceRetryEvent({
+      timestamp,
+      run_id: "run-124",
+      payload: {
+        attempt_number: 2,
+        max_attempts: 3,
+        previous_run_id: "run-123",
+        previous_exit_code: 1,
+      },
+    });
+
+    expect(event.schema_version).toBe(TRACE_SCHEMA_VERSION);
+    expect(event.run_id).toBe("run-124");
+    expect(event.timestamp).toMatch(ISO_8601_UTC_TIMESTAMP);
+    expect(event.event_type).toBe("force.retry");
+    expect(event.payload).toEqual({
+      attempt_number: 2,
+      max_attempts: 3,
+      previous_run_id: "run-123",
+      previous_exit_code: 1,
     });
   });
 

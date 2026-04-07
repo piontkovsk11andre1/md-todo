@@ -19,6 +19,7 @@ import type {
 } from "../../src/application/run-task.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createMemoryWriterAdapter } from "../../src/infrastructure/adapters/memory-writer-adapter.js";
+import { parseTasks } from "../../src/domain/parser.js";
 
 export function createDependencies(options: {
   cwd: string;
@@ -78,7 +79,24 @@ export function createDependencies(options: {
         source: path.relative(options.cwd, options.task.file).replace(/\\/g, "/"),
         contextBefore: "",
       })),
-      selectTaskByLocation: vi.fn(() => null),
+      selectTaskByLocation: vi.fn((filePath: string, line: number) => {
+        if (!options.fileSystem.exists(filePath)) {
+          return null;
+        }
+
+        const source = options.fileSystem.readText(filePath);
+        const task = parseTasks(source, filePath).find((candidate) => candidate.line === line);
+        if (!task) {
+          return null;
+        }
+
+        const lines = source.split("\n");
+        return {
+          task,
+          source: path.relative(options.cwd, filePath).replace(/\\/g, "/"),
+          contextBefore: lines.slice(0, task.line - 1).join("\n"),
+        };
+      }),
     },
     workerExecutor: {
       runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
@@ -233,6 +251,7 @@ export function createOptions(
     verify: true,
     onlyVerify: false,
     forceExecute: false,
+    forceAttempts: 2,
     noRepair: false,
     repairAttempts: 0,
     dryRun: false,

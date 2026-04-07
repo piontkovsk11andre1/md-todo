@@ -9,6 +9,7 @@ import {
 import {
   afterTaskComplete,
   afterTaskFailed,
+  OnCompleteHookError,
 } from "./run-lifecycle.js";
 import { createTraceRunSession } from "./trace-run-session.js";
 import { type ProjectTemplates } from "./project-templates.js";
@@ -83,6 +84,7 @@ export async function completeTaskIteration(params: {
   cliBlockExecutor: CommandExecutor;
   cliExpansionEnabled: boolean;
   task: Task;
+  verificationTask?: Task;
   sourceText: string;
   expandedSource: string;
   expandedContextBefore: string;
@@ -99,7 +101,13 @@ export async function completeTaskIteration(params: {
   verificationFailureRunReason: string;
   skipRemainingSiblingsReason?: string;
   toolExpansionInsertedChildCount?: number;
-}): Promise<{ continueLoop: boolean; exitCode?: number }> {
+  failOnCompleteHookError?: boolean;
+}): Promise<{
+  continueLoop: boolean;
+  exitCode?: number;
+  forceRetryableFailure?: boolean;
+  groupEnded?: boolean;
+}> {
   const {
     dependencies,
     emit,
@@ -124,6 +132,7 @@ export async function completeTaskIteration(params: {
     cliBlockExecutor,
     cliExpansionEnabled,
     task,
+    verificationTask,
     sourceText,
     expandedSource,
     expandedContextBefore,
@@ -140,9 +149,12 @@ export async function completeTaskIteration(params: {
     verificationFailureRunReason,
     skipRemainingSiblingsReason,
     toolExpansionInsertedChildCount,
+    failOnCompleteHookError,
   } = params;
+  const failOnCompleteHookFailure = failOnCompleteHookError ?? false;
 
   // Run verification and optional repair before marking the task as complete.
+  const taskForVerification = verificationTask ?? task;
   if (shouldVerify) {
     const verifyPhaseTrace = traceRunSession.beginPhase("verify", automationCommand);
     traceRunSession.emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
@@ -156,7 +168,7 @@ export async function completeTaskIteration(params: {
         traceWriter: state.traceWriter,
         output: dependencies.output,
       }, {
-        task,
+        task: taskForVerification,
         source: expandedSource,
         contextBefore: expandedContextBefore,
         verifyTemplate: templates.verify,
@@ -180,7 +192,7 @@ export async function completeTaskIteration(params: {
         emit,
         async () => await afterTaskFailed(
           dependencies,
-          task,
+          taskForVerification,
           sourceText,
           onFailCommand,
           hideHookOutput,
@@ -189,7 +201,12 @@ export async function completeTaskIteration(params: {
         async (failureMessage) => await failRun(1, "failed", failureMessage, 1),
       );
       if (failureCode !== null) {
-        return { continueLoop: false, exitCode: failureCode };
+        return {
+          continueLoop: false,
+          exitCode: failureCode,
+          forceRetryableFailure: true,
+          groupEnded: false,
+        };
       }
       throw error;
     }
@@ -203,7 +220,7 @@ export async function completeTaskIteration(params: {
       emit({ kind: "error", message: fullVerificationFailureMessage });
       await afterTaskFailed(
         dependencies,
-        task,
+        taskForVerification,
         sourceText,
         onFailCommand,
         hideHookOutput,
@@ -211,7 +228,9 @@ export async function completeTaskIteration(params: {
       );
       return {
         continueLoop: false,
+        forceRetryableFailure: true,
         exitCode: await failRun(2, "verification-failed", verificationFailureRunReason, 2),
+        groupEnded: false,
       };
     }
   }
@@ -247,7 +266,7 @@ export async function completeTaskIteration(params: {
   if ((toolExpansionInsertedChildCount ?? 0) > 0) {
     state.tasksCompleted++;
     resetArtifacts();
-    return { continueLoop: true };
+    return { continueLoop: true, groupEnded: true };
   }
 
   const shouldDeferCommit = commitAfterComplete && deferCommitUntilPostRun;
@@ -261,25 +280,47 @@ export async function completeTaskIteration(params: {
     };
   }
   // Run completion hooks and optional immediate commit.
-  const taskCompletionExtra = await afterTaskComplete(
-    dependencies,
-    task,
-    sourceText,
-    commitAfterComplete && !shouldDeferCommit,
-    commitMessageTemplate,
-    onCompleteCommand,
-    hideHookOutput,
-    extraTemplateVars,
-  );
+  let taskCompletionExtra: Record<string, unknown> | undefined;
+  try {
+    taskCompletionExtra = await afterTaskComplete(
+      dependencies,
+      task,
+      sourceText,
+      commitAfterComplete && !shouldDeferCommit,
+      commitMessageTemplate,
+      onCompleteCommand,
+      hideHookOutput,
+      extraTemplateVars,
+      failOnCompleteHookFailure,
+    );
+  } catch (error) {
+    if (error instanceof OnCompleteHookError) {
+      await afterTaskFailed(
+        dependencies,
+        task,
+        sourceText,
+        onFailCommand,
+        hideHookOutput,
+        extraTemplateVars,
+      );
+      return {
+        continueLoop: false,
+        forceRetryableFailure: false,
+        exitCode: await failRun(1, "failed", error.message, error.exitCode),
+        groupEnded: true,
+      };
+    }
+    throw error;
+  }
   // Persist successful completion state and telemetry.
   await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
   state.tasksCompleted++;
   // Stop after the first completed task when not running in run-all mode.
   if (!effectiveRunAll) {
     state.runCompleted = true;
-    return { continueLoop: false, exitCode: 0 };
+    return { continueLoop: false, exitCode: 0, groupEnded: true };
   }
   // Prepare clean artifacts before the next task iteration.
   resetArtifacts();
-  return { continueLoop: true };
+  return { continueLoop: true, groupEnded: true };
 }

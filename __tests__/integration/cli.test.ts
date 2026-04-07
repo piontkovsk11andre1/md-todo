@@ -3941,6 +3941,7 @@ describe.sequential("CLI integration", () => {
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--commit Auto-commit checked task file after successful completion");
     expect(compactHelpOutput).toContain("--commit-message <template> Commit message template (supports {{task}} and {{file}})");
+    expect(compactHelpOutput).toContain("--force-attempts <n> Default outer retry attempts for force:-prefixed tasks");
     expect(compactHelpOutput).toContain("--commit-mode <mode> Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)");
     expect(compactHelpOutput).toContain("--on-complete <command> Run a shell command after successful task completion");
   });
