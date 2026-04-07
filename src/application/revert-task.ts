@@ -103,19 +103,19 @@ export function createRevertTask(
     // Guard incompatible selectors early to keep behavior predictable.
     if (all && last !== undefined) {
       emit({ kind: "error", message: "Cannot combine --all with --last." });
-      return 3;
+      return 1;
     }
 
     // Explicit run ids cannot be mixed with bulk selectors.
     if (hasMultiRunSelection && runId !== "latest") {
       emit({ kind: "error", message: "Cannot combine --run <id> with --all or --last." });
-      return 3;
+      return 1;
     }
 
     // `--last` accepts only positive integer counts.
     if (last !== undefined && (!Number.isInteger(last) || last < 1)) {
       emit({ kind: "error", message: "--last must be a positive integer." });
-      return 3;
+      return 1;
     }
 
     const cwd = dependencies.workingDirectory.cwd();

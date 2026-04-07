@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cliOutputPort, resetCliOutputPortState } from "../../src/presentation/output-port.js";
+import { cliOutputPort, resetCliOutputPortState, setCliOutputPortQuietMode } from "../../src/presentation/output-port.js";
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001B\[[0-9;]*m/g, "");
@@ -539,5 +539,32 @@ describe("cliOutputPort", () => {
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(logSpy.mock.calls[0]?.[0]).toBe("plain text");
+  });
+
+  it("suppresses info-level output events in quiet mode", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    setCliOutputPortQuietMode(true);
+    cliOutputPort.emit({ kind: "group-start", label: "Group" });
+    cliOutputPort.emit({ kind: "info", message: "info" });
+    cliOutputPort.emit({ kind: "success", message: "ok" });
+    cliOutputPort.emit({ kind: "progress", progress: { label: "working" } });
+    cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it("still renders warnings and errors in quiet mode", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    setCliOutputPortQuietMode(true);
+    cliOutputPort.emit({ kind: "warn", message: "heads up" });
+    cliOutputPort.emit({ kind: "error", message: "bad" });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(logSpy.mock.calls[0]?.[0] as string)).toContain("heads up");
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toContain("bad");
   });
 });

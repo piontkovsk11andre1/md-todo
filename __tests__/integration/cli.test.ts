@@ -4182,7 +4182,7 @@ describe.sequential("CLI integration", () => {
     expect(options.stdio).toBe("inherit");
   });
 
-  it("discuss propagates worker exit code to CLI", async () => {
+  it("discuss maps worker failures to CLI exit code 1", async () => {
     const workspace = makeTempWorkspace();
     const sourceName = "roadmap.md";
     const sourcePath = path.join(workspace, sourceName);
@@ -4212,7 +4212,7 @@ describe.sequential("CLI integration", () => {
 
     vi.doUnmock("cross-spawn");
 
-    expect(result.code).toBe(7);
+    expect(result.code).toBe(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(result.errors.some((line) => line.includes("Discussion exited with code 7"))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toContain("- [ ] First pending task");

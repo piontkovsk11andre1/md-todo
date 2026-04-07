@@ -700,7 +700,7 @@ export function createDiscussTask(
             emitDiscussionTurnFailure(message);
             discussionFailureCount += 1;
             discussionTurnEnded = true;
-            return result.exitCode;
+            return 1;
           }
         }
 

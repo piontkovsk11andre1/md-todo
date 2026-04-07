@@ -833,12 +833,14 @@ export function createMemoryCleanCommandAction({
  */
 export function createIntroCommandAction({
   version,
+  getApp,
 }: {
   version: string;
+  getApp: () => CliApp;
 }): () => CliActionResult {
   return async () => {
     const { renderIntro } = await import("./intro.js");
-    return renderIntro(version);
+    return renderIntro(version, { emit: (event) => getApp().emitOutput?.(event) });
   };
 }
 

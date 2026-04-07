@@ -94,6 +94,34 @@ describe("CLI run option normalization", () => {
     expect(call.showAgentOutput).toBe(false);
   });
 
+  it("accepts --quiet for run command parsing", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--quiet",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+  });
+
+  it("accepts -q shorthand for run command parsing", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "-q",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+  });
+
   it("normalizes empty commit and hook values to undefined", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -393,6 +421,7 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--reset-after Reset all checkboxes in the source file after the run completes");
     expect(compactHelpOutput).toContain("--clean Shorthand for --redo --reset-after");
     expect(compactHelpOutput).toContain("--rounds <n> Repeat clean cycles N times (default: 1)");
+    expect(compactHelpOutput).toContain("--quiet Suppress info-level output");
   });
 
   it("logs a CLI error and exits with code 1 on zero --rounds", async () => {

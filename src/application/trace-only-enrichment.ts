@@ -240,7 +240,7 @@ export async function runTraceOnlyEnrichment(
     const analysisSummaryPayload = parseAnalysisSummaryFromWorkerOutput(enrichmentResult.stdout);
     if (!analysisSummaryPayload) {
       dependencies.emit({ kind: "error", message: "Trace enrichment output did not contain a valid analysis.summary block." });
-      return 2;
+      return 1;
     }
 
     traceWriter.write(createAnalysisSummaryEvent({

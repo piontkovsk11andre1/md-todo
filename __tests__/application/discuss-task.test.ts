@@ -1632,7 +1632,7 @@ describe("discuss-task", () => {
       workerCommand: ["opencode", "run"],
     }));
 
-    expect(code).toBe(9);
+    expect(code).toBe(1);
     expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       status: "discuss-finished-cancelled",
     }));
@@ -2715,7 +2715,7 @@ describe("discuss-task", () => {
       workerCommand: ["opencode", "run"],
     }));
 
-    expect(code).toBe(7);
+    expect(code).toBe(1);
     expect(vi.mocked(dependencies.traceWriter.write)).toHaveBeenNthCalledWith(2, expect.objectContaining({
       event_type: "discussion.completed",
       payload: expect.objectContaining({
@@ -2750,7 +2750,7 @@ describe("discuss-task", () => {
       workerCommand: ["opencode", "run"],
     }));
 
-    expect(code).toBe(7);
+    expect(code).toBe(1);
     expect(events).toContainEqual(expect.objectContaining({
       kind: "group-end",
       status: "failure",

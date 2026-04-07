@@ -59,7 +59,7 @@ export function createCleanMemory(
   return async function cleanMemory(options: CleanMemoryOptions): Promise<number> {
     if (options.all && !options.force) {
       emit({ kind: "warn", message: "Refusing to clean all memory without --force." });
-      return 2;
+      return 1;
     }
 
     const resolvedSources = await dependencies.sourceResolver.resolveSources(options.source);

@@ -73,7 +73,7 @@ export function createViewMemory(
 
     if (memoryEntries.length === 0) {
       emit({ kind: "info", message: formatNoItemsFound("memory entries") });
-      return 1;
+      return 3;
     }
 
     if (options.json) {

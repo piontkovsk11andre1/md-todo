@@ -1,14 +1,11 @@
 import pc from "picocolors";
+import type { ApplicationOutputEvent, ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { cliOutputPort } from "./output-port.js";
 import {
-  cascade,
   drawBox,
   isTTY,
   pause,
-  progressBar,
-  revealLines,
   sleep,
-  spinner,
-  typeLine,
 } from "./animation";
 
 // ---------------------------------------------------------------------------
@@ -52,12 +49,64 @@ function waitForKeypress(onEarlyKey?: () => void): Promise<void> {
   });
 }
 
-function write(text: string): void {
-  process.stdout.write(text);
+let activeOutputPort: ApplicationOutputPort = cliOutputPort;
+
+function emitOutput(event: ApplicationOutputEvent): void {
+  activeOutputPort.emit(event);
+}
+
+async function typeLine(text: string, ctx?: SlideContext, charDelay = 18): Promise<void> {
+  emitOutput({ kind: "text", text });
+  const delay = isTTY() && !ctx?.skipped
+    ? Math.max(0, Math.floor(charDelay * Math.min(text.length, 40) * 0.2))
+    : 0;
+  await sleep(delay, ctx);
+}
+
+async function revealLines(lines: string[], ctx?: SlideContext, lineDelay = 60): Promise<void> {
+  for (const line of lines) {
+    emitOutput({ kind: "text", text: line });
+    await sleep(lineDelay, ctx);
+  }
+}
+
+async function spinner(
+  message: string,
+  durationMs: number,
+  ctx?: SlideContext,
+  doneMessage?: string,
+): Promise<void> {
+  emitOutput({ kind: "progress", progress: { label: message } });
+  await sleep(durationMs, ctx);
+  if (doneMessage) {
+    emitOutput({ kind: "text", text: doneMessage });
+    return;
+  }
+
+  emitOutput({ kind: "success", message });
+}
+
+async function progressBar(
+  label: string,
+  ctx?: SlideContext,
+  width = 32,
+  fillDelay = 35,
+): Promise<void> {
+  for (let current = 1; current <= width; current += 1) {
+    emitOutput({
+      kind: "progress",
+      progress: {
+        label,
+        current,
+        total: width,
+      },
+    });
+    await sleep(fillDelay, ctx);
+  }
 }
 
 function writeln(text: string = ""): void {
-  write(text + "\n");
+  emitOutput({ kind: "text", text });
 }
 
 /** Dramatic slow type — for statements that need weight. */
@@ -112,10 +161,9 @@ async function runSlide(slideFn: (ctx: SlideContext) => Promise<void>): Promise<
   await slideFn(ctx);
   slideFinished = true;
 
-  write(`\n  ${pc.dim("▸ press any key")}`);
+  writeln();
+  writeln(`  ${pc.dim("▸ press any key")}`);
   await advancePromise;
-
-  write("\r" + " ".repeat(30) + "\r");
   void keypressPromise;
 }
 
@@ -585,7 +633,11 @@ async function slideFinale(version: string, ctx: SlideContext): Promise<void> {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-export async function renderIntro(version: string): Promise<number> {
+export async function renderIntro(
+  version: string,
+  outputPort: ApplicationOutputPort = cliOutputPort,
+): Promise<number> {
+  activeOutputPort = outputPort;
   writeln();
 
   const slides: Array<(ctx: SlideContext) => Promise<void>> = [

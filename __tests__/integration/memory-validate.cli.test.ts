@@ -206,13 +206,13 @@ describe.sequential("memory CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Owner: platform"))).toBe(true);
   });
 
-  it("memory-view exits 1 when no memory exists", async () => {
+  it("memory-view exits 3 when no memory exists", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Ship release\n", "utf-8");
 
     const result = await runCli(["memory-view", "roadmap.md"], workspace);
 
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(3);
     expect(result.logs.some((line) => line.includes("No memory entries found."))).toBe(true);
   });
 

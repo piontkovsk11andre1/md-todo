@@ -5,7 +5,7 @@ import type { ProcessRunMode } from "../domain/ports/index.js";
 import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../domain/ports/command-executor.js";
 import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import { collectOption } from "./cli-options.js";
-import { drainAnimationQueue, resetCliOutputPortState } from "./output-port.js";
+import { drainAnimationQueue, resetCliOutputPortState, setCliOutputPortQuietMode } from "./output-port.js";
 import { registerLockReleaseSignalHandlers } from "./cli-lock-handlers.js";
 import {
   configureCommanderOutputHandlers,
@@ -28,6 +28,7 @@ import {
   splitWorkerFromSeparator,
   terminate,
 } from "./cli-argv.js";
+import { normalizeExitCode } from "../domain/exit-codes.js";
 import {
   createArtifactsCommandAction,
   createCallCommandAction,
@@ -152,6 +153,7 @@ program
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring discuss locks", false)
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
@@ -183,6 +185,7 @@ program
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
   .option(
@@ -264,6 +267,7 @@ program
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--no-show-agent-output", "Hide worker stdout/stderr during execution.")
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring plan lock", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
@@ -298,6 +302,7 @@ program
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring phase locks", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
@@ -339,6 +344,7 @@ program
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--trace-only", "Skip task execution and run only trace enrichment on the latest completed artifact run", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring phase locks", false)
@@ -377,6 +383,7 @@ program
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--force-unlock", "Break stale source lockfiles before acquiring research lock", false)
   .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
@@ -445,18 +452,7 @@ program
 program
   .command("intro")
   .description("Display an animated introduction to rundown — concepts, workflow, and commands.")
-  .action(async () => {
-    try {
-      const exitCode = await createIntroCommandAction({ version: cliVersion })();
-      terminate(exitCode);
-    } catch (err) {
-      if (isCliExitSignal(err)) {
-        throw err;
-      }
-      emitCliFatalError(err, runtimeState.invocationLogState, runtimeState.app?.emitOutput);
-      terminate(1);
-    }
-  });
+  .action(withCliAction(createIntroCommandAction({ version: cliVersion, getApp })));
 
 /**
  * Wraps a command action with shared CLI initialization and fatal error handling.
@@ -474,6 +470,7 @@ function withCliAction<Args extends unknown[]>(
         runtimeState.invocationArgv ?? process.argv.slice(2),
         program.opts<{ configDir?: unknown }>().configDir,
       );
+      setCliOutputPortQuietMode(hasQuietOption(runtimeState.invocationArgv ?? process.argv.slice(2)));
       if (!runtimeState.app) {
         // Lazily construct the app so parse-time commands can avoid unnecessary setup.
         const initResult = createAppForInvocation(runtimeState.invocationArgv ?? process.argv.slice(2), {
@@ -487,7 +484,7 @@ function withCliAction<Args extends unknown[]>(
       }
 
       // Command actions return an exit code that is normalized through terminate().
-      const exitCode = await action(...args);
+      const exitCode = normalizeExitCode(await action(...args));
       await drainAnimationQueue();
       terminate(exitCode);
     } catch (err) {
@@ -684,6 +681,7 @@ function configureRunLikeCommandOptions(command: Command): Command {
     .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
     .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
     .option("-v, --verbose", "Show detailed per-phase run diagnostics (within grouped output)", false)
+    .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
     .option("--all", "Run all tasks sequentially instead of stopping after one (alias: all)", false)
     .option("--redo", "Reset all checkboxes in the source file before running", false)
     .option("--reset-after", "Reset all checkboxes in the source file after the run completes", false)
@@ -825,6 +823,23 @@ function hasEffectiveRunAllOption(argv: string[]): boolean {
 }
 
 /**
+ * Determines whether quiet output mode was requested before worker argument delegation.
+ */
+function hasQuietOption(argv: string[]): boolean {
+  for (const token of argv) {
+    if (token === "--") {
+      break;
+    }
+
+    if (token === "--quiet" || token === "-q") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Determines whether app initialization must happen before commander parsing.
  *
  * The root invocation path may require immediate app access prior to action execution.
@@ -842,7 +857,7 @@ function shouldInitializeAppBeforeParse(argv: string[]): boolean {
 if (process.env.RUNDOWN_DISABLE_AUTO_PARSE !== "1") {
   parseCliArgs(process.argv.slice(2)).catch((err) => {
     if (isCliExitSignal(err)) {
-      process.exit(err.code);
+      process.exit(normalizeExitCode(err.code));
     }
     emitCliFatalError(err, runtimeState.invocationLogState, runtimeState.app?.emitOutput);
     process.exit(1);

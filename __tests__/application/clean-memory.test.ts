@@ -139,7 +139,7 @@ describe("clean-memory", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run:"))).toBe(true);
   });
 
-  it("returns exit code 2 when all cleanup is requested without force", async () => {
+  it("returns exit code 1 when all cleanup is requested without force", async () => {
     const rootDir = makeTempDir();
     const sourcePath = path.join(rootDir, "roadmap.md");
     const memoryDir = path.join(rootDir, ".rundown");
@@ -164,7 +164,7 @@ describe("clean-memory", () => {
       force: false,
     });
 
-    expect(code).toBe(2);
+    expect(code).toBe(1);
     expect(fs.existsSync(memoryPath)).toBe(true);
     expect(events.some((event) => event.kind === "warn" && event.message.includes("without --force"))).toBe(true);
   });

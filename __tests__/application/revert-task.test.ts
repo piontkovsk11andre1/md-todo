@@ -17,42 +17,42 @@ import type {
 } from "../../src/domain/ports/index.js";
 
 describe("revert-task", () => {
-  it("returns 3 for --all with --last", async () => {
+  it("returns 1 for --all with --last", async () => {
     const { revertTask, events, gitClient } = createDependencies([]);
 
     const code = await revertTask(createOptions({ all: true, last: 1 }));
 
-    expect(code).toBe(3);
+    expect(code).toBe(1);
     expect(events.some((event) => event.kind === "error" && event.message.includes("Cannot combine --all with --last."))).toBe(true);
     expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
   });
 
-  it("returns 3 for --run <id> with --all", async () => {
+  it("returns 1 for --run <id> with --all", async () => {
     const { revertTask, events, gitClient } = createDependencies([]);
 
     const code = await revertTask(createOptions({ runId: "run-123", all: true }));
 
-    expect(code).toBe(3);
+    expect(code).toBe(1);
     expect(events.some((event) => event.kind === "error" && event.message.includes("Cannot combine --run <id> with --all or --last."))).toBe(true);
     expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
   });
 
-  it("returns 3 for --run <id> with --last", async () => {
+  it("returns 1 for --run <id> with --last", async () => {
     const { revertTask, events, gitClient } = createDependencies([]);
 
     const code = await revertTask(createOptions({ runId: "run-123", last: 2 }));
 
-    expect(code).toBe(3);
+    expect(code).toBe(1);
     expect(events.some((event) => event.kind === "error" && event.message.includes("Cannot combine --run <id> with --all or --last."))).toBe(true);
     expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
   });
 
-  it("returns 3 when --last is not a positive integer", async () => {
+  it("returns 1 when --last is not a positive integer", async () => {
     const { revertTask, events, gitClient } = createDependencies([]);
 
     const code = await revertTask(createOptions({ last: 0 }));
 
-    expect(code).toBe(3);
+    expect(code).toBe(1);
     expect(events.some((event) => event.kind === "error" && event.message.includes("--last must be a positive integer."))).toBe(true);
     expect(vi.mocked(gitClient.run)).not.toHaveBeenCalled();
   });

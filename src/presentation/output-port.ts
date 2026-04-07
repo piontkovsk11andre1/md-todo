@@ -34,6 +34,7 @@ const progressRenderState: ProgressRenderState = {
 };
 
 let groupDepth = 0;
+let quietMode = false;
 
 let animatedLineQueue: Promise<void> = Promise.resolve();
 
@@ -50,6 +51,17 @@ export function drainAnimationQueue(): Promise<void> {
 export function resetCliOutputPortState(): void {
   flushProgressLine();
   groupDepth = 0;
+  quietMode = false;
+}
+
+/**
+ * Toggles quiet rendering mode for the CLI output port.
+ */
+export function setCliOutputPortQuietMode(enabled: boolean): void {
+  quietMode = enabled;
+  if (enabled) {
+    flushProgressLine();
+  }
 }
 
 /**
@@ -372,6 +384,19 @@ export const cliOutputPort: ApplicationOutputPort = {
    * Emits a single application output event to the terminal.
    */
   emit(event: ApplicationOutputEvent): void {
+    if (
+      quietMode
+      && (
+        event.kind === "info"
+        || event.kind === "success"
+        || event.kind === "progress"
+        || event.kind === "group-start"
+        || event.kind === "group-end"
+      )
+    ) {
+      return;
+    }
+
     // Delegate formatting by event kind to keep each output path explicit.
     switch (event.kind) {
       case "group-start": {
