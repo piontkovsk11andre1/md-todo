@@ -7,6 +7,7 @@ import type {
 } from "../domain/ports/index.js";
 import { formatRelativeTimestamp } from "../domain/relative-time.js";
 import { toCompactRunId } from "../domain/run-id.js";
+import { EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import { formatNoItemsFound, pluralize } from "./run-task-utils.js";
 
 /**
@@ -80,7 +81,7 @@ export function createLogRuns(
     if (runs.length === 0) {
       // Mirror CLI behavior by reporting a friendly empty-state message.
       emit({ kind: "info", message: formatNoItemsFound("matching completed runs") });
-      return 0;
+      return EXIT_CODE_NO_WORK;
     }
 
     const entries = runs.map((run) => toLogRunEntry(run, now));
@@ -88,7 +89,7 @@ export function createLogRuns(
     if (options.json) {
       // Preserve machine-readability for downstream scripting.
       emit({ kind: "text", text: JSON.stringify(entries, null, 2) });
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     // Render one line per run for compact terminal viewing.
@@ -97,7 +98,7 @@ export function createLogRuns(
     }
 
     emit({ kind: "info", message: entries.length + " " + pluralize(entries.length, "run", "runs") + " listed." });
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 

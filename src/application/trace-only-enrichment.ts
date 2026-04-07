@@ -37,6 +37,11 @@ import {
   summarizePhaseAnalyses,
 } from "./trace-artifacts.js";
 import { computeDurationMs, countTraceLines } from "./run-task-utils.js";
+import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+} from "../domain/exit-codes.js";
 
 export interface TraceOnlyEnrichmentDependencies {
   workingDirectory: WorkingDirectoryPort;
@@ -73,7 +78,7 @@ export async function runTraceOnlyEnrichment(
   const selectedRun = resolveLatestCompletedRun(dependencies.artifactStore, artifactBaseDir);
   if (!selectedRun) {
     dependencies.emit({ kind: "error", message: formatNoItemsFoundFor("saved runtime artifact run", "latest completed") });
-    return 3;
+    return EXIT_CODE_NO_WORK;
   }
 
   if (!selectedRun.task) {
@@ -81,14 +86,14 @@ export async function runTraceOnlyEnrichment(
       kind: "error",
       message: "Selected run has no task metadata to run trace-only enrichment.",
     });
-    return 3;
+    return EXIT_CODE_FAILURE;
   }
 
   // Validate that persisted task metadata is present and structurally usable.
   const metadataError = validateRuntimeTaskMetadata(selectedRun.task);
   if (metadataError) {
     dependencies.emit({ kind: "error", message: "Selected run has invalid task metadata: " + metadataError });
-    return 3;
+    return EXIT_CODE_FAILURE;
   }
 
   // Re-resolve the task in source files so the enrichment prompt references current context.
@@ -103,7 +108,7 @@ export async function runTraceOnlyEnrichment(
       kind: "error",
       message: "Could not resolve task from saved metadata. The task may have moved or been edited.",
     });
-    return 3;
+    return EXIT_CODE_FAILURE;
   }
 
   // Load project templates once so we can render the dedicated trace prompt.
@@ -122,7 +127,7 @@ export async function runTraceOnlyEnrichment(
       kind: "error",
       message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
     });
-    return 1;
+    return EXIT_CODE_FAILURE;
   }
 
   // Reconstruct the artifact context expected by trace readers and writers.
@@ -233,14 +238,14 @@ export async function runTraceOnlyEnrichment(
     // Treat non-zero or missing exit codes as enrichment failures.
     if (enrichmentResult.exitCode !== 0 || enrichmentResult.exitCode === null) {
       dependencies.emit({ kind: "error", message: "Trace enrichment worker did not complete successfully." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // Parse and persist the structured analysis payload expected by trace consumers.
     const analysisSummaryPayload = parseAnalysisSummaryFromWorkerOutput(enrichmentResult.stdout);
     if (!analysisSummaryPayload) {
       dependencies.emit({ kind: "error", message: "Trace enrichment output did not contain a valid analysis.summary block." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     traceWriter.write(createAnalysisSummaryEvent({
@@ -250,7 +255,7 @@ export async function runTraceOnlyEnrichment(
     }));
     traceWriter.flush();
     dependencies.emit({ kind: "success", message: "Trace enrichment completed for run: " + selectedRun.runId });
-    return 0;
+    return EXIT_CODE_SUCCESS;
   } catch (error) {
     // On unexpected failures, still close the phase with synthetic stderr details.
     traceWriter.write(createPhaseCompletedEvent({

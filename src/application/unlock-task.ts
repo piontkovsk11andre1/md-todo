@@ -1,4 +1,5 @@
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import type {
   FileSystem,
   FileLock,
@@ -49,7 +50,7 @@ export function createUnlockTask(
     // Nothing to unlock when no lockfile exists for this source.
     if (!dependencies.fileSystem.exists(lockPath)) {
       emit({ kind: "info", message: formatNoItemsFoundFor("source lock", sourcePath) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     // Refuse manual unlock when another active process currently owns the lock.
@@ -58,13 +59,13 @@ export function createUnlockTask(
         kind: "error",
         message: "Source lock is currently held by a running process and cannot be manually released: " + sourcePath,
       });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // Lockfile exists but is not actively held, so treat it as stale and release it.
     dependencies.fileLock.forceRelease(sourcePath);
     emit({ kind: "success", message: "Released stale source lock: " + sourcePath });
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 

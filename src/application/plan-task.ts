@@ -3,6 +3,7 @@ import {
   getTraceInstructions,
 } from "../domain/defaults.js";
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import { parseTasks } from "../domain/parser.js";
 import {
   validatePlanEdit,
@@ -183,7 +184,7 @@ export function createPlanTask(
             + error.filePath
             + "`.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
       throw error;
     }
@@ -222,7 +223,7 @@ export function createPlanTask(
           kind: "error",
           message: "Unable to read Markdown document: " + source,
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       // Infer user intent and current TODO density to guide prompt rendering.
@@ -261,14 +262,14 @@ export function createPlanTask(
           kind: "error",
           message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
 
       // Multi-scan planning must always run in clean worker sessions.
       const cleanSessionCommandError = validatePlanCleanSessionWorkerCommand(resolvedWorkerCommand);
       if (cleanSessionCommandError) {
         emit({ kind: "error", message: cleanSessionCommandError });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
 
       // Render the plan prompt template with the current document context.
@@ -330,7 +331,7 @@ export function createPlanTask(
                 + error.command
                 + ". Aborting run.",
             });
-            return 1;
+            return EXIT_CODE_FAILURE;
           }
           throw error;
         }
@@ -369,7 +370,7 @@ export function createPlanTask(
             }
           }
         }
-        return 0;
+        return EXIT_CODE_SUCCESS;
       }
 
       // Dry run reports planned execution details and exits successfully.
@@ -416,7 +417,7 @@ export function createPlanTask(
             }
           }
         }
-        return 0;
+        return EXIT_CODE_SUCCESS;
       }
 
       // Create artifact and trace context for a real planning execution.
@@ -651,7 +652,7 @@ export function createPlanTask(
               emit({ kind: "error", message });
               emitScanFailure(message);
               emitPlanSummary();
-              return finishPlan(1, "execution-failed");
+              return finishPlan(EXIT_CODE_FAILURE, "execution-failed");
             }
 
             let editedDocumentSource: string;
@@ -665,7 +666,7 @@ export function createPlanTask(
               });
               emitScanFailure(message);
               emitPlanSummary();
-              return finishPlan(3, "failed");
+              return finishPlan(EXIT_CODE_FAILURE, "failed");
             }
 
             const validationResult = validatePlanEdit(scanBaseline, editedDocumentSource);
@@ -679,7 +680,7 @@ export function createPlanTask(
               });
               emitScanFailure(message);
               emitPlanSummary();
-              return finishPlan(1, "failed");
+              return finishPlan(EXIT_CODE_FAILURE, "failed");
             }
 
             if (editedDocumentSource === scanBaseline) {
@@ -718,7 +719,7 @@ export function createPlanTask(
                 message: "Unable to reload Markdown document before deep pass " + deepPass + ": " + source,
               });
               emitPlanSummary();
-              return finishPlan(3, "failed");
+              return finishPlan(EXIT_CODE_FAILURE, "failed");
             }
 
             const deepCandidates = collectDeepLeafCandidates(latestDocumentSource, source);
@@ -800,7 +801,7 @@ export function createPlanTask(
                 });
                 planFailureCount += 1;
                 emitPlanSummary();
-                return finishPlan(1, "execution-failed");
+                return finishPlan(EXIT_CODE_FAILURE, "execution-failed");
               }
 
               let deepEditedDocumentSource: string;
@@ -813,7 +814,7 @@ export function createPlanTask(
                 });
                 planFailureCount += 1;
                 emitPlanSummary();
-                return finishPlan(3, "failed");
+                return finishPlan(EXIT_CODE_FAILURE, "failed");
               }
 
               const validationResult = validatePlanEdit(latestDocumentSource, deepEditedDocumentSource);
@@ -826,7 +827,7 @@ export function createPlanTask(
                 });
                 planFailureCount += 1;
                 emitPlanSummary();
-                return finishPlan(1, "failed");
+                return finishPlan(EXIT_CODE_FAILURE, "failed");
               }
 
               planSuccessCount += 1;
@@ -863,7 +864,7 @@ export function createPlanTask(
 
         // Return success when no insertions are needed after all scans.
         if (insertedTotal === 0) {
-          return finishPlan(0, "completed", convergenceMetadata);
+          return finishPlan(EXIT_CODE_SUCCESS, "completed", convergenceMetadata);
         }
 
         emit({
@@ -872,7 +873,7 @@ export function createPlanTask(
             + pluralize(insertedTotal, "TODO item", "TODO items")
             + " into: " + source,
         });
-        return finishPlan(0, "completed", convergenceMetadata);
+        return finishPlan(EXIT_CODE_SUCCESS, "completed", convergenceMetadata);
       } finally {
         // Ensure trace and artifacts are finalized on all exceptional exits.
         if (!artifactsFinalized) {

@@ -1590,6 +1590,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(2);
     expect(result.errors.some((line) => line.includes("Verification failed after all repair attempts."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Re-verify pass summary: 2 successes, 1 failure."))).toBe(true);
     const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
     expect(stderrOutput.includes("newest fails")).toBe(true);
     const reverifyLines = result.logs.filter((line) => line.includes("Re-verify task:"));
@@ -1797,6 +1798,7 @@ describe.sequential("CLI integration", () => {
 
     expect(revertResult.code).toBe(0);
     expect(revertResult.logs.some((line) => line.includes("Reverted 3 runs successfully."))).toBe(true);
+    expect(revertResult.logs.some((line) => line.includes("Revert operation summary: 3 successes, 0 failures."))).toBe(true);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: echo first");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: echo second");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [ ] cli: echo third");
@@ -3116,6 +3118,72 @@ describe.sequential("CLI integration", () => {
     }
   });
 
+  it("strips ANSI escape sequences from JSONL messages emitted by task text", async () => {
+    const workspace = makeTempWorkspace();
+    const ansiRed = "\u001b[31m";
+    const ansiReset = "\u001b[0m";
+    fs.writeFileSync(
+      path.join(workspace, "tasks.md"),
+      `- [ ] ${ansiRed}Ship release notes${ansiReset}\n`,
+      "utf-8",
+    );
+
+    const result = await runCli(["next", "tasks.md"], workspace);
+    expect(result.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    const lines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(stripAnsi(line)).toBe(line);
+    }
+
+    const entries = readGlobalOutputLogEntries(workspace);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) {
+      expect(stripAnsi(entry.message)).toBe(entry.message);
+    }
+  });
+
+  it("strips ANSI escape sequences from JSONL messages emitted by inline CLI output", async () => {
+    const workspace = makeTempWorkspace();
+    const scriptPath = path.join(workspace, "ansi-output.cjs");
+    fs.writeFileSync(
+      scriptPath,
+      "process.stdout.write(\"\\u001b[32mansi stdout\\u001b[0m\\n\");\n",
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: node ansi-output.cjs\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--show-agent-output",
+      "--keep-artifacts",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+    const lines = fs.readFileSync(outputLogPath, "utf-8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0);
+
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(stripAnsi(line)).toBe(line);
+    }
+
+    const entries = readGlobalOutputLogEntries(workspace);
+    const ansiCliEntry = entries.find((entry) => entry.message.includes("ansi stdout"));
+    expect(ansiCliEntry).toBeDefined();
+    expect(stripAnsi(ansiCliEntry?.message ?? "")).toBe(ansiCliEntry?.message ?? "");
+  });
+
   it("captures invalid flag errors in .rundown/logs/output.jsonl", async () => {
     const workspace = makeTempWorkspace();
 
@@ -3158,6 +3226,141 @@ describe.sequential("CLI integration", () => {
         && entry.stream === "stderr"
         && entry.message.includes("Inline CLI exited with code");
     })).toBe(true);
+  });
+
+  it("plan writes paired group-start/group-end entries for each executed scan", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-group-pairing-worker.cjs");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nInitial plan.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "if (!source.includes('- [ ] Add implementation checklist')) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n\\n- [ ] Add implementation checklist\\n', 'utf-8');",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "3",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expectCommandGroupEventsToBePaired(workspace, "plan", { minPairs: 2 });
+  });
+
+  it("research writes paired group-start/group-end entries", async () => {
+    const workspace = makeTempWorkspace();
+    const workerScriptPath = path.join(workspace, "research-group-pairing-worker.cjs");
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "# Roadmap\n\nSeed context.\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      "console.log('# Roadmap\\n\\nResearched context.\\n');\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "research",
+      "roadmap.md",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expectCommandGroupEventsToBePaired(workspace, "research", { expectedPairs: 1 });
+  });
+
+  it("discuss writes paired group-start/group-end entries", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Discuss rollout\n", "utf-8");
+
+    const result = await runCli([
+      "discuss",
+      "roadmap.md",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expectCommandGroupEventsToBePaired(workspace, "discuss", { expectedPairs: 1 });
+  });
+
+  it("reverify --all writes paired group-start/group-end entries for each selected run", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-group-a",
+      status: "completed",
+      startedAt: "2026-03-17T00:00:00.000Z",
+    });
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000100000Z-group-b",
+      status: "completed",
+      startedAt: "2026-03-17T00:01:00.000Z",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--all",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expectCommandGroupEventsToBePaired(workspace, "reverify", { expectedPairs: 2 });
+  });
+
+  it("revert writes paired group-start/group-end entries for each revert operation", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "- [ ] cli: echo first\n- [ ] cli: echo second\n",
+      "utf-8",
+    );
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+    for (let runIndex = 0; runIndex < 2; runIndex += 1) {
+      const runResult = await runCli([
+        "run",
+        "roadmap.md",
+        "--no-verify",
+        "--commit",
+        "--keep-artifacts",
+      ], workspace);
+      expect(runResult.code).toBe(0);
+    }
+
+    const result = await runCli(["revert", "--last", "2"], workspace);
+
+    expect(result.code).toBe(0);
+    expectCommandGroupEventsToBePaired(workspace, "revert", { expectedPairs: 2 });
   });
 
   it("run --trace-only enriches the latest completed run without changing tasks", async () => {
@@ -3213,6 +3416,37 @@ describe.sequential("CLI integration", () => {
     expect(eventTypes).toContain("phase.started");
     expect(eventTypes).toContain("phase.completed");
     expect(eventTypes).toContain("analysis.summary");
+  });
+
+  it("run --trace-only returns 1 when enrichment output is missing analysis.summary", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const enrichmentScriptPath = path.join(workspace, "trace-enrichment-worker-missing-summary.mjs");
+    fs.writeFileSync(roadmapPath, "- [x] Write docs\n", "utf-8");
+    fs.writeFileSync(
+      enrichmentScriptPath,
+      [
+        "console.log('worker output without analysis summary');",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-missing-analysis",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--trace-only",
+      "--trace",
+      "--worker",
+      "node",
+      enrichmentScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Trace enrichment output did not contain a valid analysis.summary block."))).toBe(true);
   });
 
   it("run --trace-only returns 3 when no completed artifacts exist", async () => {
@@ -4137,6 +4371,7 @@ describe.sequential("CLI integration", () => {
     expect(renderedPrompt).toContain("- [ ] Second pending task");
     expect(result.logs.some((line) => line.includes("Next task:") && line.includes("First pending task"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Discussion completed."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Discuss turn summary: 1 success, 0 failures."))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toContain("- [ ] First pending task");
   });
 
@@ -6097,6 +6332,17 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(lockPath)).toBe(false);
   });
 
+  it("unlock returns 3 when no lockfile exists", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    fs.writeFileSync(sourcePath, "- [ ] Write docs\n", "utf-8");
+
+    const result = await runCli(["unlock", "roadmap.md"], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => line.includes("No source lock found"))).toBe(true);
+  });
+
   it("unlock refuses to remove lock held by active process", async () => {
     const workspace = makeTempWorkspace();
     const sourcePath = path.join(workspace, "roadmap.md");
@@ -6345,6 +6591,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.stderrWrites.some((line) => line.includes("planner diagnostic hidden by default"))).toBe(false);
     expect(result.logs.some((line) => line.includes("Inserted 1 TODO item"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Plan operation summary: 1 success, 0 failures."))).toBe(true);
   });
 
   it("plan keeps sub-agent diagnostics hidden by default unless explicitly enabled", async () => {
@@ -7104,6 +7351,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Research worker completed."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Research turn summary: 1 success, 0 failures."))).toBe(true);
     const updated = fs.readFileSync(sourcePath, "utf-8");
     expect(updated).toContain("## Context");
 
@@ -7427,12 +7675,12 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("revertable=yes"))).toBe(true);
   });
 
-  it("log exits 0 with an informational message when no runs exist", async () => {
+  it("log exits 3 with an informational message when no runs exist", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli(["log"], workspace);
 
-    expect(result.code).toBe(0);
+    expect(result.code).toBe(3);
     expect(result.logs.some((line) => line.includes("No matching completed runs found."))).toBe(true);
   });
 
@@ -7460,6 +7708,15 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("worker: opencode run"))).toBe(true);
   });
 
+  it("artifacts exits 3 when no saved runs exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["artifacts"], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => line.includes("No saved runtime artifacts found."))).toBe(true);
+  });
+
   it("artifacts --clean removes saved runtime runs", async () => {
     const workspace = makeTempWorkspace();
     writeSavedRun(workspace, {
@@ -7477,6 +7734,15 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Removed 2 runtime artifact runs."))).toBe(true);
     expect(fs.readdirSync(path.join(workspace, ".rundown", "runs")).length).toBe(0);
+  });
+
+  it("artifacts --clean exits 3 when no saved runs exist", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["artifacts", "--clean"], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => line.includes("No saved runtime artifacts found."))).toBe(true);
   });
 
   it("artifacts --json prints saved runtime runs as JSON", async () => {
@@ -7549,6 +7815,15 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Opened runtime artifacts"))).toBe(true);
   });
 
+  it("artifacts --open exits 3 when the target run is missing", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["artifacts", "--open", "missing-run"], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.errors.some((line) => line.includes("No saved runtime artifact run found for: missing-run."))).toBe(true);
+  });
+
   it("artifacts --open latest opens the newest saved runtime run folder", async () => {
     const workspace = makeTempWorkspace();
     writeSavedRun(workspace, {
@@ -7603,13 +7878,13 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "runs", "run-20260317T000100000Z-drop"))).toBe(false);
   });
 
-  it("list exits with 0 when source has no tasks", async () => {
+  it("list exits with 3 when source has no tasks", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "notes.md"), "# Notes\nNo tasks here.\n", "utf-8");
 
     const result = await runCli(["list", "notes.md"], workspace);
 
-    expect(result.code).toBe(0);
+    expect(result.code).toBe(3);
     expect(result.logs.some((line) => line.includes("No tasks found"))).toBe(true);
   });
 
@@ -7916,6 +8191,30 @@ function readGlobalOutputLogEntries(workspace: string): Array<{
       stream: typeof entry.stream === "string" ? entry.stream : "",
       message: typeof entry.message === "string" ? entry.message : "",
     }));
+}
+
+function expectCommandGroupEventsToBePaired(
+  workspace: string,
+  commandName: string,
+  options: { expectedPairs?: number; minPairs?: number },
+): void {
+  const entries = readGlobalOutputLogEntries(workspace)
+    .filter((entry) => entry.command === commandName);
+  const groupStarts = entries.filter((entry) => entry.kind === "group-start");
+  const groupEnds = entries.filter((entry) => entry.kind === "group-end");
+
+  if (options.expectedPairs !== undefined) {
+    expect(groupStarts.length).toBe(options.expectedPairs);
+    expect(groupEnds.length).toBe(options.expectedPairs);
+  }
+
+  if (options.minPairs !== undefined) {
+    expect(groupStarts.length).toBeGreaterThanOrEqual(options.minPairs);
+    expect(groupEnds.length).toBeGreaterThanOrEqual(options.minPairs);
+  }
+
+  expect(groupStarts.length).toBe(groupEnds.length);
+  expect(groupStarts.length).toBeGreaterThan(0);
 }
 
 function createWaitModeSpawnMock(options: {

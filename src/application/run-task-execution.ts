@@ -1,6 +1,11 @@
 import type { SortMode } from "../domain/sorting.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+} from "../domain/exit-codes.js";
+import {
   buildRundownVarEnv,
   formatTemplateVarsForPrompt,
   parseCliTemplateVars,
@@ -234,7 +239,7 @@ export function createRunTaskExecution(
         kind: "error",
         message: "--redo, --reset-after, and --clean cannot be combined with --only-verify.",
       });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     if (!Number.isInteger(rounds) || rounds <= 0) {
@@ -242,7 +247,7 @@ export function createRunTaskExecution(
         kind: "error",
         message: "--rounds must be a positive integer.",
       });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     if (rounds > 1 && !(clean || (redo && resetAfter))) {
@@ -250,7 +255,7 @@ export function createRunTaskExecution(
         kind: "error",
         message: "--rounds > 1 requires --clean or both --redo and --reset-after.",
       });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // `--redo` and `--clean` imply full-run behavior across all tasks.
@@ -403,7 +408,7 @@ export function createRunTaskExecution(
       resolvedFiles = files;
       if (files.length === 0) {
         emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", source) });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       // Lock all source files to prevent concurrent rundown workers from colliding.
@@ -437,7 +442,7 @@ export function createRunTaskExecution(
               + error.filePath
               + "`.",
           });
-          return 1;
+          return EXIT_CODE_FAILURE;
         }
         throw error;
       }
@@ -460,7 +465,7 @@ export function createRunTaskExecution(
               kind: "error",
               message: "--commit: working directory is not clean. Commit or stash changes before using --commit.",
             });
-            return 1;
+            return EXIT_CODE_FAILURE;
           }
         }
       }
@@ -497,10 +502,10 @@ export function createRunTaskExecution(
                     + " total).",
                 });
               }
-              return 0;
+              return EXIT_CODE_SUCCESS;
             }
             emit({ kind: "info", message: formatNoItemsFound("unchecked tasks") });
-            return 3;
+            return EXIT_CODE_NO_WORK;
           }
 
           // Execute one full task iteration and inspect control-flow instructions.
@@ -652,7 +657,7 @@ export function createRunTaskExecution(
       }
 
       completedAllRoundsSuccessfully = true;
-      return 0;
+      return EXIT_CODE_SUCCESS;
     } catch (error) {
       // Preserve unexpected errors so finalization can emit failed trace status.
       unexpectedError = error;

@@ -61,6 +61,12 @@ import type {
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+  EXIT_CODE_VERIFICATION_FAILURE,
+} from "../domain/exit-codes.js";
 
 interface ReverifyPromptContext {
   // Fully rendered verification prompt for the selected task context.
@@ -216,7 +222,7 @@ export function createReverifyTask(
           kind: "error",
           message: "Selected run is missing run metadata (run.json). Re-run the original task with --keep-artifacts, then retry reverify.",
         });
-        return { exitCode: 3, status: null };
+        return { exitCode: EXIT_CODE_NO_WORK, status: null };
       }
 
       // Reverify only supports runs that reached a completed terminal state.
@@ -225,7 +231,7 @@ export function createReverifyTask(
           kind: "error",
           message: "Selected run is not completed (status=" + (selectedRun.status ?? "unknown") + "). Use `rundown artifacts` to choose a completed run.",
         });
-        return { exitCode: 3, status: null };
+        return { exitCode: EXIT_CODE_NO_WORK, status: null };
       }
 
       // Runtime task metadata is mandatory because reverify does not re-parse CLI input.
@@ -234,7 +240,7 @@ export function createReverifyTask(
           kind: "error",
           message: "Selected run has no task metadata to re-verify. Choose a different run or execute tasks again to refresh artifacts.",
         });
-        return { exitCode: 3, status: null };
+        return { exitCode: EXIT_CODE_NO_WORK, status: null };
       }
 
       // Validate metadata shape before using it to resolve file/task references.
@@ -245,7 +251,7 @@ export function createReverifyTask(
           message: "Selected run has invalid task metadata: " + metadataError
             + " Re-run the task to regenerate runtime artifacts.",
         });
-        return { exitCode: 3, status: null };
+        return { exitCode: EXIT_CODE_NO_WORK, status: null };
       }
 
       // Resolve the current task view from persisted runtime metadata.
@@ -260,7 +266,7 @@ export function createReverifyTask(
           kind: "error",
           message: "Could not resolve task from saved metadata. The task may have moved or been edited.",
         });
-        return { exitCode: 3, status: null };
+        return { exitCode: EXIT_CODE_NO_WORK, status: null };
       }
 
       if (verbose) {
@@ -337,7 +343,7 @@ export function createReverifyTask(
       // Print prompt mode stops before any worker invocation or artifact writes.
       if (printPrompt) {
         emit({ kind: "text", text: expandedVerificationPrompt });
-        return { exitCode: 0, status: null };
+        return { exitCode: EXIT_CODE_SUCCESS, status: null };
       }
 
       // Dry-run reports what would execute without mutating artifacts or tasks.
@@ -355,7 +361,7 @@ export function createReverifyTask(
         }
         emit({ kind: "info", message: "Dry run - would run verification with: " + effectiveWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Prompt length: " + expandedVerificationPrompt.length + " chars" });
-        return { exitCode: 0, status: null };
+        return { exitCode: EXIT_CODE_SUCCESS, status: null };
       }
 
       // Verification always requires a concrete worker command at execution time.
@@ -479,11 +485,11 @@ export function createReverifyTask(
             ? "Verification failed after all repair attempts.\n" + verificationResult.failureReason
             : "Verification failed after all repair attempts.";
           emit({ kind: "error", message });
-          return finalizeAndReturn(2, "reverify-failed");
+          return finalizeAndReturn(EXIT_CODE_VERIFICATION_FAILURE, "reverify-failed");
         }
 
         emit({ kind: "success", message: "Re-verification passed." });
-        return finalizeAndReturn(0, "reverify-completed");
+        return finalizeAndReturn(EXIT_CODE_SUCCESS, "reverify-completed");
       } catch (error) {
         // Ensure failure states still flush traces and artifact metadata.
         if (!artifactsFinalized) {
@@ -509,14 +515,14 @@ export function createReverifyTask(
     if (targetRuns.length === 0) {
       if (hasMultiRunSelection) {
         emit({ kind: "error", message: formatNoItemsFound("completed runs") });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       const target = runId === "latest"
         ? "latest completed"
         : runId;
       emit({ kind: "error", message: formatNoItemsFoundFor("saved runtime artifact run", target) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     if (hasMultiRunSelection && dryRun) {
@@ -532,7 +538,7 @@ export function createReverifyTask(
           });
         }
       }
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     // Process selected runs sequentially and stop at the first failure.
@@ -607,7 +613,7 @@ export function createReverifyTask(
 
     emitReverifySummary();
 
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 
@@ -732,4 +738,3 @@ function formatTaskMetadataLabel(task: RuntimeTaskMetadata): string {
     subItems: [],
   });
 }
-

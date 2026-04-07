@@ -1,4 +1,5 @@
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import type {
   ArtifactStore,
   ConfigDirResult,
@@ -73,12 +74,12 @@ export function createManageArtifacts(
     // Guard against mutually exclusive options that would produce ambiguous behavior.
     if (shouldClean && (shouldPrintJson || runToOpen)) {
       emit({ kind: "error", message: "--clean cannot be combined with --json or --open." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     if (runToOpen && (shouldPrintJson || onlyFailed)) {
       emit({ kind: "error", message: "--open cannot be combined with --json or --failed." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // Open a specific run directory and exit early when --open is requested.
@@ -88,12 +89,12 @@ export function createManageArtifacts(
         : dependencies.artifactStore.find(runToOpen, artifactBaseDir);
       if (!run) {
         emit({ kind: "error", message: formatNoItemsFoundFor("saved runtime artifact run", runToOpen) });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       dependencies.directoryOpener.openDirectory(run.rootDir);
       emit({ kind: "success", message: "Opened runtime artifacts: " + run.relativePath });
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     // Remove saved runs when --clean is provided, optionally scoped to failures.
@@ -103,7 +104,7 @@ export function createManageArtifacts(
         : dependencies.artifactStore.removeSaved(artifactBaseDir);
       if (removed === 0) {
         emit({ kind: "info", message: onlyFailed ? formatNoItemsFound("failed runtime artifacts") : formatNoItemsFound("saved runtime artifacts") });
-        return 0;
+        return EXIT_CODE_NO_WORK;
       }
 
       emit({
@@ -113,7 +114,7 @@ export function createManageArtifacts(
           + pluralize(removed, "runtime artifact run", "runtime artifact runs")
           + ".",
       });
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     // Default behavior is listing saved runs, filtered to failed runs when requested.
@@ -123,13 +124,13 @@ export function createManageArtifacts(
 
     if (runs.length === 0) {
       emit({ kind: "info", message: onlyFailed ? formatNoItemsFound("failed runtime artifacts") : formatNoItemsFound("saved runtime artifacts") });
-      return 0;
+      return EXIT_CODE_NO_WORK;
     }
 
     // Emit machine-readable JSON output for scripting use cases.
     if (shouldPrintJson) {
       emit({ kind: "text", text: JSON.stringify(runs, null, 2) });
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     // Emit a human-readable summary followed by key details for each run.
@@ -153,7 +154,7 @@ export function createManageArtifacts(
     }
 
     emit({ kind: "info", message: runs.length + " " + pluralize(runs.length, "artifact run", "artifact runs") + " listed." });
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 

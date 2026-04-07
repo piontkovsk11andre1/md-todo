@@ -386,6 +386,93 @@ describe("cliOutputPort", () => {
     }
   });
 
+  it("resets group indentation after a grouped command completes", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({ kind: "group-start", label: "Run 1" });
+      cliOutputPort.emit({ kind: "info", message: "inside group" });
+      cliOutputPort.emit({ kind: "group-end", status: "success" });
+      cliOutputPort.emit({ kind: "info", message: "next command" });
+
+      expect(logSpy).toHaveBeenCalledTimes(4);
+      const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
+      expect(lines[0]).toBe("┌ Run 1");
+      expect(lines[1]).toBe("│  ℹ inside group");
+      expect(lines[2]).toBe("└ ✔ Done");
+      expect(lines[3]).toBe("ℹ next command");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
+  it("resets stale group indentation between invocations after an error path", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({ kind: "group-start", label: "Run that crashes" });
+      resetCliOutputPortState();
+      cliOutputPort.emit({ kind: "info", message: "fresh invocation" });
+
+      expect(logSpy).toHaveBeenCalledTimes(2);
+      const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
+      expect(lines[0]).toBe("┌ Run that crashes");
+      expect(lines[1]).toBe("ℹ fresh invocation");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
   it("renders grouped output with flat prefix in non-TTY mode", () => {
     const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
     const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;

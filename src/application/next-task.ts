@@ -1,6 +1,7 @@
 import type { SortMode } from "../domain/sorting.js";
 import type { Task } from "../domain/parser.js";
 import { parseTasks } from "../domain/parser.js";
+import { EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import type {
   SourceResolverPort,
   TaskSelectionResult as PortTaskSelectionResult,
@@ -57,14 +58,14 @@ export function createNextTask(
     const files = await dependencies.sourceResolver.resolveSources(source);
     if (files.length === 0) {
       emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", source) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     // Select the next unchecked task according to the requested ordering mode.
     const result = dependencies.taskSelector.selectNextTask(files, sortMode);
     if (!result) {
       emit({ kind: "info", message: formatNoItemsFound("unchecked tasks") });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     const totalTasksInFile = parseTasks(result.source, result.task.file).length;
@@ -82,7 +83,7 @@ export function createNextTask(
     });
 
     // Signal successful task discovery.
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 

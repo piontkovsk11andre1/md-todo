@@ -79,7 +79,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("orphaned-index-entry"))).toBe(true);
   });
 
@@ -98,7 +98,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("missing-index-entry"))).toBe(true);
   });
 
@@ -125,7 +125,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("entry-count-mismatch"))).toBe(true);
     expect(textLines.some((line) => line.includes("summary-drift"))).toBe(true);
   });
@@ -152,7 +152,7 @@ describe("validate-memory", () => {
       resolvedSources: [liveSourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("source-missing"))).toBe(true);
   });
 
@@ -183,7 +183,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("origin-task-unchecked"))).toBe(true);
   });
 
@@ -214,7 +214,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("origin-task-removed"))).toBe(true);
   });
 
@@ -257,7 +257,7 @@ describe("validate-memory", () => {
       fileSystem: unreadableFileSystem,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("origin-task-unreadable"))).toBe(true);
   });
 
@@ -342,7 +342,7 @@ describe("validate-memory", () => {
       resolvedSources: [sourcePath],
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(textLines.some((line) => line.includes("missing-index-entry"))).toBe(true);
   });
 
@@ -363,7 +363,7 @@ describe("validate-memory", () => {
       fix: true,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(fs.readFileSync(memoryFilePath, "utf-8")).toContain("Captured release context");
 
     const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, MemoryIndexFixture>;
@@ -404,7 +404,7 @@ describe("validate-memory", () => {
       fix: true,
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     const index = JSON.parse(fs.readFileSync(memoryIndexPath, "utf-8")) as Record<string, MemoryIndexFixture>;
     expect(index[path.resolve(orphanSourcePath)]).toBeUndefined();
     expect(index[path.resolve(sourcePath)]).toBeDefined();

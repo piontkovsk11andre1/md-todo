@@ -62,6 +62,14 @@ const DEFAULT_PLAN_SCAN_COUNT = 3;
 const DEFAULT_PLAN_DEEP = 0;
 const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
 const STALE_CALL_CLI_CACHE_RELATIVE_PATH = path.join("cache", "cli-blocks");
+const EXIT_CODES_HELP_TEXT = [
+  "",
+  "Exit codes:",
+  "  0  success",
+  "  1  execution error",
+  "  2  verification failure",
+  "  3  no-work / no actionable target",
+].join("\n");
 
 type CliActionResult = number | Promise<number>;
 
@@ -110,6 +118,8 @@ program
     "--config-dir <path>",
     "Explicit path to the .rundown configuration directory (bypasses upward discovery)",
   );
+
+program.addHelpText("afterAll", EXIT_CODES_HELP_TEXT);
 
 const runCommand = program
   .command("run")

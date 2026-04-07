@@ -77,7 +77,7 @@ describe("list-tasks", () => {
     const listTasks = createListTasks(dependencies);
     const code = await listTasks(createOptions());
 
-    expect(code).toBe(0);
+    expect(code).toBe(3);
     expect(events.some((event) => event.kind === "info" && event.message === "No tasks found.")).toBe(true);
   });
 

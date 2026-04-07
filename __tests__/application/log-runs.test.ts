@@ -250,7 +250,7 @@ describe("log-runs", () => {
 
     const code = logRuns({ revertable: true, commandName: "run", json: false });
 
-    expect(code).toBe(0);
+    expect(code).toBe(3);
     expect(events).toEqual([{ kind: "info", message: "No matching completed runs found." }]);
   });
 });

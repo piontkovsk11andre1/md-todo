@@ -1,5 +1,6 @@
 import { getTraceInstructions } from "../domain/defaults.js";
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import {
   buildMemoryTemplateVars,
   renderTemplate,
@@ -176,7 +177,7 @@ export function createResearchTask(
           kind: "error",
           message: "Unable to read Markdown document: " + source,
         });
-        return 3;
+        return EXIT_CODE_FAILURE;
       }
 
       emitResearchGroupStart(deriveDocumentIntent(sourceDocument, source));
@@ -256,7 +257,7 @@ export function createResearchTask(
                 message,
               });
               emitResearchGroupFailure(message);
-              return 1;
+              return EXIT_CODE_FAILURE;
             }
             throw error;
           }
@@ -265,7 +266,7 @@ export function createResearchTask(
         if (printPrompt) {
           emit({ kind: "text", text: prompt });
           emitResearchGroupSuccess();
-          return 0;
+          return EXIT_CODE_SUCCESS;
         }
 
         const loadedWorkerConfig = dependencies.configDir?.configDir
@@ -288,7 +289,7 @@ export function createResearchTask(
             message,
           });
           emitResearchGroupFailure(message);
-          return 1;
+          return EXIT_CODE_FAILURE;
         }
 
         if (dryRunSuppressesCliExpansion && !ignoreCliBlock) {
@@ -304,7 +305,7 @@ export function createResearchTask(
         emit({ kind: "info", message: "Dry run - would research: " + resolvedWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
         emitResearchGroupSuccess();
-        return 0;
+        return EXIT_CODE_SUCCESS;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         emitResearchGroupFailure(message);
@@ -340,7 +341,7 @@ export function createResearchTask(
             + error.filePath
             + "`.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
       throw error;
     }
@@ -379,7 +380,7 @@ export function createResearchTask(
           kind: "error",
           message: "Unable to read Markdown document: " + source,
         });
-        return 3;
+        return EXIT_CODE_FAILURE;
       }
 
       emitResearchGroupStart(deriveDocumentIntent(sourceDocument, source));
@@ -459,7 +460,7 @@ export function createResearchTask(
                 message,
               });
               emitResearchGroupFailure(message);
-              return 1;
+              return EXIT_CODE_FAILURE;
             }
             throw error;
           }
@@ -468,7 +469,7 @@ export function createResearchTask(
         if (printPrompt) {
           emit({ kind: "text", text: prompt });
           emitResearchGroupSuccess();
-          return 0;
+          return EXIT_CODE_SUCCESS;
         }
 
         const loadedWorkerConfig = dependencies.configDir?.configDir
@@ -492,7 +493,7 @@ export function createResearchTask(
             message,
           });
           emitResearchGroupFailure(message);
-          return 1;
+          return EXIT_CODE_FAILURE;
         }
 
         if (dryRun) {
@@ -509,7 +510,7 @@ export function createResearchTask(
           emit({ kind: "info", message: "Dry run - would research: " + resolvedWorkerCommand.join(" ") });
           emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
           emitResearchGroupSuccess();
-          return 0;
+          return EXIT_CODE_SUCCESS;
         }
 
         artifactContext = dependencies.artifactStore.createContext({
@@ -570,7 +571,7 @@ export function createResearchTask(
             emit({ kind: "error", message });
           }
           emitResearchGroupFailure(message);
-          return finishResearch(1, "execution-failed");
+          return finishResearch(EXIT_CODE_FAILURE, "execution-failed");
         }
 
         const updatedDocument = runResult.stdout;
@@ -583,7 +584,7 @@ export function createResearchTask(
             message,
           });
           emitResearchGroupFailure(message);
-          return finishResearch(1, "execution-failed");
+          return finishResearch(EXIT_CODE_FAILURE, "execution-failed");
         }
 
         if (hasCheckboxStateMutation(sourceDocument, updatedDocument)) {
@@ -602,7 +603,7 @@ export function createResearchTask(
             message: "Research update rejected due to constraint violation.",
           });
           emitResearchGroupFailure(violationMessage);
-          return finishResearch(1, "execution-failed");
+          return finishResearch(EXIT_CODE_FAILURE, "execution-failed");
         }
 
         const strippedTodos = stripIntroducedUncheckedTodos(sourceDocument, updatedDocument);
@@ -616,7 +617,7 @@ export function createResearchTask(
               message,
             });
             emitResearchGroupFailure(message);
-            return finishResearch(1, "execution-failed");
+            return finishResearch(EXIT_CODE_FAILURE, "execution-failed");
           }
 
           emit({
@@ -635,7 +636,7 @@ export function createResearchTask(
 
         emit({ kind: "success", message: "Research worker completed." });
         emitResearchGroupSuccess();
-        return finishResearch(0, "completed");
+        return finishResearch(EXIT_CODE_SUCCESS, "completed");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         emitResearchGroupFailure(message);

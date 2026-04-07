@@ -216,7 +216,7 @@ describe.sequential("memory CLI integration", () => {
     expect(result.logs.some((line) => line.includes("No memory entries found."))).toBe(true);
   });
 
-  it("memory-validate reports issues and exits 1", async () => {
+  it("memory-validate reports issues and exits 2", async () => {
     const workspace = makeTempWorkspace();
     const sourcePath = path.join(workspace, "roadmap.md");
     const memoryDir = path.join(workspace, ".rundown");
@@ -240,7 +240,7 @@ describe.sequential("memory CLI integration", () => {
 
     const result = await runCli(["memory-validate", "roadmap.md"], workspace);
 
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(2);
     expect(result.logs.some((line) => line.includes("entry-count-mismatch"))).toBe(true);
     expect(result.logs.some((line) => line.includes("summary-drift"))).toBe(true);
     expect(result.logs.some((line) => line.includes("origin-task-unchecked"))).toBe(true);
@@ -270,6 +270,32 @@ describe.sequential("memory CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Cleanup plan:"))).toBe(true);
     expect(result.logs.some((line) => line.includes(memoryFilePath))).toBe(true);
     expect(result.logs.some((line) => line.includes("Dry run:"))).toBe(true);
+    expect(fs.existsSync(memoryFilePath)).toBe(true);
+    expect(fs.existsSync(memoryIndexPath)).toBe(true);
+  });
+
+  it("memory-clean --all without --force exits 1 and refuses cleanup", async () => {
+    const workspace = makeTempWorkspace();
+    const sourcePath = path.join(workspace, "roadmap.md");
+    const memoryDir = path.join(workspace, ".rundown");
+    const memoryFilePath = path.join(memoryDir, "roadmap.md.memory.md");
+    const memoryIndexPath = path.join(memoryDir, "memory-index.json");
+
+    fs.writeFileSync(sourcePath, "- [x] memory: capture context\n", "utf-8");
+    fs.mkdirSync(memoryDir, { recursive: true });
+    fs.writeFileSync(memoryFilePath, "Captured release context\n", "utf-8");
+    fs.writeFileSync(memoryIndexPath, JSON.stringify({
+      [path.resolve(sourcePath)]: {
+        summary: "Captured release context",
+        updatedAt: "2020-01-01T00:00:00.000Z",
+        entryCount: 1,
+      },
+    }, null, 2), "utf-8");
+
+    const result = await runCli(["memory-clean", "roadmap.md", "--all"], workspace);
+
+    expect(result.code).toBe(1);
+    expect(result.logs.some((line) => line.includes("without --force"))).toBe(true);
     expect(fs.existsSync(memoryFilePath)).toBe(true);
     expect(fs.existsSync(memoryIndexPath)).toBe(true);
   });

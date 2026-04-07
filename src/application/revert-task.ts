@@ -13,6 +13,11 @@ import {
   formatTaskLabel,
   pluralize,
 } from "./run-task-utils.js";
+import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+} from "../domain/exit-codes.js";
 import type {
   ArtifactRunMetadata,
   ArtifactStore,
@@ -103,19 +108,19 @@ export function createRevertTask(
     // Guard incompatible selectors early to keep behavior predictable.
     if (all && last !== undefined) {
       emit({ kind: "error", message: "Cannot combine --all with --last." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // Explicit run ids cannot be mixed with bulk selectors.
     if (hasMultiRunSelection && runId !== "latest") {
       emit({ kind: "error", message: "Cannot combine --run <id> with --all or --last." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     // `--last` accepts only positive integer counts.
     if (last !== undefined && (!Number.isInteger(last) || last < 1)) {
       emit({ kind: "error", message: "--last must be a positive integer." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     const cwd = dependencies.workingDirectory.cwd();
@@ -132,19 +137,19 @@ export function createRevertTask(
           kind: "error",
           message: buildNoRevertableRunsMessage(true),
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       if (hasMultiRunSelection) {
         emit({ kind: "error", message: formatNoItemsFound("completed runs") });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       const target = runId === "latest"
         ? "latest completed"
         : runId;
       emit({ kind: "error", message: formatNoItemsFoundFor("saved runtime artifact run", target) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     // Convert saved runs into executable git targets.
@@ -164,14 +169,14 @@ export function createRevertTask(
           message: "Run " + selectedRun.runId + " is not revertable because it does not include extra.commitSha. "
             + FILE_DONE_FINAL_RUN_HINT,
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       emit({
         kind: "error",
         message: buildNoRevertableRunsMessage(completedRuns.length > 0),
       });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     // `pre-reset-ref` entries represent prior reset reverts and must be replayed one-at-a-time.
@@ -182,7 +187,7 @@ export function createRevertTask(
           kind: "error",
           message: "Runs created by a prior --method reset can only be reverted one at a time (use --run <id> --method reset).",
         });
-        return 3;
+        return EXIT_CODE_FAILURE;
       }
 
       if (method !== "reset") {
@@ -190,7 +195,7 @@ export function createRevertTask(
           kind: "error",
           message: "Selected run was created by --method reset. Revert it with --method reset to restore its pre-reset ref.",
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
     }
 
@@ -217,7 +222,7 @@ export function createRevertTask(
             + error.filePath
             + "` before retrying.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
       throw error;
     }
@@ -247,7 +252,7 @@ export function createRevertTask(
       const inGitRepo = await isGitRepoWithGitClient(dependencies.gitClient, cwd);
       if (!inGitRepo) {
         emit({ kind: "error", message: "Not inside a git repository." });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
 
       if (force) {
@@ -267,7 +272,7 @@ export function createRevertTask(
             kind: "error",
             message: "Working directory is not clean. Commit or stash changes before running revert.",
           });
-          return 1;
+          return EXIT_CODE_FAILURE;
         }
       }
 
@@ -298,7 +303,7 @@ export function createRevertTask(
         await validatePreResetRefTargetsExistInHistory(dependencies.gitClient, cwd, executionOperations);
       } catch (error) {
         emit({ kind: "error", message: String(error) });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
 
       // Dry-run prints planned actions without mutating git history.
@@ -360,7 +365,7 @@ export function createRevertTask(
           });
         }
 
-        return 0;
+        return EXIT_CODE_SUCCESS;
       }
 
       // Create a fresh artifact context for this revert invocation.
@@ -523,7 +528,7 @@ export function createRevertTask(
             + pluralize(executionRuns.length, "run", "runs")
             + " successfully.",
         });
-        return 0;
+        return EXIT_CODE_SUCCESS;
       } catch (error) {
         // Persist partial progress for debuggability when execution fails mid-stream.
         dependencies.artifactStore.finalize(artifactContext, {
@@ -549,7 +554,7 @@ export function createRevertTask(
         }
 
         emit({ kind: "error", message: "Revert failed: " + String(error) });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
     } finally {
       // Always release locks, even after early returns or thrown errors.

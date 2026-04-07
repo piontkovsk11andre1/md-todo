@@ -1,6 +1,7 @@
 import type { FileSystem } from "../domain/ports/file-system.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { PathOperationsPort } from "../domain/ports/path-operations-port.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import type {
   MemoryCleanResult,
   MemoryIndexEntry,
@@ -59,13 +60,13 @@ export function createCleanMemory(
   return async function cleanMemory(options: CleanMemoryOptions): Promise<number> {
     if (options.all && !options.force) {
       emit({ kind: "warn", message: "Refusing to clean all memory without --force." });
-      return 1;
+      return EXIT_CODE_FAILURE;
     }
 
     const resolvedSources = await dependencies.sourceResolver.resolveSources(options.source);
     if (resolvedSources.length === 0) {
       emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", options.source) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     const olderThanMs = parseAgeThresholdMs(options.olderThan);
@@ -74,13 +75,13 @@ export function createCleanMemory(
 
     if (selectedCandidates.length === 0) {
       emit({ kind: "info", message: formatNoItemsFound("memory artifacts for cleanup filters") });
-      return 0;
+      return EXIT_CODE_NO_WORK;
     }
 
     const cleanupResult = executeCleanup(dependencies, selectedCandidates, options.dryRun);
     renderCleanupResult(cleanupResult, selectedCandidates, emit);
 
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 
@@ -460,8 +461,15 @@ function writeMemoryIndexAtomically(
       if (dependencies.fileSystem.exists(tempPath)) {
         dependencies.fileSystem.rm(tempPath, { force: true });
       }
-    } catch {
-      // Best-effort temp cleanup only.
+    } catch (cleanupError) {
+      dependencies.output.emit({
+        kind: "warn",
+        message: "Failed to clean up temporary memory index file after write failure: "
+          + tempPath
+          + " ("
+          + String(cleanupError)
+          + ").",
+      });
     }
     throw error;
   }

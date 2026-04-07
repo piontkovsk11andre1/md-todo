@@ -3,6 +3,41 @@ import { createViewMemory, type ViewMemoryDependencies, type ViewMemoryOptions }
 import type { ApplicationOutputEvent, MemoryIndexEntry, MemoryMetadata } from "../../src/domain/ports/index.js";
 
 describe("view-memory", () => {
+  it("returns exit code 3 when no source matches the selector", async () => {
+    const { viewMemory, events } = createDependencies({
+      resolvedSources: [],
+    });
+
+    const code = await viewMemory(createOptions({ source: "missing.md" }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("No Markdown files found"))).toBe(true);
+  });
+
+  it("returns exit code 3 when sources exist but none has memory", async () => {
+    const sourcePath = "roadmap.md";
+    const { viewMemory, events } = createDependencies({
+      resolvedSources: [sourcePath],
+      metadataBySource: {
+        [sourcePath]: {
+          available: false,
+          filePath: ".rundown/roadmap.md.memory.md",
+        },
+      },
+      memoryBySource: {
+        [sourcePath]: {
+          entries: [],
+          index: null,
+        },
+      },
+    });
+
+    const code = await viewMemory(createOptions({ source: sourcePath }));
+
+    expect(code).toBe(3);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("No memory entries found."))).toBe(true);
+  });
+
   it("emits JSON output for a single source as an object payload", async () => {
     const sourcePath = "notes.md";
     const memoryFilePath = ".rundown/notes.md.memory.md";

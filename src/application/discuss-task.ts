@@ -68,6 +68,11 @@ import type {
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+} from "../domain/exit-codes.js";
 
 export type RunnerMode = ProcessRunMode;
 
@@ -261,7 +266,7 @@ export function createDiscussTask(
       if (!selectedRun) {
         const target = runId === "latest" ? "latest" : runId;
         emit({ kind: "error", message: formatNoItemsFoundFor("saved runtime artifact run", target) });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       if (selectedRun.status === "metadata-missing") {
@@ -269,7 +274,7 @@ export function createDiscussTask(
           kind: "error",
           message: "Selected run is missing run metadata (run.json). Re-run the original task with --keep-artifacts, then retry discuss --run.",
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       if (!isTerminalRunStatus(selectedRun.status)) {
@@ -279,7 +284,7 @@ export function createDiscussTask(
             + (selectedRun.status ?? "unknown")
             + "). Use `rundown artifacts` to choose a completed run.",
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       if (!selectedRun.task) {
@@ -287,7 +292,7 @@ export function createDiscussTask(
           kind: "error",
           message: "Selected run has no task metadata to discuss. Choose a different run or execute tasks again to refresh artifacts.",
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       const metadataError = validateRuntimeTaskMetadata(selectedRun.task);
@@ -297,7 +302,7 @@ export function createDiscussTask(
           message: "Selected run has invalid task metadata: " + metadataError
             + " Re-run the task to regenerate runtime artifacts.",
         });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       selectedRuntimeTaskMetadata = selectedRun.task;
@@ -313,7 +318,7 @@ export function createDiscussTask(
       files = await dependencies.sourceResolver.resolveSources(source);
       if (files.length === 0) {
         emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", source) });
-        return 3;
+        return EXIT_CODE_NO_WORK;
       }
 
       // Deduplicate lock targets in case globbing or resolver behavior returns repeated paths.
@@ -351,7 +356,7 @@ export function createDiscussTask(
             + error.filePath
             + "`.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
       throw error;
     }
@@ -370,7 +375,7 @@ export function createDiscussTask(
             message: "Selected run has no saved artifact directory: " + selectedRun.rootDir
               + ". No saved artifacts are available on disk; they may have been purged (run without --keep-artifacts).",
           });
-          return 3;
+          return EXIT_CODE_NO_WORK;
         }
 
         const runtimeTaskContext = resolveTaskContextFromRuntimeMetadata(
@@ -400,7 +405,7 @@ export function createDiscussTask(
         const selectedTask = dependencies.taskSelector.selectNextTask(files, sortMode);
         if (!selectedTask) {
           emit({ kind: "info", message: formatNoItemsFound("unchecked tasks") });
-          return 3;
+          return EXIT_CODE_NO_WORK;
         }
 
         taskContext = resolveTaskContext(selectedTask);
@@ -475,7 +480,7 @@ export function createDiscussTask(
                 + error.command
                 + ". Aborting run.",
             });
-            return 1;
+            return EXIT_CODE_FAILURE;
           }
           throw error;
         }
@@ -497,7 +502,7 @@ export function createDiscussTask(
 
       if (printPrompt) {
         emit({ kind: "text", text: prompt });
-        return 0;
+        return EXIT_CODE_SUCCESS;
       }
 
       if (dryRun) {
@@ -513,7 +518,7 @@ export function createDiscussTask(
         }
         emit({ kind: "info", message: "Dry run — would discuss with: " + resolvedWorkerCommand.join(" ") });
         emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
-        return 0;
+        return EXIT_CODE_SUCCESS;
       }
 
       // Discuss execution requires a worker command from config or CLI flags.
@@ -522,7 +527,7 @@ export function createDiscussTask(
           kind: "error",
           message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
         });
-        return 1;
+        return EXIT_CODE_FAILURE;
       }
 
       // Snapshot checkbox state so discuss mode can enforce non-mutating checkbox behavior.
@@ -683,7 +688,7 @@ export function createDiscussTask(
           emitDiscussionTurnFailure(message);
           discussionFailureCount += 1;
           discussionTurnEnded = true;
-          return 1;
+          return EXIT_CODE_FAILURE;
         }
 
         if (result.exitCode !== 0) {
@@ -693,14 +698,14 @@ export function createDiscussTask(
             emitDiscussionTurnFailure(message);
             discussionFailureCount += 1;
             discussionTurnEnded = true;
-            return 1;
+            return EXIT_CODE_FAILURE;
           } else {
             const message = "Discussion exited with code " + result.exitCode + ".";
             emit({ kind: "error", message });
             emitDiscussionTurnFailure(message);
             discussionFailureCount += 1;
             discussionTurnEnded = true;
-            return 1;
+            return EXIT_CODE_FAILURE;
           }
         }
 
@@ -708,7 +713,7 @@ export function createDiscussTask(
         discussionSuccessCount += 1;
         discussionTurnEnded = true;
         emit({ kind: "success", message: "Discussion completed." });
-        return 0;
+        return EXIT_CODE_SUCCESS;
       } catch (error) {
         if (discussionTurnStarted && !discussionTurnEnded) {
           const message = error instanceof Error ? error.message : String(error);

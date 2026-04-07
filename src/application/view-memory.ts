@@ -4,6 +4,7 @@ import type {
   MemoryResolverPort,
   SourceResolverPort,
 } from "../domain/ports/index.js";
+import { EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
 
@@ -49,7 +50,7 @@ export function createViewMemory(
     const resolvedSources = await dependencies.sourceResolver.resolveSources(options.source);
     if (resolvedSources.length === 0) {
       emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", options.source) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     const selectedSources = options.all ? resolvedSources : [resolvedSources[0]];
@@ -73,12 +74,12 @@ export function createViewMemory(
 
     if (memoryEntries.length === 0) {
       emit({ kind: "info", message: formatNoItemsFound("memory entries") });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     if (options.json) {
       emit({ kind: "text", text: JSON.stringify(toJsonPayload(memoryEntries, options.all), null, 2) });
-      return 0;
+      return EXIT_CODE_SUCCESS;
     }
 
     for (const [index, entry] of memoryEntries.entries()) {
@@ -89,7 +90,7 @@ export function createViewMemory(
     }
 
     emit({ kind: "info", message: memoryEntries.length + " " + pluralize(memoryEntries.length, "source", "sources") + " with memory listed." });
-    return 0;
+    return EXIT_CODE_SUCCESS;
   };
 }
 

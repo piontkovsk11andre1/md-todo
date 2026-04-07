@@ -47,6 +47,19 @@ describe("next-task", () => {
     expect(code).toBe(3);
     expect(events).toEqual([{ kind: "info", message: "No unchecked tasks found." }]);
   });
+
+  it("returns no-work when source resolves to no markdown files", async () => {
+    const { dependencies, events } = createDependencies({
+      files: [],
+      selection: null,
+    });
+
+    const nextTask = createNextTask(dependencies);
+    const code = await nextTask(createOptions({ source: "missing/**/*.md" }));
+
+    expect(code).toBe(3);
+    expect(events).toEqual([{ kind: "warn", message: "No Markdown files found matching: missing/**/*.md." }]);
+  });
 });
 
 function createDependencies(options: {

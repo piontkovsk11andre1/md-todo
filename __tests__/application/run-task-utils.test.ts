@@ -12,6 +12,7 @@ import {
   hasLongOptionVariant,
   isSameFilePath,
   parseJson,
+  pluralize,
 } from "../../src/application/run-task-utils.js";
 
 describe("run-task-utils", () => {
@@ -102,6 +103,19 @@ describe("run-task-utils", () => {
       };
 
       expect(formatTaskLabel(task)).toBe("todo.md:12 [#3] Do thing");
+    });
+  });
+
+  describe("pluralize", () => {
+    it("returns singular form for count of 1", () => {
+      expect(pluralize(1, "task", "tasks")).toBe("task");
+    });
+
+    it("returns plural form for non-1 counts", () => {
+      expect(pluralize(0, "task", "tasks")).toBe("tasks");
+      expect(pluralize(2, "task", "tasks")).toBe("tasks");
+      expect(pluralize(-1, "task", "tasks")).toBe("tasks");
+      expect(pluralize(1.5, "task", "tasks")).toBe("tasks");
     });
   });
 

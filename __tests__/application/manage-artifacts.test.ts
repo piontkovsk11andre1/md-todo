@@ -84,7 +84,7 @@ describe("manage-artifacts", () => {
 
     const code = manageArtifacts({ clean: true, json: false, failed: true, open: "" });
 
-    expect(code).toBe(0);
+    expect(code).toBe(3);
     expect(artifactStore.removeFailed).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "info",
@@ -124,7 +124,7 @@ describe("manage-artifacts", () => {
 
     const code = manageArtifacts({ clean: false, json: false, failed: false, open: "" });
 
-    expect(code).toBe(0);
+    expect(code).toBe(3);
     expect(artifactStore.listSaved).toHaveBeenCalledWith("/workspace/.rundown");
     expect(events).toContainEqual({
       kind: "info",

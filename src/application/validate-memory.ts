@@ -3,6 +3,11 @@ import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import type { FileSystem } from "../domain/ports/file-system.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { PathOperationsPort } from "../domain/ports/path-operations-port.js";
+import {
+  EXIT_CODE_NO_WORK,
+  EXIT_CODE_SUCCESS,
+  EXIT_CODE_VERIFICATION_FAILURE,
+} from "../domain/exit-codes.js";
 import type {
   MemoryIssue,
   MemoryReaderPort,
@@ -64,7 +69,7 @@ export function createValidateMemory(
     const resolvedSources = await dependencies.sourceResolver.resolveSources(options.source);
     if (resolvedSources.length === 0) {
       emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", options.source) });
-      return 3;
+      return EXIT_CODE_NO_WORK;
     }
 
     const contexts = collectContexts(dependencies, resolvedSources);
@@ -108,7 +113,9 @@ export function createValidateMemory(
       emit({ kind: "warn", message: reports.length + " " + pluralize(reports.length, "source", "sources") + " with issues out of " + contexts.length + " checked." });
     }
 
-    return reports.length === 0 ? 0 : 1;
+    return reports.length === 0
+      ? EXIT_CODE_SUCCESS
+      : EXIT_CODE_VERIFICATION_FAILURE;
   };
 }
 
@@ -513,8 +520,15 @@ function writeMemoryIndexAtomically(
       if (dependencies.fileSystem.exists(tempPath)) {
         dependencies.fileSystem.rm(tempPath, { force: true });
       }
-    } catch {
-      // Best-effort temp cleanup only.
+    } catch (cleanupError) {
+      dependencies.output.emit({
+        kind: "warn",
+        message: "Failed to clean up temporary memory index file after write failure: "
+          + tempPath
+          + " ("
+          + String(cleanupError)
+          + ").",
+      });
     }
     throw error;
   }
