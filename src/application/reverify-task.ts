@@ -329,6 +329,7 @@ export function createReverifyTask(
         cliWorkerPattern: workerPattern,
         fallbackWorkerCommand: selectedRun.workerCommand,
         emit,
+        mode: "wait",
       });
       const effectiveWorkerCommand = resolvedWorker.workerCommand;
       const effectiveWorkerPattern = resolvedWorker.workerPattern;

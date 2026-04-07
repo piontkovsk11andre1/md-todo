@@ -390,8 +390,8 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      defaults: {
-        worker: ["opencode", "run"],
+      workers: {
+        default: ["opencode", "run"],
       },
     }, null, 2), "utf-8");
 
@@ -423,8 +423,8 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(
       path.join(workspace, ".rundown", "config.json"),
       JSON.stringify({
-        defaults: {
-          worker: ["node", workerScriptPath.replace(/\\/g, "/")],
+        workers: {
+          default: ["node", workerScriptPath.replace(/\\/g, "/")],
         },
       }, null, 2),
       "utf-8",
@@ -537,8 +537,8 @@ describe.sequential("CLI integration", () => {
     const markdownFile = path.join(workspace, "8. Do something.md");
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      defaults: {
-        worker: "opencode",
+      workers: {
+        default: "opencode",
       },
     }, null, 2), "utf-8");
 
@@ -961,16 +961,12 @@ describe.sequential("CLI integration", () => {
     );
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      defaults: {
-        worker: ["opencode", "run"],
+      workers: {
+        default: ["opencode", "run"],
       },
       profiles: {
-        legacy: {
-          workerArgs: ["--profile", "legacy-directive"],
-        },
-        modern: {
-          workerArgs: ["--profile", "modern-prefix"],
-        },
+        legacy: ["opencode", "run", "--profile", "legacy-directive"],
+        modern: ["opencode", "run", "--profile", "modern-prefix"],
       },
     }, null, 2), "utf-8");
 
@@ -997,16 +993,12 @@ describe.sequential("CLI integration", () => {
     );
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      defaults: {
-        worker: ["opencode", "run"],
+      workers: {
+        default: ["opencode", "run"],
       },
       profiles: {
-        legacy: {
-          workerArgs: ["--profile", "legacy-directive"],
-        },
-        modern: {
-          workerArgs: ["--profile", "modern-prefix"],
-        },
+        legacy: ["opencode", "run", "--profile", "legacy-directive"],
+        modern: ["opencode", "run", "--profile", "modern-prefix"],
       },
     }, null, 2), "utf-8");
 
@@ -1019,7 +1011,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(
       result.logs.some(
-        (line) => line.includes("would run verification with: opencode run --profile legacy-directive --profile modern-prefix"),
+        (line) => line.includes("would run verification with: opencode run --profile modern-prefix"),
       ),
     ).toBe(true);
   });
@@ -6697,8 +6689,8 @@ describe.sequential("CLI integration", () => {
     fs.writeFileSync(
       path.join(workspace, ".rundown", "config.json"),
       JSON.stringify({
-        defaults: {
-          worker: ["node", workerScriptPath.replace(/\\/g, "/")],
+        workers: {
+          default: ["node", workerScriptPath.replace(/\\/g, "/")],
         },
       }, null, 2),
       "utf-8",

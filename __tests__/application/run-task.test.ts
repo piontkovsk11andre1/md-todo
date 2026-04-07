@@ -87,14 +87,8 @@ describe("run-task orchestration", () => {
       gitClient: createGitClientMock(),
       workerConfig: {
         commands: {
-          run: {
-            worker: ["run-worker"],
-            workerArgs: ["--from-run"],
-          },
-          verify: {
-            worker: ["verify-worker"],
-            workerArgs: ["--from-verify"],
-          },
+          run: ["run-worker", "--from-run"],
+          verify: ["verify-worker", "--from-verify"],
         },
       },
     });
@@ -115,7 +109,7 @@ describe("run-task orchestration", () => {
     expect(dependencies.taskVerification.verify).toHaveBeenCalledTimes(1);
     expect(vi.mocked(dependencies.taskVerification.verify).mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       workerPattern: expect.objectContaining({
-        command: ["verify-worker", "--from-run", "--from-verify"],
+        command: ["verify-worker", "--from-verify"],
       }),
     }));
   });
@@ -201,14 +195,8 @@ describe("run-task orchestration", () => {
       gitClient: createGitClientMock(),
       workerConfig: {
         commands: {
-          run: {
-            worker: ["run-worker"],
-            workerArgs: ["--from-run"],
-          },
-          memory: {
-            worker: ["memory-worker"],
-            workerArgs: ["--from-memory"],
-          },
+          run: ["run-worker", "--from-run"],
+          memory: ["memory-worker", "--from-memory"],
         },
       },
     });
@@ -234,7 +222,7 @@ describe("run-task orchestration", () => {
     expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(1);
     expect(vi.mocked(dependencies.workerExecutor.runWorker).mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       workerPattern: expect.objectContaining({
-        command: ["memory-worker", "--from-run", "--from-memory"],
+        command: ["memory-worker", "--from-memory"],
       }),
     }));
   });

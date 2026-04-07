@@ -202,6 +202,7 @@ export function createDiscussTask(
       workerPattern,
       cliBlockTimeoutMs,
       verbose = false,
+      mode,
     } = options;
     const varsFilePath = resolveTemplateVarsFilePath(
       varsFileOption,
@@ -416,6 +417,7 @@ export function createDiscussTask(
         task: taskContext.task,
         cliWorkerPattern: workerPattern,
         emit,
+        mode,
       });
       const resolvedWorkerCommand = resolvedWorker.workerCommand;
       const resolvedWorkerPattern = resolvedWorker.workerPattern;

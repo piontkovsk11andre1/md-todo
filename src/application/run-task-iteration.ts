@@ -299,6 +299,7 @@ export async function runTaskIteration(params: {
     taskIntent: taskIntentDecision.intent,
     toolName: taskIntentDecision.toolName,
     emit,
+    mode: execution.mode,
   });
   const resolvedWorkerCommand = resolvedWorker.workerCommand;
   const resolvedWorkerPattern = resolvedWorker.workerPattern;

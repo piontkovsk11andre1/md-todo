@@ -1,13 +1,22 @@
 import type { SubItem } from "./parser.js";
+import type { ProcessRunMode } from "./ports/process-runner.js";
 
 /**
- * Partial worker settings that can be composed from defaults, commands, and profiles.
+ * A flat worker command expressed as a string array of executable tokens.
  */
-export interface WorkerProfile {
-  // Command tokens used to launch the worker process.
-  worker?: string[];
-  // Additional arguments appended during profile resolution.
-  workerArgs?: string[];
+export type WorkerCommand = string[];
+
+/**
+ * Worker entries in the `workers` configuration section.
+ */
+export interface WorkersConfig {
+  // Default worker command used for all non-TUI executions.
+  default?: WorkerCommand;
+  // Worker command used when executing in TUI mode.
+  tui?: WorkerCommand;
+  // Ordered list of fallback worker commands tried when the primary worker
+  // hits a usage-limit or connection error.
+  fallbacks?: WorkerCommand[];
 }
 
 /**
@@ -31,32 +40,22 @@ export const WORKER_CONFIG_COMMAND_NAMES = [
 export type WorkerConfigCommandName = typeof WORKER_CONFIG_COMMAND_NAMES[number] | `tools.${string}`;
 
 /**
- * Per-command worker profile overrides keyed by supported command name.
+ * Per-command worker overrides keyed by supported command name.
  */
 export type WorkerCommandProfiles = {
-  [K in WorkerConfigCommandName]?: WorkerProfile;
+  [K in WorkerConfigCommandName]?: WorkerCommand;
 };
 
 /**
  * Worker configuration loaded from user or project settings.
  */
 export interface WorkerConfig {
-  // Baseline profile applied first to all command executions.
-  defaults?: WorkerProfile;
+  // Named worker commands: default, tui, and fallback list.
+  workers?: WorkersConfig;
   // Per-command overrides keyed by command name.
   commands?: WorkerCommandProfiles;
   // Named reusable profiles referenced by directive or file metadata.
-  profiles?: Record<string, WorkerProfile>;
-}
-
-/**
- * Fully resolved worker command and argument set.
- */
-export interface ResolvedWorker {
-  // Final worker executable tokens after all overrides are applied.
-  worker: string[];
-  // Final argument list accumulated in merge order.
-  workerArgs: string[];
+  profiles?: Record<string, WorkerCommand>;
 }
 
 // Matches a sub-item like "profile: build" and captures the profile name.
@@ -104,10 +103,10 @@ export function extractProfileFromSubItems(subItems: SubItem[]): string | undefi
  *
  * @param config Worker configuration that may include named profiles.
  * @param profileName Name of the profile to resolve.
- * @returns The matching worker profile.
+ * @returns The matching worker command.
  * @throws Error When the requested profile does not exist.
  */
-function resolveNamedProfile(config: WorkerConfig, profileName: string): WorkerProfile {
+function resolveNamedProfile(config: WorkerConfig, profileName: string): WorkerCommand {
   const profile = config.profiles?.[profileName];
   if (!profile) {
     throw new Error(`Unknown worker profile: ${profileName}`);
@@ -117,29 +116,19 @@ function resolveNamedProfile(config: WorkerConfig, profileName: string): WorkerP
 }
 
 /**
- * Merges an override profile into a resolved worker snapshot.
- *
- * Worker executable tokens are replaced when explicitly provided by the override.
- * Worker arguments are always appended to preserve cumulative merge behavior.
- *
- * @param base Current resolved worker state.
- * @param override Profile values to apply.
- * @returns A new resolved worker object containing the merged result.
+ * Returns the override command when non-empty, otherwise falls back to the base.
  */
-function mergeWorkerProfile(base: ResolvedWorker, override: WorkerProfile): ResolvedWorker {
-  return {
-    worker: override.worker ? [...override.worker] : [...base.worker],
-    workerArgs: [...base.workerArgs, ...(override.workerArgs ?? [])],
-  };
+function pickCommand(base: WorkerCommand, override: WorkerCommand | undefined): WorkerCommand {
+  return override && override.length > 0 ? [...override] : [...base];
 }
 
 /**
- * Resolves the effective worker command from CLI, config defaults, command overrides,
+ * Resolves the effective worker command from CLI, config workers, command overrides,
  * file profile metadata, and directive profile metadata.
  *
  * Resolution order is deterministic:
  * 1) CLI worker (if provided) short-circuits all config.
- * 2) Config defaults.
+ * 2) Config workers.default or workers.tui (based on mode).
  * 3) Per-command override.
  * 4) Per-intent override (e.g. "verify" for verify-only tasks), when provided.
  * 5) File-level named profile.
@@ -153,7 +142,8 @@ function mergeWorkerProfile(base: ResolvedWorker, override: WorkerProfile): Reso
  * @param taskProfile Profile name derived from task-level inline metadata.
  * @param cliWorker Optional worker executable tokens passed via CLI.
  * @param intentCommandName Optional intent-based command key (e.g. "verify") applied after the per-command override.
- * @returns Resolved worker executable and argument list.
+ * @param mode Optional process run mode; when "tui", prefers workers.tui over workers.default.
+ * @returns Resolved worker command as a flat string array.
  */
 export function resolveWorkerConfig(
   config: WorkerConfig | undefined,
@@ -163,54 +153,43 @@ export function resolveWorkerConfig(
   taskProfile: string | undefined,
   cliWorker: string[] | undefined,
   intentCommandName?: WorkerConfigCommandName,
-): ResolvedWorker {
+  mode?: ProcessRunMode,
+): WorkerCommand {
   // CLI-provided worker executable takes absolute precedence.
   if (Array.isArray(cliWorker) && cliWorker.length > 0) {
-    return {
-      worker: [...cliWorker],
-      workerArgs: [],
-    };
+    return [...cliWorker];
   }
 
-  // Start from an empty resolved state and merge in order of precedence.
-  const resolved: ResolvedWorker = {
-    worker: [],
-    workerArgs: [],
-  };
+  // Select the base worker from config: prefer tui variant when in TUI mode.
+  const workers = config?.workers;
+  let resolved: WorkerCommand = mode === "tui" && workers?.tui && workers.tui.length > 0
+    ? [...workers.tui]
+    : workers?.default ? [...workers.default] : [];
 
-  const defaults = config?.defaults;
-  if (defaults) {
-    Object.assign(resolved, mergeWorkerProfile(resolved, defaults));
-  }
-
-  const commandOverrides = config?.commands?.[commandName];
-  if (commandOverrides) {
-    Object.assign(resolved, mergeWorkerProfile(resolved, commandOverrides));
-  }
+  const commandOverride = config?.commands?.[commandName];
+  resolved = pickCommand(resolved, commandOverride);
 
   if (intentCommandName && intentCommandName !== commandName) {
-    const intentCommandOverrides = config?.commands?.[intentCommandName];
-    if (intentCommandOverrides) {
-      Object.assign(resolved, mergeWorkerProfile(resolved, intentCommandOverrides));
-    }
+    const intentOverride = config?.commands?.[intentCommandName];
+    resolved = pickCommand(resolved, intentOverride);
   }
 
   const normalizedFileProfile = normalizeProfileName(fileProfile);
   if (normalizedFileProfile) {
     const profile = resolveNamedProfile(config ?? {}, normalizedFileProfile);
-    Object.assign(resolved, mergeWorkerProfile(resolved, profile));
+    resolved = pickCommand(resolved, profile);
   }
 
   const normalizedDirectiveProfile = normalizeProfileName(directiveProfile);
   if (normalizedDirectiveProfile) {
     const profile = resolveNamedProfile(config ?? {}, normalizedDirectiveProfile);
-    Object.assign(resolved, mergeWorkerProfile(resolved, profile));
+    resolved = pickCommand(resolved, profile);
   }
 
   const normalizedTaskProfile = normalizeProfileName(taskProfile);
   if (normalizedTaskProfile) {
     const profile = resolveNamedProfile(config ?? {}, normalizedTaskProfile);
-    Object.assign(resolved, mergeWorkerProfile(resolved, profile));
+    resolved = pickCommand(resolved, profile);
   }
 
   return resolved;

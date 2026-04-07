@@ -5,10 +5,11 @@ import {
   resolveWorkerConfig,
   type WorkerConfig,
   type WorkerConfigCommandName,
-  type WorkerProfile,
+  type WorkerCommand,
 } from "../domain/worker-config.js";
 import type { TaskIntent } from "../domain/task-intent.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import type { ProcessRunMode } from "../domain/ports/process-runner.js";
 
 /**
  * Input contract used to resolve the effective worker command for one invocation.
@@ -25,6 +26,7 @@ interface ResolveWorkerForInvocationInput {
   verbose?: boolean;
   taskIntent?: TaskIntent;
   toolName?: string;
+  mode?: ProcessRunMode;
 }
 
 interface ResolveWorkerPatternForInvocationInput {
@@ -39,6 +41,7 @@ interface ResolveWorkerPatternForInvocationInput {
   verbose?: boolean;
   taskIntent?: TaskIntent;
   toolName?: string;
+  mode?: ProcessRunMode;
 }
 
 interface ResolvedWorkerInvocation {
@@ -66,14 +69,10 @@ function normalizeProfileName(profileName: string | undefined): string | undefin
 }
 
 /**
- * Indicates whether a profile contributes any worker executable or argument values.
+ * Indicates whether a worker command has any tokens.
  */
-function hasWorkerProfileValues(profile: WorkerProfile | undefined): boolean {
-  if (!profile) {
-    return false;
-  }
-
-  return (profile.worker?.length ?? 0) > 0 || (profile.workerArgs?.length ?? 0) > 0;
+function hasWorkerCommandValues(command: WorkerCommand | undefined): boolean {
+  return (command?.length ?? 0) > 0;
 }
 
 /**
@@ -95,12 +94,16 @@ function describeConfigResolutionSource(input: ResolveWorkerForInvocationInput, 
     return `profile "${normalizedFrontmatterProfile}" via frontmatter`;
   }
 
-  if (hasWorkerProfileValues(input.workerConfig?.commands?.[input.commandName])) {
+  if (hasWorkerCommandValues(input.workerConfig?.commands?.[input.commandName])) {
     return `from config commands.${input.commandName}`;
   }
 
-  if (hasWorkerProfileValues(input.workerConfig?.defaults)) {
-    return "from config defaults";
+  if (input.mode === "tui" && hasWorkerCommandValues(input.workerConfig?.workers?.tui)) {
+    return "from config workers.tui";
+  }
+
+  if (hasWorkerCommandValues(input.workerConfig?.workers?.default)) {
+    return "from config workers.default";
   }
 
   return undefined;
@@ -139,7 +142,7 @@ export function resolveWorkerForInvocation(input: ResolveWorkerForInvocationInpu
     : undefined;
 
   // Resolve worker/profile configuration with CLI override precedence.
-  const resolvedWorker = resolveWorkerConfig(
+  const resolvedWorkerCommand = resolveWorkerConfig(
     input.workerConfig,
     input.commandName,
     frontmatterProfile,
@@ -148,8 +151,8 @@ export function resolveWorkerForInvocation(input: ResolveWorkerForInvocationInpu
       ?? (supportsInlineTaskProfile ? input.task?.taskProfile : undefined),
     hasCliWorkerCommand ? input.cliWorkerCommand : undefined,
     intentCommandName,
+    input.mode,
   );
-  const resolvedWorkerCommand = [...resolvedWorker.worker, ...resolvedWorker.workerArgs];
   if (resolvedWorkerCommand.length > 0) {
     // Emit source diagnostics only in verbose mode when CLI did not explicitly set the worker.
     if (input.verbose && !hasCliWorkerCommand && input.emit) {
@@ -208,6 +211,7 @@ export function resolveWorkerPatternForInvocation(
     verbose: input.verbose,
     taskIntent: input.taskIntent,
     toolName: input.toolName,
+    mode: input.mode,
   });
 
   if (resolvedWorkerCommand.length === 0) {

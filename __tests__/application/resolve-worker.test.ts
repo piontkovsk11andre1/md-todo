@@ -9,21 +9,15 @@ describe("resolve-worker", () => {
     const command = resolveWorkerForInvocation({
       commandName: "discuss",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          discuss: {
-            workerArgs: ["--base", "1"],
-          },
+          discuss: ["opencode", "discuss", "--base", "1"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          complex: ["opencode", "run", "--model", "opus-4.6"],
+          fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       },
       source: "---\nprofile: complex\n---\n\n- [ ] discuss item\n",
@@ -38,10 +32,6 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--base",
-      "1",
-      "--model",
-      "opus-4.6",
       "--model",
       "gpt-5.3-codex",
     ]);
@@ -55,8 +45,8 @@ describe("resolve-worker", () => {
     resolveWorkerForInvocation({
       commandName: "discuss",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
       },
       source: "- [ ] discuss item\n",
@@ -66,7 +56,7 @@ describe("resolve-worker", () => {
     });
 
     expect(events.some((event) => event.kind === "info"
-      && event.message === "opencode run (from config defaults)")).toBe(true);
+      && event.message === "opencode run (from config workers.default)")).toBe(true);
   });
 
   it("does not emit config worker resolution feedback when CLI worker is provided", () => {
@@ -75,8 +65,8 @@ describe("resolve-worker", () => {
     const command = resolveWorkerForInvocation({
       commandName: "plan",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
       },
       source: "- [ ] draft plan\n",
@@ -104,18 +94,12 @@ describe("resolve-worker", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
         commands: {
-          run: {
-            workerArgs: ["--effort", "medium"],
-          },
-          "tools.post-on-gitea": {
-            worker: ["opencode", "run"],
-            workerArgs: ["--model", "gpt-5.3-mini", "--no-approval"],
-          },
+          run: ["opencode", "run", "--effort", "medium"],
+          "tools.post-on-gitea": ["opencode", "run", "--model", "gpt-5.3-mini", "--no-approval"],
         },
       },
       source: "- [ ] post-on-gitea: payload\n",
@@ -128,41 +112,26 @@ describe("resolve-worker", () => {
       "opencode",
       "run",
       "--model",
-      "gpt-5.3-codex",
-      "--effort",
-      "medium",
-      "--model",
       "gpt-5.3-mini",
       "--no-approval",
     ]);
   });
 
-  it("applies tool-expansion profile precedence from defaults to task inline", () => {
+  it("applies tool-expansion profile precedence — last override wins", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          run: {
-            workerArgs: ["--from-commands-run", "1"],
-          },
-          "tools.post-on-gitea": {
-            workerArgs: ["--from-commands-tools", "1"],
-          },
+          run: ["opencode", "run", "--from-commands-run", "1"],
+          "tools.post-on-gitea": ["opencode", "run", "--from-commands-tools", "1"],
         },
         profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          fileProfile: ["opencode", "run", "--from-frontmatter", "1"],
+          directiveProfile: ["opencode", "run", "--from-directive", "1"],
+          taskProfile: ["opencode", "run", "--from-task-inline", "1"],
         },
       },
       source: "---\nprofile: fileProfile\n---\n\n- [ ] post-on-gitea: payload\n",
@@ -179,54 +148,27 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
-      "--from-commands-run",
-      "1",
-      "--from-commands-tools",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
       "--from-task-inline",
       "1",
     ]);
   });
 
-  it("uses CLI worker for tool-expansion tasks over defaults, commands.tools, and profiles", () => {
+  it("uses CLI worker for tool-expansion tasks over all config sources", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          run: {
-            workerArgs: ["--from-commands-run", "1"],
-          },
-          "tools.post-on-gitea": {
-            workerArgs: ["--from-commands-tools", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          "tools.post-on-gitea": ["opencode", "run", "--from-commands-tools", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] post-on-gitea: payload\n",
+      source: "- [ ] post-on-gitea: payload\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: ["custom", "worker", "--model", "gpt-5.3-codex"],
       taskIntent: "tool-expansion",
@@ -240,16 +182,12 @@ describe("resolve-worker", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
         profiles: {
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-mini"],
-          },
-          slow: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          fast: ["opencode", "run", "--model", "gpt-5.3-mini"],
+          slow: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       },
       source: "- [ ] verify: release checklist\n",
@@ -266,35 +204,24 @@ describe("resolve-worker", () => {
       "opencode",
       "run",
       "--model",
-      "gpt-5.3-codex",
-      "--model",
       "gpt-5.3-mini",
     ]);
   });
 
-  it("applies verify-only profile precedence from defaults to task inline", () => {
+  it("applies verify-only profile precedence — last override wins", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          verify: {
-            workerArgs: ["--from-commands-verify", "1"],
-          },
+          verify: ["opencode", "run", "--from-commands-verify", "1"],
         },
         profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          fileProfile: ["opencode", "run", "--from-frontmatter", "1"],
+          directiveProfile: ["opencode", "run", "--from-directive", "1"],
+          taskProfile: ["opencode", "run", "--from-task-inline", "1"],
         },
       },
       source: "---\nprofile: fileProfile\n---\n\n- [ ] verify: release checklist\n",
@@ -310,49 +237,27 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
-      "--from-commands-verify",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
       "--from-task-inline",
       "1",
     ]);
   });
 
-  it("uses CLI worker for verify-only tasks over defaults, commands.verify, and profiles", () => {
+  it("uses CLI worker for verify-only tasks over all config sources", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          verify: {
-            workerArgs: ["--from-commands-verify", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          verify: ["opencode", "run", "--from-commands-verify", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] verify: release checklist\n",
+      source: "- [ ] verify: release checklist\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: ["custom", "worker", "--model", "gpt-5.3-codex"],
       taskIntent: "verify-only",
@@ -361,29 +266,20 @@ describe("resolve-worker", () => {
     expect(command).toEqual(["custom", "worker", "--model", "gpt-5.3-codex"]);
   });
 
-  it("applies memory-capture profile precedence from defaults to task inline", () => {
+  it("applies memory-capture profile precedence — last override wins", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          memory: {
-            workerArgs: ["--from-commands-memory", "1"],
-          },
+          memory: ["opencode", "run", "--from-commands-memory", "1"],
         },
         profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          fileProfile: ["opencode", "run", "--from-frontmatter", "1"],
+          directiveProfile: ["opencode", "run", "--from-directive", "1"],
+          taskProfile: ["opencode", "run", "--from-task-inline", "1"],
         },
       },
       source: "---\nprofile: fileProfile\n---\n\n- [ ] memory: capture release context\n",
@@ -399,49 +295,27 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
-      "--from-commands-memory",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
       "--from-task-inline",
       "1",
     ]);
   });
 
-  it("uses CLI worker for memory-capture tasks over defaults, commands.memory, and profiles", () => {
+  it("uses CLI worker for memory-capture tasks over all config sources", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          memory: {
-            workerArgs: ["--from-commands-memory", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          memory: ["opencode", "run", "--from-commands-memory", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] memory: capture release context\n",
+      source: "- [ ] memory: capture release context\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: ["custom", "worker", "--model", "gpt-5.3-codex"],
       taskIntent: "memory-capture",
@@ -450,36 +324,22 @@ describe("resolve-worker", () => {
     expect(command).toEqual(["custom", "worker", "--model", "gpt-5.3-codex"]);
   });
 
-  it("keeps verify-only tasks on existing run-worker resolution when commands.verify is not configured", () => {
+  it("keeps verify-only tasks on run command override when commands.verify is not configured", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          run: {
-            workerArgs: ["--from-commands-run", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          run: ["opencode", "run", "--from-commands-run", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] verify: release checklist\n",
+      source: "- [ ] verify: release checklist\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: [],
       taskIntent: "verify-only",
@@ -488,49 +348,27 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
       "--from-commands-run",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
-      "--from-task-inline",
       "1",
     ]);
   });
 
-  it("keeps memory-capture tasks on existing run-worker resolution when commands.memory is not configured", () => {
+  it("keeps memory-capture tasks on run command override when commands.memory is not configured", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          run: {
-            workerArgs: ["--from-commands-run", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          run: ["opencode", "run", "--from-commands-run", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] memory: capture release context\n",
+      source: "- [ ] memory: capture release context\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: [],
       taskIntent: "memory-capture",
@@ -539,49 +377,27 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
       "--from-commands-run",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
-      "--from-task-inline",
       "1",
     ]);
   });
 
-  it("keeps tool-expansion tasks on existing run-worker resolution when commands.tools.{toolName} is not configured", () => {
+  it("keeps tool-expansion tasks on run command override when commands.tools.{toolName} is not configured", () => {
     const command = resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--from-defaults", "1"],
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
         },
         commands: {
-          run: {
-            workerArgs: ["--from-commands-run", "1"],
-          },
-        },
-        profiles: {
-          fileProfile: {
-            workerArgs: ["--from-frontmatter", "1"],
-          },
-          directiveProfile: {
-            workerArgs: ["--from-directive", "1"],
-          },
-          taskProfile: {
-            workerArgs: ["--from-task-inline", "1"],
-          },
+          run: ["opencode", "run", "--from-commands-run", "1"],
         },
       },
-      source: "---\nprofile: fileProfile\n---\n\n- [ ] post-on-gitea: payload\n",
+      source: "- [ ] post-on-gitea: payload\n",
       task: {
-        directiveProfile: "directiveProfile",
-        taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        directiveProfile: undefined,
+        taskProfile: undefined,
+        subItems: [],
       },
       cliWorkerCommand: [],
       taskIntent: "tool-expansion",
@@ -591,15 +407,7 @@ describe("resolve-worker", () => {
     expect(command).toEqual([
       "opencode",
       "run",
-      "--from-defaults",
-      "1",
       "--from-commands-run",
-      "1",
-      "--from-frontmatter",
-      "1",
-      "--from-directive",
-      "1",
-      "--from-task-inline",
       "1",
     ]);
   });
@@ -610,8 +418,8 @@ describe("resolve-worker", () => {
     resolveWorkerForInvocation({
       commandName: "run",
       workerConfig: {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
       },
       source: "- [ ] memory: release context\n",
@@ -624,5 +432,27 @@ describe("resolve-worker", () => {
     });
 
     expect(events.some((event) => event.kind === "warn")).toBe(false);
+  });
+
+  it("emits workers.tui source when mode is tui and verbose", () => {
+    const events: ApplicationOutputEvent[] = [];
+
+    resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+          tui: ["opencode", "$bootstrap"],
+        },
+      },
+      source: "- [ ] some task\n",
+      cliWorkerCommand: [],
+      emit: (event) => events.push(event),
+      verbose: true,
+      mode: "tui",
+    });
+
+    expect(events.some((event) => event.kind === "info"
+      && event.message === "opencode $bootstrap (from config workers.tui)")).toBe(true);
   });
 });

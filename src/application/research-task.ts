@@ -277,6 +277,7 @@ export function createResearchTask(
           source: sourceDocument,
           cliWorkerPattern: workerPattern,
           emit,
+          mode,
         });
         const resolvedWorkerCommand = resolvedWorker.workerCommand;
 
@@ -479,6 +480,7 @@ export function createResearchTask(
           source: sourceDocument,
           cliWorkerPattern: workerPattern,
           emit,
+          mode,
         });
         const resolvedWorkerCommand = resolvedWorker.workerCommand;
         const resolvedWorkerPattern = resolvedWorker.workerPattern;

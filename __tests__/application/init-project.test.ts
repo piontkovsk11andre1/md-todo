@@ -62,16 +62,16 @@ describe("init-project", () => {
     );
   });
 
-  it("writes worker into config.json when --worker is provided", async () => {
+  it("writes worker into config.json when --default-worker is provided", async () => {
     const { dependencies, fileSystem } = createDependencies();
     const initProject = createInitProject(dependencies);
 
-    const code = await initProject({ worker: "opencode" });
+    const code = await initProject({ defaultWorker: "opencode" });
 
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/.rundown/config.json",
-      JSON.stringify({ defaults: { worker: ["opencode"] } }, null, 2) + "\n",
+      JSON.stringify({ workers: { default: ["opencode"] } }, null, 2) + "\n",
     );
   });
 

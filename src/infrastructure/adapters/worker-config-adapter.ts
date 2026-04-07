@@ -3,10 +3,11 @@ import path from "node:path";
 import type { WorkerConfigPort } from "../../domain/ports/worker-config-port.js";
 import {
   WORKER_CONFIG_COMMAND_NAMES,
+  type WorkerCommand,
   type WorkerCommandProfiles,
   type WorkerConfig,
   type WorkerConfigCommandName,
-  type WorkerProfile,
+  type WorkersConfig,
 } from "../../domain/worker-config.js";
 
 const WORKER_CONFIG_FILE_NAME = "config.json";
@@ -26,47 +27,58 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /**
- * Validates and normalizes a worker profile object from parsed JSON input.
- *
- * The function enforces shape expectations and returns cloned arrays so callers
- * receive immutable snapshots of the parsed configuration sections.
+ * Validates and normalizes a worker command (flat string array) from parsed JSON input.
  */
-function validateWorkerProfile(value: unknown, keyPath: string): WorkerProfile {
-  if (!isPlainObject(value)) {
-    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+function validateWorkerCommand(value: unknown, keyPath: string): WorkerCommand {
+  if (!isStringArray(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected string array.`);
   }
 
-  // Validate the optional worker executable command parts.
-  const worker = value.worker;
-  if (worker !== undefined && !isStringArray(worker)) {
-    throw new Error(`Invalid worker config at ${keyPath}.worker: expected string array.`);
-  }
-
-  // Validate the optional worker argument list.
-  const workerArgs = value.workerArgs;
-  if (workerArgs !== undefined && !isStringArray(workerArgs)) {
-    throw new Error(`Invalid worker config at ${keyPath}.workerArgs: expected string array.`);
-  }
-
-  // Clone arrays to avoid returning references to raw parsed objects.
-  return {
-    worker: worker === undefined ? undefined : [...worker],
-    workerArgs: workerArgs === undefined ? undefined : [...workerArgs],
-  };
+  return [...value];
 }
 
 /**
- * Validates a map of worker profiles keyed by command or profile name.
+ * Validates the `workers` section: { default?, tui?, fallbacks? }.
  */
-function validateProfileMap(value: unknown, keyPath: string): Record<string, WorkerProfile> {
+function validateWorkers(value: unknown, keyPath: string): WorkersConfig {
   if (!isPlainObject(value)) {
     throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
   }
 
-  const result: Record<string, WorkerProfile> = {};
-  // Validate each nested profile with a fully qualified path for clear errors.
-  for (const [key, profile] of Object.entries(value)) {
-    result[key] = validateWorkerProfile(profile, `${keyPath}.${key}`);
+  const result: WorkersConfig = {};
+
+  if (value.default !== undefined) {
+    result.default = validateWorkerCommand(value.default, `${keyPath}.default`);
+  }
+
+  if (value.tui !== undefined) {
+    result.tui = validateWorkerCommand(value.tui, `${keyPath}.tui`);
+  }
+
+  if (value.fallbacks !== undefined) {
+    if (!Array.isArray(value.fallbacks)) {
+      throw new Error(`Invalid worker config at ${keyPath}.fallbacks: expected array.`);
+    }
+
+    result.fallbacks = (value.fallbacks as unknown[]).map((entry, index) =>
+      validateWorkerCommand(entry, `${keyPath}.fallbacks[${index}]`),
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Validates a map of worker commands keyed by profile name.
+ */
+function validateProfileMap(value: unknown, keyPath: string): Record<string, WorkerCommand> {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+  }
+
+  const result: Record<string, WorkerCommand> = {};
+  for (const [key, command] of Object.entries(value)) {
+    result[key] = validateWorkerCommand(command, `${keyPath}.${key}`);
   }
 
   return result;
@@ -90,14 +102,14 @@ function validateCommandProfiles(value: unknown, keyPath: string): WorkerCommand
   const allowedNames = new Set<string>(WORKER_CONFIG_COMMAND_NAMES);
   const result: WorkerCommandProfiles = {};
 
-  for (const [key, profile] of Object.entries(value)) {
+  for (const [key, command] of Object.entries(value)) {
     if (!allowedNames.has(key) && !isToolsKey(key)) {
       throw new Error(
         `Invalid worker config at ${keyPath}.${key}: unknown command. Allowed: ${WORKER_CONFIG_COMMAND_NAMES.join(", ")}, or tools.{toolName}.`,
       );
     }
 
-    result[key as WorkerConfigCommandName] = validateWorkerProfile(profile, `${keyPath}.${key}`);
+    result[key as WorkerConfigCommandName] = validateWorkerCommand(command, `${keyPath}.${key}`);
   }
 
   return result;
@@ -111,12 +123,12 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
     throw new Error("Invalid worker config: expected top-level JSON object.");
   }
 
-  const defaults = value.defaults;
+  const workers = value.workers;
   const commands = value.commands;
   const profiles = value.profiles;
 
   return {
-    defaults: defaults === undefined ? undefined : validateWorkerProfile(defaults, "defaults"),
+    workers: workers === undefined ? undefined : validateWorkers(workers, "workers"),
     commands: commands === undefined ? undefined : validateCommandProfiles(commands, "commands"),
     profiles: profiles === undefined ? undefined : validateProfileMap(profiles, "profiles"),
   };

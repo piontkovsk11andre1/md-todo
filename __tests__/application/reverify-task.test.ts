@@ -362,9 +362,8 @@ describe("reverify-task", () => {
       runs: [completedRun],
     });
     vi.mocked(workerConfigPort.load).mockReturnValue({
-      defaults: {
-        worker: ["default", "worker"],
-        workerArgs: ["--model", "gpt-5.3-codex"],
+      workers: {
+        default: ["default", "worker", "--model", "gpt-5.3-codex"],
       },
     });
 
@@ -407,15 +406,11 @@ describe("reverify-task", () => {
       runs: [completedRun],
     });
     vi.mocked(workerConfigPort.load).mockReturnValue({
-      defaults: {
-        worker: ["default", "worker"],
-        workerArgs: ["--speed", "slow"],
+      workers: {
+        default: ["default", "worker", "--speed", "slow"],
       },
       commands: {
-        reverify: {
-          worker: ["reverify", "worker"],
-          workerArgs: ["--speed", "fast"],
-        },
+        reverify: ["reverify", "worker", "--speed", "fast"],
       },
     });
 
@@ -425,7 +420,7 @@ describe("reverify-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       workerPattern: expect.objectContaining({
-        command: ["reverify", "worker", "--speed", "slow", "--speed", "fast"],
+        command: ["reverify", "worker", "--speed", "fast"],
       }),
     }));
   });
@@ -458,13 +453,11 @@ describe("reverify-task", () => {
       runs: [completedRun],
     });
     vi.mocked(workerConfigPort.load).mockReturnValue({
-      defaults: {
-        worker: ["default", "worker"],
+      workers: {
+        default: ["default", "worker"],
       },
       commands: {
-        reverify: {
-          worker: ["reverify", "worker"],
-        },
+        reverify: ["reverify", "worker"],
       },
     });
 
@@ -510,18 +503,14 @@ describe("reverify-task", () => {
       runs: [completedRun],
     });
     vi.mocked(workerConfigPort.load).mockReturnValue({
-      defaults: {
-        worker: ["opencode", "run"],
+      workers: {
+        default: ["opencode", "run"],
       },
       commands: {
-        reverify: {
-          workerArgs: ["--base", "1"],
-        },
+        reverify: ["opencode", "run", "--base", "1"],
       },
       profiles: {
-        complex: {
-          workerArgs: ["--model", "opus-4.6"],
-        },
+        complex: ["opencode", "run", "--model", "opus-4.6"],
       },
     });
 
@@ -531,7 +520,7 @@ describe("reverify-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(taskVerification.verify)).toHaveBeenCalledWith(expect.objectContaining({
       workerPattern: expect.objectContaining({
-        command: ["opencode", "run", "--base", "1", "--model", "opus-4.6"],
+        command: ["opencode", "run", "--model", "opus-4.6"],
       }),
     }));
   });

@@ -6,12 +6,11 @@ import {
 } from "../../src/domain/worker-config.js";
 
 describe("resolveWorkerConfig", () => {
-  it("resolves defaults only", () => {
+  it("resolves workers.default only", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       },
       "run",
@@ -21,24 +20,17 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "run"],
-      workerArgs: ["--model", "gpt-5.3-codex"],
-    });
+    expect(resolved).toEqual(["opencode", "run", "--model", "gpt-5.3-codex"]);
   });
 
-  it("applies per-command overrides", () => {
+  it("applies per-command override replacing default", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          plan: {
-            worker: ["opencode", "plan"],
-            workerArgs: ["--effort", "high"],
-          },
+          plan: ["opencode", "plan", "--effort", "high"],
         },
       },
       "plan",
@@ -48,24 +40,37 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "plan"],
-      workerArgs: ["--model", "gpt-5.3-codex", "--effort", "high"],
-    });
+    expect(resolved).toEqual(["opencode", "plan", "--effort", "high"]);
+  });
+
+  it("keeps default when command override is empty", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run"],
+        },
+        commands: {
+          plan: [],
+        },
+      },
+      "plan",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(resolved).toEqual(["opencode", "run"]);
   });
 
   it("applies per-command overrides for research", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          research: {
-            worker: ["opencode", "run"],
-            workerArgs: ["--model", "opus-4.6"],
-          },
+          research: ["opencode", "run", "--model", "opus-4.6"],
         },
       },
       "research",
@@ -75,22 +80,17 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "run"],
-      workerArgs: ["--model", "gpt-5.3-codex", "--model", "opus-4.6"],
-    });
+    expect(resolved).toEqual(["opencode", "run", "--model", "opus-4.6"]);
   });
 
   it("applies file-level frontmatter profile", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
+          complex: ["opencode", "run", "--model", "opus-4.6"],
         },
       },
       "run",
@@ -100,25 +100,18 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "run"],
-      workerArgs: ["--model", "opus-4.6"],
-    });
+    expect(resolved).toEqual(["opencode", "run", "--model", "opus-4.6"]);
   });
 
-  it("applies directive profile and overrides file profile", () => {
+  it("applies directive profile overriding file profile", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          complex: ["opencode", "run", "--model", "opus-4.6"],
+          fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       },
       "run",
@@ -128,28 +121,19 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "run"],
-      workerArgs: ["--model", "opus-4.6", "--model", "gpt-5.3-codex"],
-    });
+    expect(resolved).toEqual(["opencode", "run", "--model", "gpt-5.3-codex"]);
   });
 
   it("applies task profile after directive profile", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          slow: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-mini"],
-          },
+          complex: ["opencode", "run", "--model", "opus-4.6"],
+          slow: ["opencode", "run", "--model", "gpt-5.3-codex"],
+          fast: ["opencode", "run", "--model", "gpt-5.3-mini"],
         },
       },
       "run",
@@ -159,29 +143,20 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "run"],
-      workerArgs: ["--model", "opus-4.6", "--model", "gpt-5.3-codex", "--model", "gpt-5.3-mini"],
-    });
+    expect(resolved).toEqual(["opencode", "run", "--model", "gpt-5.3-mini"]);
   });
 
   it("uses CLI worker over all other sources", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          run: {
-            worker: ["opencode", "plan"],
-            workerArgs: ["--effort", "high"],
-          },
+          run: ["opencode", "plan", "--effort", "high"],
         },
         profiles: {
-          fast: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
+          fast: ["opencode", "run", "--model", "opus-4.6"],
         },
       },
       "run",
@@ -191,23 +166,18 @@ describe("resolveWorkerConfig", () => {
       ["custom-worker", "execute"],
     );
 
-    expect(resolved).toEqual({
-      worker: ["custom-worker", "execute"],
-      workerArgs: [],
-    });
+    expect(resolved).toEqual(["custom-worker", "execute"]);
   });
 
   it("throws when referenced profile does not exist", () => {
     expect(() =>
       resolveWorkerConfig(
         {
-          defaults: {
-            worker: ["opencode", "run"],
+          workers: {
+            default: ["opencode", "run"],
           },
           profiles: {
-            fast: {
-              workerArgs: ["--model", "gpt-5.3-codex"],
-            },
+            fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
           },
         },
         "run",
@@ -219,68 +189,22 @@ describe("resolveWorkerConfig", () => {
     ).toThrow("Unknown worker profile: missing");
   });
 
-  it("returns empty worker and args for empty config", () => {
-    expect(resolveWorkerConfig(undefined, "run", undefined, undefined, undefined, undefined)).toEqual({
-      worker: [],
-      workerArgs: [],
-    });
+  it("returns empty array for empty config", () => {
+    expect(resolveWorkerConfig(undefined, "run", undefined, undefined, undefined, undefined)).toEqual([]);
   });
 
-  it("appends workerArgs from each layer instead of replacing", () => {
+  it("last override wins in cascade", () => {
     const resolved = resolveWorkerConfig(
       {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--base", "1"],
+        workers: {
+          default: ["opencode", "run"],
         },
         commands: {
-          run: {
-            workerArgs: ["--command", "2"],
-          },
+          discuss: ["opencode", "discuss", "--command", "2"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--profile", "3"],
-          },
-        },
-      },
-      "run",
-      "complex",
-      undefined,
-      undefined,
-      undefined,
-    );
-
-    expect(resolved.workerArgs).toEqual([
-      "--base",
-      "1",
-      "--command",
-      "2",
-      "--profile",
-      "3",
-    ]);
-  });
-
-  it("combines multiple cascade layers in order", () => {
-    const resolved = resolveWorkerConfig(
-      {
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--default", "1"],
-        },
-        commands: {
-          discuss: {
-            worker: ["opencode", "discuss"],
-            workerArgs: ["--command", "2"],
-          },
-        },
-        profiles: {
-          complex: {
-            workerArgs: ["--file", "3"],
-          },
-          fast: {
-            workerArgs: ["--directive", "4"],
-          },
+          complex: ["claude", "-p", "--file", "3"],
+          fast: ["aider", "--directive", "4"],
         },
       },
       "discuss",
@@ -290,10 +214,111 @@ describe("resolveWorkerConfig", () => {
       undefined,
     );
 
-    expect(resolved).toEqual({
-      worker: ["opencode", "discuss"],
-      workerArgs: ["--default", "1", "--command", "2", "--file", "3", "--directive", "4"],
-    });
+    expect(resolved).toEqual(["aider", "--directive", "4"]);
+  });
+
+  it("uses workers.tui when mode is tui", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+          tui: ["opencode", "$bootstrap"],
+        },
+      },
+      "run",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "tui",
+    );
+
+    expect(resolved).toEqual(["opencode", "$bootstrap"]);
+  });
+
+  it("falls back to workers.default when mode is tui but tui is not configured", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+        },
+      },
+      "run",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "tui",
+    );
+
+    expect(resolved).toEqual(["opencode", "run", "$bootstrap"]);
+  });
+
+  it("uses workers.default when mode is wait", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+          tui: ["opencode", "$bootstrap"],
+        },
+      },
+      "run",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "wait",
+    );
+
+    expect(resolved).toEqual(["opencode", "run", "$bootstrap"]);
+  });
+
+  it("per-command override replaces tui base when mode is tui", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+          tui: ["opencode", "$bootstrap"],
+        },
+        commands: {
+          discuss: ["claude", "-p", "$bootstrap"],
+        },
+      },
+      "discuss",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "tui",
+    );
+
+    expect(resolved).toEqual(["claude", "-p", "$bootstrap"]);
+  });
+
+  it("applies intent-based command override", () => {
+    const resolved = resolveWorkerConfig(
+      {
+        workers: {
+          default: ["opencode", "run"],
+        },
+        commands: {
+          run: ["opencode", "run", "--effort", "medium"],
+          verify: ["claude", "-p", "$bootstrap"],
+        },
+      },
+      "run",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "verify",
+    );
+
+    expect(resolved).toEqual(["claude", "-p", "$bootstrap"]);
   });
 });
 

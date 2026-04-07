@@ -238,6 +238,7 @@ export function createPlanTask(
         source: documentSource,
         cliWorkerPattern: workerPattern,
         emit,
+        mode,
       });
       const resolvedWorkerCommand = resolvedWorker.workerCommand;
       const resolvedWorkerPattern = resolvedWorker.workerPattern;

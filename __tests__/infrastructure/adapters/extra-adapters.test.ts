@@ -56,13 +56,13 @@ describe("extra infrastructure adapters", () => {
 
     try {
       const config = {
-        defaults: { worker: ["opencode", "run"] },
+        workers: { default: ["opencode", "run"] },
         commands: {
-          plan: { workerArgs: ["--model", "opus-4.6"] },
-          research: { workerArgs: ["--model", "opus-4.6"] },
+          plan: ["opencode", "run", "--model", "opus-4.6"],
+          research: ["opencode", "run", "--model", "opus-4.6"],
         },
         profiles: {
-          fast: { workerArgs: ["--model", "gpt-5.3-codex"] },
+          fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       };
       fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify(config), "utf-8");
@@ -93,12 +93,12 @@ describe("extra infrastructure adapters", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-worker-config-"));
 
     try {
-      fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ defaults: { worker: "opencode" } }), "utf-8");
+      fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify({ workers: { default: "opencode" } }), "utf-8");
 
       const adapter = createWorkerConfigAdapter();
 
       expect(() => adapter.load(tempDir)).toThrowError(/Invalid worker config/);
-      expect(() => adapter.load(tempDir)).toThrowError(/defaults\.worker/);
+      expect(() => adapter.load(tempDir)).toThrowError(/workers\.default/);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

@@ -18,7 +18,8 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { PathOperationsPort } from "../domain/ports/path-operations-port.js";
 
 export interface InitProjectOptions {
-  worker?: string;
+  defaultWorker?: string;
+  tuiWorker?: string;
   gitignore?: boolean;
 }
 
@@ -109,9 +110,15 @@ export function createInitProject(
     write("trace.md", DEFAULT_TRACE_TEMPLATE);
     write("vars.json", DEFAULT_VARS_FILE_CONTENT);
 
-    // Generate config content: embed worker when provided, otherwise use default.
-    const configContent = options.worker
-      ? JSON.stringify({ defaults: { worker: [options.worker] } }, null, 2) + "\n"
+    // Generate config content: embed worker(s) when provided, otherwise use default.
+    const hasWorkerOptions = options.defaultWorker || options.tuiWorker;
+    const configContent = hasWorkerOptions
+      ? JSON.stringify({
+        workers: {
+          ...(options.defaultWorker ? { default: options.defaultWorker.split(/\s+/) } : {}),
+          ...(options.tuiWorker ? { tui: options.tuiWorker.split(/\s+/) } : {}),
+        },
+      }, null, 2) + "\n"
       : DEFAULT_CONFIG_CONTENT;
     write("config.json", configContent);
 

@@ -35,14 +35,11 @@ describe("createWorkerConfigAdapter", () => {
     writeConfig(
       configDir,
       JSON.stringify({
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
         profiles: {
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       }),
     );
@@ -51,14 +48,11 @@ describe("createWorkerConfigAdapter", () => {
     const loaded = adapter.load(configDir);
 
     expect(loaded).toEqual({
-      defaults: {
-        worker: ["opencode", "run"],
-        workerArgs: ["--model", "gpt-5.3-codex"],
+      workers: {
+        default: ["opencode", "run", "--model", "gpt-5.3-codex"],
       },
       profiles: {
-        fast: {
-          workerArgs: ["--model", "gpt-5.3-codex"],
-        },
+        fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
       },
     });
   });
@@ -87,8 +81,8 @@ describe("createWorkerConfigAdapter", () => {
     const configPath = writeConfig(
       configDir,
       JSON.stringify({
-        defaults: {
-          worker: "opencode run",
+        workers: {
+          default: "opencode run",
         },
       }),
     );
@@ -96,17 +90,17 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(() => adapter.load(configDir)).toThrow(
-      `Invalid worker config at \"${configPath}\": Invalid worker config at defaults.worker: expected string array.`,
+      `Invalid worker config at \"${configPath}\": Invalid worker config at workers.default: expected string array.`,
     );
   });
 
-  it("loads minimal config with defaults only", () => {
+  it("loads minimal config with workers.default only", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
       configDir,
       JSON.stringify({
-        defaults: {
-          worker: ["opencode", "run"],
+        workers: {
+          default: ["opencode", "run"],
         },
       }),
     );
@@ -114,22 +108,26 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(adapter.load(configDir)).toEqual({
-      defaults: {
-        worker: ["opencode", "run"],
-        workerArgs: undefined,
+      workers: {
+        default: ["opencode", "run"],
       },
       commands: undefined,
       profiles: undefined,
     });
   });
 
-  it("accepts config with defaults but no worker field", () => {
+  it("loads config with workers.tui and workers.fallbacks", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
       configDir,
       JSON.stringify({
-        defaults: {
-          workerArgs: ["--model", "gpt-5.3-codex"],
+        workers: {
+          default: ["opencode", "run", "$bootstrap"],
+          tui: ["opencode", "$bootstrap"],
+          fallbacks: [
+            ["claude", "-p", "$bootstrap"],
+            ["aider", "--message-file", "$file"],
+          ],
         },
       }),
     );
@@ -137,43 +135,35 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(adapter.load(configDir)).toEqual({
-      defaults: {
-        worker: undefined,
-        workerArgs: ["--model", "gpt-5.3-codex"],
+      workers: {
+        default: ["opencode", "run", "$bootstrap"],
+        tui: ["opencode", "$bootstrap"],
+        fallbacks: [
+          ["claude", "-p", "$bootstrap"],
+          ["aider", "--message-file", "$file"],
+        ],
       },
       commands: undefined,
       profiles: undefined,
     });
   });
 
-  it("loads full config with defaults, commands, and profiles", () => {
+  it("loads full config with workers, commands, and profiles", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
       configDir,
       JSON.stringify({
-        defaults: {
-          worker: ["opencode", "run"],
-          workerArgs: ["--color", "always"],
+        workers: {
+          default: ["opencode", "run", "--color", "always"],
         },
         commands: {
-          plan: {
-            worker: ["opencode", "run"],
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          research: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          discuss: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          plan: ["opencode", "run", "--model", "opus-4.6"],
+          research: ["opencode", "run", "--model", "opus-4.6"],
+          discuss: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
         profiles: {
-          complex: {
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          fast: {
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
+          complex: ["opencode", "run", "--model", "opus-4.6"],
+          fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
       }),
     );
@@ -181,33 +171,17 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(adapter.load(configDir)).toEqual({
-      defaults: {
-        worker: ["opencode", "run"],
-        workerArgs: ["--color", "always"],
+      workers: {
+        default: ["opencode", "run", "--color", "always"],
       },
-        commands: {
-          plan: {
-            worker: ["opencode", "run"],
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          research: {
-            worker: undefined,
-            workerArgs: ["--model", "opus-4.6"],
-          },
-          discuss: {
-            worker: undefined,
-            workerArgs: ["--model", "gpt-5.3-codex"],
-          },
-        },
+      commands: {
+        plan: ["opencode", "run", "--model", "opus-4.6"],
+        research: ["opencode", "run", "--model", "opus-4.6"],
+        discuss: ["opencode", "run", "--model", "gpt-5.3-codex"],
+      },
       profiles: {
-        complex: {
-          worker: undefined,
-          workerArgs: ["--model", "opus-4.6"],
-        },
-        fast: {
-          worker: undefined,
-          workerArgs: ["--model", "gpt-5.3-codex"],
-        },
+        complex: ["opencode", "run", "--model", "opus-4.6"],
+        fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
       },
     });
   });
@@ -218,9 +192,7 @@ describe("createWorkerConfigAdapter", () => {
       configDir,
       JSON.stringify({
         commands: {
-          execute: {
-            worker: ["opencode", "run"],
-          },
+          execute: ["opencode", "run"],
         },
       }),
     );
@@ -229,6 +201,42 @@ describe("createWorkerConfigAdapter", () => {
 
     expect(() => adapter.load(configDir)).toThrow(
       `Invalid worker config at \"${configPath}\": Invalid worker config at commands.execute: unknown command. Allowed: run, plan, discuss, research, reverify, verify, memory, or tools.{toolName}.`,
+    );
+  });
+
+  it("rejects non-array command values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        commands: {
+          run: { worker: ["opencode"] },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at commands.run: expected string array.`,
+    );
+  });
+
+  it("rejects non-array profile values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        profiles: {
+          fast: { workerArgs: ["--model", "gpt"] },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at profiles.fast: expected string array.`,
     );
   });
 });
