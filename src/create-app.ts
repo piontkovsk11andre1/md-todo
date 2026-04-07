@@ -118,6 +118,7 @@ export type App = {
 export interface PlanTaskCommandOptions {
   source: string;
   scanCount?: number;
+  maxItems?: number;
   deep?: number;
   mode: PlanTaskUseCaseOptions["mode"];
   workerPattern: PlanTaskUseCaseOptions["workerPattern"];
@@ -414,7 +415,14 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       output: ports.output,
     }),
-    planTask: (ports) => planTaskUseCase(ports),
+    planTask: (ports) => {
+      const runPlanTask = planTaskUseCase(ports);
+
+      return async (options) => runPlanTask({
+        ...options,
+        maxItems: options.maxItems,
+      });
+    },
     researchTask: (ports) => createResearchTask({
       workerExecutor: ports.workerExecutor,
       cliBlockExecutor: ports.cliBlockExecutor,

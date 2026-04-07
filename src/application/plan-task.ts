@@ -41,6 +41,7 @@ import {
   createPhaseStartedEvent,
   createRunCompletedEvent,
   createRunStartedEvent,
+  type RunCompletedPayload,
   type TraceRunStatus,
 } from "../domain/trace.js";
 import type {
@@ -79,6 +80,7 @@ type ArtifactContext = ArtifactRunContext;
 export type PlanConvergenceOutcome =
   | "converged-no-change"
   | "converged-no-additions"
+  | "max-items-reached"
   | "scan-cap-reached"
   | "emergency-cap-reached";
 
@@ -88,10 +90,12 @@ export type PlanConvergenceOutcome =
 interface PlanConvergenceMetadata extends Record<string, unknown> {
   planScanMode: PlanScanMode;
   planScanCount: number | null;
+  planMaxItems: number | null;
   planScansExecuted: number;
   planConvergenceReason: PlanConvergenceOutcome;
   planConvergenceOutcome: PlanConvergenceOutcome;
   planConverged: boolean;
+  planMaxItemsReached: boolean;
   planScanCapReached: boolean;
   planEmergencyCapReached: boolean;
 }
@@ -142,6 +146,7 @@ export interface PlanTaskDependencies {
 export interface PlanTaskOptions {
   source: string;
   scanCount?: number;
+  maxItems?: number;
   deep?: number;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
@@ -174,6 +179,7 @@ export function createPlanTask(
     const {
       source,
       scanCount,
+      maxItems,
       deep = 0,
       mode,
       workerPattern,
@@ -319,6 +325,7 @@ export function createPlanTask(
 
       const planPromptDocumentContext = buildPlanPromptDocumentContext(source);
       const scanStrategy = resolvePlanScanStrategy(scanCount);
+      const initialInsertedTotal = 0;
       const vars: TemplateVars = {
         ...templateVarsWithUserVariables,
         ...buildMemoryTemplateVars({
@@ -333,6 +340,8 @@ export function createPlanTask(
         source: planPromptDocumentContext,
         scanCount: resolvePlanScanCountTemplateValue(scanStrategy),
         scanMode: scanStrategy.mode,
+        maxItems,
+        insertedTotal: initialInsertedTotal,
         existingTodoCount,
         hasExistingTodos: hasExistingTodos ? "true" : "false",
       };
@@ -385,6 +394,8 @@ export function createPlanTask(
             source,
             1,
             scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
+            maxItems,
+            initialInsertedTotal,
           ),
         });
         if (deep > 0) {
@@ -406,6 +417,8 @@ export function createPlanTask(
                 parentTask,
                 deepPass: 1,
                 deep,
+                maxItems,
+                insertedTotal: initialInsertedTotal,
               });
               emit({ kind: "text", text: deepPrompt });
             }
@@ -439,6 +452,9 @@ export function createPlanTask(
             ? "Scan count: " + scanStrategy.scanCount
             : "Scan count: unlimited",
         });
+        if (maxItems !== undefined) {
+          emit({ kind: "info", message: "Max items: " + maxItems });
+        }
         emit({
           kind: "info",
           message: "Prompt length: " + buildPlanScanPrompt(
@@ -446,6 +462,8 @@ export function createPlanTask(
             source,
             1,
             scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
+            maxItems,
+            initialInsertedTotal,
           ).length + " chars",
         });
         if (deep > 0) {
@@ -467,6 +485,8 @@ export function createPlanTask(
               parentTask: deepCandidates[0]!,
               deepPass: 1,
               deep,
+              maxItems,
+              insertedTotal: initialInsertedTotal,
             });
             emit({ kind: "info", message: "Deep prompt length (first parent task): " + firstDeepPrompt.length + " chars" });
             if (deep > 1) {
@@ -577,19 +597,31 @@ export function createPlanTask(
       };
 
       // Finalize the trace run once, even if multiple exit paths are hit.
-      const completeTraceRun = (status: ArtifactStoreStatus): void => {
+      const completeTraceRun = (status: ArtifactStoreStatus, extra?: Record<string, unknown>): void => {
         if (traceCompleted) {
           return;
+        }
+
+        const payload: RunCompletedPayload = {
+          status: toTraceStatus(status),
+          total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
+          total_phases: tracePhaseCount,
+        };
+
+        const planConvergenceOutcome = extra?.planConvergenceOutcome;
+        if (isPlanConvergenceOutcome(planConvergenceOutcome)) {
+          payload.plan_convergence_outcome = planConvergenceOutcome;
+          payload.plan_converged = planConvergenceOutcome === "converged-no-change"
+            || planConvergenceOutcome === "converged-no-additions";
+          payload.plan_max_items_reached = planConvergenceOutcome === "max-items-reached";
+          payload.plan_scan_cap_reached = planConvergenceOutcome === "scan-cap-reached";
+          payload.plan_emergency_cap_reached = planConvergenceOutcome === "emergency-cap-reached";
         }
 
         traceWriter.write(createRunCompletedEvent({
           timestamp: nowIso(),
           run_id: artifactContext.runId,
-          payload: {
-            status: toTraceStatus(status),
-            total_duration_ms: Math.max(0, Date.now() - traceStartedAtMs),
-            total_phases: tracePhaseCount,
-          },
+          payload,
         }));
         traceCompleted = true;
       };
@@ -601,7 +633,7 @@ export function createPlanTask(
         extra?: Record<string, unknown>,
       ): number => {
         artifactStatus = status;
-        completeTraceRun(status);
+        completeTraceRun(status, extra);
         traceWriter.flush();
         finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit, extra);
         artifactsFinalized = true;
@@ -624,10 +656,22 @@ export function createPlanTask(
         let planSuccessCount = 0;
         let planFailureCount = 0;
 
-        const emitPlanSummary = (): void => {
+        const recordInsertedTodoCount = (addedCount: number): void => {
+          if (addedCount <= 0) {
+            return;
+          }
+
+          insertedTotal += addedCount;
+        };
+
+        const emitPlanSummary = (summaryConvergenceOutcome?: PlanConvergenceOutcome | null): void => {
+          const maxItemsSummarySuffix = summaryConvergenceOutcome === "max-items-reached"
+            ? " Planning stopped because --max-items limit was reached."
+            : "";
           emit({
             kind: "info",
-            message: formatSuccessFailureSummary("Plan operation", planSuccessCount, planFailureCount),
+            message: formatSuccessFailureSummary("Plan operation", planSuccessCount, planFailureCount)
+              + maxItemsSummarySuffix,
           });
         };
 
@@ -641,6 +685,16 @@ export function createPlanTask(
               message: "Emergency scan ceiling reached: planner stopped after "
                 + EMERGENCY_MAX_UNLIMITED_PLAN_SCANS
                 + " unlimited scans to prevent a runaway loop. This is a non-fatal safety stop; using current plan output.",
+            });
+            break;
+          }
+
+          if (maxItems !== undefined && insertedTotal >= maxItems) {
+            convergenceOutcome = "max-items-reached";
+            emit({
+              kind: "info",
+              message: "Planner stopped before scan " + scanIndex + ": max-items cap already reached ("
+                + insertedTotal + "/" + maxItems + " TODO items added).",
             });
             break;
           }
@@ -675,6 +729,8 @@ export function createPlanTask(
               source,
               scanIndex,
               scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
+              maxItems,
+              insertedTotal,
             );
             if (verbose) {
               emit({
@@ -781,9 +837,20 @@ export function createPlanTask(
             }
 
             latestDocumentSource = editedDocumentSource;
-            insertedTotal += validationResult.stats.added;
+            recordInsertedTodoCount(validationResult.stats.added);
             planSuccessCount += 1;
             emit({ kind: "group-end", status: "success" });
+
+            if (maxItems !== undefined && insertedTotal >= maxItems) {
+              convergenceOutcome = "max-items-reached";
+              emit({
+                kind: "info",
+                message: "Planner stopped after scan " + scanIndex + ": max-items cap reached ("
+                  + insertedTotal + "/" + maxItems + " TODO items added).",
+              });
+              break;
+            }
+
             scanIndex += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -795,7 +862,8 @@ export function createPlanTask(
         }
 
         // Execute additional deep passes to generate nested child TODO items.
-        if (deep > 0) {
+        if (deep > 0 && (maxItems === undefined || insertedTotal < maxItems)) {
+          let maxItemsReachedDuringDeep = false;
           for (let deepPass = 1; deepPass <= deep; deepPass += 1) {
             try {
               latestDocumentSource = dependencies.fileSystem.readText(source);
@@ -836,6 +904,8 @@ export function createPlanTask(
                 parentTask,
                 deepPass,
                 deep,
+                maxItems,
+                insertedTotal,
               });
 
               if (verbose) {
@@ -918,13 +988,39 @@ export function createPlanTask(
 
               planSuccessCount += 1;
 
-              if (deepEditedDocumentSource === latestDocumentSource) {
-                continue;
+              if (deepEditedDocumentSource !== latestDocumentSource) {
+                latestDocumentSource = deepEditedDocumentSource;
+                recordInsertedTodoCount(validationResult.stats.added);
+                deepPassInsertedCount += validationResult.stats.added;
               }
 
-              latestDocumentSource = deepEditedDocumentSource;
-              insertedTotal += validationResult.stats.added;
-              deepPassInsertedCount += validationResult.stats.added;
+              if (maxItems !== undefined && insertedTotal >= maxItems) {
+                convergenceOutcome = "max-items-reached";
+                emit({
+                  kind: "info",
+                  message: "Planner stopped during deep pass " + deepPass + ", task " + (deepTaskIndex + 1)
+                    + ": max-items cap reached ("
+                    + insertedTotal + "/" + maxItems + " TODO items added).",
+                });
+                maxItemsReachedDuringDeep = true;
+                break;
+              }
+
+            }
+
+            if (maxItemsReachedDuringDeep) {
+              break;
+            }
+
+            if (maxItems !== undefined && insertedTotal >= maxItems) {
+              convergenceOutcome = "max-items-reached";
+              emit({
+                kind: "info",
+                message: "Planner stopped after deep pass " + deepPass
+                  + ": max-items cap reached ("
+                  + insertedTotal + "/" + maxItems + " TODO items added).",
+              });
+              break;
             }
 
             if (deepPassInsertedCount === 0) {
@@ -943,7 +1039,7 @@ export function createPlanTask(
         }
 
         const convergenceMetadata = convergenceOutcome
-          ? buildPlanConvergenceMetadata(scanStrategy, scansExecuted, convergenceOutcome)
+          ? buildPlanConvergenceMetadata(scanStrategy, scansExecuted, convergenceOutcome, maxItems)
           : undefined;
 
         if (convergenceOutcome) {
@@ -953,7 +1049,7 @@ export function createPlanTask(
           });
         }
 
-        emitPlanSummary();
+        emitPlanSummary(convergenceOutcome);
 
         // Return success when no insertions are needed after all scans.
         if (insertedTotal === 0) {
@@ -1023,15 +1119,18 @@ function buildPlanConvergenceMetadata(
   scanStrategy: PlanScanStrategy,
   scansExecuted: number,
   convergenceOutcome: PlanConvergenceOutcome,
+  maxItems: number | undefined,
 ): PlanConvergenceMetadata {
   return {
     planScanMode: scanStrategy.mode,
     planScanCount: scanStrategy.mode === "bounded" ? scanStrategy.scanCount : null,
+    planMaxItems: maxItems ?? null,
     planScansExecuted: scansExecuted,
     planConvergenceReason: convergenceOutcome,
     planConvergenceOutcome: convergenceOutcome,
     planConverged: convergenceOutcome === "converged-no-change"
       || convergenceOutcome === "converged-no-additions",
+    planMaxItemsReached: convergenceOutcome === "max-items-reached",
     planScanCapReached: convergenceOutcome === "scan-cap-reached",
     planEmergencyCapReached: convergenceOutcome === "emergency-cap-reached",
   };
@@ -1042,6 +1141,17 @@ function buildPlanConvergenceMetadata(
  */
 function formatPlanStopReason(convergenceOutcome: PlanConvergenceOutcome): string {
   return "Plan stop reason: " + convergenceOutcome + ".";
+}
+
+/**
+ * Type guard for convergence outcomes persisted in artifact metadata.
+ */
+function isPlanConvergenceOutcome(value: unknown): value is PlanConvergenceOutcome {
+  return value === "converged-no-change"
+    || value === "converged-no-additions"
+    || value === "max-items-reached"
+    || value === "scan-cap-reached"
+    || value === "emergency-cap-reached";
 }
 
 /**
@@ -1105,14 +1215,30 @@ function buildPlanScanPrompt(
   sourcePath: string,
   scanIndex: number,
   scanCount: number | undefined,
+  maxItems: number | undefined,
+  insertedTotal: number,
 ): string {
   const scanStrategy = resolvePlanScanStrategy(scanCount);
   const scanLabel = buildPlanScanLabel(scanIndex, scanStrategy);
   const scanContextLine = scanStrategy.mode === "bounded"
     ? `Scan pass ${scanIndex} of ${scanStrategy.scanCount}.`
     : `Scan pass ${scanIndex} (unlimited mode; total pass count is unknown).`;
+  const remainingItemBudget = maxItems === undefined
+    ? undefined
+    : Math.max(0, maxItems - insertedTotal);
+  const scanContextParts = [
+    `Scan label: ${scanLabel}`,
+    scanContextLine,
+  ];
 
-  return `${basePrompt}\n\n## Scan Context\n\nScan label: ${scanLabel}\n${scanContextLine}\n\nTreat this scan as a clean standalone worker session. Do not rely on prior prompt history or prior scan outputs.\n\nEdit the source file directly at: ${sourcePath}\n\nAvoid cosmetic rewrites (including reordering, reformatting, or wording-only changes). Only edit when adding genuinely missing actionable TODO items.\n\nIf plan coverage is already sufficient, leave the file unchanged. If no useful TODO edits are needed, leave the file unchanged.`;
+  if (remainingItemBudget !== undefined) {
+    scanContextParts.push(
+      `Max-items cap: ${maxItems}. Already added: ${insertedTotal}. Remaining item budget: ${remainingItemBudget}.`,
+      `Add at most ${remainingItemBudget} new TODO ${pluralize(remainingItemBudget, "item", "items")} in this scan; if no budget remains, leave the file unchanged.`,
+    );
+  }
+
+  return `${basePrompt}\n\n## Scan Context\n\n${scanContextParts.join("\n")}\n\nTreat this scan as a clean standalone worker session. Do not rely on prior prompt history or prior scan outputs.\n\nEdit the source file directly at: ${sourcePath}\n\nAvoid cosmetic rewrites (including reordering, reformatting, or wording-only changes). Only edit when adding genuinely missing actionable TODO items.\n\nIf plan coverage is already sufficient, leave the file unchanged. If no useful TODO edits are needed, leave the file unchanged.`;
 }
 
 /**
@@ -1201,7 +1327,12 @@ function buildPlanDeepPrompt(options: {
   parentTask: ReturnType<typeof parseTasks>[number];
   deepPass: number;
   deep: number;
+  maxItems: number | undefined;
+  insertedTotal: number;
 }): string {
+  const remainingItemBudget = options.maxItems === undefined
+    ? undefined
+    : Math.max(0, options.maxItems - options.insertedTotal);
   const deepVars: TemplateVars = {
     traceInstructions: "",
     task: options.parentTask.text,
@@ -1213,10 +1344,22 @@ function buildPlanDeepPrompt(options: {
     parentTask: options.parentTask.text,
     parentTaskLine: options.parentTask.line,
     parentTaskDepth: options.parentTask.depth,
+    maxItems: options.maxItems,
+    insertedTotal: options.insertedTotal,
+    remainingItemBudget,
   };
 
   const renderedTemplate = renderTemplate(options.deepPlanTemplate, deepVars);
-  return `${renderedTemplate}\n\n## Deep Pass Context\n\nDeep pass ${options.deepPass} of ${options.deep}.\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
+  const deepContextParts = [`Deep pass ${options.deepPass} of ${options.deep}.`];
+
+  if (remainingItemBudget !== undefined) {
+    deepContextParts.push(
+      `Max-items cap: ${options.maxItems}. Already added: ${options.insertedTotal}. Remaining item budget: ${remainingItemBudget}.`,
+      `Add at most ${remainingItemBudget} new TODO ${pluralize(remainingItemBudget, "item", "items")} for this parent task; if no budget remains, leave the file unchanged.`,
+    );
+  }
+
+  return `${renderedTemplate}\n\n## Deep Pass Context\n\n${deepContextParts.join("\n")}\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
 }
 
 /**

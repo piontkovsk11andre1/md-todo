@@ -10,6 +10,7 @@ import {
   parseLimitCount,
   parseLoopCooldownSeconds,
   parseLoopIterations,
+  parseMaxItems,
   parseRepairAttempts,
   parseRevertMethod,
   parseRounds,
@@ -727,6 +728,7 @@ export function createPlanCommandAction({
     // Resolve planning input and execution controls from CLI options.
     const markdownFile = resolvePlanMarkdownFile(markdownFiles);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
+    const maxItems = parseMaxItems(opts.maxItems as string | undefined);
     const deep = parsePlanDeep(opts.deep as string | undefined);
     const mode = parseRunnerMode(opts.mode as string | undefined, plannerModes);
     const dryRun = opts.dryRun as boolean;
@@ -746,6 +748,7 @@ export function createPlanCommandAction({
     return getApp().planTask({
       source: markdownFile,
       scanCount,
+      maxItems,
       deep,
       mode,
       workerPattern,
@@ -827,12 +830,15 @@ export function createMakeCommandAction({
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
     const app = getApp();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
-    const mode = parseRunnerMode(opts.mode as string | undefined, makeModes);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
-    const dryRun = Boolean(opts.dryRun as boolean | undefined);
-    const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
-    const scanCount = parseScanCount(opts.scanCount as string | undefined);
-    const verbose = resolveVerboseOption(opts);
+    const {
+      mode,
+      sharedRuntimeOptions,
+      dryRun,
+      printPrompt,
+      scanCount,
+      maxItems,
+      verbose,
+    } = parseMakeBootstrapCliOptions(opts, makeModes, getWorkerFromSeparator);
 
     return runMakeBootstrapPhases({
       app,
@@ -843,6 +849,7 @@ export function createMakeCommandAction({
       dryRun,
       printPrompt,
       scanCount,
+      maxItems,
       verbose,
     });
   };
@@ -857,7 +864,34 @@ interface RunMakeBootstrapPhasesOptions {
   dryRun: boolean;
   printPrompt: boolean;
   scanCount: number | undefined;
+  maxItems: number | undefined;
   verbose: boolean;
+}
+
+interface ParsedMakeBootstrapCliOptions {
+  mode: ProcessRunMode;
+  sharedRuntimeOptions: ReturnType<typeof resolveSharedWorkerRuntimeOptions>;
+  dryRun: boolean;
+  printPrompt: boolean;
+  scanCount: number | undefined;
+  maxItems: number | undefined;
+  verbose: boolean;
+}
+
+function parseMakeBootstrapCliOptions(
+  opts: CliOpts,
+  makeModes: readonly ProcessRunMode[],
+  getWorkerFromSeparator: () => string[] | undefined,
+): ParsedMakeBootstrapCliOptions {
+  return {
+    mode: parseRunnerMode(opts.mode as string | undefined, makeModes),
+    sharedRuntimeOptions: resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator),
+    dryRun: Boolean(opts.dryRun as boolean | undefined),
+    printPrompt: Boolean(opts.printPrompt as boolean | undefined),
+    scanCount: parseScanCount(opts.scanCount as string | undefined),
+    maxItems: parseMaxItems(opts.maxItems as string | undefined),
+    verbose: resolveVerboseOption(opts),
+  };
 }
 
 async function runMakeBootstrapPhases({
@@ -869,6 +903,7 @@ async function runMakeBootstrapPhases({
   dryRun,
   printPrompt,
   scanCount,
+  maxItems,
   verbose,
 }: RunMakeBootstrapPhasesOptions): Promise<number> {
   const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
@@ -905,6 +940,7 @@ async function runMakeBootstrapPhases({
   return normalizeMakePhaseExitCode(await app.planTask({
     source: targetMarkdownFile,
     scanCount,
+    maxItems,
     mode,
     workerPattern: sharedWorkerPattern,
     showAgentOutput: sharedRuntimeOptions.showAgentOutput,
@@ -935,12 +971,16 @@ export function createDoCommandAction({
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
     const app = getApp();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
-    const mode = parseRunnerMode(opts.mode as string | undefined, makeModes);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const {
+      mode,
+      sharedRuntimeOptions,
+      dryRun,
+      printPrompt,
+      scanCount,
+      maxItems,
+      verbose,
+    } = parseMakeBootstrapCliOptions(opts, makeModes, getWorkerFromSeparator);
     const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
-    const dryRun = Boolean(opts.dryRun as boolean | undefined);
-    const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
-    const scanCount = parseScanCount(opts.scanCount as string | undefined);
 
     const runSortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
@@ -964,7 +1004,6 @@ export function createDoCommandAction({
       throw new Error("--rounds requires --clean or both --redo and --reset-after.");
     }
     const cacheCliBlocks = Boolean(opts.cacheCliBlocks as boolean | undefined);
-    const verbose = resolveVerboseOption(opts);
 
     emitCliInfo(app, "Do phase 1/2: bootstrap (make)");
 
@@ -977,6 +1016,7 @@ export function createDoCommandAction({
       dryRun,
       printPrompt,
       scanCount,
+      maxItems,
       verbose,
     });
 

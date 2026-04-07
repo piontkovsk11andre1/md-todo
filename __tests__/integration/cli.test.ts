@@ -682,6 +682,134 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", `${sourceName}.lock`))).toBe(false);
   });
 
+  it("make forwards --max-items to plan and stops after reaching the item cap", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "8. Do something.md";
+    const markdownFile = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`);
+    const workerScriptPath = path.join(workspace, "make-max-items-worker.cjs");
+    const planScanMarkerPath = path.join(workspace, ".make-max-items-plan-scan-count");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const sourcePath = ${JSON.stringify(markdownFile.replace(/\\/g, "/"))};`,
+        `const lockPath = ${JSON.stringify(lockPath.replace(/\\/g, "/"))};`,
+        `const planScanMarkerPath = ${JSON.stringify(planScanMarkerPath.replace(/\\/g, "/"))};`,
+        "const lockCommand = (() => {",
+        "  if (!fs.existsSync(lockPath)) {",
+        "    return 'missing';",
+        "  }",
+        "  try {",
+        "    const payload = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));",
+        "    return typeof payload.command === 'string' ? payload.command : 'unknown';",
+        "  } catch {",
+        "    return 'unreadable';",
+        "  }",
+        "})();",
+        "if (lockCommand === 'plan') {",
+        "  const previous = fs.existsSync(planScanMarkerPath) ? Number(fs.readFileSync(planScanMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(planScanMarkerPath, String(current));",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (current === 1) {",
+        "    fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "    process.exit(0);",
+        "  }",
+        "  fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Should not be added\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "make",
+      "Seed from make",
+      sourceName,
+      "--scan-count",
+      "5",
+      "--max-items",
+      "1",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(planScanMarkerPath, "utf-8").trim()).toBe("1");
+
+    const updated = fs.readFileSync(markdownFile, "utf-8");
+    expect(updated).toContain("Item one");
+    expect(updated).toContain("Item two");
+    expect(updated).not.toContain("Should not be added");
+  });
+
+  it("make without --max-items keeps planning unbounded by item count", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "8. Do something.md";
+    const markdownFile = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`);
+    const workerScriptPath = path.join(workspace, "make-without-max-items-worker.cjs");
+    const planScanMarkerPath = path.join(workspace, ".make-without-max-items-plan-scan-count");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const sourcePath = ${JSON.stringify(markdownFile.replace(/\\/g, "/"))};`,
+        `const lockPath = ${JSON.stringify(lockPath.replace(/\\/g, "/"))};`,
+        `const planScanMarkerPath = ${JSON.stringify(planScanMarkerPath.replace(/\\/g, "/"))};`,
+        "const lockCommand = (() => {",
+        "  if (!fs.existsSync(lockPath)) {",
+        "    return 'missing';",
+        "  }",
+        "  try {",
+        "    const payload = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));",
+        "    return typeof payload.command === 'string' ? payload.command : 'unknown';",
+        "  } catch {",
+        "    return 'unreadable';",
+        "  }",
+        "})();",
+        "if (lockCommand === 'plan') {",
+        "  const previous = fs.existsSync(planScanMarkerPath) ? Number(fs.readFileSync(planScanMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(planScanMarkerPath, String(current));",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (current === 1) {",
+        "    fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "    process.exit(0);",
+        "  }",
+        "  fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Added on second scan\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "make",
+      "Seed from make",
+      sourceName,
+      "--scan-count",
+      "2",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(planScanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(markdownFile, "utf-8");
+    expect(updated).toContain("Item one");
+    expect(updated).toContain("Item two");
+    expect(updated).toContain("Added on second scan");
+  });
+
   it("run auto-skips execution for verify-only tasks", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] verify: release docs are consistent\n", "utf-8");
@@ -4085,6 +4213,154 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("invalid --mode value: tui")).toBe(true);
     expect(combinedOutput.includes("allowed: wait")).toBe(true);
     expect(combinedOutput.includes("unknown command")).toBe(false);
+  });
+
+  it("do forwards --max-items to bootstrap planning before run-all execution", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "8. Do something.md";
+    const markdownFile = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`);
+    const workerScriptPath = path.join(workspace, "do-max-items-worker.cjs");
+    const planScanMarkerPath = path.join(workspace, ".do-max-items-plan-scan-count");
+    const runInvocationMarkerPath = path.join(workspace, ".do-max-items-run-invocations");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const sourcePath = ${JSON.stringify(markdownFile.replace(/\\/g, "/"))};`,
+        `const lockPath = ${JSON.stringify(lockPath.replace(/\\/g, "/"))};`,
+        `const planScanMarkerPath = ${JSON.stringify(planScanMarkerPath.replace(/\\/g, "/"))};`,
+        `const runInvocationMarkerPath = ${JSON.stringify(runInvocationMarkerPath.replace(/\\/g, "/"))};`,
+        "const lockCommand = (() => {",
+        "  if (!fs.existsSync(lockPath)) {",
+        "    return 'missing';",
+        "  }",
+        "  try {",
+        "    const payload = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));",
+        "    return typeof payload.command === 'string' ? payload.command : 'unknown';",
+        "  } catch {",
+        "    return 'unreadable';",
+        "  }",
+        "})();",
+        "if (lockCommand === 'plan') {",
+        "  const previous = fs.existsSync(planScanMarkerPath) ? Number(fs.readFileSync(planScanMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(planScanMarkerPath, String(current));",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (current === 1) {",
+        "    fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "    process.exit(0);",
+        "  }",
+        "  fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Should not be added\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (lockCommand === 'run') {",
+        "  const previous = fs.existsSync(runInvocationMarkerPath) ? Number(fs.readFileSync(runInvocationMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(runInvocationMarkerPath, String(current));",
+        "  process.exit(0);",
+        "}",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "do",
+      "Seed from do",
+      sourceName,
+      "--scan-count",
+      "5",
+      "--max-items",
+      "1",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(planScanMarkerPath, "utf-8").trim()).toBe("1");
+    expect(Number(fs.readFileSync(runInvocationMarkerPath, "utf-8").trim())).toBeGreaterThan(0);
+
+    const updated = fs.readFileSync(markdownFile, "utf-8");
+    expect(updated).toContain("Item one");
+    expect(updated).toContain("Item two");
+    expect(updated).not.toContain("Should not be added");
+  });
+
+  it("do without --max-items keeps bootstrap planning unbounded by item count", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceName = "8. Do something.md";
+    const markdownFile = path.join(workspace, sourceName);
+    const lockPath = path.join(workspace, ".rundown", `${sourceName}.lock`);
+    const workerScriptPath = path.join(workspace, "do-without-max-items-worker.cjs");
+    const planScanMarkerPath = path.join(workspace, ".do-without-max-items-plan-scan-count");
+    const runInvocationMarkerPath = path.join(workspace, ".do-without-max-items-run-invocations");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const sourcePath = ${JSON.stringify(markdownFile.replace(/\\/g, "/"))};`,
+        `const lockPath = ${JSON.stringify(lockPath.replace(/\\/g, "/"))};`,
+        `const planScanMarkerPath = ${JSON.stringify(planScanMarkerPath.replace(/\\/g, "/"))};`,
+        `const runInvocationMarkerPath = ${JSON.stringify(runInvocationMarkerPath.replace(/\\/g, "/"))};`,
+        "const lockCommand = (() => {",
+        "  if (!fs.existsSync(lockPath)) {",
+        "    return 'missing';",
+        "  }",
+        "  try {",
+        "    const payload = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));",
+        "    return typeof payload.command === 'string' ? payload.command : 'unknown';",
+        "  } catch {",
+        "    return 'unreadable';",
+        "  }",
+        "})();",
+        "if (lockCommand === 'plan') {",
+        "  const previous = fs.existsSync(planScanMarkerPath) ? Number(fs.readFileSync(planScanMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(planScanMarkerPath, String(current));",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (current === 1) {",
+        "    fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "    process.exit(0);",
+        "  }",
+        "  fs.writeFileSync(sourcePath, source.trimEnd() + '\\n- [ ] Added on second scan\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (lockCommand === 'run') {",
+        "  const previous = fs.existsSync(runInvocationMarkerPath) ? Number(fs.readFileSync(runInvocationMarkerPath, 'utf-8')) : 0;",
+        "  const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "  fs.writeFileSync(runInvocationMarkerPath, String(current));",
+        "  process.exit(0);",
+        "}",
+        "process.exit(0);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "do",
+      "Seed from do",
+      sourceName,
+      "--scan-count",
+      "2",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(planScanMarkerPath, "utf-8").trim()).toBe("2");
+    expect(Number(fs.readFileSync(runInvocationMarkerPath, "utf-8").trim())).toBeGreaterThan(0);
+
+    const updated = fs.readFileSync(markdownFile, "utf-8");
+    expect(updated).toContain("Item one");
+    expect(updated).toContain("Item two");
+    expect(updated).toContain("Added on second scan");
   });
 
   it("loop forwards run-style options to inner call execution", async () => {
@@ -7774,6 +8050,325 @@ describe.sequential("CLI integration", () => {
     expect(updated).toContain("- [ ] Scan 1 task");
     expect(updated).toContain("- [ ] Scan 2 task");
     expect(updated).not.toContain("- [ ] Scan 3 task");
+  });
+
+  it("plan respects both --scan-count and --max-items when scan-count is reached first", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-scan-cap-before-max-items.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-scan-cap-before-max-items");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nShip release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "fs.writeFileSync(roadmapPath, source.trimEnd() + `\\n- [ ] Scan ${current} task\\n`, 'utf-8');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "2",
+      "--max-items",
+      "5",
+      "--verbose",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: scan-cap-reached."))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Scan 1 task");
+    expect(updated).toContain("- [ ] Scan 2 task");
+    expect(updated).not.toContain("- [ ] Scan 3 task");
+  });
+
+  it("plan respects both --scan-count and --max-items when max-items is reached first", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-max-items-before-scan-cap.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-max-items-before-scan-cap");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nShip release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "fs.writeFileSync(roadmapPath, source.trimEnd() + `\\n- [ ] Scan ${current} task\\n`, 'utf-8');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "5",
+      "--max-items",
+      "2",
+      "--verbose",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: max-items-reached."))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Scan 1 task");
+    expect(updated).toContain("- [ ] Scan 2 task");
+    expect(updated).not.toContain("- [ ] Scan 3 task");
+  });
+
+  it("plan --max-items stops scanning once the item cap is reached", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-max-items-cap.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-max-items");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nShip release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "if (current === 1) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (current === 2) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Should not be added\\n', 'utf-8');",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "5",
+      "--max-items",
+      "1",
+      "--verbose",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: max-items-reached."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("max-items cap reached"))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("1");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Item one");
+    expect(updated).toContain("- [ ] Item two");
+    expect(updated).not.toContain("- [ ] Should not be added");
+  });
+
+  it("plan without --max-items does not enforce an item cap", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-without-max-items.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-without-max-items");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nShip release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "if (current === 1) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (current === 2) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Added on second scan\\n', 'utf-8');",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "2",
+      "--verbose",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
+
+    const updated = fs.readFileSync(roadmapPath, "utf-8");
+    expect(updated).toContain("- [ ] Item one");
+    expect(updated).toContain("- [ ] Item two");
+    expect(updated).toContain("- [ ] Added on second scan");
+  });
+
+  it("plan --max-items 0 exits before invoking worker", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-max-items-zero.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-max-items-zero");
+
+    const initialSource = "# Roadmap\n\n## Scope\nShip release workflow.\n";
+    fs.writeFileSync(roadmapPath, initialSource, "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "fs.writeFileSync(markerPath, 'worker-ran', 'utf-8');",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "3",
+      "--max-items",
+      "0",
+      "--verbose",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: max-items-reached."))).toBe(true);
+    expect(fs.existsSync(scanMarkerPath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(initialSource);
+  });
+
+  it("plan --max-items persists max-items convergence in artifact and trace metadata", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "plan-worker-max-items-metadata.cjs");
+    const scanMarkerPath = path.join(workspace, ".plan-scan-count-max-items-metadata");
+
+    fs.writeFileSync(
+      roadmapPath,
+      "# Roadmap\n\n## Scope\nShip release workflow.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const roadmapPath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const markerPath = ${JSON.stringify(scanMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(roadmapPath, 'utf-8');",
+        "const previous = fs.existsSync(markerPath) ? Number(fs.readFileSync(markerPath, 'utf-8')) : 0;",
+        "const current = Number.isFinite(previous) ? previous + 1 : 1;",
+        "fs.writeFileSync(markerPath, String(current));",
+        "if (current === 1) {",
+        "  fs.writeFileSync(roadmapPath, source.trimEnd() + '\\n- [ ] Item one\\n- [ ] Item two\\n', 'utf-8');",
+        "  process.exit(0);",
+        "}",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "plan",
+      "roadmap.md",
+      "--scan-count",
+      "5",
+      "--max-items",
+      "1",
+      "--keep-artifacts",
+      "--trace",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: max-items-reached."))).toBe(true);
+
+    const latestRun = findSavedRunByCommand(workspace, "plan");
+    expect(latestRun).not.toBeNull();
+    expect(latestRun?.extra).toEqual(expect.objectContaining({
+      planConvergenceReason: "max-items-reached",
+      planConvergenceOutcome: "max-items-reached",
+      planConverged: false,
+      planMaxItemsReached: true,
+      planScanCapReached: false,
+      planEmergencyCapReached: false,
+    }));
+
+    const tracePath = path.join(workspace, ".rundown", "runs", latestRun!.runId, "trace.jsonl");
+    expect(fs.existsSync(tracePath)).toBe(true);
+    const traceEvents = fs.readFileSync(tracePath, "utf-8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as {
+        event_type?: string;
+        payload?: Record<string, unknown>;
+      });
+    const runCompletedEvent = traceEvents.find((event) => event.event_type === "run.completed");
+    expect(runCompletedEvent?.payload).toEqual(expect.objectContaining({
+      plan_convergence_outcome: "max-items-reached",
+      plan_converged: false,
+      plan_max_items_reached: true,
+      plan_scan_cap_reached: false,
+      plan_emergency_cap_reached: false,
+    }));
   });
 
   it("plan --deep 2 produces a two-level task hierarchy", async () => {

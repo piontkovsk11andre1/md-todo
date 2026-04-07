@@ -298,6 +298,7 @@ program
     "--scan-count <n>",
     "Max clean-session TODO coverage scans (omit for convergence-driven unlimited mode)",
   )
+  .option("--max-items <n>", "Cap the total number of TODO items added across all scans (default: no limit)")
   .option(
     "--deep <n>",
     "Additional nested planning depth passes after top-level scans (default: 0)",
@@ -339,6 +340,7 @@ program
     "--scan-count <n>",
     "Max clean-session TODO coverage scans for the plan phase (omit for convergence-driven unlimited mode)",
   )
+  .option("--max-items <n>", "Cap the total number of TODO items added across all scans (default: no limit)")
   .option("--dry-run", "Show what would run for research and plan without executing workers", false)
   .option("--print-prompt", "Print rendered research/plan prompts and exit", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -373,6 +375,7 @@ program
     "--scan-count <n>",
     "Max clean-session TODO coverage scans for the plan phase (omit for convergence-driven unlimited mode)",
   )
+  .option("--max-items <n>", "Cap the total number of TODO items added across all scans (default: no limit)")
   .option("--sort <sort>", "File sort mode for execution phase: name-sort, none, old-first, new-first", "name-sort")
   .option("--verify", "Run verification after task execution (default)")
   .option("--no-verify", "Disable verification after task execution")

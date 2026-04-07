@@ -31,6 +31,30 @@ describe("plan-task", () => {
     expect(events.some((event) => event.kind === "text" && event.text.includes("## Phase"))).toBe(true);
   });
 
+  it("includes max-items budget guidance in printed scan prompt", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      printPrompt: true,
+      maxItems: 3,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("Max-items cap: 3. Already added: 0. Remaining item budget: 3.");
+    expect(prompt).toContain("Add at most 3 new TODO items in this scan; if no budget remains, leave the file unchanged.");
+  });
+
   it("expands cli blocks in rendered plan prompt before printing", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
@@ -1050,6 +1074,33 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("Scan pass 1 (unlimited mode; total pass count is unknown).");
   });
 
+  it("omits max-items guidance when no max-items cap is set", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, maxItems: undefined }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const firstPrompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0]?.prompt ?? "";
+    expect(firstPrompt).not.toContain("Max-items cap:");
+    expect(firstPrompt).not.toContain("Remaining item budget:");
+    expect(firstPrompt).not.toContain("Add at most");
+  });
+
   it("builds scan prompt with source-file edit context", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
@@ -1188,6 +1239,315 @@ describe("plan-task", () => {
     );
   });
 
+  it("accepts final scan overshoot when max-items is reached", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "- [ ] Item two",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "- [ ] Item two",
+          "- [ ] Should not be added",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 5,
+      maxItems: 1,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Item one");
+    expect(finalSource).toContain("- [ ] Item two");
+    expect(finalSource).not.toContain("- [ ] Should not be added");
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("max-items cap reached")
+      && event.message.includes("2/1 TODO items added"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: max-items-reached.",
+    });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan operation summary: 1 success, 0 failures. Planning stopped because --max-items limit was reached.",
+    });
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 5,
+          planScansExecuted: 1,
+          planConvergenceReason: "max-items-reached",
+          planConvergenceOutcome: "max-items-reached",
+          planConverged: false,
+          planMaxItemsReached: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("stops scan loop when insertedTotal equals max-items", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "- [ ] Should not be added",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 5,
+      maxItems: 1,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Item one");
+    expect(finalSource).not.toContain("- [ ] Should not be added");
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("after scan 1")
+      && event.message.includes("1/1 TODO items added"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: max-items-reached.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 5,
+          planScansExecuted: 1,
+          planConvergenceReason: "max-items-reached",
+          planConvergenceOutcome: "max-items-reached",
+          planConverged: false,
+          planMaxItemsReached: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("stops unlimited scanning when max-items is reached", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "- [ ] Item two",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "Build a new release process.",
+          "- [ ] Item one",
+          "- [ ] Item two",
+          "- [ ] Should not be added",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: undefined,
+      maxItems: 1,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Item one");
+    expect(finalSource).toContain("- [ ] Item two");
+    expect(finalSource).not.toContain("- [ ] Should not be added");
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("max-items cap reached")
+      && event.message.includes("2/1 TODO items added"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: max-items-reached.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: null,
+          planScansExecuted: 1,
+          planConvergenceReason: "max-items-reached",
+          planConvergenceOutcome: "max-items-reached",
+          planConverged: false,
+          planMaxItemsReached: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("prefers max-items stop over semantic convergence when both apply", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 3,
+      maxItems: 0,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("before scan 1")
+      && event.message.includes("0/0 TODO items added"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: max-items-reached.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 3,
+          planScansExecuted: 0,
+          planConvergenceReason: "max-items-reached",
+          planConvergenceOutcome: "max-items-reached",
+          planConverged: false,
+          planMaxItemsReached: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("records max-items convergence distinctly in run.completed trace payload", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+    vi.mocked(dependencies.createTraceWriter).mockReturnValue(traceWriter);
+
+    vi.mocked(workerExecutor.runWorker).mockImplementationOnce(async () => {
+      fileSystem.writeText(markdownFile, [
+        "# Roadmap",
+        "Build a new release process.",
+        "- [ ] Item one",
+        "- [ ] Item two",
+        "",
+      ].join("\n"));
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 5,
+      maxItems: 1,
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const runCompletedEvent = traceWriter.write.mock.calls
+      .map((call) => call[0])
+      .find((event) => event.event_type === "run.completed");
+    expect(runCompletedEvent).toBeDefined();
+    expect(runCompletedEvent?.payload).toEqual(expect.objectContaining({
+      status: "completed",
+      plan_convergence_outcome: "max-items-reached",
+      plan_converged: false,
+      plan_max_items_reached: true,
+      plan_scan_cap_reached: false,
+      plan_emergency_cap_reached: false,
+    }));
+  });
+
   it("stops unlimited scanning at internal emergency cap", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
@@ -1231,6 +1591,63 @@ describe("plan-task", () => {
           planConvergenceReason: "emergency-cap-reached",
           planConvergenceOutcome: "emergency-cap-reached",
           planConverged: false,
+          planScanCapReached: false,
+          planEmergencyCapReached: true,
+        }),
+      }),
+    );
+  });
+
+  it("keeps emergency cap as fallback when max-items is configured", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    let runCount = 0;
+    vi.mocked(workerExecutor.runWorker).mockImplementation(async () => {
+      runCount += 1;
+      const todos = Array.from({ length: runCount }, (_value, index) => `- [ ] Scan ${index + 1}`).join("\n");
+      fileSystem.writeText(markdownFile, `# Roadmap\nBuild a new release process.\n${todos}\n`);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: undefined,
+      maxItems: 1_000,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(30);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Scan 30");
+    expect(finalSource).not.toContain("- [ ] Scan 31");
+    expect(events.some((event) => event.kind === "warn"
+      && event.message.includes("Emergency scan ceiling reached")
+      && event.message.includes("non-fatal safety stop"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: emergency-cap-reached.",
+    });
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("Plan stop reason: max-items-reached."))).toBe(false);
+    expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: null,
+          planScansExecuted: 30,
+          planConvergenceReason: "emergency-cap-reached",
+          planConvergenceOutcome: "emergency-cap-reached",
+          planConverged: false,
+          planMaxItemsReached: false,
           planScanCapReached: false,
           planEmergencyCapReached: true,
         }),
@@ -1287,6 +1704,112 @@ describe("plan-task", () => {
         }),
       }),
     );
+  });
+
+  it("records semantic convergence before hitting max-items", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "- [ ] Existing task A",
+      "- [ ] Existing task B",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockImplementationOnce(async () => {
+      fileSystem.writeText(markdownFile, [
+        "# Roadmap",
+        "",
+        "- [ ] Existing task B",
+        "- [ ] Existing task A",
+        "",
+      ].join("\n"));
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 5,
+      maxItems: 10,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-no-additions.",
+    });
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("Plan stop reason: max-items-reached."))).toBe(false);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planConvergenceReason: "converged-no-additions",
+          planConvergenceOutcome: "converged-no-additions",
+          planConverged: true,
+          planMaxItemsReached: false,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("records bounded scan-cap convergence distinctly in run.completed trace payload", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+    vi.mocked(dependencies.createTraceWriter).mockReturnValue(traceWriter);
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({
+      source: markdownFile,
+      scanCount: 2,
+      trace: true,
+    }));
+
+    expect(code).toBe(0);
+    const runCompletedEvent = traceWriter.write.mock.calls
+      .map((call) => call[0])
+      .find((event) => event.event_type === "run.completed");
+    expect(runCompletedEvent).toBeDefined();
+    expect(runCompletedEvent?.payload).toEqual(expect.objectContaining({
+      status: "completed",
+      plan_convergence_outcome: "scan-cap-reached",
+      plan_converged: false,
+      plan_max_items_reached: false,
+      plan_scan_cap_reached: true,
+      plan_emergency_cap_reached: false,
+    }));
   });
 
   it("stops unlimited scanning on semantic convergence with no net new TODO items", async () => {
@@ -1511,6 +2034,77 @@ describe("plan-task", () => {
     expect(deepPrompt).toContain("Build release flow");
     const updated = fileSystem.readText(markdownFile);
     expect(updated).toContain("- [ ] Build release flow\n  - [ ] Define release steps\n  - [ ] Validate rollout\n");
+  });
+
+  it("counts deep-pass insertions toward max-items and stops further deep tasks", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "- [ ] Parent A",
+      "- [ ] Parent B",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, [
+          "# Roadmap",
+          "- [ ] Parent A",
+          "- [ ] Parent B",
+          "  - [ ] Child one",
+          "  - [ ] Child two",
+          "",
+        ].join("\n"));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, deep: 2, maxItems: 1 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("Planner stopped during deep pass 1, task 1")
+      && event.message.includes("max-items cap reached")
+      && event.message.includes("2/1 TODO items added"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: max-items-reached.",
+    });
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan operation summary: 2 successes, 0 failures. Planning stopped because --max-items limit was reached.",
+    });
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planConvergenceReason: "max-items-reached",
+          planConvergenceOutcome: "max-items-reached",
+          planMaxItemsReached: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
   });
 
   it("rejects invalid deep-pass edits and restores file", async () => {
@@ -1867,6 +2461,7 @@ function createOptions(
   return {
     source: "roadmap.md",
     scanCount: 1,
+    maxItems: undefined,
     mode: "wait",
     workerPattern: inferWorkerPatternFromCommand(workerCommand ?? ["opencode", "run"]),
     showAgentOutput: false,

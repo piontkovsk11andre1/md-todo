@@ -419,6 +419,16 @@ export interface RunCompletedPayload {
   status: TraceRunStatus;
   total_duration_ms: number;
   total_phases: number;
+  plan_convergence_outcome?:
+    | "converged-no-change"
+    | "converged-no-additions"
+    | "max-items-reached"
+    | "scan-cap-reached"
+    | "emergency-cap-reached";
+  plan_converged?: boolean;
+  plan_max_items_reached?: boolean;
+  plan_scan_cap_reached?: boolean;
+  plan_emergency_cap_reached?: boolean;
 }
 
 /**

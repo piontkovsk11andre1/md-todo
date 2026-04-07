@@ -201,6 +201,22 @@ export function parseScanCount(value: string | undefined): number | undefined {
 }
 
 /**
+ * Parses the optional maximum number of planned items.
+ *
+ * Returns `undefined` when `--max-items` is omitted so callers can use
+ * unlimited item mode; provided values must be non-negative integers.
+ */
+export function parseMaxItems(value: string | undefined): number | undefined {
+  return parseIntOption(value, {
+    optionName: "max-items",
+    allowUndefined: true,
+    min: 0,
+    integerLabel: "non-negative integer (0 or greater)",
+    safeIntegerLabel: "safe non-negative integer (0 or greater)",
+  });
+}
+
+/**
  * Parses the additional deep planning pass count with a non-negative minimum bound.
  */
 export function parsePlanDeep(value: string | undefined): number {

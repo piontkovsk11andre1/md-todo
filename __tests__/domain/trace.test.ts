@@ -592,6 +592,11 @@ describe("trace event factory functions", () => {
         status: "completed",
         total_duration_ms: 1600,
         total_phases: 3,
+        plan_convergence_outcome: "max-items-reached",
+        plan_converged: false,
+        plan_max_items_reached: true,
+        plan_scan_cap_reached: false,
+        plan_emergency_cap_reached: false,
       },
     });
 
@@ -601,6 +606,11 @@ describe("trace event factory functions", () => {
       status: "completed",
       total_duration_ms: 1600,
       total_phases: 3,
+      plan_convergence_outcome: "max-items-reached",
+      plan_converged: false,
+      plan_max_items_reached: true,
+      plan_scan_cap_reached: false,
+      plan_emergency_cap_reached: false,
     });
   });
 });
