@@ -2060,6 +2060,7 @@ describe("task-execution-dispatch", () => {
       kind: "ready-for-completion",
       shouldVerify: true,
       executionStdout: "done",
+      executionOutputCaptured: true,
       cliExecutionOptionsForVerification: verifyAfterExecuteOptions,
       verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
       verificationFailureRunReason: "Verification failed after all repair attempts.",
@@ -3213,12 +3214,18 @@ describe("complete-task-iteration", () => {
       extraTemplateVars: {},
     });
 
-    expect(result).toEqual({ continueLoop: false, exitCode: 2, forceRetryableFailure: true, groupEnded: false });
+    expect(result).toEqual({
+      continueLoop: false,
+      exitCode: 2,
+      forceRetryableFailure: true,
+      groupEnded: false,
+      failureMessage: "Verification failed. Task not checked.\nmissing tests",
+    });
     expect(emit).toHaveBeenCalledWith({
       kind: "error",
       message: "Verification failed. Task not checked.\nmissing tests",
     });
-    expect(failRun).toHaveBeenCalledWith(2, "verification-failed", "Verification failed.", 2);
+    expect(failRun).toHaveBeenCalledWith(2, "verification-failed", "verification-failed", 2);
   });
 
   it("skips usage-limit detection entirely when shouldVerify is false", async () => {

@@ -1046,6 +1046,13 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("genuinely missing actionable TODO items");
     expect(firstPrompt).toContain("If plan coverage is already sufficient, leave the file unchanged.");
     expect(firstPrompt).toContain("Scan label: plan-scan-01-of-01");
+    expect(firstPrompt).toContain("## Rundown feature reference for planning");
+    expect(firstPrompt).toContain("`verify:` / `confirm:` / `check:`");
+    expect(firstPrompt).toContain("`fast:` / `raw:`");
+    expect(firstPrompt).toContain("`profile: <name>`");
+    expect(firstPrompt).toContain("`memory:` / `memorize:` / `remember:` / `inventory:`");
+    expect(firstPrompt).toContain("`include: <path>`");
+    expect(firstPrompt).toContain("Prefix composition is supported with `, ` or `; ` separators");
   });
 
   it("describes unknown total pass count in unlimited scan prompts", async () => {

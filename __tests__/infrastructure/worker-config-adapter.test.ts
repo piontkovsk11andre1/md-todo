@@ -200,7 +200,7 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(() => adapter.load(configDir)).toThrow(
-      `Invalid worker config at \"${configPath}\": Invalid worker config at commands.execute: unknown command. Allowed: run, plan, discuss, research, reverify, verify, memory, or tools.{toolName}.`,
+      `Invalid worker config at \"${configPath}\": Invalid worker config at commands.execute: unknown command. Allowed: help, run, plan, discuss, research, reverify, verify, memory, or tools.{toolName}.`,
     );
   });
 

@@ -1285,6 +1285,9 @@ describe("run-task orchestration", () => {
         if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
           return cwd;
         }
+        if (args[0] === "check-ignore") {
+          throw new Error("not ignored");
+        }
         if (args[0] === "rev-parse" && args[1] === "HEAD") {
           return "sha-final";
         }

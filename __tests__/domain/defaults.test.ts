@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
@@ -45,5 +46,25 @@ describe("default prompt templates", () => {
     });
 
     expect(result).toContain("## Variables\n\n(none)");
+  });
+
+  it("documents built-in planning prefixes and composition in default plan templates", () => {
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("## Rundown feature reference for planning");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`verify:` / `confirm:` / `check:`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`fast:` / `raw:`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`profile: <name>`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`memory:` / `memorize:` / `remember:` / `inventory:`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`include: <path>`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile: fast, verify: release checks pass`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile: complex; memory: record migration constraints`");
+
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("## Rundown feature reference for deep planning");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`verify:` / `confirm:` / `check:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`fast:` / `raw:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`profile: <name>`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memory:` / `memorize:` / `remember:` / `inventory:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`include: <path>`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile: fast, verify: release checks pass`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile: complex; memory: record migration constraints`");
   });
 });

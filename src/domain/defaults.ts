@@ -322,6 +322,38 @@ Edit the source Markdown file directly to improve plan coverage.
 
 Review \`{{file}}\` and insert missing actionable TODO items in logical locations.
 
+## Rundown feature reference for planning
+
+Use built-in prefixes when they improve execution quality:
+
+- \`verify:\` / \`confirm:\` / \`check:\` for validation-only tasks that should skip execute and run verify directly.
+- \`fast:\` / \`raw:\` for small, mechanical, low-risk tasks that should skip verify.
+- \`profile: <name>\` to choose a worker profile for specific tasks.
+- \`memory:\` / \`memorize:\` / \`remember:\` / \`inventory:\` for tasks that should capture reusable context.
+- \`include: <path>\` to delegate subtasks to another Markdown file.
+
+You can apply prefixes in either form:
+
+- Inline on a checkbox task, for example \`- [ ] verify: tests pass\`.
+- As a directive parent that applies to child checkbox items, for example:
+
+  \`- verify:\`
+  \`  - [ ] Unit tests pass\`
+  \`  - [ ] Linting is clean\`
+
+Prefix composition is supported with \`, \` or \`; \` separators when combining known prefixes, for example:
+
+- \`- [ ] profile: fast, verify: release checks pass\`
+- \`- [ ] profile: complex; memory: record migration constraints\`
+
+Heuristics:
+
+- Use verify-only prefixes when the task is purely to confirm current state.
+- Use fast prefixes for tiny edits that do not need a separate validation pass.
+- Use profile when task complexity or cost/speed trade-offs suggest a non-default worker.
+- Use directive parents when multiple adjacent tasks share the same prefix.
+- Prefer plain \`- [ ]\` items when no special behavior is needed.
+
 Rules:
 - Add only unchecked TODO items using \`- [ ]\` syntax.
 - Insert new items where they fit best; you may add them in the middle of existing lists.
@@ -351,6 +383,38 @@ ${DEFAULT_TEMPLATE_MEMORY_SECTION}
 Edit the source Markdown file directly to improve child plan coverage for the parent task above.
 
 Review \`{{file}}\` and add missing unchecked child TODO items under this parent task.
+
+## Rundown feature reference for deep planning
+
+Use built-in prefixes when they improve execution quality for child tasks:
+
+- \`verify:\` / \`confirm:\` / \`check:\` for validation-only child tasks that should skip execute and run verify directly.
+- \`fast:\` / \`raw:\` for small, mechanical, low-risk child tasks that should skip verify.
+- \`profile: <name>\` to choose a worker profile for specific child tasks.
+- \`memory:\` / \`memorize:\` / \`remember:\` / \`inventory:\` for child tasks that should capture reusable context.
+- \`include: <path>\` to delegate child subtasks to another Markdown file.
+
+You can apply prefixes in either form:
+
+- Inline on a checkbox child task, for example \`- [ ] verify: unit tests pass\`.
+- As a directive parent that applies to child checkbox items, for example:
+
+  \`- verify:\`
+  \`  - [ ] Unit tests pass\`
+  \`  - [ ] Linting is clean\`
+
+Prefix composition is supported with \`, \` or \`; \` separators when combining known prefixes, for example:
+
+- \`- [ ] profile: fast, verify: release checks pass\`
+- \`- [ ] profile: complex; memory: record migration constraints\`
+
+Heuristics:
+
+- Use verify-only prefixes when the child task is purely to confirm current state.
+- Use fast prefixes for tiny child edits that do not need a separate validation pass.
+- Use profile when child task complexity or cost/speed trade-offs suggest a non-default worker.
+- Use directive parents when multiple adjacent child tasks share the same prefix.
+- Prefer plain \`- [ ]\` child items when no special behavior is needed.
 
 Rules:
 - Scope changes strictly to child TODO items under the selected parent task.
