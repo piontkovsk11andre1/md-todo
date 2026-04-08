@@ -56,6 +56,10 @@ export interface TaskRepairResult {
   valid: boolean;
   /** Total number of repair attempts performed for this run. */
   attempts: number;
+  /** Raw stdout from the last repair worker run, when available. */
+  repairStdout?: string;
+  /** Raw stdout from the last verification worker run, when available. */
+  verificationStdout?: string;
 }
 
 /**

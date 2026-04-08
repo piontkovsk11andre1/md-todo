@@ -3,6 +3,7 @@ import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import type {
   CommandExecutionOptions,
   CommandExecutor,
+  ProcessRunMode,
   TaskRepairPort,
   TaskVerificationPort,
   TraceWriterPort,
@@ -12,9 +13,14 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import {
   createRepairAttemptEvent,
   createRepairOutcomeEvent,
+  createUsageLimitDetectedEvent,
   createVerificationEfficiencyEvent,
   createVerificationResultEvent,
 } from "../domain/trace.js";
+import {
+  areOutputsSuspiciouslySimilar,
+  containsKnownUsageLimitPattern,
+} from "../domain/services/output-similarity.js";
 
 type ArtifactContext = any;
 
@@ -38,6 +44,7 @@ export interface VerifyRepairLoopInput {
   contextBefore: string;
   verifyTemplate: string;
   repairTemplate: string;
+  executionStdout?: string;
   workerPattern: ParsedWorkerPattern;
   configDir?: string;
   maxRepairAttempts: number;
@@ -51,6 +58,10 @@ export interface VerifyRepairLoopInput {
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
   cliExpansionEnabled?: boolean;
+  runMode?: ProcessRunMode;
+  executionOutputCaptured?: boolean;
+  isInlineCliTask?: boolean;
+  isToolExpansionTask?: boolean;
 }
 
 /**
@@ -59,6 +70,7 @@ export interface VerifyRepairLoopInput {
 export interface VerifyRepairLoopResult {
   valid: boolean;
   failureReason: string | null;
+  usageLimitDetected?: boolean;
 }
 
 /**
@@ -68,6 +80,8 @@ export async function runVerifyRepairLoop(
   dependencies: VerifyRepairLoopDependencies,
   input: VerifyRepairLoopInput,
 ): Promise<VerifyRepairLoopResult> {
+  const isExplicitlyEmptyOutput = (stdout: string | undefined): boolean =>
+    typeof stdout === "string" && stdout.trim().length === 0;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const emitWorkerOutput = (stdout: string, stderr: string): void => {
     if (!input.showAgentOutput) {
@@ -140,12 +154,44 @@ export async function runVerifyRepairLoop(
     }));
   };
 
+  const emitUsageLimitDetected = (payload: {
+    phase: "execute" | "verify" | "repair";
+    reason: string;
+    similarityDetected: boolean;
+    knownPatternDetected: boolean;
+    executionStdout: string | null;
+    matchedPhase: "execute" | "verify" | "repair";
+    matchedStdout: string | null;
+  }): void => {
+    if (!input.trace || !runId) {
+      return;
+    }
+
+    dependencies.traceWriter.write(createUsageLimitDetectedEvent({
+      timestamp: new Date().toISOString(),
+      run_id: runId,
+      payload: {
+        phase: payload.phase,
+        reason: payload.reason,
+        similarity_detected: payload.similarityDetected,
+        known_pattern_detected: payload.knownPatternDetected,
+        execution_stdout: payload.executionStdout,
+        matched_phase: payload.matchedPhase,
+        matched_stdout: payload.matchedStdout,
+      },
+    }));
+  };
+
   let verifyAttempts = 0;
   let repairAttempts = 0;
   let firstPassSuccess = false;
   const cumulativeFailureReasons: string[] = [];
   let verificationDurationMs = 0;
   let executionDurationMs = 0;
+  const shouldRunUsageLimitDetection = input.runMode !== "detached"
+    && (input.runMode !== "tui" || input.executionOutputCaptured === true)
+    && input.isInlineCliTask !== true
+    && input.isToolExpansionTask !== true;
 
   // Emits aggregate efficiency metrics for verification and repair behavior.
   const emitVerificationEfficiency = (): void => {
@@ -170,6 +216,33 @@ export async function runVerifyRepairLoop(
     }));
   };
 
+  if (
+    shouldRunUsageLimitDetection
+    &&
+    typeof input.executionStdout === "string"
+    && containsKnownUsageLimitPattern(input.executionStdout)
+  ) {
+    const usageLimitFailureReason = "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.";
+    emitUsageLimitDetected({
+      phase: "execute",
+      reason: usageLimitFailureReason,
+      similarityDetected: false,
+      knownPatternDetected: true,
+      executionStdout: input.executionStdout,
+      matchedPhase: "execute",
+      matchedStdout: input.executionStdout,
+    });
+    cumulativeFailureReasons.push(usageLimitFailureReason);
+    emitRepairOutcome(false, 0);
+    emitVerificationEfficiency();
+    emit({ kind: "error", message: usageLimitFailureReason });
+    return {
+      valid: false,
+      failureReason: usageLimitFailureReason,
+      usageLimitDetected: true,
+    };
+  }
+
   // Always run one initial verification before considering repairs.
   if (input.verbose) {
     emit({ kind: "info", message: "Verify phase: running initial verification (attempt 1)." });
@@ -177,7 +250,7 @@ export async function runVerifyRepairLoop(
   }
 
   const initialVerificationStartedAt = Date.now();
-  const { valid, formatWarning } = await dependencies.taskVerification.verify({
+  const { valid, formatWarning, stdout: verificationStdout } = await dependencies.taskVerification.verify({
     task: input.task,
     source: input.source,
     contextBefore: input.contextBefore,
@@ -204,6 +277,35 @@ export async function runVerifyRepairLoop(
   const initialFailureReason = valid
     ? null
     : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
+
+  if (
+    shouldRunUsageLimitDetection
+    && !valid
+    &&
+    typeof input.executionStdout === "string"
+    && typeof verificationStdout === "string"
+    && areOutputsSuspiciouslySimilar(input.executionStdout, verificationStdout)
+  ) {
+    const usageLimitFailureReason = "Possible API usage limit detected: identical or near-identical responses across execution and verification phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.";
+    emitUsageLimitDetected({
+      phase: "verify",
+      reason: usageLimitFailureReason,
+      similarityDetected: true,
+      knownPatternDetected: false,
+      executionStdout: input.executionStdout,
+      matchedPhase: "verify",
+      matchedStdout: verificationStdout,
+    });
+    cumulativeFailureReasons.push(usageLimitFailureReason);
+    emitRepairOutcome(false, 0);
+    emitVerificationEfficiency();
+    emit({ kind: "error", message: usageLimitFailureReason });
+    return {
+      valid: false,
+      failureReason: usageLimitFailureReason,
+      usageLimitDetected: true,
+    };
+  }
 
   if (initialFailureReason) {
     cumulativeFailureReasons.push(initialFailureReason);
@@ -241,6 +343,7 @@ export async function runVerifyRepairLoop(
   });
   let attempts = 0;
   let previousFailure = dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
+  const initialVerificationStdout = verificationStdout;
 
   while (attempts < input.maxRepairAttempts) {
     attempts += 1;
@@ -270,6 +373,58 @@ export async function runVerifyRepairLoop(
       cliExpansionEnabled: input.cliExpansionEnabled,
     });
     executionDurationMs += Math.max(0, Date.now() - repairStartedAt);
+
+    const allPhaseOutputsEmpty = isExplicitlyEmptyOutput(input.executionStdout)
+      && isExplicitlyEmptyOutput(initialVerificationStdout)
+      && isExplicitlyEmptyOutput(result.repairStdout)
+      && isExplicitlyEmptyOutput(result.verificationStdout);
+
+    if (allPhaseOutputsEmpty) {
+      const emptyOutputFailureReason = "Worker output was empty across execution, verification, and repair phases; aborting because this indicates an execution/capture failure rather than an API usage limit.";
+      cumulativeFailureReasons.push(emptyOutputFailureReason);
+      emitRepairOutcome(false, attempts);
+      emitVerificationEfficiency();
+      emit({ kind: "error", message: emptyOutputFailureReason });
+      return {
+        valid: false,
+        failureReason: emptyOutputFailureReason,
+      };
+    }
+
+    if (
+      shouldRunUsageLimitDetection
+      && !result.valid
+      && typeof input.executionStdout === "string"
+    ) {
+      const repairOutputMatched = typeof result.repairStdout === "string"
+        && areOutputsSuspiciouslySimilar(input.executionStdout, result.repairStdout);
+      const reVerificationOutputMatched = typeof result.verificationStdout === "string"
+        && areOutputsSuspiciouslySimilar(input.executionStdout, result.verificationStdout);
+
+      if (repairOutputMatched || reVerificationOutputMatched) {
+        const usageLimitFailureReason = "Possible API usage limit detected: identical or near-identical responses across execution and repair phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.";
+        emitUsageLimitDetected({
+          phase: "repair",
+          reason: usageLimitFailureReason,
+          similarityDetected: true,
+          knownPatternDetected: false,
+          executionStdout: input.executionStdout,
+          matchedPhase: repairOutputMatched ? "repair" : "verify",
+          matchedStdout: repairOutputMatched
+            ? (result.repairStdout ?? null)
+            : (result.verificationStdout ?? null),
+        });
+        cumulativeFailureReasons.push(usageLimitFailureReason);
+        emitRepairOutcome(false, attempts);
+        emitVerificationEfficiency();
+        emit({ kind: "error", message: usageLimitFailureReason });
+        return {
+          valid: false,
+          failureReason: usageLimitFailureReason,
+          usageLimitDetected: true,
+        };
+      }
+    }
 
     verifyAttempts += 1;
     const repairFailureReason = result.valid

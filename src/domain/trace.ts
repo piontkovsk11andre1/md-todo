@@ -38,6 +38,7 @@ export type TraceEventType =
   | "analysis.summary"
   | "verification.result"
   | "verification.efficiency"
+  | "usage.limit_detected"
   | "repair.attempt"
   | "repair.outcome"
   | "task.completed"
@@ -375,6 +376,19 @@ export interface VerificationEfficiencyPayload {
 }
 
 /**
+ * Payload for `usage.limit_detected` events.
+ */
+export interface UsageLimitDetectedPayload {
+  phase: TracePhase;
+  reason: string;
+  similarity_detected: boolean;
+  known_pattern_detected: boolean;
+  execution_stdout: string | null;
+  matched_phase: TracePhase;
+  matched_stdout: string | null;
+}
+
+/**
  * Payload emitted before a repair attempt starts.
  */
 export interface RepairAttemptPayload {
@@ -536,6 +550,10 @@ export type VerificationResultEvent = TraceEventBase<"verification.result", Veri
  */
 export type VerificationEfficiencyEvent = TraceEventBase<"verification.efficiency", VerificationEfficiencyPayload>;
 /**
+ * Strongly typed event shape for `usage.limit_detected`.
+ */
+export type UsageLimitDetectedEvent = TraceEventBase<"usage.limit_detected", UsageLimitDetectedPayload>;
+/**
  * Strongly typed event shape for `repair.attempt`.
  */
 export type RepairAttemptEvent = TraceEventBase<"repair.attempt", RepairAttemptPayload>;
@@ -583,6 +601,7 @@ export type TraceEvent =
   | AnalysisSummaryEvent
   | VerificationResultEvent
   | VerificationEfficiencyEvent
+  | UsageLimitDetectedEvent
   | RepairAttemptEvent
   | RepairOutcomeEvent
   | TaskCompletedEvent
@@ -1056,6 +1075,25 @@ export function createVerificationEfficiencyEvent(input: {
     timestamp: input.timestamp,
     run_id: input.run_id,
     event_type: "verification.efficiency",
+    payload: input.payload,
+  });
+}
+
+/**
+ * Creates a `usage.limit_detected` trace event.
+ *
+ * @param input Required metadata and payload for the event.
+ * @returns Typed `usage.limit_detected` event.
+ */
+export function createUsageLimitDetectedEvent(input: {
+  timestamp: string;
+  run_id: string;
+  payload: UsageLimitDetectedPayload;
+}): UsageLimitDetectedEvent {
+  return createTraceEvent({
+    timestamp: input.timestamp,
+    run_id: input.run_id,
+    event_type: "usage.limit_detected",
     payload: input.payload,
   });
 }

@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { stripAnsi } from "../domain/services/string-utils.js";
 
 export interface AnimationContext {
   skipped?: boolean;
@@ -13,11 +14,6 @@ export function sleep(ms: number, ctx?: AnimationContext): Promise<void> {
 
 export async function pause(ms = 400, ctx?: AnimationContext): Promise<void> {
   await sleep(ms, ctx);
-}
-
-export function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
 export async function typeText(text: string, ctx?: AnimationContext, charDelay = 18): Promise<void> {

@@ -400,10 +400,7 @@ describe("run-task-iteration", () => {
       };
     });
 
-    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration").mockResolvedValue({
-      continueLoop: false,
-      exitCode: 0,
-    });
+    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration");
 
     const traceRunSession = createTraceRunSession({
       getTraceWriter: () => dependencies.traceWriter,
@@ -521,9 +518,15 @@ describe("run-task-iteration", () => {
     vi.spyOn(taskExecutionDispatchModule, "dispatchTaskExecution").mockResolvedValue({
       kind: "ready-for-completion",
       shouldVerify: false,
+      executionStdout: "provider limit message",
       cliExecutionOptionsForVerification: undefined,
       verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
       verificationFailureRunReason: "Verification failed after all repair attempts.",
+    });
+
+    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration").mockResolvedValue({
+      continueLoop: false,
+      exitCode: 0,
     });
 
     const traceRunSession = createTraceRunSession({
@@ -618,9 +621,9 @@ describe("run-task-iteration", () => {
       },
     });
 
-    const taskCheckedEventIndex = events.findIndex((event) => event.kind === "success" && event.message === "Task checked: Ship release");
-    expect(taskCheckedEventIndex).toBeGreaterThanOrEqual(0);
-    expect(events[taskCheckedEventIndex + 1]).toEqual({ kind: "group-end", status: "success" });
+    expect(events).toContainEqual({ kind: "group-end", status: "success" });
+    expect(completeSpy).toHaveBeenCalledTimes(1);
+    expect(completeSpy.mock.calls[0]?.[0]?.executionStdout).toBeUndefined();
   });
 
   it("forwards skipRemainingSiblingsReason from dispatch to completion", async () => {
@@ -2056,7 +2059,67 @@ describe("task-execution-dispatch", () => {
     expect(result).toEqual({
       kind: "ready-for-completion",
       shouldVerify: true,
+      executionStdout: "done",
       cliExecutionOptionsForVerification: verifyAfterExecuteOptions,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+    });
+  });
+
+  it("omits execution stdout capture when shouldVerify is false", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "Ship release");
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] Ship release\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: "provider limit message",
+      stderr: "",
+    }));
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: false,
+      mode: "wait",
+      transport: "file",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      task,
+      prompt: "prompt",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      trace: true,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result).toEqual({
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: undefined,
       verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
       verificationFailureRunReason: "Verification failed after all repair attempts.",
     });

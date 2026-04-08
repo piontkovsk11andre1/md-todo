@@ -361,12 +361,22 @@ export function createRunTaskExecution(
         rounds,
         currentRound,
       };
+      const failureMetadata = failure
+        ? {
+          runReason: failure.reason,
+          failureExitCode: failure.exitCode,
+        }
+        : undefined;
       const finalExtra = extra
         ? {
           ...extra,
           ...roundMetadata,
+          ...(failureMetadata ?? {}),
         }
-        : roundMetadata;
+        : {
+          ...roundMetadata,
+          ...(failureMetadata ?? {}),
+        };
       traceRunSession.emitRoundCompleted(currentRound, rounds);
       traceRunSession.emitTaskOutcome(status, failure);
       await runTraceEnrichment({

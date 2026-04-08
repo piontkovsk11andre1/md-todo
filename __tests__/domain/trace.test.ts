@@ -21,6 +21,7 @@ import {
   createTimingWaterfallEvent,
   createTaskCompletedEvent,
   createTaskFailedEvent,
+  createUsageLimitDetectedEvent,
   createVerificationEfficiencyEvent,
   createVerificationResultEvent,
 } from "../../src/domain/trace.js";
@@ -497,6 +498,34 @@ describe("trace event factory functions", () => {
       total_repair_attempts: 2,
       verification_to_execution_ratio: 0.6,
       cumulative_failure_reasons: ["missing test", "failing assertion"],
+    });
+  });
+
+  it("creates usage.limit_detected event with schema version and required payload fields", () => {
+    const event = createUsageLimitDetectedEvent({
+      timestamp,
+      run_id: "run-123",
+      payload: {
+        phase: "verify",
+        reason: "Possible API usage limit detected",
+        similarity_detected: true,
+        known_pattern_detected: false,
+        execution_stdout: "rate limit exceeded",
+        matched_phase: "verify",
+        matched_stdout: "rate limit exceeded",
+      },
+    });
+
+    expectCommonTraceFields(event);
+    expect(event.event_type).toBe("usage.limit_detected");
+    expect(event.payload).toEqual({
+      phase: "verify",
+      reason: "Possible API usage limit detected",
+      similarity_detected: true,
+      known_pattern_detected: false,
+      execution_stdout: "rate limit exceeded",
+      matched_phase: "verify",
+      matched_stdout: "rate limit exceeded",
     });
   });
 

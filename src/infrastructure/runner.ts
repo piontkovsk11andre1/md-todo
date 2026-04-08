@@ -67,9 +67,17 @@ export interface RunnerOptions {
 export interface RunnerResult {
   /** Exit code of the process (null if detached or killed). */
   exitCode: number | null;
-  /** Captured stdout (wait mode and optional tui capture). */
+  /**
+   * Captured stdout bytes decoded as UTF-8 with no trimming or truncation.
+   *
+   * In detached mode or non-capturing TUI mode this is intentionally empty.
+   */
   stdout: string;
-  /** Captured stderr (wait mode and optional tui capture). */
+  /**
+   * Captured stderr bytes decoded as UTF-8 with no trimming or truncation.
+   *
+   * In detached mode or non-capturing TUI mode this is intentionally empty.
+   */
   stderr: string;
 }
 

@@ -18,12 +18,17 @@ import type {
   ArtifactStoreStatus,
   CommandExecutionOptions,
   CommandExecutor,
+  ProcessRunMode,
   TraceWriterPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
 import { pluralize } from "./run-task-utils.js";
+import {
+  RUN_REASON_VERIFICATION_FAILED,
+  RUN_REASON_USAGE_LIMIT_DETECTED,
+} from "../domain/run-reasons.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 type ArtifactContext = ArtifactRunContext;
@@ -94,7 +99,12 @@ export async function completeTaskIteration(params: {
   automationCommand: string[];
   automationWorkerPattern: ParsedWorkerPattern;
   shouldVerify: boolean;
+  runMode: ProcessRunMode;
+  executionOutputCaptured?: boolean;
   verificationPrompt: string;
+  executionStdout?: string;
+  isInlineCliTask?: boolean;
+  isToolExpansionTask?: boolean;
   artifactContext: ArtifactContext;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   verificationFailureMessage: string;
@@ -106,6 +116,7 @@ export async function completeTaskIteration(params: {
   continueLoop: boolean;
   exitCode?: number;
   forceRetryableFailure?: boolean;
+  failureMessage?: string;
   groupEnded?: boolean;
 }> {
   const {
@@ -142,7 +153,12 @@ export async function completeTaskIteration(params: {
     automationCommand,
     automationWorkerPattern,
     shouldVerify,
+    runMode,
+    executionOutputCaptured,
     verificationPrompt,
+    executionStdout,
+    isInlineCliTask,
+    isToolExpansionTask,
     artifactContext,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     verificationFailureMessage,
@@ -160,8 +176,9 @@ export async function completeTaskIteration(params: {
     traceRunSession.emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
     let valid: boolean;
     let failureReason: string | null;
+    let usageLimitDetected = false;
     try {
-      ({ valid, failureReason } = await runVerifyRepairLoop({
+      ({ valid, failureReason, usageLimitDetected: usageLimitDetected = false } = await runVerifyRepairLoop({
         taskVerification: dependencies.taskVerification,
         taskRepair: dependencies.taskRepair,
         verificationStore: dependencies.verificationStore,
@@ -173,6 +190,7 @@ export async function completeTaskIteration(params: {
         contextBefore: expandedContextBefore,
         verifyTemplate: templates.verify,
         repairTemplate: templates.repair,
+        executionStdout,
         workerPattern: automationWorkerPattern,
         configDir: dependencies.configDir?.configDir,
         maxRepairAttempts,
@@ -185,6 +203,10 @@ export async function completeTaskIteration(params: {
         cliBlockExecutor,
         cliExecutionOptions: cliExecutionOptionsWithVerificationTemplateFailureAbort,
         cliExpansionEnabled,
+        runMode,
+        executionOutputCaptured,
+        isInlineCliTask,
+        isToolExpansionTask,
       }));
     } catch (error) {
       const failureCode = await handleTemplateCliFailure(
@@ -213,11 +235,16 @@ export async function completeTaskIteration(params: {
     // Record verification phase completion for trace consumers.
     traceRunSession.completePhase(verifyPhaseTrace, valid ? 0 : 1, "", "", false);
     if (!valid) {
+      const usageLimitFailureMessage = failureReason
+        ?? "Possible API usage limit detected during verification/repair.";
       const fullVerificationFailureMessage = failureReason
         ? verificationFailureMessage + "\n" + failureReason
         : verificationFailureMessage;
+      const surfacedFailureMessage = usageLimitDetected
+        ? usageLimitFailureMessage
+        : fullVerificationFailureMessage;
       // Surface verification details, trigger failure hooks, and terminate the run.
-      emit({ kind: "error", message: fullVerificationFailureMessage });
+      emit({ kind: "error", message: surfacedFailureMessage });
       await afterTaskFailed(
         dependencies,
         taskForVerification,
@@ -228,8 +255,14 @@ export async function completeTaskIteration(params: {
       );
       return {
         continueLoop: false,
-        forceRetryableFailure: true,
-        exitCode: await failRun(2, "verification-failed", verificationFailureRunReason, 2),
+        forceRetryableFailure: !usageLimitDetected,
+        failureMessage: surfacedFailureMessage,
+        exitCode: await failRun(
+          2,
+          "verification-failed",
+          usageLimitDetected ? RUN_REASON_USAGE_LIMIT_DETECTED : RUN_REASON_VERIFICATION_FAILED,
+          2,
+        ),
         groupEnded: false,
       };
     }

@@ -628,7 +628,16 @@ export async function runTaskIteration(params: {
     automationCommand,
     automationWorkerPattern,
     shouldVerify: dispatchResult.shouldVerify,
+    runMode: execution.mode,
+    executionOutputCaptured: dispatchResult.shouldVerify
+      ? dispatchResult.executionOutputCaptured
+      : undefined,
     verificationPrompt: preparedPrompts.verificationPrompt,
+    executionStdout: dispatchResult.shouldVerify
+      ? dispatchResult.executionStdout
+      : undefined,
+    isInlineCliTask: taskForExecution.isInlineCli,
+    isToolExpansionTask: taskIntentDecision.intent === "tool-expansion",
     artifactContext: state.artifactContext,
     cliExecutionOptionsWithVerificationTemplateFailureAbort:
       dispatchResult.cliExecutionOptionsForVerification,
@@ -644,7 +653,7 @@ export async function runTaskIteration(params: {
   }
 
   if (!completionResult.continueLoop && (completionResult.exitCode ?? 0) !== 0 && !groupEnded) {
-    emitGroupFailure(dispatchResult.verificationFailureRunReason);
+    emitGroupFailure(completionResult.failureMessage ?? dispatchResult.verificationFailureRunReason);
   } else if (!completionResult.continueLoop && !groupEnded) {
     emitGroupSuccess();
   }

@@ -37,6 +37,8 @@ export type TaskExecutionDispatchResult =
   | {
     kind: "ready-for-completion";
     shouldVerify: boolean;
+    executionStdout?: string;
+    executionOutputCaptured?: boolean;
     verificationFailureMessage: string;
     verificationFailureRunReason: string;
     cliExecutionOptionsForVerification: CommandExecutionOptions | undefined;
@@ -545,6 +547,8 @@ export async function dispatchTaskExecution(params: {
   return {
     kind: "ready-for-completion",
     shouldVerify,
+    executionStdout: shouldVerify ? runResult.stdout : undefined,
+    executionOutputCaptured: shouldVerify ? mode === "wait" : undefined,
     cliExecutionOptionsForVerification: cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
     verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
     verificationFailureRunReason: "Verification failed after all repair attempts.",

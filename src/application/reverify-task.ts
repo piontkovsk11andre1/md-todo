@@ -478,6 +478,7 @@ export function createReverifyTask(
           showAgentOutput,
           cliBlockExecutor,
           cliExecutionOptions: cliExecutionOptionsWithTemplateFailureAbort,
+          runMode: "wait",
         });
 
         if (!verificationResult.valid) {

@@ -50,6 +50,7 @@ export interface TaskVerificationOptions {
 export interface TaskVerificationResult {
   valid: boolean;
   formatWarning?: string;
+  stdout?: string;
 }
 
 /**

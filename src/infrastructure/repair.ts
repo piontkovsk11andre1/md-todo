@@ -71,6 +71,10 @@ export interface RepairResult {
   valid: boolean;
   /** How many correction attempts were made. */
   attempts: number;
+  /** Raw stdout from the last repair worker run, when available. */
+  repairStdout?: string;
+  /** Raw stdout from the last verification worker run, when available. */
+  verificationStdout?: string;
 }
 
 /**
@@ -84,6 +88,8 @@ export interface RepairResult {
  */
 export async function repair(options: RepairOptions): Promise<RepairResult> {
   let attempts = 0;
+  let repairStdout: string | undefined;
+  let verificationStdout: string | undefined;
 
   // Retry until verification succeeds or the configured attempt limit is reached.
   for (let i = 0; i < options.maxRetries; i++) {
@@ -146,10 +152,11 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       artifactPhase: "repair",
       artifactExtra: { attempt: attempts },
     });
-    options.onWorkerOutput?.(runResult.stdout, runResult.stderr);
+    repairStdout = runResult.stdout;
+    options.onWorkerOutput?.(repairStdout, runResult.stderr);
 
     // Re-run verification immediately after each repair attempt.
-    const { valid } = await verify({
+    const { valid, stdout } = await verify({
       task: options.task,
       source: options.source,
       contextBefore: options.contextBefore,
@@ -167,13 +174,14 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       cliExecutionOptions: options.cliExecutionOptions,
       cliExpansionEnabled: options.cliExpansionEnabled,
     });
+    verificationStdout = stdout;
 
     // Exit early as soon as verification passes.
     if (valid) {
-      return { valid: true, attempts };
+      return { valid: true, attempts, repairStdout, verificationStdout };
     }
   }
 
   // Exhausted all retries without reaching a valid state.
-  return { valid: false, attempts };
+  return { valid: false, attempts, repairStdout, verificationStdout };
 }

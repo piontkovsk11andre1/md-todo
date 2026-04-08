@@ -2,6 +2,10 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createRunTask } from "../../src/application/run-task.js";
 import { FileLockError } from "../../src/domain/ports/file-lock.js";
+import {
+  RUN_REASON_USAGE_LIMIT_DETECTED,
+  RUN_REASON_VERIFICATION_FAILED,
+} from "../../src/domain/run-reasons.js";
 import type { CommandExecutor, ProcessRunResult, ProcessRunner } from "../../src/domain/ports/index.js";
 import {
   createDependencies,
@@ -74,6 +78,80 @@ describe("run-task orchestration", () => {
 
     expect(code).toBe(0);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Detached mode"))).toBe(true);
+  });
+
+  it("persists verification-failed run reason in finalized run metadata", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+    });
+
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: "worker output",
+      stderr: "",
+    });
+    vi.mocked(dependencies.taskVerification.verify).mockResolvedValue({ valid: false });
+    vi.mocked(dependencies.verificationStore.read).mockReturnValue("missing tests");
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: true,
+        noRepair: true,
+      }),
+    );
+
+    expect(code).toBe(2);
+    expect(dependencies.artifactStore.finalize).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "verification-failed",
+        extra: expect.objectContaining({
+          runReason: RUN_REASON_VERIFICATION_FAILED,
+          failureExitCode: 2,
+        }),
+      }),
+    );
+  });
+
+  it("persists usage-limit run reason in finalized run metadata", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const usageLimitOutput = "Error: rate limit exceeded for this workspace";
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+    });
+
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: usageLimitOutput,
+      stderr: "",
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        verify: true,
+      }),
+    );
+
+    expect(code).toBe(2);
+    expect(dependencies.artifactStore.finalize).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "verification-failed",
+        extra: expect.objectContaining({
+          runReason: RUN_REASON_USAGE_LIMIT_DETECTED,
+          failureExitCode: 2,
+        }),
+      }),
+    );
   });
 
   it("passes intent-resolved verify worker to task verification for verify-only tasks", async () => {

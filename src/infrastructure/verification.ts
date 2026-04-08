@@ -23,6 +23,7 @@ interface VerificationResult {
   ok: boolean;
   sidecarContent: string;
   formatWarning?: string;
+  stdout?: string;
 }
 
 /**
@@ -64,6 +65,7 @@ const FORMAT_WARNING = "Verification worker produced extra output before the ver
  * carries a `formatWarning` so callers can surface it.
  */
 function parseVerificationResult(output: { exitCode: number | null; stdout: string; stderr: string }): VerificationResult {
+  const rawStdout = output.stdout;
   // Trim streams once so later checks can treat empty output consistently.
   const stdout = output.stdout.trim();
   const stderr = output.stderr.trim();
@@ -71,7 +73,7 @@ function parseVerificationResult(output: { exitCode: number | null; stdout: stri
   // Non-zero exit means the worker failed before producing a valid OK payload.
   if (output.exitCode !== 0) {
     const reason = stdout || stderr || `Verification worker exited with code ${String(output.exitCode)}.`;
-    return { ok: false, sidecarContent: reason };
+    return { ok: false, sidecarContent: reason, stdout: rawStdout };
   }
 
   // Extract the last non-empty line as the verdict.
@@ -80,7 +82,7 @@ function parseVerificationResult(output: { exitCode: number | null; stdout: stri
 
   // `OK` is the only accepted success token.
   if (verdict.toUpperCase() === "OK") {
-    return { ok: true, sidecarContent: "OK", formatWarning };
+    return { ok: true, sidecarContent: "OK", formatWarning, stdout: rawStdout };
   }
 
   // `NOT_OK: <reason>` is the canonical failure format.
@@ -93,6 +95,7 @@ function parseVerificationResult(output: { exitCode: number | null; stdout: stri
         ? "Verification failed (no details)."
         : normalizedReason,
       formatWarning,
+      stdout: rawStdout,
     };
   }
 
@@ -104,18 +107,20 @@ function parseVerificationResult(output: { exitCode: number | null; stdout: stri
       sidecarContent: normalizedReason === ""
         ? "Verification failed (no details)."
         : normalizedReason,
+      stdout: rawStdout,
     };
   }
 
   // Fall back to stderr when stdout is empty.
   if (stderr !== "") {
-    return { ok: false, sidecarContent: stderr };
+    return { ok: false, sidecarContent: stderr, stdout: rawStdout };
   }
 
   // Guard against empty worker output to keep sidecar diagnostics explicit.
   return {
     ok: false,
     sidecarContent: "Verification worker returned empty output. Expected OK or a short failure reason.",
+    stdout: rawStdout,
   };
 }
 
@@ -151,6 +156,7 @@ export interface VerifyOptions {
 export interface VerifyResult {
   valid: boolean;
   formatWarning?: string;
+  stdout?: string;
 }
 
 /**
@@ -217,8 +223,9 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
   });
 
   // Persist the normalized sidecar output and return final pass/fail status.
-  options.onWorkerOutput?.(runResult.stdout, runResult.stderr);
+  const rawStdout = runResult.stdout;
+  options.onWorkerOutput?.(rawStdout, runResult.stderr);
   const result = parseVerificationResult(runResult);
   options.verificationStore.write(options.task, result.sidecarContent);
-  return { valid: result.ok, formatWarning: result.formatWarning };
+  return { valid: result.ok, formatWarning: result.formatWarning, stdout: rawStdout };
 }
