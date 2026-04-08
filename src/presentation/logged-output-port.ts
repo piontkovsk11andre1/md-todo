@@ -107,13 +107,14 @@ function resolveLogKind(event: ApplicationOutputEvent): GlobalOutputLogKind {
  */
 function resolveLogLevel(event: ApplicationOutputEvent): GlobalOutputLogLevel {
   switch (event.kind) {
+    case "group-end":
+      return event.status === "failure" ? "warn" : "info";
     case "warn":
       return "warn";
     case "error":
     case "stderr":
       return "error";
     case "group-start":
-    case "group-end":
     case "info":
     case "success":
     case "progress":
@@ -129,17 +130,19 @@ function resolveLogLevel(event: ApplicationOutputEvent): GlobalOutputLogLevel {
  */
 function resolveLogStream(event: ApplicationOutputEvent): GlobalOutputLogStream {
   switch (event.kind) {
+    case "warn":
     case "error":
     case "stderr":
       return "stderr";
     case "group-start":
-    case "group-end":
     case "info":
-    case "warn":
     case "success":
     case "progress":
     case "task":
     case "text":
+      return "stdout";
+    case "group-end":
+      return event.status === "failure" ? "stderr" : "stdout";
     default:
       return "stdout";
   }

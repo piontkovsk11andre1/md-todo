@@ -418,11 +418,12 @@ export const cliOutputPort: ApplicationOutputPort = {
         const statusLabel = isSuccess ? `${pc.green("✔")} Done` : `${pc.red("✖")} Failed`;
         const suffix = event.message ? ` — ${event.message}` : "";
         const parentPrefix = groupLinePrefix();
+        const writeLine = isSuccess ? console.log : console.error;
 
         if (isInteractiveProgressEnabled()) {
-          console.log(`${parentPrefix}└ ${statusLabel}${suffix}`);
+          writeLine(`${parentPrefix}└ ${statusLabel}${suffix}`);
         } else {
-          console.log(`${parentPrefix}${statusLabel}${suffix}`);
+          writeLine(`${parentPrefix}${statusLabel}${suffix}`);
         }
         return;
       }
@@ -439,7 +440,7 @@ export const cliOutputPort: ApplicationOutputPort = {
         return;
       case "warn":
         flushProgressLine();
-        console.log(withGroupPrefix(`${pc.yellow("⚠")} ${event.message}`));
+        console.error(withGroupPrefix(`${pc.yellow("⚠")} ${event.message}`));
         return;
       case "error":
         flushProgressLine();

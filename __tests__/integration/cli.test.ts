@@ -236,7 +236,7 @@ describe.sequential("CLI integration", () => {
     const result = await runCli(["next", "missing/**/*.md"], workspace);
 
     expect(result.code).toBe(3);
-    expect(result.logs.some((line) => line.includes("No Markdown files found matching: missing/**/*.md"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("No Markdown files found matching: missing/**/*.md"))).toBe(true);
   });
 
   it("next remains read-only and ignores existing source lockfiles", async () => {
@@ -2891,7 +2891,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("[1/1]") && line.includes("Write docs"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Verification failed:") && line.includes("Running repair (1 attempt(s))..."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Verification failed:") && line.includes("Running repair (1 attempt(s))..."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
     expect(result.logs).not.toContain("worker stdout\n");
@@ -2917,7 +2917,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("worker stdout"))).toBe(true);
     expect(result.stderrWrites.some((line) => line.includes("worker stderr"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Verification failed:"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Verification failed:"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair attempt 1 of 1: starting..."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: Write docs"))).toBe(true);
@@ -5560,7 +5560,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
   });
 
   it("run --all file-done commit skips commit with warning outside a git repository and still completes the run", async () => {
@@ -5581,7 +5581,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo one"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo two"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo one");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo two");
@@ -5604,7 +5604,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo one"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo two"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--commit: not inside a git repository, skipping."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo one");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] cli: echo two");
@@ -6027,7 +6027,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Task checked: cli: echo hello"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("--on-complete hook exited with code 17"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("--on-complete hook exited with code 17"))).toBe(true);
   });
 
   it("run keeps --on-complete hook output visible with hidden agent output by default", async () => {
@@ -6317,7 +6317,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: force: implement release docs"))).toBe(true);
     expect(fs.readFileSync(runLogPath, "utf-8").trim().split("\n").filter(Boolean)).toHaveLength(2);
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] force: implement release docs\n");
@@ -6354,7 +6354,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: force: cli: node force-inline-retry.cjs"))).toBe(true);
     expect(fs.readFileSync(attemptsPath, "utf-8")).toBe("2");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] force: cli: node force-inline-retry.cjs\n");
@@ -6378,7 +6378,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Execution phase skipped; entering verification phase."))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: force: verify: tests pass"))).toBe(true);
     expect(fs.readFileSync(verifyAttemptsPath, "utf-8")).toBe("2");
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [x] force: verify: tests pass\n");
@@ -6404,7 +6404,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Execution phase skipped; entering verification phase."))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Task checked: force: verify: tests pass"))).toBe(true);
     expect(fs.readFileSync(verifyAttemptsPath, "utf-8")).toBe("3");
     expect(fs.readFileSync(repairAttemptsPath, "utf-8")).toBe("1");
@@ -6523,7 +6523,7 @@ describe.sequential("CLI integration", () => {
     ], projectDir);
 
     expect(result.code).toBe(1);
-    expect(result.logs.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Force retry 2 of 2"))).toBe(true);
     expect(fs.readFileSync(templateCliAttemptsPath, "utf-8")).toBe("2");
     expect(fs.existsSync(markerPath)).toBe(false);
     expect(fs.readFileSync(path.join(projectDir, "roadmap.md"), "utf-8")).toBe("- [ ] force: implement release docs\n");
@@ -7581,7 +7581,7 @@ describe.sequential("CLI integration", () => {
     const promptSource = fs.readFileSync(promptPath, "utf-8");
     expect(promptSource).not.toContain("Deliver API workflow");
     expect(promptSource).toContain("Edit the source file directly at: roadmap.md");
-    expect(result.logs.some((line) => line.includes("Planner made no file edits"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Planner made no file edits"))).toBe(true);
   });
 
   it("plan --print-prompt expands cli blocks in plan templates", async () => {
@@ -8704,7 +8704,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Planner made no file edits. No TODO items added."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Planner made no file edits. No TODO items added."))).toBe(true);
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
     expect(updated).toBe("# Roadmap\n\n## Scope\n- [ ] Existing task\n");
@@ -8952,8 +8952,8 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Research introduced new unchecked TODO items in"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Removed 1 introduced item: - [ ] New task from research; continuing with cleaned output."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Research introduced new unchecked TODO items in"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Removed 1 introduced item: - [ ] New task from research; continuing with cleaned output."))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toBe("# Roadmap\n\nThin note.\n\n");
   });
 
@@ -8977,8 +8977,8 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Research introduced new unchecked TODO items in"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Removed 1 introduced item: - [ ] Real task to remove; continuing with cleaned output."))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Research introduced new unchecked TODO items in"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("Removed 1 introduced item: - [ ] Real task to remove; continuing with cleaned output."))).toBe(true);
     expect(fs.readFileSync(sourcePath, "utf-8")).toBe([
       "# Roadmap",
       "",
@@ -9487,7 +9487,7 @@ describe.sequential("CLI integration", () => {
 
     expect(result.code).toBe(0);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "execute.md"), "utf-8")).toBe("custom execute");
-    expect(result.logs.some((line) => line.includes(".rundown/execute.md already exists, skipping."))).toBe(true);
+    expect(result.errors.some((line) => line.includes(".rundown/execute.md already exists, skipping."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Initialized .rundown/ with default templates."))).toBe(true);
   });
 });

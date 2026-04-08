@@ -211,7 +211,7 @@ describe("createLoggedOutputPort", () => {
     expect(writer.write).toHaveBeenNthCalledWith(2, {
       ts: "2026-03-28T12:34:56.000Z",
       level: "warn",
-      stream: "stdout",
+      stream: "stderr",
       kind: "warn",
       message: "warn message",
       command: "rundown",
@@ -355,8 +355,8 @@ describe("createLoggedOutputPort", () => {
       message: "[4/10] Add include-cycle protection",
     }));
     expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      level: "info",
-      stream: "stdout",
+      level: "warn",
+      stream: "stderr",
       kind: "group-end",
       message: "failure - repairs exhausted",
     }));
@@ -440,8 +440,8 @@ describe("createLoggedOutputPort", () => {
     }));
     expect(writer.write).toHaveBeenNthCalledWith(4, expect.objectContaining({
       kind: "group-end",
-      level: "info",
-      stream: "stdout",
+      level: "warn",
+      stream: "stderr",
       message: "failure - repairs exhausted",
     }));
   });

@@ -559,6 +559,47 @@ describe("cliOutputPort", () => {
     }
   });
 
+  it("renders group-end failure to stderr in non-TTY mode", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    process.env.CI = "true";
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      cliOutputPort.emit({ kind: "group-end", status: "failure", message: "repairs exhausted" });
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const output = stripAnsi(errorSpy.mock.calls[0]?.[0] as string);
+      expect(output).toBe("✖ Failed — repairs exhausted");
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
   it("renders group-end failure with message in TTY mode", () => {
     const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
     const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
@@ -571,13 +612,13 @@ describe("cliOutputPort", () => {
     const previousCi = process.env.CI;
     delete process.env.CI;
 
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
       cliOutputPort.emit({ kind: "group-end", status: "failure", message: "repairs exhausted" });
 
-      expect(logSpy).toHaveBeenCalledTimes(1);
-      const output = stripAnsi(logSpy.mock.calls[0]?.[0] as string);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const output = stripAnsi(errorSpy.mock.calls[0]?.[0] as string);
       expect(output).toBe("└ ✖ Failed — repairs exhausted");
     } finally {
       if (previousCi === undefined) {
@@ -596,6 +637,17 @@ describe("cliOutputPort", () => {
         Reflect.deleteProperty(process.stdout, "isTTY");
       }
     }
+  });
+
+  it("renders warn events to stderr", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    cliOutputPort.emit({ kind: "warn", message: "heads up" });
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toContain("heads up");
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
   it("styles log-runs text lines in the presentation layer", () => {
@@ -642,16 +694,14 @@ describe("cliOutputPort", () => {
   });
 
   it("still renders warnings and errors in quiet mode", () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     setCliOutputPortQuietMode(true);
     cliOutputPort.emit({ kind: "warn", message: "heads up" });
     cliOutputPort.emit({ kind: "error", message: "bad" });
 
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    expect(stripAnsi(logSpy.mock.calls[0]?.[0] as string)).toContain("heads up");
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toContain("bad");
+    expect(errorSpy).toHaveBeenCalledTimes(2);
+    expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toContain("heads up");
+    expect(stripAnsi(errorSpy.mock.calls[1]?.[0] as string)).toContain("bad");
   });
 });

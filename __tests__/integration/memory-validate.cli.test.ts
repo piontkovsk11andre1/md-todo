@@ -295,7 +295,7 @@ describe.sequential("memory CLI integration", () => {
     const result = await runCli(["memory-clean", "roadmap.md", "--all"], workspace);
 
     expect(result.code).toBe(1);
-    expect(result.logs.some((line) => line.includes("without --force"))).toBe(true);
+    expect(result.errors.some((line) => line.includes("without --force"))).toBe(true);
     expect(fs.existsSync(memoryFilePath)).toBe(true);
     expect(fs.existsSync(memoryIndexPath)).toBe(true);
   });
