@@ -64,6 +64,10 @@ describe("extra infrastructure adapters", () => {
         profiles: {
           fast: ["opencode", "run", "--model", "gpt-5.3-codex"],
         },
+        traceStatistics: {
+          enabled: false,
+          fields: ["total_time", "tokens_estimated"],
+        },
       };
       fs.writeFileSync(path.join(tempDir, "config.json"), JSON.stringify(config), "utf-8");
 

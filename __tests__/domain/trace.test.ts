@@ -192,6 +192,7 @@ describe("trace event factory functions", () => {
         document_context_lines: 40,
         has_subtasks: true,
         is_inline_cli: false,
+        cli_args: "--worker opencode",
         is_verify_only: true,
       },
     });
@@ -205,6 +206,7 @@ describe("trace event factory functions", () => {
       document_context_lines: 40,
       has_subtasks: true,
       is_inline_cli: false,
+      cli_args: "--worker opencode",
       is_verify_only: true,
     });
   });

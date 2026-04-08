@@ -360,6 +360,84 @@ describe("dry-run-dispatch", () => {
     expect(emit).toHaveBeenCalledWith({ kind: "text", text: "cli: npm test" });
   });
 
+  it("renders inline cli print-prompt with directive cli args", () => {
+    const emit = vi.fn();
+    const code = handleDryRunOrPrintPrompt({
+      emit,
+      printPrompt: true,
+      dryRun: false,
+      dryRunSuppressesCliExpansion: false,
+      dryRunCliBlockCount: 0,
+      onlyVerify: false,
+      task: {
+        ...createInlineTask(taskFile, "cli: npm test"),
+        cliCommand: "npm test",
+        directiveCliArgs: "--worker opencode",
+      },
+      prompt: "unused",
+      verificationPrompt: "unused",
+      automationCommand: ["opencode", "run"],
+      resolvedWorkerCommand: ["opencode", "run"],
+    });
+
+    expect(code).toBe(0);
+    expect(emit).toHaveBeenCalledWith({ kind: "text", text: "cli: npm test --worker opencode" });
+  });
+
+  it("renders inline cli dry-run output with directive cli args", () => {
+    const emit = vi.fn();
+    const code = handleDryRunOrPrintPrompt({
+      emit,
+      printPrompt: false,
+      dryRun: true,
+      dryRunSuppressesCliExpansion: false,
+      dryRunCliBlockCount: 0,
+      onlyVerify: false,
+      task: {
+        ...createInlineTask(taskFile, "cli: npm test"),
+        cliCommand: "npm test",
+        directiveCliArgs: "--worker opencode",
+      },
+      prompt: "unused",
+      verificationPrompt: "unused",
+      automationCommand: ["opencode", "run"],
+      resolvedWorkerCommand: ["opencode", "run"],
+    });
+
+    expect(code).toBe(0);
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "info",
+      message: "Dry run — would execute inline CLI: npm test --worker opencode",
+    }));
+  });
+
+  it("renders inline cli dry-run output with quoted directive cli args", () => {
+    const emit = vi.fn();
+    const code = handleDryRunOrPrintPrompt({
+      emit,
+      printPrompt: false,
+      dryRun: true,
+      dryRunSuppressesCliExpansion: false,
+      dryRunCliBlockCount: 0,
+      onlyVerify: false,
+      task: {
+        ...createInlineTask(taskFile, "cli: npm test"),
+        cliCommand: "npm test",
+        directiveCliArgs: "--worker \"my worker\"",
+      },
+      prompt: "unused",
+      verificationPrompt: "unused",
+      automationCommand: ["opencode", "run"],
+      resolvedWorkerCommand: ["opencode", "run"],
+    });
+
+    expect(code).toBe(0);
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "info",
+      message: "Dry run — would execute inline CLI: npm test --worker \"my worker\"",
+    }));
+  });
+
 });
 
 describe("run-task-iteration", () => {

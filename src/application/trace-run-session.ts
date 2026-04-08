@@ -470,6 +470,7 @@ export function createTraceRunSession(config: {
           document_context_lines: countTraceLines(params.contextBefore),
           has_subtasks: params.metrics.hasSubtasks,
           is_inline_cli: params.task.isInlineCli,
+          cli_args: params.task.directiveCliArgs ?? null,
           is_verify_only: params.isVerifyOnly,
         },
       }));

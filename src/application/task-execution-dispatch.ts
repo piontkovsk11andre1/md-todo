@@ -316,10 +316,11 @@ export async function dispatchTaskExecution(params: {
 
   // Inline CLI tasks execute directly from the task file's directory.
   if (task.isInlineCli) {
+    const inlineCliCommand = resolveInlineCliCommand(task);
     const inlineCliCwd = dependencies.pathOperations.dirname(dependencies.pathOperations.resolve(task.file));
-    emit({ kind: "info", message: "Executing inline CLI: " + task.cliCommand! + " [cwd=" + inlineCliCwd + "]" });
-    const inlineCliPhaseTrace = traceRunSession.beginPhase("execute", [task.cliCommand!]);
-    const cliResult = await dependencies.workerExecutor.executeInlineCli(task.cliCommand!, inlineCliCwd, {
+    emit({ kind: "info", message: "Executing inline CLI: " + inlineCliCommand + " [cwd=" + inlineCliCwd + "]" });
+    const inlineCliPhaseTrace = traceRunSession.beginPhase("execute", [inlineCliCommand]);
+    const cliResult = await dependencies.workerExecutor.executeInlineCli(inlineCliCommand, inlineCliCwd, {
       env: executionEnv,
       artifactContext,
       keepArtifacts,
@@ -553,6 +554,20 @@ export async function dispatchTaskExecution(params: {
     verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
     verificationFailureRunReason: "Verification failed after all repair attempts.",
   };
+}
+
+function resolveInlineCliCommand(task: Task): string {
+  const command = task.cliCommand?.trim() ?? "";
+  const directiveCliArgs = task.directiveCliArgs?.trim();
+  if (!directiveCliArgs) {
+    return command;
+  }
+
+  if (command.endsWith(directiveCliArgs)) {
+    return command;
+  }
+
+  return [command, directiveCliArgs].filter(Boolean).join(" ");
 }
 
 function runIncludedFile(params: {

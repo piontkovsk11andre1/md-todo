@@ -100,18 +100,34 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
 
   if (!onlyVerify && task.isInlineCli && printPrompt) {
     // Inline CLI tasks do not generate worker prompts; show the CLI command.
+    const inlineCliCommand = resolveInlineCliCommand(task);
     emit({ kind: "info", message: "Selected task is inline CLI; no worker prompt is rendered." });
-    emit({ kind: "text", text: "cli: " + task.cliCommand! });
+    emit({ kind: "text", text: "cli: " + inlineCliCommand });
     return 0;
   }
 
   if (!onlyVerify && task.isInlineCli && dryRun) {
     // Inline CLI dry run reports the command that would be executed.
+    const inlineCliCommand = resolveInlineCliCommand(task);
     emitDryRunCliExpansionNote({ emit, dryRunSuppressesCliExpansion, dryRunCliBlockCount });
-    emit({ kind: "info", message: "Dry run — would execute inline CLI: " + task.cliCommand! });
+    emit({ kind: "info", message: "Dry run — would execute inline CLI: " + inlineCliCommand });
     return 0;
   }
 
   // Returning null signals the caller to continue with normal execution.
   return null;
+}
+
+function resolveInlineCliCommand(task: Task): string {
+  const command = task.cliCommand?.trim() ?? "";
+  const directiveCliArgs = task.directiveCliArgs?.trim();
+  if (!directiveCliArgs) {
+    return command;
+  }
+
+  if (command.endsWith(directiveCliArgs)) {
+    return command;
+  }
+
+  return [command, directiveCliArgs].filter(Boolean).join(" ");
 }

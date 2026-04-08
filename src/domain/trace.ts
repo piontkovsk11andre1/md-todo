@@ -217,6 +217,7 @@ export interface TaskContextPayload {
   document_context_lines: number;
   has_subtasks: boolean;
   is_inline_cli: boolean;
+  cli_args: string | null;
   is_verify_only: boolean;
 }
 

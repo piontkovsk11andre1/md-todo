@@ -48,6 +48,8 @@ export interface Task {
   intent?: TaskIntent;
   /** Profile inherited from directive parent list items. */
   directiveProfile?: string;
+  /** CLI args inherited from parent `cli-args:` directive items. */
+  directiveCliArgs?: string;
   /** Profile declared as a task-level `profile:` sub-item for prefix-intent tasks. */
   taskProfile?: string;
 }
@@ -103,6 +105,8 @@ const FRONTMATTER_BLOCK_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
 const FRONTMATTER_KEY_VALUE_PATTERN = /^\s*([^:#\s][^:]*)\s*:\s*(.*)$/;
 // Detects directive list items that set a profile context.
 const PROFILE_DIRECTIVE_PATTERN = /^profile\s*:\s*(.+)$/i;
+// Detects directive list items that append args to nested cli tasks.
+const CLI_ARGS_DIRECTIVE_PATTERN = /^cli[-\s]?args\s*:\s*(.*)$/i;
 // Detects directive list items that switch tasks to verify-only intent.
 const VERIFY_DIRECTIVE_PATTERN = /^(?:verify|confirm|check)\s*:\s*$/i;
 // Detects directive list items that switch tasks to fast-execution intent.
@@ -118,6 +122,8 @@ const FAST_TASK_PREFIX_PATTERN = /^(?:fast|raw)\s*:/i;
 interface DirectiveContext {
   /** Active profile inherited from parent directive items. */
   directiveProfile?: string;
+  /** CLI args inherited from parent `cli-args:` directive items. */
+  cliArgs?: string;
   /** Active task intent inherited from parent directive items. */
   intent?: TaskIntent;
 }
@@ -286,7 +292,13 @@ function walkForTasks(
     }
 
     if (isInlineCli) {
-      task.cliCommand = text.replace(CLI_PREFIX, "").trim();
+      const inlineCliCommand = text.replace(CLI_PREFIX, "").trim();
+      task.cliCommand = directiveContext.cliArgs
+        ? [inlineCliCommand, directiveContext.cliArgs].filter(Boolean).join(" ")
+        : inlineCliCommand;
+      if (directiveContext.cliArgs) {
+        task.directiveCliArgs = directiveContext.cliArgs;
+      }
     }
 
     if (parentTask) {
@@ -297,7 +309,10 @@ function walkForTasks(
     currentParentTask = task;
   } else if (isListItem(node)) {
     const text = extractText(node);
-    if (currentParentTask && text.length > 0) {
+    const directive = parseDirectiveParent(text);
+    const isCliArgsDirectiveSubItem = Boolean(directive.cliArgs);
+
+    if (currentParentTask && text.length > 0 && !isCliArgsDirectiveSubItem) {
       currentParentTask.subItems.push({
         text,
         line: node.position?.start.line ?? 0,
@@ -305,7 +320,6 @@ function walkForTasks(
       });
     }
 
-    const directive = parseDirectiveParent(text);
     const isDirectProfileSubItemOfTask = Boolean(
       currentParentTask
       && directive.directiveProfile
@@ -321,12 +335,13 @@ function walkForTasks(
       currentParentTask.taskProfile = directive.directiveProfile;
     }
 
-    if (directive.intent || (directive.directiveProfile && !isDirectProfileSubItemOfTask)) {
+    if (directive.intent || directive.cliArgs || (directive.directiveProfile && !isDirectProfileSubItemOfTask)) {
       nextDirectiveContext = {
         intent: directive.intent ?? directiveContext.intent,
         directiveProfile: isDirectProfileSubItemOfTask
           ? directiveContext.directiveProfile
           : (directive.directiveProfile ?? directiveContext.directiveProfile),
+        cliArgs: mergeCliArgs(directiveContext.cliArgs, directive.cliArgs),
       };
     }
   }
@@ -377,13 +392,23 @@ function isIntentClassifiedPrefixTaskText(taskText: string): boolean {
  * Supported directives currently include profile selection and verify-only
  * intent markers.
  */
-function parseDirectiveParent(text: string): DirectiveContext {
+export function parseDirectiveParent(text: string): DirectiveContext {
   const profileMatch = text.match(PROFILE_DIRECTIVE_PATTERN);
   if (profileMatch) {
     const profileName = profileMatch[1]?.trim();
     if (profileName) {
       return { directiveProfile: profileName };
     }
+  }
+
+  const cliArgsMatch = text.match(CLI_ARGS_DIRECTIVE_PATTERN);
+  if (cliArgsMatch) {
+    const cliArgs = cliArgsMatch[1]?.trim();
+    if (cliArgs && cliArgs.length > 0) {
+      return { cliArgs };
+    }
+
+    return {};
   }
 
   if (VERIFY_DIRECTIVE_PATTERN.test(text)) {
@@ -395,6 +420,22 @@ function parseDirectiveParent(text: string): DirectiveContext {
   }
 
   return {};
+}
+
+/**
+ * Compose nested `cli-args:` directive values in document order.
+ *
+ * Outer directive args appear first, followed by inner directive args.
+ */
+function mergeCliArgs(parentCliArgs?: string, childCliArgs?: string): string | undefined {
+  const normalizedParent = parentCliArgs?.trim();
+  const normalizedChild = childCliArgs?.trim();
+
+  if (normalizedParent && normalizedChild) {
+    return [normalizedParent, normalizedChild].join(" ");
+  }
+
+  return normalizedChild ?? normalizedParent;
 }
 
 /** Type guard for mdast list item nodes. */

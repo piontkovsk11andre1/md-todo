@@ -202,38 +202,42 @@ export function createGitClientMock(): GitClient {
   };
 }
 
-export function createInlineTask(file: string, text: string): Task {
+export function createInlineTask(file: string, text: string, overrides: Partial<Task> = {}): Task {
+  const resolvedText = overrides.text ?? text;
   return {
-    text,
+    text: resolvedText,
     checked: false,
     index: 0,
     line: 1,
     column: 1,
     offsetStart: 0,
-    offsetEnd: text.length,
+    offsetEnd: resolvedText.length,
     file,
     isInlineCli: true,
-    cliCommand: text.replace(/^cli:\s*/i, ""),
+    cliCommand: resolvedText.replace(/^cli:\s*/i, ""),
     depth: 0,
     children: [],
     subItems: [],
+    ...overrides,
   };
 }
 
-export function createTask(file: string, text: string): Task {
+export function createTask(file: string, text: string, overrides: Partial<Task> = {}): Task {
+  const resolvedText = overrides.text ?? text;
   return {
-    text,
+    text: resolvedText,
     checked: false,
     index: 0,
     line: 1,
     column: 1,
     offsetStart: 0,
-    offsetEnd: text.length,
+    offsetEnd: resolvedText.length,
     file,
     isInlineCli: false,
     depth: 0,
     children: [],
     subItems: [],
+    ...overrides,
   };
 }
 

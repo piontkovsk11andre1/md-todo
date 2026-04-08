@@ -669,6 +669,7 @@ Worker resolution cascade (lowest to highest priority):
 - `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `make`, `discuss`, `research`, `reverify`, `help`)
 - Markdown frontmatter `profile: <name>`
 - Parent directive item `- profile: <name>` for child checkbox tasks
+- Parent directive item `- cli-args: <args>` for child `cli:` checkbox tasks (appends `<args>` to each child inline CLI command)
 - Prefix modifier `profile: <name>` on the selected checkbox task
 - CLI `--worker` or separator form `-- <command>`
 
@@ -718,6 +719,7 @@ Intent prefix notes:
 
 - `fast:` and `raw:` are aliases that force execution without verification for that task (the inverse of `verify:`).
 - `fast:` / `raw:` can also be used as directive parents (`- fast:` / `- raw:`) so child checkbox tasks inherit fast-execution intent.
+- `cli-args:` can be used as a directive parent (`- cli-args: <args>`) so child `cli:` checkbox tasks inherit appended CLI arguments.
 - Prefix detection is case-insensitive and allows whitespace around `:`.
 - For mixed intent prefixes, the first explicit prefix in task text wins (for example `verify: fast: ...` stays verify-only, `fast: verify: ...` stays fast-execution).
 
@@ -1115,6 +1117,16 @@ Example:
 ```md
 - [ ] cli: npm test
 ```
+
+With a parent directive:
+
+```md
+- cli-args: --worker opencode
+  - [ ] cli: npm run build
+  - [ ] cli: npm test
+```
+
+Both `cli:` commands run with `--worker opencode` appended.
 
 ## Inline rundown delegation tasks
 

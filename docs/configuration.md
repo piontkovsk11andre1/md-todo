@@ -219,6 +219,7 @@ Supported directive parents:
 - `profile: <name>`: children inherit that profile.
 - `verify:` / `confirm:` / `check:`: children are treated as verify-only tasks.
 - `fast:` / `raw:`: children execute with verification suppressed.
+- `cli-args: <args>`: appends `<args>` to each child `cli:` checkbox task command.
 
 Example:
 
@@ -230,6 +231,10 @@ Example:
 - check:
   - [ ] All tests pass
   - [ ] Linting clean
+
+- cli-args: --worker opencode
+  - [ ] cli: npm run build
+  - [ ] cli: npm test
 ```
 
 Colon prefixes on checkbox text are also supported for verify-only intent:

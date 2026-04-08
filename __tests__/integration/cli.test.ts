@@ -3170,6 +3170,10 @@ describe.sequential("CLI integration", () => {
     expect(typeof taskContextEvent?.payload?.document_context_lines).toBe("number");
     expect(typeof taskContextEvent?.payload?.has_subtasks).toBe("boolean");
     expect(typeof taskContextEvent?.payload?.is_inline_cli).toBe("boolean");
+    expect(
+      taskContextEvent?.payload?.cli_args === null
+        || typeof taskContextEvent?.payload?.cli_args === "string",
+    ).toBe(true);
     expect(typeof taskContextEvent?.payload?.is_verify_only).toBe("boolean");
   });
 
@@ -4206,7 +4210,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("--trace-stats Enable inline task trace statistics in Markdown without requiring JSONL trace output");
+    expect(compactHelpOutput).toContain("--trace-stats Insert inline task trace statistics under completed TODOs in source Markdown");
   });
 
   it("run rejects invalid --commit-mode values", async () => {

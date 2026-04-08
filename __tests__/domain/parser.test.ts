@@ -6,6 +6,7 @@ import {
   extractHeadingSections,
   extractTodoItems,
   hasTodoItems,
+  parseDirectiveParent,
   parseTasks,
   type SubItem,
 } from "../../src/domain/parser.js";
@@ -17,6 +18,52 @@ afterEach(() => {
 });
 
 describe("parseTasks", () => {
+  it("recognizes cli-args directive parents and returns cli args context", () => {
+    expect(parseDirectiveParent("cli-args: --worker opencode")).toEqual({
+      cliArgs: "--worker opencode",
+    });
+
+    expect(parseDirectiveParent("CLI ARGS: --flag value")).toEqual({
+      cliArgs: "--flag value",
+    });
+  });
+
+  it("treats empty cli-args directive values as no-op context", () => {
+    expect(parseDirectiveParent("cli-args:")).toEqual({});
+    expect(parseDirectiveParent("cli args:    ")).toEqual({});
+  });
+
+  it("parses cli-args directive case-insensitively with flexible spacing", () => {
+    expect(parseDirectiveParent("CLI-ARGS: --worker opencode")).toEqual({
+      cliArgs: "--worker opencode",
+    });
+    expect(parseDirectiveParent("cli-args : --verbose")).toEqual({
+      cliArgs: "--verbose",
+    });
+
+    const md = [
+      "- CLI-ARGS: --worker opencode",
+      "  - [ ] cli: npm run build",
+      "- cli-args : --verbose",
+      "  - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+    expect(tasks[1]!.directiveCliArgs).toBe("--verbose");
+    expect(tasks[1]!.cliCommand).toBe("npm test --verbose");
+  });
+
+  it("does not recognize malformed cli-args variants as directive parents", () => {
+    expect(parseDirectiveParent("cli-args --worker opencode")).toEqual({});
+    expect(parseDirectiveParent("cli args --worker opencode")).toEqual({});
+    expect(parseDirectiveParent("cli-args=--worker opencode")).toEqual({});
+    expect(parseDirectiveParent("cli-arg: --worker opencode")).toEqual({});
+  });
+
   it("exports SubItem shape for plain list item metadata", () => {
     const subItem: SubItem = {
       text: "Note",
@@ -573,6 +620,268 @@ describe("parseTasks", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]!.isInlineCli).toBe(true);
     expect(tasks[0]!.cliCommand).toBe("npm test -- --runInBand");
+  });
+
+  it("propagates cli-args directive value to child cli task fields", () => {
+    const md = [
+      "- cli-args: --worker opencode --verbose",
+      "  - [ ] cli: npm run build",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.isInlineCli).toBe(true);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker opencode --verbose");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode --verbose");
+  });
+
+  it("appends group-level cli-args directive to nested cli tasks", () => {
+    const md = [
+      "- cli-args: --worker opencode",
+      "  - [ ] cli: npm run build",
+      "  - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.isInlineCli).toBe(true);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+    expect(tasks[1]!.isInlineCli).toBe(true);
+    expect(tasks[1]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[1]!.cliCommand).toBe("npm test --worker opencode");
+  });
+
+  it("applies cli-args only to cli tasks in mixed checkbox groups", () => {
+    const md = [
+      "- cli-args: --worker opencode",
+      "  - [ ] cli: npm run build",
+      "  - [ ] Update release notes",
+      "  - [x] cli: npm test",
+      "  - [ ] Confirm changelog entries",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(4);
+
+    expect(tasks[0]!.isInlineCli).toBe(true);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+
+    expect(tasks[1]!.isInlineCli).toBe(false);
+    expect(tasks[1]!.cliCommand).toBeUndefined();
+    expect(tasks[1]!.directiveCliArgs).toBeUndefined();
+
+    expect(tasks[2]!.isInlineCli).toBe(true);
+    expect(tasks[2]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[2]!.cliCommand).toBe("npm test --worker opencode");
+
+    expect(tasks[3]!.isInlineCli).toBe(false);
+    expect(tasks[3]!.cliCommand).toBeUndefined();
+    expect(tasks[3]!.directiveCliArgs).toBeUndefined();
+  });
+
+  it("builds final cliCommand end-to-end with appended group cli-args", () => {
+    const md = [
+      "- cli-args: --worker opencode",
+      "  - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.cliCommand).toBe("npm test --worker opencode");
+  });
+
+  it("preserves quoted arguments in cli-args directives", () => {
+    const md = [
+      "- cli-args: --worker \"my worker\" --flag='quoted value'",
+      "  - [ ] cli: npm run build",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker \"my worker\" --flag='quoted value'");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker \"my worker\" --flag='quoted value'");
+  });
+
+  it("does not modify non-cli checkbox tasks under cli-args directive", () => {
+    const md = [
+      "- cli-args: --worker opencode",
+      "  - [ ] cli: npm run build",
+      "  - [ ] Review release notes",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+    expect(tasks[1]!.isInlineCli).toBe(false);
+    expect(tasks[1]!.cliCommand).toBeUndefined();
+    expect(tasks[1]!.directiveCliArgs).toBeUndefined();
+  });
+
+  it("keeps non-cli tasks under cli-args unaffected and parses without errors", () => {
+    const md = [
+      "- cli-args: --worker opencode --verbose",
+      "  - [ ] Review release notes",
+      "  - [x] Confirm screenshot updates",
+    ].join("\n");
+
+    expect(() => parseTasks(md, "test.md")).not.toThrow();
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.text).toBe("Review release notes");
+    expect(tasks[0]!.isInlineCli).toBe(false);
+    expect(tasks[0]!.cliCommand).toBeUndefined();
+    expect(tasks[0]!.directiveCliArgs).toBeUndefined();
+    expect(tasks[1]!.text).toBe("Confirm screenshot updates");
+    expect(tasks[1]!.isInlineCli).toBe(false);
+    expect(tasks[1]!.cliCommand).toBeUndefined();
+    expect(tasks[1]!.directiveCliArgs).toBeUndefined();
+  });
+
+  it("treats empty cli-args directive values as a no-op", () => {
+    const md = [
+      "- cli-args:",
+      "  - [ ] cli: npm test",
+      "- cli-args:    ",
+      "  - [ ] cli: npm run build",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.isInlineCli).toBe(true);
+    expect(tasks[0]!.directiveCliArgs).toBeUndefined();
+    expect(tasks[0]!.cliCommand).toBe("npm test");
+    expect(tasks[1]!.isInlineCli).toBe(true);
+    expect(tasks[1]!.directiveCliArgs).toBeUndefined();
+    expect(tasks[1]!.cliCommand).toBe("npm run build");
+  });
+
+  it("composes cli-args with nested profile directives in both nesting orders", () => {
+    const profileThenCliArgs = [
+      "- profile: fast",
+      "  - cli-args: --worker opencode",
+      "    - [ ] cli: npm run build",
+    ].join("\n");
+    const cliArgsThenProfile = [
+      "- cli-args: --worker opencode",
+      "  - profile: fast",
+      "    - [ ] cli: npm run build",
+    ].join("\n");
+
+    const firstOrderTasks = parseTasks(profileThenCliArgs, "test.md");
+    const secondOrderTasks = parseTasks(cliArgsThenProfile, "test.md");
+
+    expect(firstOrderTasks).toHaveLength(1);
+    expect(firstOrderTasks[0]!.directiveProfile).toBe("fast");
+    expect(firstOrderTasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(firstOrderTasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+
+    expect(secondOrderTasks).toHaveLength(1);
+    expect(secondOrderTasks[0]!.directiveProfile).toBe("fast");
+    expect(secondOrderTasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(secondOrderTasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+  });
+
+  it("propagates profile and cli-args directives to sibling cli tasks", () => {
+    const md = [
+      "- profile: fast",
+      "  - cli-args: --worker opencode",
+      "    - [ ] cli: npm run build",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.directiveProfile).toBe("fast");
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --worker opencode");
+    expect(tasks[1]!.directiveProfile).toBe("fast");
+    expect(tasks[1]!.directiveCliArgs).toBe("--worker opencode");
+    expect(tasks[1]!.cliCommand).toBe("npm test --worker opencode");
+  });
+
+  it("composes cli-args with nested verify directives in both nesting orders", () => {
+    const verifyThenCliArgs = [
+      "- verify:",
+      "  - cli-args: --worker opencode",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+    const cliArgsThenVerify = [
+      "- cli-args: --worker opencode",
+      "  - verify:",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+
+    const firstOrderTasks = parseTasks(verifyThenCliArgs, "test.md");
+    const secondOrderTasks = parseTasks(cliArgsThenVerify, "test.md");
+
+    expect(firstOrderTasks).toHaveLength(1);
+    expect(firstOrderTasks[0]!.intent).toBe("verify-only");
+    expect(firstOrderTasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(firstOrderTasks[0]!.cliCommand).toBe("npm test --worker opencode");
+
+    expect(secondOrderTasks).toHaveLength(1);
+    expect(secondOrderTasks[0]!.intent).toBe("verify-only");
+    expect(secondOrderTasks[0]!.directiveCliArgs).toBe("--worker opencode");
+    expect(secondOrderTasks[0]!.cliCommand).toBe("npm test --worker opencode");
+  });
+
+  it("concatenates nested cli-args directives in document order", () => {
+    const md = [
+      "- cli-args: --worker outer --region us-east",
+      "  - cli-args: --worker inner --verbose",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]!.directiveCliArgs).toBe("--worker outer --region us-east --worker inner --verbose");
+    expect(tasks[0]!.cliCommand).toBe("npm test --worker outer --region us-east --worker inner --verbose");
+  });
+
+  it("concatenates stacked cli-args directives across nesting levels", () => {
+    const md = [
+      "- cli-args: --outer one",
+      "  - cli-args: --middle two",
+      "    - cli-args: --inner three",
+      "      - [ ] cli: npm run build",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.directiveCliArgs).toBe("--outer one --middle two --inner three");
+    expect(tasks[0]!.cliCommand).toBe("npm run build --outer one --middle two --inner three");
+    expect(tasks[1]!.directiveCliArgs).toBe("--outer one --middle two");
+    expect(tasks[1]!.cliCommand).toBe("npm test --outer one --middle two");
+  });
+
+  it("excludes cli-args directive lines from task subItems", () => {
+    const md = [
+      "- [ ] Parent task",
+      "  - cli-args: --worker opencode",
+      "    - [ ] cli: npm test",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.text).toBe("Parent task");
+    expect(tasks[0]!.subItems).toEqual([]);
+    expect(tasks[0]!.children).toEqual([tasks[1]]);
+    expect(tasks[1]!.cliCommand).toBe("npm test --worker opencode");
   });
 
   it("treats task text starting with rundown as a plain task", () => {

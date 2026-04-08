@@ -150,6 +150,60 @@ describe("run-task-execution helpers", () => {
     );
   });
 
+  it("uses parser-appended cli-args directly for inline cli execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSource = [
+      "- cli-args: --worker opencode",
+      "  - [ ] cli: npm test",
+    ].join("\n");
+    const parsedTask = parseTasks(fileSource, taskFile)[0]!;
+    const { dependencies } = createDependencies({
+      cwd,
+      task: parsedTask,
+      fileSystem: createInMemoryFileSystem({ [taskFile]: fileSource + "\n" }),
+      gitClient: createGitClientMock(),
+    });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledWith(
+      "npm test --worker opencode",
+      path.dirname(path.resolve(taskFile)),
+      expect.any(Object),
+    );
+    expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
+  });
+
+  it("preserves quoted cli-args when executing inline cli tasks", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSource = [
+      "- cli-args: --worker \"my worker\"",
+      "  - [ ] cli: npm test",
+    ].join("\n");
+    const parsedTask = parseTasks(fileSource, taskFile)[0]!;
+    const { dependencies } = createDependencies({
+      cwd,
+      task: parsedTask,
+      fileSystem: createInMemoryFileSystem({ [taskFile]: fileSource + "\n" }),
+      gitClient: createGitClientMock(),
+    });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.executeInlineCli).toHaveBeenCalledWith(
+      "npm test --worker \"my worker\"",
+      path.dirname(path.resolve(taskFile)),
+      expect.any(Object),
+    );
+    expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
+  });
+
   it("retries force-prefixed inline cli tasks after inline command failure", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;
