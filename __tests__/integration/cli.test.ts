@@ -9010,9 +9010,8 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-01"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-02"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Planning plan-scan-03"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("converged at scan 3"))).toBe(true);
-    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("3");
+    expect(result.logs.some((line) => line.includes("Plan stop reason: converged-diminishing."))).toBe(true);
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
     expect(updated).toContain("- [ ] Existing task");
@@ -9060,7 +9059,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-02"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-02"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Plan stop reason: scan-cap-reached."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: converged-diminishing."))).toBe(true);
     expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
@@ -9109,7 +9108,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Plan stop reason: scan-cap-reached."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: converged-diminishing."))).toBe(true);
     expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
@@ -9158,7 +9157,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Plan stop reason: max-items-reached."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: converged-diminishing."))).toBe(true);
     expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
@@ -9493,10 +9492,9 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-01-of-04"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Planning plan-scan-02-of-04"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("Planning plan-scan-03-of-04"))).toBe(true);
-    expect(result.logs.some((line) => line.includes("converged at scan 3"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Plan stop reason: converged-diminishing."))).toBe(true);
     expect(result.logs.some((line) => line.includes("Inserted 2 TODO items"))).toBe(true);
-    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("3");
+    expect(fs.readFileSync(scanMarkerPath, "utf-8").trim()).toBe("2");
 
     const updated = fs.readFileSync(roadmapPath, "utf-8");
     expect(updated).toContain("- [ ] Create API schema");

@@ -437,6 +437,8 @@ export interface RunCompletedPayload {
   plan_convergence_outcome?:
     | "converged-no-change"
     | "converged-no-additions"
+    | "converged-diminishing"
+    | "converged-rewrite-only"
     | "max-items-reached"
     | "scan-cap-reached"
     | "emergency-cap-reached";

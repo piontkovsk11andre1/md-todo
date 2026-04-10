@@ -320,7 +320,7 @@ ${DEFAULT_TEMPLATE_MEMORY_SECTION}
 
 Edit the source Markdown file directly to improve plan coverage.
 
-Review \`{{file}}\` and insert missing actionable TODO items in logical locations.
+Review the document and evaluate whether existing TODO items fully cover the described workload. If coverage gaps exist, append new items.
 
 ## Rundown feature reference for planning
 
@@ -356,11 +356,12 @@ Heuristics:
 
 Rules:
 - Add only unchecked TODO items using \`- [ ]\` syntax.
-- Insert new items where they fit best; you may add them in the middle of existing lists.
-- You may reorder unchecked \`- [ ]\` items when it improves execution flow.
+- Append new items after the last existing TODO item in the list. Do not insert between existing items.
+- Do not reorder, reword, rephrase, or rewrite any existing TODO item (checked or unchecked).
 - Do not change any \`- [ ]\` item to \`- [x]\`.
-- Do not remove, rewrite, or move any completed \`- [x]\` item.
+- Do not remove or move any existing item (checked or unchecked).
 - Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.
+- If plan coverage is already sufficient, leave the file unchanged.
 {{traceInstructions}}
 `;
 
@@ -419,9 +420,10 @@ Heuristics:
 Rules:
 - Scope changes strictly to child TODO items under the selected parent task.
 - Add only unchecked TODO items using \`- [ ]\` syntax.
-- Insert new child items where they fit best under the parent; you may reorder unchecked child \`- [ ]\` items when it improves execution flow.
+- Append new child items after the last existing child under the parent. Do not insert between existing children.
+- Do not reorder, reword, rephrase, or rewrite any existing child item (checked or unchecked).
 - Do not change any \`- [ ]\` item to \`- [x]\`.
-- Do not remove, rewrite, or move any completed \`- [x]\` item.
+- Do not remove or move any existing child item (checked or unchecked).
 - Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.
 {{traceInstructions}}
 `;

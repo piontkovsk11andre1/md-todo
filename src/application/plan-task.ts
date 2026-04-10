@@ -80,6 +80,8 @@ type ArtifactContext = ArtifactRunContext;
 export type PlanConvergenceOutcome =
   | "converged-no-change"
   | "converged-no-additions"
+  | "converged-diminishing"
+  | "converged-rewrite-only"
   | "max-items-reached"
   | "scan-cap-reached"
   | "emergency-cap-reached";
@@ -117,7 +119,7 @@ type PlanScanCountTemplateValue = number | string;
 /**
  * Internal safety ceiling for unlimited top-level plan scans.
  */
-const EMERGENCY_MAX_UNLIMITED_PLAN_SCANS = 30;
+const EMERGENCY_MAX_UNLIMITED_PLAN_SCANS = 15;
 
 /**
  * Ports and services required to execute the `plan` command.
@@ -609,10 +611,12 @@ export function createPlanTask(
         };
 
         const planConvergenceOutcome = extra?.planConvergenceOutcome;
-        if (isPlanConvergenceOutcome(planConvergenceOutcome)) {
+        if (isPlanConvergenceOutcome(planConvergenceOutcome)
+          && planConvergenceOutcome !== "converged-rewrite-only") {
           payload.plan_convergence_outcome = planConvergenceOutcome;
           payload.plan_converged = planConvergenceOutcome === "converged-no-change"
-            || planConvergenceOutcome === "converged-no-additions";
+            || planConvergenceOutcome === "converged-no-additions"
+            || planConvergenceOutcome === "converged-diminishing";
           payload.plan_max_items_reached = planConvergenceOutcome === "max-items-reached";
           payload.plan_scan_cap_reached = planConvergenceOutcome === "scan-cap-reached";
           payload.plan_emergency_cap_reached = planConvergenceOutcome === "emergency-cap-reached";
@@ -651,6 +655,7 @@ export function createPlanTask(
         // Track mutable scan-loop state for convergence reporting and totals.
         let latestDocumentSource = documentSource;
         let insertedTotal = 0;
+        let consecutiveLowAdditionScans = 0;
         let scansExecuted = 0;
         let convergenceOutcome: PlanConvergenceOutcome | null = null;
         let planSuccessCount = 0;
@@ -827,7 +832,23 @@ export function createPlanTask(
               continue;
             }
 
-            if (validationResult.stats.added === 0) {
+            const netAdditions = validationResult.stats.added - validationResult.stats.removed;
+
+            if ((validationResult.stats.removed > 0 || validationResult.stats.reordered > 0) && netAdditions <= 0) {
+              dependencies.fileSystem.writeText(source, scanBaseline);
+              latestDocumentSource = scanBaseline;
+              convergenceOutcome = "converged-rewrite-only";
+              emit({
+                kind: "warn",
+                message: "Planner scan " + scanIndex
+                  + " rewrote existing TODO items without net additions. File reverted. Treating as converged.",
+              });
+              planSuccessCount += 1;
+              emit({ kind: "group-end", status: "success" });
+              continue;
+            }
+
+            if (netAdditions <= 0) {
               convergenceOutcome = "converged-no-additions";
               latestDocumentSource = editedDocumentSource;
               emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": edit added no new TODO items." });
@@ -838,8 +859,23 @@ export function createPlanTask(
 
             latestDocumentSource = editedDocumentSource;
             recordInsertedTodoCount(validationResult.stats.added);
+            if (netAdditions <= 1) {
+              consecutiveLowAdditionScans += 1;
+            } else {
+              consecutiveLowAdditionScans = 0;
+            }
             planSuccessCount += 1;
             emit({ kind: "group-end", status: "success" });
+
+            if (consecutiveLowAdditionScans >= 2) {
+              convergenceOutcome = "converged-diminishing";
+              emit({
+                kind: "info",
+                message: "Planner converged at scan " + scanIndex
+                  + ": diminishing returns after consecutive low-addition scans.",
+              });
+              break;
+            }
 
             if (maxItems !== undefined && insertedTotal >= maxItems) {
               convergenceOutcome = "max-items-reached";
@@ -1129,7 +1165,9 @@ function buildPlanConvergenceMetadata(
     planConvergenceReason: convergenceOutcome,
     planConvergenceOutcome: convergenceOutcome,
     planConverged: convergenceOutcome === "converged-no-change"
-      || convergenceOutcome === "converged-no-additions",
+      || convergenceOutcome === "converged-no-additions"
+      || convergenceOutcome === "converged-diminishing"
+      || convergenceOutcome === "converged-rewrite-only",
     planMaxItemsReached: convergenceOutcome === "max-items-reached",
     planScanCapReached: convergenceOutcome === "scan-cap-reached",
     planEmergencyCapReached: convergenceOutcome === "emergency-cap-reached",
@@ -1149,6 +1187,8 @@ function formatPlanStopReason(convergenceOutcome: PlanConvergenceOutcome): strin
 function isPlanConvergenceOutcome(value: unknown): value is PlanConvergenceOutcome {
   return value === "converged-no-change"
     || value === "converged-no-additions"
+    || value === "converged-diminishing"
+    || value === "converged-rewrite-only"
     || value === "max-items-reached"
     || value === "scan-cap-reached"
     || value === "emergency-cap-reached";

@@ -260,7 +260,7 @@ describe("plan-task", () => {
 
     expect(code).toBe(0);
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("Scan count: unlimited (emergency cap: 30)");
+    expect(prompt).toContain("Scan count: unlimited (emergency cap: 15)");
   });
 
   it("includes memory path and summary in plan prompt without memory body text", async () => {
@@ -1008,11 +1008,11 @@ describe("plan-task", () => {
 
     vi.mocked(workerExecutor.runWorker)
       .mockImplementationOnce(async () => {
-        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Write tests\n");
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Write tests\n- [ ] Update docs\n");
         return { exitCode: 0, stdout: "", stderr: "" };
       })
       .mockImplementationOnce(async () => {
-        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Write tests\n- [ ] Update docs\n");
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Write tests\n- [ ] Update docs\n- [ ] Prepare release notes\n");
         return { exitCode: 0, stdout: "", stderr: "" };
       })
       .mockResolvedValueOnce({
@@ -1032,6 +1032,7 @@ describe("plan-task", () => {
     const finalSource = fileSystem.readText(markdownFile);
     expect(finalSource).toContain("- [ ] Write tests");
     expect(finalSource).toContain("- [ ] Update docs");
+    expect(finalSource).toContain("- [ ] Prepare release notes");
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning plan-scan-01-of-03"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Executing planner plan-scan-01-of-03"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planner plan-scan-01-of-03 completed (exit 0)."))).toBe(true);
@@ -1039,7 +1040,7 @@ describe("plan-task", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("Executing planner plan-scan-03-of-03"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planner plan-scan-03-of-03 completed (exit 0)."))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("converged at scan 3"))).toBe(true);
-    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 3 TODO items"))).toBe(true);
   });
 
   it("includes clean-session instruction in each scan prompt", async () => {
@@ -1231,11 +1232,11 @@ describe("plan-task", () => {
         return { exitCode: 0, stdout: "", stderr: "" };
       })
       .mockImplementationOnce(async () => {
-        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n");
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n- [ ] Scan three\n");
         return { exitCode: 0, stdout: "", stderr: "" };
       })
       .mockImplementationOnce(async () => {
-        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n- [ ] Scan three\n");
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n- [ ] Scan three\n- [ ] Scan four\n");
         return { exitCode: 0, stdout: "", stderr: "" };
       });
 
@@ -1247,12 +1248,13 @@ describe("plan-task", () => {
     const finalSource = fileSystem.readText(markdownFile);
     expect(finalSource).toContain("- [ ] Scan one");
     expect(finalSource).toContain("- [ ] Scan two");
-    expect(finalSource).not.toContain("- [ ] Scan three");
+    expect(finalSource).toContain("- [ ] Scan three");
+    expect(finalSource).not.toContain("- [ ] Scan four");
     expect(events).toContainEqual({
       kind: "info",
       message: "Plan stop reason: scan-cap-reached.",
     });
-    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 2 TODO items"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("Inserted 3 TODO items"))).toBe(true);
     expect(vi.mocked(dependencies.artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -1592,7 +1594,7 @@ describe("plan-task", () => {
     let runCount = 0;
     vi.mocked(workerExecutor.runWorker).mockImplementation(async () => {
       runCount += 1;
-      const todos = Array.from({ length: runCount }, (_value, index) => `- [ ] Scan ${index + 1}`).join("\n");
+      const todos = Array.from({ length: runCount * 2 }, (_value, index) => `- [ ] Scan ${index + 1}`).join("\n");
       fileSystem.writeText(markdownFile, `# Roadmap\nBuild a new release process.\n${todos}\n`);
       return { exitCode: 0, stdout: "", stderr: "" };
     });
@@ -1601,7 +1603,7 @@ describe("plan-task", () => {
     const code = await planTask(createOptions({ source: markdownFile, scanCount: undefined }));
 
     expect(code).toBe(0);
-    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(30);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(15);
     const finalSource = fileSystem.readText(markdownFile);
     expect(finalSource).toContain("- [ ] Scan 30");
     expect(finalSource).not.toContain("- [ ] Scan 31");
@@ -1618,7 +1620,7 @@ describe("plan-task", () => {
         status: "completed",
         extra: expect.objectContaining({
           planScanCount: null,
-          planScansExecuted: 30,
+          planScansExecuted: 15,
           planConvergenceReason: "emergency-cap-reached",
           planConvergenceOutcome: "emergency-cap-reached",
           planConverged: false,
@@ -1642,7 +1644,7 @@ describe("plan-task", () => {
     let runCount = 0;
     vi.mocked(workerExecutor.runWorker).mockImplementation(async () => {
       runCount += 1;
-      const todos = Array.from({ length: runCount }, (_value, index) => `- [ ] Scan ${index + 1}`).join("\n");
+      const todos = Array.from({ length: runCount * 2 }, (_value, index) => `- [ ] Scan ${index + 1}`).join("\n");
       fileSystem.writeText(markdownFile, `# Roadmap\nBuild a new release process.\n${todos}\n`);
       return { exitCode: 0, stdout: "", stderr: "" };
     });
@@ -1655,7 +1657,7 @@ describe("plan-task", () => {
     }));
 
     expect(code).toBe(0);
-    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(30);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(15);
     const finalSource = fileSystem.readText(markdownFile);
     expect(finalSource).toContain("- [ ] Scan 30");
     expect(finalSource).not.toContain("- [ ] Scan 31");
@@ -1674,7 +1676,7 @@ describe("plan-task", () => {
         status: "completed",
         extra: expect.objectContaining({
           planScanCount: null,
-          planScansExecuted: 30,
+          planScansExecuted: 15,
           planConvergenceReason: "emergency-cap-reached",
           planConvergenceOutcome: "emergency-cap-reached",
           planConverged: false,
@@ -1686,7 +1688,113 @@ describe("plan-task", () => {
     );
   });
 
-  it("reports converged-no-additions when edits add no net new TODO items", async () => {
+  it("reports converged-no-additions when edits change non-TODO content only", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "- [ ] Existing task A",
+      "- [ ] Existing task B",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockImplementationOnce(async () => {
+      fileSystem.writeText(markdownFile, [
+        "# Updated roadmap",
+        "",
+        "- [ ] Existing task A",
+        "- [ ] Existing task B",
+        "",
+      ].join("\n"));
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-no-additions.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planConvergenceReason: "converged-no-additions",
+          planConvergenceOutcome: "converged-no-additions",
+          planConverged: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("converges as rewrite-only and reverts file when worker rewords items without net new TODOs", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "- [ ] Fix bug",
+      "- [ ] Add tests",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker).mockImplementationOnce(async () => {
+      fileSystem.writeText(markdownFile, [
+        "# Roadmap",
+        "",
+        "- [ ] Fix the critical bug",
+        "- [ ] Add tests",
+        "",
+      ].join("\n"));
+      return { exitCode: 0, stdout: "", stderr: "" };
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 3 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    expect(fileSystem.readText(markdownFile)).toBe(content);
+    expect(events.some((event) => event.kind === "warn"
+      && event.message.includes("rewrote existing TODO items without net additions")
+      && event.message.includes("File reverted"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-rewrite-only.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planConvergenceReason: "converged-rewrite-only",
+          planConvergenceOutcome: "converged-rewrite-only",
+          planConverged: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("converges as rewrite-only and reverts file when worker reorders items without net new TODOs", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
     const content = [
@@ -1718,17 +1826,83 @@ describe("plan-task", () => {
 
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    expect(fileSystem.readText(markdownFile)).toBe(content);
+    expect(events.some((event) => event.kind === "warn"
+      && event.message.includes("without net additions")
+      && event.message.includes("File reverted"))).toBe(true);
     expect(events).toContainEqual({
       kind: "info",
-      message: "Plan stop reason: converged-no-additions.",
+      message: "Plan stop reason: converged-rewrite-only.",
     });
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         status: "completed",
         extra: expect.objectContaining({
-          planConvergenceReason: "converged-no-additions",
-          planConvergenceOutcome: "converged-no-additions",
+          planConvergenceReason: "converged-rewrite-only",
+          planConvergenceOutcome: "converged-rewrite-only",
+          planConverged: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("continues scanning when worker adds three TODO identities and rewords one existing item (net additions = 2)", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = [
+      "# Roadmap",
+      "",
+      "- [ ] Fix bug",
+      "- [ ] Add tests",
+      "",
+    ].join("\n");
+    const firstScanEdit = [
+      "# Roadmap",
+      "",
+      "- [ ] Fix the critical bug",
+      "- [ ] Add tests",
+      "- [ ] Add regression tests",
+      "- [ ] Update release notes",
+      "",
+    ].join("\n");
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, firstScanEdit);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => ({ exitCode: 0, stdout: "", stderr: "" }));
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 4 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    expect(fileSystem.readText(markdownFile)).toBe(firstScanEdit);
+    expect(events.some((event) => event.kind === "warn"
+      && event.message.includes("without net additions")
+      && event.message.includes("File reverted"))).toBe(false);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-no-change.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 4,
+          planScansExecuted: 2,
+          planConvergenceReason: "converged-no-change",
+          planConvergenceOutcome: "converged-no-change",
           planConverged: true,
           planScanCapReached: false,
           planEmergencyCapReached: false,
@@ -1775,7 +1949,7 @@ describe("plan-task", () => {
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
     expect(events).toContainEqual({
       kind: "info",
-      message: "Plan stop reason: converged-no-additions.",
+      message: "Plan stop reason: converged-rewrite-only.",
     });
     expect(events.some((event) => event.kind === "info"
       && event.message.includes("Plan stop reason: max-items-reached."))).toBe(false);
@@ -1784,8 +1958,8 @@ describe("plan-task", () => {
       expect.objectContaining({
         status: "completed",
         extra: expect.objectContaining({
-          planConvergenceReason: "converged-no-additions",
-          planConvergenceOutcome: "converged-no-additions",
+          planConvergenceReason: "converged-rewrite-only",
+          planConvergenceOutcome: "converged-rewrite-only",
           planConverged: true,
           planMaxItemsReached: false,
           planScanCapReached: false,
@@ -1817,7 +1991,7 @@ describe("plan-task", () => {
         return { exitCode: 0, stdout: "", stderr: "" };
       })
       .mockImplementationOnce(async () => {
-        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n");
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n- [ ] Scan three\n");
         return { exitCode: 0, stdout: "", stderr: "" };
       });
 
@@ -1894,7 +2068,7 @@ describe("plan-task", () => {
     expect(finalSource).not.toContain("Should not be added");
     expect(events).toContainEqual({
       kind: "info",
-      message: "Plan stop reason: converged-no-additions.",
+      message: "Plan stop reason: converged-rewrite-only.",
     });
     expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
       expect.anything(),
@@ -1903,8 +2077,119 @@ describe("plan-task", () => {
         extra: expect.objectContaining({
           planScanCount: null,
           planScansExecuted: 1,
-          planConvergenceReason: "converged-no-additions",
-          planConvergenceOutcome: "converged-no-additions",
+          planConvergenceReason: "converged-rewrite-only",
+          planConvergenceOutcome: "converged-rewrite-only",
+          planConverged: true,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("converges on diminishing returns after two consecutive low-addition scans", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Scan one\n- [ ] Scan two\n- [ ] Scan three\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: 5 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Scan one");
+    expect(finalSource).toContain("- [ ] Scan two");
+    expect(finalSource).not.toContain("- [ ] Scan three");
+    expect(events.some((event) => event.kind === "info"
+      && event.message.includes("diminishing returns"))).toBe(true);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-diminishing.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: 5,
+          planScansExecuted: 2,
+          planConvergenceReason: "converged-diminishing",
+          planConvergenceOutcome: "converged-diminishing",
+          planConverged: true,
+          planMaxItemsReached: false,
+          planScanCapReached: false,
+          planEmergencyCapReached: false,
+        }),
+      }),
+    );
+  });
+
+  it("converges in unlimited mode after two consecutive scans that each add exactly one item", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const content = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, workerExecutor, fileSystem, events, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: content,
+    });
+
+    vi.mocked(workerExecutor.runWorker)
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Added in scan one\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Added in scan one\n- [ ] Added in scan two\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      })
+      .mockImplementationOnce(async () => {
+        fileSystem.writeText(markdownFile, "# Roadmap\nBuild a new release process.\n- [ ] Added in scan one\n- [ ] Added in scan two\n- [ ] Should not be added\n");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, scanCount: undefined }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
+    const finalSource = fileSystem.readText(markdownFile);
+    expect(finalSource).toContain("- [ ] Added in scan one");
+    expect(finalSource).toContain("- [ ] Added in scan two");
+    expect(finalSource).not.toContain("- [ ] Should not be added");
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Plan stop reason: converged-diminishing.",
+    });
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          planScanCount: null,
+          planScansExecuted: 2,
+          planConvergenceReason: "converged-diminishing",
+          planConvergenceOutcome: "converged-diminishing",
           planConverged: true,
           planScanCapReached: false,
           planEmergencyCapReached: false,
