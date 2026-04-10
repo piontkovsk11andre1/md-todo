@@ -356,7 +356,8 @@ Heuristics:
 
 Rules:
 - Add only unchecked TODO items using \`- [ ]\` syntax.
-- Append new items after the last existing TODO item in the list. Do not insert between existing items.
+- Prefer appending new items at the end of the document. Each task only sees the document content above it, so items placed at the end have the most context available during execution.
+- Do not insert new items between existing items or between prose paragraphs. Append after the last existing TODO item or at the document end.
 - Do not reorder, reword, rephrase, or rewrite any existing TODO item (checked or unchecked).
 - Do not change any \`- [ ]\` item to \`- [x]\`.
 - Do not remove or move any existing item (checked or unchecked).
