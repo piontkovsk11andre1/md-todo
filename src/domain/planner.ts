@@ -270,3 +270,72 @@ function collectImmediateChildCounts(lines: string[], parentLineIndex: number, c
 function normalizeTodoChildLine(line: string): string {
   return line.replace(/^\s*[-*+]\s+/, "- ").trim();
 }
+
+const CHECKBOX_PATTERN = /^\s*[-*+]\s+\[([ xX])\]\s+\S/;
+
+/**
+ * Collects all TODO checkbox lines and groups them at the end of the document.
+ *
+ * In rundown, each task only sees document content above it. When TODO items
+ * are scattered throughout the document between prose paragraphs, earlier
+ * tasks lose visibility of the prose below them. This function extracts all
+ * TODO checkbox lines from the document, removes them from their inline
+ * positions, and appends the whole group at the end — preserving the
+ * original relative order of all items.
+ */
+export function relocateInsertedTodosToEnd(_beforeSource: string, afterSource: string): string {
+  const eol = afterSource.includes("\r\n") ? "\r\n" : "\n";
+  const afterLines = afterSource.split(/\r?\n/);
+
+  const proseLines: string[] = [];
+  const todoLines: string[] = [];
+
+  for (const line of afterLines) {
+    if (CHECKBOX_PATTERN.test(line)) {
+      todoLines.push(line);
+    } else {
+      proseLines.push(line);
+    }
+  }
+
+  // Nothing to relocate if there are no TODOs or they were already all at the end.
+  if (todoLines.length === 0) {
+    return afterSource;
+  }
+
+  // Check whether TODOs are already grouped at the end (no prose after the first TODO).
+  let firstTodoIndex = -1;
+  for (let i = 0; i < afterLines.length; i++) {
+    if (CHECKBOX_PATTERN.test(afterLines[i]!)) {
+      firstTodoIndex = i;
+      break;
+    }
+  }
+  // If all lines from the first TODO onward are either TODOs or blank, nothing to move.
+  let alreadyGrouped = true;
+  for (let i = firstTodoIndex; i < afterLines.length; i++) {
+    const line = afterLines[i]!;
+    if (!CHECKBOX_PATTERN.test(line) && line.trim() !== "") {
+      alreadyGrouped = false;
+      break;
+    }
+  }
+  if (alreadyGrouped) {
+    return afterSource;
+  }
+
+  // Trim trailing empty lines from prose before appending TODO group.
+  while (proseLines.length > 0 && proseLines[proseLines.length - 1]!.trim() === "") {
+    proseLines.pop();
+  }
+
+  const result = [...proseLines, "", ...todoLines];
+
+  // Restore a single final newline if the original ended with one.
+  const endsWithNewline = afterSource.endsWith("\n") || afterSource.endsWith("\r\n");
+  if (endsWithNewline) {
+    result.push("");
+  }
+
+  return result.join(eol);
+}

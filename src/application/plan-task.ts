@@ -6,6 +6,7 @@ import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { EXIT_CODE_FAILURE, EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import { parseTasks } from "../domain/parser.js";
 import {
+  relocateInsertedTodosToEnd,
   validatePlanEdit,
 } from "../domain/planner.js";
 import {
@@ -818,6 +819,15 @@ export function createPlanTask(
               emitScanFailure(message);
               emitPlanSummary();
               return finishPlan(EXIT_CODE_FAILURE, "failed");
+            }
+
+            // Relocate newly inserted TODO items that the planner placed between
+            // existing items to the end of the document. Each task only sees
+            // content above it, so end-placement maximizes context visibility.
+            const relocatedSource = relocateInsertedTodosToEnd(scanBaseline, editedDocumentSource);
+            if (relocatedSource !== editedDocumentSource) {
+              editedDocumentSource = relocatedSource;
+              dependencies.fileSystem.writeText(source, editedDocumentSource);
             }
 
             if (editedDocumentSource === scanBaseline) {
