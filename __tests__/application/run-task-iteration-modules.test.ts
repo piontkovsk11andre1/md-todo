@@ -3429,6 +3429,103 @@ describe("complete-task-iteration", () => {
     expect(afterTaskFailedSpy.mock.invocationCallOrder[0]).toBeLessThan(failRun.mock.invocationCallOrder[0] ?? 0);
   });
 
+  it("stacks fix annotations across consecutive verification failures without checkbox reset", async () => {
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: "- [ ] Ship release\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const emit = vi.fn();
+    const failRun = vi.fn(async () => 2);
+    vi.spyOn(runLifecycleModule, "afterTaskFailed").mockResolvedValue();
+    vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+
+    const verifySpy = vi.spyOn(verifyRepairLoopModule, "runVerifyRepairLoop");
+    verifySpy
+      .mockResolvedValueOnce({ valid: false, failureReason: "first failure" })
+      .mockResolvedValueOnce({ valid: false, failureReason: "second failure" });
+
+    const createParams = () => ({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+      },
+      traceRunSession: createCompletionSession(),
+      failRun,
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task,
+      sourceText: "- [ ] Ship release",
+      expandedSource: "- [ ] Ship release",
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "{{task}}",
+        repair: "{{task}}",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: true,
+      runMode: "wait" as const,
+      verificationPrompt: "verify",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run" as const,
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "Verification failed. Task not checked.",
+      verificationFailureRunReason: "verification-failed",
+      extraTemplateVars: {},
+    });
+
+    const firstResult = await completeTaskIteration(createParams());
+    expect(firstResult.exitCode).toBe(2);
+    expect(fileSystem.readText(task.file)).toBe([
+      "- [x] Ship release",
+      "  - fix: first failure",
+      "",
+    ].join("\n"));
+
+    const secondResult = await completeTaskIteration(createParams());
+    expect(secondResult.exitCode).toBe(2);
+    expect(fileSystem.readText(task.file)).toBe([
+      "- [x] Ship release",
+      "  - fix: second failure",
+      "  - fix: first failure",
+      "",
+    ].join("\n"));
+  });
+
   it("uses research-repair template for inline rundown research tasks", async () => {
     const inlineResearchTask = createInlineTask(
       task.file,

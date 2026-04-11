@@ -228,6 +228,28 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("stacks fix annotations by inserting newest entry directly under the task", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] First task",
+        "  - fix: previous verification failure",
+        "- [ ] Second task",
+        "",
+      ].join("\n"),
+    });
+    const task = createTask({ text: "First task", line: 1, checked: true });
+
+    writeFixAnnotationToFile(task, "latest verification failure", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] First task",
+      "  - fix: latest verification failure",
+      "  - fix: previous verification failure",
+      "- [ ] Second task",
+      "",
+    ].join("\n"));
+  });
+
   it("serializes re-entrant checkbox updates on the same file without losing writes", () => {
     const filePath = "todo.md";
     const taskOne = createTask({ text: "First task", line: 1, index: 0, file: filePath });
