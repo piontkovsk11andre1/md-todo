@@ -82,6 +82,18 @@ export interface VerifyRepairLoopResult {
   usageLimitDetected?: boolean;
 }
 
+export interface RepairAttemptRecord {
+  attempt: number;
+  repairStdout: string | undefined;
+  verificationStdout: string | undefined;
+  failureReason: string | null;
+}
+
+export interface ResolveResult {
+  resolved: boolean;
+  diagnosis: string | null;
+}
+
 interface RepairValidationErrorClassification {
   contentShapeValidationError: string;
   taskStateValidationError: string;
@@ -457,6 +469,7 @@ export async function runVerifyRepairLoop(
   let attempts = 0;
   let previousFailure = dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
   const initialVerificationStdout = verificationStdout;
+  const repairAttemptHistory: RepairAttemptRecord[] = [];
 
   while (attempts < input.maxRepairAttempts) {
     attempts += 1;
@@ -488,6 +501,14 @@ export async function runVerifyRepairLoop(
     });
     executionDurationMs += Math.max(0, Date.now() - repairStartedAt);
 
+    const attemptRecord: RepairAttemptRecord = {
+      attempt: attempts,
+      repairStdout: result.repairStdout,
+      verificationStdout: result.verificationStdout,
+      failureReason: null,
+    };
+    repairAttemptHistory.push(attemptRecord);
+
     const allPhaseOutputsEmpty = isExplicitlyEmptyOutput(input.executionStdout)
       && isExplicitlyEmptyOutput(initialVerificationStdout)
       && isExplicitlyEmptyOutput(result.repairStdout)
@@ -495,6 +516,7 @@ export async function runVerifyRepairLoop(
 
     if (allPhaseOutputsEmpty) {
       const emptyOutputFailureReason = "Worker output was empty across execution, verification, and repair phases; aborting because this indicates an execution/capture failure rather than an API usage limit.";
+      attemptRecord.failureReason = emptyOutputFailureReason;
       cumulativeFailureReasons.push(emptyOutputFailureReason);
       emitRepairOutcome(false, attempts);
       emitVerificationEfficiency();
@@ -517,6 +539,7 @@ export async function runVerifyRepairLoop(
 
       if (repairOutputMatched || reVerificationOutputMatched) {
         const usageLimitFailureReason = "Possible API usage limit detected: identical or near-identical responses across execution and repair phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.";
+        attemptRecord.failureReason = usageLimitFailureReason;
         emitUsageLimitDetected({
           phase: "repair",
           reason: usageLimitFailureReason,
@@ -544,6 +567,7 @@ export async function runVerifyRepairLoop(
     const repairFailureReason = result.valid
       ? null
       : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
+    attemptRecord.failureReason = repairFailureReason;
 
     if (repairFailureReason) {
       cumulativeFailureReasons.push(repairFailureReason);
