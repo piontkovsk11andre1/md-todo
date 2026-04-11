@@ -18,10 +18,20 @@ afterEach(() => {
 
 const CLI_FILE_PATH = path.resolve(process.cwd(), "src/presentation/cli.ts");
 const MIGRATE_TASK_FILE_PATH = path.resolve(process.cwd(), "src/application/migrate-task.ts");
+const cliSource = fs.existsSync(CLI_FILE_PATH)
+  ? fs.readFileSync(CLI_FILE_PATH, "utf-8")
+  : "";
 const hasMigrateCommand = fs.existsSync(CLI_FILE_PATH)
-  && fs.readFileSync(CLI_FILE_PATH, "utf-8").includes('.command("migrate")');
+  && cliSource.includes('.command("migrate")');
 const hasMigrateTaskUseCase = fs.existsSync(MIGRATE_TASK_FILE_PATH);
 const describeIfMigrateAvailable = hasMigrateCommand && hasMigrateTaskUseCase ? describe : describe.skip;
+const SATELLITE_ACTIONS = ["context", "snapshot", "backlog", "review", "user-experience"] as const;
+const hasMigrateSatelliteActions = SATELLITE_ACTIONS.every((action) => cliSource.includes(action));
+const describeIfSatelliteMigrateAvailable = hasMigrateCommand
+  && hasMigrateTaskUseCase
+  && hasMigrateSatelliteActions
+  ? describe
+  : describe.skip;
 
 describeIfMigrateAvailable("migrate-task integration", () => {
   it("falls back to the first ranked proposal in non-interactive mode", async () => {
@@ -66,6 +76,51 @@ describeIfMigrateAvailable("migrate-task integration", () => {
   });
 });
 
+describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration", () => {
+  for (const action of SATELLITE_ACTIONS) {
+    it(`rerunning migrate ${action} overwrites the same satellite file`, async () => {
+      const workspace = makeTempWorkspace();
+      scaffoldPredictionProjectWithSatelliteTemplates(workspace);
+
+      const firstRunResult = await runCli([
+        "migrate",
+        action,
+        "--dir",
+        "migrations",
+        "--",
+        "node",
+        "-e",
+        buildSequencedWorkerScript(action),
+      ], workspace);
+
+      expect(firstRunResult.code).toBe(0);
+
+      const secondRunResult = await runCli([
+        "migrate",
+        action,
+        "--dir",
+        "migrations",
+        "--",
+        "node",
+        "-e",
+        buildSequencedWorkerScript(action),
+      ], workspace);
+
+      expect(secondRunResult.code).toBe(0);
+
+      const targetFile = path.join(workspace, "migrations", `0001--${action}.md`);
+      expect(fs.existsSync(targetFile)).toBe(true);
+      expect(fs.readFileSync(targetFile, "utf-8")).toContain(`generated-${action}-2`);
+
+      const satelliteFiles = fs.readdirSync(path.join(workspace, "migrations"))
+        .filter((entry) => /^\d{4}--.+\.md$/.test(entry))
+        .filter((entry) => entry.endsWith(`--${action}.md`));
+
+      expect(satelliteFiles).toStrictEqual([`0001--${action}.md`]);
+    });
+  }
+});
+
 function scaffoldPredictionProject(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
@@ -74,6 +129,34 @@ function scaffoldPredictionProject(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
   fs.writeFileSync(path.join(workspace, ".rundown", "migrate.md"), "{{design}}\n{{latestContext}}\n{{migrationHistory}}\n", "utf-8");
+}
+
+function scaffoldPredictionProjectWithSatelliteTemplates(workspace: string): void {
+  scaffoldPredictionProject(workspace);
+
+  fs.writeFileSync(path.join(workspace, ".rundown", "migrate-context.md"), "{{latestMigration}}\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, ".rundown", "migrate-snapshot.md"), "{{migrationHistory}}\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, ".rundown", "migrate-backlog.md"), "{{design}}\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, ".rundown", "migrate-review.md"), "{{latestContext}}\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, ".rundown", "migrate-ux.md"), "{{latestMigration}}\n", "utf-8");
+}
+
+function buildSequencedWorkerScript(action: string): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    `const action=${JSON.stringify(action)};`,
+    "const markerPath=path.join(process.cwd(),`.satellite-${action}.seq`);",
+    "let sequence=1;",
+    "if(fs.existsSync(markerPath)){",
+    "  sequence=Number.parseInt(fs.readFileSync(markerPath,'utf-8'),10)+1;",
+    "}",
+    "fs.writeFileSync(markerPath,String(sequence));",
+    "console.log(`# ${action}`);",
+    "console.log('');",
+    "console.log(`generated-${action}-${sequence}`);",
+    "process.exit(0);",
+  ].join("\n");
 }
 
 function makeTempWorkspace(): string {
