@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -892,6 +893,136 @@ describe.sequential("CLI integration", () => {
       "Trace request entry points",
       "Summarize authentication flow",
     ]);
+  });
+
+  it("query resolves question tasks before heavy investigation steps and persists answers", async () => {
+    const workspace = makeTempWorkspace();
+    const analysisDir = path.join(workspace, "analysis-question");
+    const workerScriptPath = path.join(workspace, "query-question-worker.cjs");
+    const phaseProbePath = path.join(analysisDir, "query-question-probe.jsonl");
+
+    fs.mkdirSync(analysisDir, { recursive: true });
+    fs.writeFileSync(path.join(analysisDir, "service.ts"), "export const authEnabled = true;\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const path = require('node:path');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const resolveSourcePath = () => {",
+        "  const sourceMatch = prompt.match(/## Source file\\s+`([^`]+)`/m);",
+        "  if (sourceMatch && sourceMatch[1]) {",
+        "    return sourceMatch[1];",
+        "  }",
+        "  const runsRoot = path.join(process.cwd(), '.rundown', 'runs');",
+        "  if (!fs.existsSync(runsRoot)) {",
+        "    return '';",
+        "  }",
+        "  const runIds = fs.readdirSync(runsRoot).sort();",
+        "  for (let index = runIds.length - 1; index >= 0; index -= 1) {",
+        "    const candidate = path.join(runsRoot, runIds[index], 'query.md');",
+        "    if (fs.existsSync(candidate)) {",
+        "      return candidate;",
+        "    }",
+        "  }",
+        "  return '';",
+        "};",
+        "const sourcePath = resolveSourcePath();",
+        `const phaseProbePath = ${JSON.stringify(phaseProbePath.replace(/\\/g, "/"))};`,
+        "const record = (phase, extra = {}) => {",
+        "  fs.appendFileSync(phaseProbePath, JSON.stringify({ phase, ...extra }) + '\\n', 'utf-8');",
+        "};",
+        "if (prompt.includes('Research and enrich the source document with implementation context.')) {",
+        "  record('research');",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (source.includes('## Research Context')) {",
+        "    console.log(source);",
+        "  } else {",
+        "    console.log(source.trimEnd() + '\\n\\n## Research Context\\n\\n- Located auth module\\n');",
+        "  }",
+        "  process.exit(0);",
+        "}",
+        "if (prompt.includes('Edit the source Markdown file directly to improve plan coverage.')) {",
+        "  record('plan');",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  let updated = source;",
+        "  if (!updated.includes('- [ ] question: Which bounded context should we prioritize?')) {",
+        "    updated = updated.trimEnd()",
+        "      + '\\n\\n- [ ] question: Which bounded context should we prioritize?'",
+        "      + '\\n- [ ] Trace communication flow for selected context\\n';",
+        "  }",
+        "  fs.writeFileSync(sourcePath, updated.endsWith('\\n') ? updated : `${updated}\\n`, 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (prompt.includes('You are executing one step of a query investigation plan.')) {",
+        "  const taskMatch = prompt.match(/- Task: (.+)/);",
+        "  const task = taskMatch ? taskMatch[1].trim() : 'unknown';",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  const hasAnswer = source.includes('answer: Auth');",
+        "  record('run', { task, hasAnswer });",
+        "  if (!hasAnswer) {",
+        "    process.exit(97);",
+        "  }",
+        "  console.log(`# ${task}\\n\\n- Focused on Auth context\\n`);",
+        "  process.exit(0);",
+        "}",
+        "record('unknown');",
+        "process.exit(95);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+    const input = new PassThrough() as PassThrough & { isTTY: boolean };
+    input.isTTY = true;
+
+    Object.defineProperty(process, "stdin", {
+      configurable: true,
+      value: input,
+    });
+
+    let result;
+    try {
+      result = await withTerminalTty(true, async () => {
+        setTimeout(() => {
+          input.write("Auth\n");
+        }, 25);
+
+        return runCli([
+          "query",
+          "map communication flow",
+          "--dir",
+          analysisDir,
+          "--worker",
+          "node",
+          workerScriptPath.replace(/\\/g, "/"),
+        ], workspace);
+      });
+    } finally {
+      if (stdinDescriptor) {
+        Object.defineProperty(process, "stdin", stdinDescriptor);
+      } else {
+        Reflect.deleteProperty(process, "stdin");
+      }
+    }
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Running tool: question"))).toBe(true);
+
+    const probeEntries = fs.readFileSync(phaseProbePath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; task?: string; hasAnswer?: boolean });
+    const runEntries = probeEntries.filter((entry) => entry.phase === "run");
+    expect(probeEntries.map((entry) => entry.phase)).toContain("research");
+    expect(probeEntries.map((entry) => entry.phase)).toContain("plan");
+    expect(runEntries).toHaveLength(1);
+    expect(runEntries[0]).toMatchObject({
+      task: "Trace communication flow for selected context",
+      hasAnswer: true,
+    });
   });
 
   it("query --format json writes aggregated output to --output file", async () => {
