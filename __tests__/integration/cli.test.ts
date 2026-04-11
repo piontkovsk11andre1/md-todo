@@ -2805,6 +2805,56 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(path.join(forcedWorkspace, "roadmap.md"), "utf-8")).toContain("- [ ] Write docs");
   });
 
+  it("migrate down [n] routes to undo --last <n> and preserves --force/--commit flags", async () => {
+    const undoWorkspace = makeTempWorkspace();
+    setupUndoLastRunsWorkspace(undoWorkspace);
+
+    const undoResult = await runCli([
+      "undo",
+      "--last",
+      "2",
+      "--force",
+      "--commit",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], undoWorkspace);
+
+    expect(undoResult.code).toBe(0);
+    expect(undoResult.logs.some((line) => line.includes("--force enabled: skipping clean-worktree precondition check."))).toBe(true);
+    expect(fs.readFileSync(path.join(undoWorkspace, "roadmap.md"), "utf-8")).toBe([
+      "- [x] Oldest task",
+      "- [ ] Middle task",
+      "- [ ] Newest task",
+      "",
+    ].join("\n"));
+
+    const migrateWorkspace = makeTempWorkspace();
+    setupUndoLastRunsWorkspace(migrateWorkspace);
+
+    const migrateResult = await runCli([
+      "migrate",
+      "down",
+      "2",
+      "--force",
+      "--commit",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], migrateWorkspace);
+
+    expect(migrateResult.code).toBe(0);
+    expect(migrateResult.logs.some((line) => line.includes("--force enabled: skipping clean-worktree precondition check."))).toBe(true);
+    expect(fs.readFileSync(path.join(migrateWorkspace, "roadmap.md"), "utf-8")).toBe([
+      "- [x] Oldest task",
+      "- [ ] Middle task",
+      "- [ ] Newest task",
+      "",
+    ].join("\n"));
+  });
+
   it("revert --dry-run prints planned runs and git commands", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -10912,6 +10962,8 @@ function writeSavedRun(
     status: ArtifactStoreStatus;
     startedAt?: string;
     taskText?: string;
+    taskLine?: number;
+    taskIndex?: number;
     workerCommand?: string[];
     extra?: Record<string, unknown>;
   },
@@ -10927,8 +10979,8 @@ function writeSavedRun(
     task: {
       text: options.taskText ?? "Write docs",
       file: "roadmap.md",
-      line: 1,
-      index: 0,
+      line: options.taskLine ?? 1,
+      index: options.taskIndex ?? 0,
       source: "roadmap.md",
     },
     keepArtifacts: true,
@@ -10961,6 +11013,47 @@ function setupUndoDirtyWorkspace(
     runId: options.runId,
     status: "completed",
     taskText: options.taskText,
+  });
+}
+
+function setupUndoLastRunsWorkspace(workspace: string): void {
+  const roadmapPath = path.join(workspace, "roadmap.md");
+  fs.writeFileSync(roadmapPath, [
+    "- [x] Oldest task",
+    "- [x] Middle task",
+    "- [x] Newest task",
+    "",
+  ].join("\n"), "utf-8");
+
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+  writeSavedRun(workspace, {
+    runId: "run-20260411T160000000Z-oldest",
+    startedAt: "2026-04-11T16:00:00.000Z",
+    status: "completed",
+    taskText: "Oldest task",
+    taskLine: 1,
+    taskIndex: 0,
+  });
+  writeSavedRun(workspace, {
+    runId: "run-20260411T160100000Z-middle",
+    startedAt: "2026-04-11T16:01:00.000Z",
+    status: "completed",
+    taskText: "Middle task",
+    taskLine: 2,
+    taskIndex: 1,
+  });
+  writeSavedRun(workspace, {
+    runId: "run-20260411T160200000Z-newest",
+    startedAt: "2026-04-11T16:02:00.000Z",
+    status: "completed",
+    taskText: "Newest task",
+    taskLine: 3,
+    taskIndex: 2,
   });
 }
 

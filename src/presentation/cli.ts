@@ -267,6 +267,7 @@ program
   .option("--run <id|latest>", "Choose artifact run id or 'latest'", "latest")
   .option("--last <n>", "Undo the last N completed runs")
   .option("--force", "Bypass clean-worktree safety check", false)
+  .option("--commit", "Commit undo changes after successful completion", false)
   .option("--dry-run", "Show what would be undone without changing files", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
