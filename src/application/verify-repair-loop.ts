@@ -48,7 +48,7 @@ export interface VerifyRepairLoopInput {
   workerPattern: ParsedWorkerPattern;
   configDir?: string;
   maxRepairAttempts: number;
-  maxResolveRepairAttempts: number;
+  maxResolveRepairAttempts?: number;
   allowRepair: boolean;
   templateVars: Record<string, unknown>;
   lastValidationError?: string;
@@ -114,6 +114,35 @@ export async function runVerifyRepairLoop(
   const indentRepairMessage = (message: string): string => `${repairIndent}${message}`;
   const formatRepairAttempt = (attemptNumber: number): string => "Repair attempt "
     + attemptNumber + " of " + input.maxRepairAttempts;
+  const maxResolveRepairAttempts = Number.isFinite(input.maxResolveRepairAttempts)
+    && (input.maxResolveRepairAttempts ?? 0) > 0
+    ? Math.floor(input.maxResolveRepairAttempts ?? 1)
+    : 1;
+  const formatResolveRepairAttempt = (attemptNumber: number): string => "Resolve-informed repair attempt "
+    + attemptNumber + " of " + maxResolveRepairAttempts;
+  const resolveDiagnosis = typeof input.templateVars.resolvedDiagnosis === "string"
+    && input.templateVars.resolvedDiagnosis.trim().length > 0
+    ? input.templateVars.resolvedDiagnosis.trim()
+    : null;
+  const buildRepairTemplateVars = (
+    failureReason: string | null | undefined,
+    diagnosis: string | null,
+  ): Record<string, unknown> => ({
+    ...input.templateVars,
+    ...(failureReason !== undefined ? { lastValidationError: failureReason } : {}),
+    ...classifyRepairValidationErrors(failureReason),
+    ...(diagnosis ? { resolvedDiagnosis: diagnosis } : {}),
+    ...(input.targetArtifactPath !== undefined ? { targetArtifactPath: input.targetArtifactPath } : {}),
+    ...(input.targetArtifactPathDisplay !== undefined
+      ? { targetArtifactPathDisplay: input.targetArtifactPathDisplay }
+      : {}),
+    ...(input.controllingTaskPath !== undefined ? { controllingTaskPath: input.controllingTaskPath } : {}),
+    ...(input.controllingTaskPathDisplay !== undefined
+      ? { controllingTaskPathDisplay: input.controllingTaskPathDisplay }
+      : {}),
+    ...(input.controllingTaskFile !== undefined ? { controllingTaskFile: input.controllingTaskFile } : {}),
+    ...(input.selectedTaskMetadata !== undefined ? { selectedTaskMetadata: input.selectedTaskMetadata } : {}),
+  });
   // Trace events are tied to a run id derived from artifact context.
   const runId = resolveTraceRunId(input.artifactContext);
   // Emits pass/fail details for each verification attempt.
@@ -198,6 +227,7 @@ export async function runVerifyRepairLoop(
 
   let verifyAttempts = 0;
   let repairAttempts = 0;
+  let totalRepairAttempts = 0;
   let firstPassSuccess = false;
   const cumulativeFailureReasons: string[] = [];
   let verificationDurationMs = 0;
@@ -367,6 +397,7 @@ export async function runVerifyRepairLoop(
   while (attempts < input.maxRepairAttempts) {
     attempts += 1;
     repairAttempts = attempts;
+    totalRepairAttempts = attempts;
     emitRepairAttempt(attempts, previousFailure);
     emit({ kind: "info", message: indentRepairMessage(formatRepairAttempt(attempts) + ": starting...") });
 
@@ -382,21 +413,7 @@ export async function runVerifyRepairLoop(
       maxRetries: 1,
       mode: "wait",
       configDir: input.configDir,
-      templateVars: {
-        ...input.templateVars,
-        ...(previousFailure !== undefined ? { lastValidationError: previousFailure } : {}),
-        ...classifyRepairValidationErrors(previousFailure),
-        ...(input.targetArtifactPath !== undefined ? { targetArtifactPath: input.targetArtifactPath } : {}),
-        ...(input.targetArtifactPathDisplay !== undefined
-          ? { targetArtifactPathDisplay: input.targetArtifactPathDisplay }
-          : {}),
-        ...(input.controllingTaskPath !== undefined ? { controllingTaskPath: input.controllingTaskPath } : {}),
-        ...(input.controllingTaskPathDisplay !== undefined
-          ? { controllingTaskPathDisplay: input.controllingTaskPathDisplay }
-          : {}),
-        ...(input.controllingTaskFile !== undefined ? { controllingTaskFile: input.controllingTaskFile } : {}),
-        ...(input.selectedTaskMetadata !== undefined ? { selectedTaskMetadata: input.selectedTaskMetadata } : {}),
-      },
+      templateVars: buildRepairTemplateVars(previousFailure, null),
       executionEnv: input.executionEnv,
       artifactContext: input.artifactContext,
       onWorkerOutput: emitWorkerOutput,
@@ -491,8 +508,85 @@ export async function runVerifyRepairLoop(
     previousFailure = repairFailureReason ?? "Verification failed (no details).";
   }
 
+  if (resolveDiagnosis && maxResolveRepairAttempts > 0) {
+    emit({
+      kind: "warn",
+      message: "Resolve-informed repair phase: attempting up to "
+        + maxResolveRepairAttempts
+        + " repair attempt(s) using diagnosis context.",
+    });
+
+    let resolveRepairAttempts = 0;
+    while (resolveRepairAttempts < maxResolveRepairAttempts) {
+      resolveRepairAttempts += 1;
+      repairAttempts = attempts + resolveRepairAttempts;
+      totalRepairAttempts = repairAttempts;
+      emit({
+        kind: "info",
+        message: indentRepairMessage(formatResolveRepairAttempt(resolveRepairAttempts) + ": starting..."),
+      });
+
+      const resolveRepairResult = await dependencies.taskRepair.repair({
+        task: input.task,
+        source: input.source,
+        contextBefore: input.contextBefore,
+        repairTemplate: input.repairTemplate,
+        verifyTemplate: input.verifyTemplate,
+        workerPattern: input.workerPattern,
+        maxRetries: 1,
+        mode: "wait",
+        configDir: input.configDir,
+        templateVars: buildRepairTemplateVars(previousFailure, resolveDiagnosis),
+        executionEnv: input.executionEnv,
+        artifactContext: input.artifactContext,
+        onWorkerOutput: emitWorkerOutput,
+        trace: input.trace,
+        cliBlockExecutor: input.cliBlockExecutor,
+        cliExecutionOptions: input.cliExecutionOptions,
+        cliExpansionEnabled: input.cliExpansionEnabled,
+      });
+
+      verifyAttempts += 1;
+      const resolveRepairFailureReason = resolveRepairResult.valid
+        ? null
+        : dependencies.verificationStore.read(input.task) ?? "Verification failed (no details).";
+      if (resolveRepairFailureReason) {
+        cumulativeFailureReasons.push(resolveRepairFailureReason);
+      }
+      emitVerificationResult(resolveRepairResult.valid, attempts + resolveRepairAttempts + 1);
+
+      if (resolveRepairResult.valid) {
+        emitRepairOutcome(true, attempts + resolveRepairAttempts);
+        dependencies.verificationStore.remove(input.task);
+        emitVerificationEfficiency();
+        emit({
+          kind: "success",
+          message: indentRepairMessage("Resolve-informed repair succeeded after "
+            + resolveRepairAttempts
+            + " attempt(s)."),
+        });
+        return { valid: true, failureReason: null };
+      }
+
+      emit({
+        kind: "warn",
+        message: indentRepairMessage(formatResolveRepairAttempt(resolveRepairAttempts)
+          + ": failed verification: "
+          + (resolveRepairFailureReason ?? "Verification failed (no details).")),
+      });
+      previousFailure = resolveRepairFailureReason ?? "Verification failed (no details).";
+    }
+
+    emit({
+      kind: "error",
+      message: "Resolve-informed repair attempts exhausted after "
+        + maxResolveRepairAttempts
+        + " attempt(s).",
+    });
+  }
+
   // All repair attempts failed; report the most recent failure reason.
-  emitRepairOutcome(false, attempts);
+  emitRepairOutcome(false, totalRepairAttempts);
   emitVerificationEfficiency();
   emit({ kind: "warn", message: "Repair phase complete: all repair attempts exhausted." });
   const failureReason = cumulativeFailureReasons.at(-1) ?? initialFailureReason;

@@ -797,6 +797,82 @@ describe("verify-repair-loop output", () => {
     });
   });
 
+  it("applies resolve-informed repair attempt limit and emits exhaustion message", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const repair = vi.fn()
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" })
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "resolve-repair-1", verificationStdout: "resolve-verify-1" })
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "resolve-repair-2", verificationStdout: "resolve-verify-2" });
+
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("initial failure")
+      .mockReturnValueOnce("initial failure")
+      .mockReturnValueOnce("repair failed")
+      .mockReturnValueOnce("resolve repair 1 failed")
+      .mockReturnValueOnce("resolve repair 2 failed");
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false, stdout: "NOT_OK: initial failure" })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      maxResolveRepairAttempts: 2,
+      allowRepair: true,
+      templateVars: {
+        resolvedDiagnosis: "Root cause diagnosis",
+      },
+      artifactContext: { runId: "run-resolve-limit" },
+      trace: false,
+    });
+
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "resolve repair 2 failed",
+    });
+    expect(repair).toHaveBeenCalledTimes(3);
+    expect(repair.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        resolvedDiagnosis: "Root cause diagnosis",
+      }),
+    }));
+    expect(repair.mock.calls[2]?.[0]).toEqual(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        resolvedDiagnosis: "Root cause diagnosis",
+      }),
+    }));
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Resolve-informed repair attempts exhausted after 2 attempt(s).",
+    });
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Last validation error: resolve repair 2 failed",
+    });
+  });
+
   it("emits per-attempt failure reasons for each failed repair before success", async () => {
     const output = {
       emit: vi.fn(),
