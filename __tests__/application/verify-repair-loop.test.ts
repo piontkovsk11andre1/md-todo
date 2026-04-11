@@ -929,6 +929,144 @@ describe("verify-repair-loop output", () => {
     }));
   });
 
+  it("short-circuits before resolve-informed repair when resolve diagnosis matches usage-limit patterns", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    const repair = vi.fn()
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" });
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false, stdout: "NOT_OK: initial failure" })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: vi.fn(() => "repair failed"),
+        remove: vi.fn(),
+      },
+      traceWriter,
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      executionStdout: "Execution completed with transient upstream gateway failure and automatic retry suppression for safety.",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      maxResolveRepairAttempts: 2,
+      allowRepair: true,
+      templateVars: {
+        resolvedDiagnosis: "HTTP 429 Too Many Requests: billing quota reached for this account",
+      },
+      artifactContext: { runId: "run-resolve-usage-limit" },
+      trace: true,
+    });
+
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      usageLimitDetected: true,
+    });
+    expect(repair).toHaveBeenCalledTimes(1);
+    expect(output.emit).toHaveBeenCalledWith({
+      kind: "error",
+      message: "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+    });
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "usage.limit_detected",
+      payload: expect.objectContaining({
+        phase: "repair",
+        similarity_detected: false,
+        known_pattern_detected: true,
+        matched_phase: "repair",
+        matched_stdout: "HTTP 429 Too Many Requests: billing quota reached for this account",
+      }),
+    }));
+  });
+
+  it("short-circuits resolve-informed repair when output is near-identical to execution stdout", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+    const traceWriter = {
+      write: vi.fn(),
+      flush: vi.fn(),
+    };
+
+    const repeatedOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window and no retry budget remains.";
+    const repair = vi.fn()
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" })
+      .mockResolvedValueOnce({
+        valid: false,
+        attempts: 1,
+        repairStdout: "resolve repair attempted",
+        verificationStdout: repeatedOutput,
+      });
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false, stdout: "NOT_OK: initial failure" })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: vi.fn(() => "repair failed"),
+        remove: vi.fn(),
+      },
+      traceWriter,
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      executionStdout: repeatedOutput,
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      maxResolveRepairAttempts: 2,
+      allowRepair: true,
+      templateVars: {
+        resolvedDiagnosis: "Root cause points to stale queue lock in repair routine.",
+      },
+      artifactContext: { runId: "run-resolve-repair-usage-limit" },
+      trace: true,
+    });
+
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "Possible API usage limit detected: identical or near-identical responses across execution and resolve-informed repair phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      usageLimitDetected: true,
+    });
+    expect(repair).toHaveBeenCalledTimes(2);
+    expect(output.emit).not.toHaveBeenCalledWith(expect.objectContaining({
+      message: "Resolve-informed repair attempts exhausted after 2 attempt(s).",
+    }));
+    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      event_type: "usage.limit_detected",
+      payload: expect.objectContaining({
+        phase: "repair",
+        similarity_detected: true,
+        known_pattern_detected: false,
+        matched_phase: "verify",
+        matched_stdout: repeatedOutput,
+      }),
+    }));
+  });
+
   it("emits per-attempt failure reasons for each failed repair before success", async () => {
     const output = {
       emit: vi.fn(),
