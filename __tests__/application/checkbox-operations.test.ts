@@ -113,6 +113,55 @@ describe("checkbox-operations", () => {
     ].join("\r\n"));
   });
 
+  it("indents fix annotation for top-level tasks", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] Top task\n- [ ] Next task\n",
+    });
+    const task = createTask({ text: "Top task", line: 1, depth: 0 });
+
+    writeFixAnnotationToFile(task, "failed", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] Top task",
+      "  - fix: failed",
+      "- [ ] Next task",
+      "",
+    ].join("\n"));
+  });
+
+  it("indents fix annotation for 2-space nested tasks", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] Parent\n  - [ ] Child task\n",
+    });
+    const task = createTask({ text: "Child task", line: 2, depth: 1 });
+
+    writeFixAnnotationToFile(task, "failed", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] Parent",
+      "  - [x] Child task",
+      "    - fix: failed",
+      "",
+    ].join("\n"));
+  });
+
+  it("indents fix annotation for 4-space nested tasks", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] Parent\n  - [ ] Child\n    - [ ] Grandchild task\n",
+    });
+    const task = createTask({ text: "Grandchild task", line: 3, depth: 2 });
+
+    writeFixAnnotationToFile(task, "failed", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] Parent",
+      "  - [ ] Child",
+      "    - [x] Grandchild task",
+      "      - fix: failed",
+      "",
+    ].join("\n"));
+  });
+
   it("serializes re-entrant checkbox updates on the same file without losing writes", () => {
     const filePath = "todo.md";
     const taskOne = createTask({ text: "First task", line: 1, index: 0, file: filePath });
