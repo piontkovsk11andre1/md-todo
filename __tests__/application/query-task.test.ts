@@ -156,9 +156,61 @@ describe("query-task", () => {
       "failure: coverage missing",
     );
   });
+
+  it("honors project query template overrides during query run", async () => {
+    const cwd = "/workspace";
+    const querySeedOverride = "# Custom seed for {{query}} in {{dir}}";
+    const queryExecuteOverride = "Custom execute writes to {{workdir}} for {{task}}";
+    const queryAggregateOverride = "# Custom aggregate\n\n{{output}}";
+    const { dependencies, fileSystem, runTask } = createDependencies({
+      cwd,
+      templateOverrides: {
+        "query-seed.md": querySeedOverride,
+        "query-execute.md": queryExecuteOverride,
+        "query-aggregate.md": queryAggregateOverride,
+      },
+    });
+    const queryTask = createQueryTask(dependencies);
+
+    vi.mocked(fileSystem.readdir).mockReturnValue([
+      { name: "step-1.md", isFile: true, isDirectory: false },
+    ]);
+    vi.mocked(fileSystem.readText).mockImplementation((filePath: string) => {
+      if (/step-1\.md$/.test(filePath)) {
+        return "# Evidence\n\nsuccess";
+      }
+      return "";
+    });
+
+    await queryTask(createOptions({
+      queryText: "Check override behavior",
+      format: "json",
+      output: "/tmp/query/override.json",
+      showAgentOutput: false,
+    }));
+
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      expect.stringMatching(/[\\/]runs[\\/]run-query[\\/]query\.md$/),
+      expect.stringContaining(`# Custom seed for Check override behavior in ${path.resolve(cwd)}`),
+    );
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskTemplateOverride: queryExecuteOverride,
+    }));
+
+    const outputWrite = vi.mocked(fileSystem.writeText).mock.calls.find(
+      ([filePath]) => filePath === "/tmp/query/override.json",
+    );
+    expect(outputWrite).toBeDefined();
+    const outputJson = outputWrite?.[1] as string;
+    expect(outputJson).toContain("# Custom aggregate");
+    expect(outputJson).toContain("## Step 1: Evidence");
+  });
 });
 
-function createDependencies(options: { cwd: string }): {
+function createDependencies(options: {
+  cwd: string;
+  templateOverrides?: Record<string, string>;
+}): {
   dependencies: QueryTaskDependencies;
   events: ApplicationOutputEvent[];
   artifactStore: ArtifactStore;
@@ -223,6 +275,20 @@ function createDependencies(options: { cwd: string }): {
     },
     output: {
       emit: (event) => events.push(event),
+    },
+    templateLoader: {
+      load: vi.fn((filePath: string) => {
+        if (!options.templateOverrides) {
+          return null;
+        }
+        const normalized = filePath.replace(/\\/g, "/");
+        const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+        return options.templateOverrides[fileName] ?? null;
+      }),
+    },
+    configDir: {
+      configDir: "/workspace/.rundown",
+      isExplicit: false,
     },
   };
 

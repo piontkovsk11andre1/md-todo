@@ -547,6 +547,8 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       workingDirectory: ports.workingDirectory,
       output: ports.output,
+      templateLoader: ports.templateLoader,
+      configDir: ports.configDir,
     }),
     unlockTask: (ports) => createUnlockTask({
       fileLock: ports.fileLock,

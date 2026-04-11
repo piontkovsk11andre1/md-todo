@@ -3,12 +3,21 @@ import {
   DEFAULT_QUERY_SEED_TEMPLATE,
   DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
+  DEFAULT_QUERY_AGGREGATION_TEMPLATE,
   DEFAULT_QUERY_YN_SEED_TEMPLATE,
 } from "../domain/defaults.js";
 import { EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
-import type { ProcessRunMode, ArtifactStore, FileSystem, PathOperationsPort, WorkingDirectoryPort } from "../domain/ports/index.js";
+import type {
+  ArtifactStore,
+  ConfigDirResult,
+  FileSystem,
+  PathOperationsPort,
+  ProcessRunMode,
+  TemplateLoader,
+  WorkingDirectoryPort,
+} from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import {
   aggregateQueryOutput,
@@ -16,6 +25,7 @@ import {
   resolveQueryExitCode,
   writeQueryOutput,
 } from "./query-output.js";
+import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import type { PlanTaskOptions } from "./plan-task.js";
 import type { ResearchTaskOptions } from "./research-task.js";
 import type { RunTaskOptions } from "./run-task.js";
@@ -31,6 +41,8 @@ export interface QueryTaskDependencies {
   pathOperations: PathOperationsPort;
   workingDirectory: WorkingDirectoryPort;
   output: ApplicationOutputPort;
+  templateLoader?: TemplateLoader;
+  configDir?: ConfigDirResult;
 }
 
 export interface QueryTaskOptions {
@@ -64,6 +76,13 @@ export function createQueryTask(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function queryTask(options: QueryTaskOptions): Promise<number> {
+    const projectTemplates = dependencies.templateLoader
+      ? loadProjectTemplatesFromPorts(
+        dependencies.configDir,
+        dependencies.templateLoader,
+        dependencies.pathOperations,
+      )
+      : null;
     const resolvedDir = dependencies.pathOperations.resolve(
       options.dir && options.dir.trim().length > 0
         ? options.dir
@@ -101,7 +120,7 @@ export function createQueryTask(
         dependencies.fileSystem.mkdir(workdirPath, { recursive: true });
       }
 
-      const seedTemplate = selectQuerySeedTemplate(options.format);
+      const seedTemplate = selectQuerySeedTemplate(options.format, projectTemplates?.querySeed);
       const seedVars: TemplateVars = {
         task: options.queryText,
         file: queryDocumentPath,
@@ -177,6 +196,10 @@ export function createQueryTask(
       }
 
       emit({ kind: "info", message: fileMode ? "Query phase 3/3: execute (file mode)" : "Query phase 3/3: execute (stream mode)" });
+      const executionTemplate = selectQueryExecutionTemplate(
+        fileMode,
+        projectTemplates?.queryExecute,
+      );
       const runCode = await dependencies.runTask({
         source: queryDocumentPath,
         cwd: resolvedDir,
@@ -208,9 +231,7 @@ export function createQueryTask(
         cliBlockTimeoutMs: options.cliBlockTimeoutMs,
         ignoreCliBlock: options.ignoreCliBlock,
         verbose: options.verbose ?? false,
-        taskTemplateOverride: fileMode
-          ? DEFAULT_QUERY_EXECUTION_TEMPLATE
-          : DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
+        taskTemplateOverride: executionTemplate,
       });
       if (runCode !== EXIT_CODE_SUCCESS) {
         finish("failed");
@@ -222,7 +243,16 @@ export function createQueryTask(
           fileSystem: dependencies.fileSystem,
           pathOperations: dependencies.pathOperations,
         });
-        const formattedOutput = formatQueryOutput(aggregatedOutput, options.format, options.queryText);
+        const aggregateTemplate = projectTemplates?.queryAggregate;
+        const aggregateContent = applyAggregationTemplateOverride({
+          aggregateTemplate,
+          queryText: options.queryText,
+          dir: resolvedDir,
+          workdir: workdirPath,
+          queryDocumentPath,
+          aggregatedOutput,
+        });
+        const formattedOutput = formatQueryOutput(aggregateContent, options.format, options.queryText);
         await writeQueryOutput(formattedOutput, options.output, {
           fileSystem: dependencies.fileSystem,
           pathOperations: dependencies.pathOperations,
@@ -241,7 +271,11 @@ export function createQueryTask(
   };
 }
 
-function selectQuerySeedTemplate(format: QueryOutputFormat): string {
+function selectQuerySeedTemplate(format: QueryOutputFormat, projectSeedTemplate?: string): string {
+  if (isCustomQueryTemplate(projectSeedTemplate, DEFAULT_QUERY_SEED_TEMPLATE)) {
+    return projectSeedTemplate;
+  }
+
   if (format === "yn") {
     return DEFAULT_QUERY_YN_SEED_TEMPLATE;
   }
@@ -251,6 +285,44 @@ function selectQuerySeedTemplate(format: QueryOutputFormat): string {
   }
 
   return DEFAULT_QUERY_SEED_TEMPLATE;
+}
+
+function selectQueryExecutionTemplate(fileMode: boolean, projectExecutionTemplate?: string): string {
+  if (isCustomQueryTemplate(projectExecutionTemplate, DEFAULT_QUERY_EXECUTION_TEMPLATE)) {
+    return projectExecutionTemplate;
+  }
+
+  return fileMode
+    ? DEFAULT_QUERY_EXECUTION_TEMPLATE
+    : DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE;
+}
+
+function applyAggregationTemplateOverride(options: {
+  aggregateTemplate: string | undefined;
+  queryText: string;
+  dir: string;
+  workdir: string;
+  queryDocumentPath: string;
+  aggregatedOutput: string;
+}): string {
+  if (!isCustomQueryTemplate(options.aggregateTemplate, DEFAULT_QUERY_AGGREGATION_TEMPLATE)) {
+    return options.aggregatedOutput;
+  }
+
+  const aggregateVars: TemplateVars = {
+    task: options.queryText,
+    file: options.queryDocumentPath,
+    context: options.aggregatedOutput,
+    taskIndex: 0,
+    taskLine: 1,
+    source: options.aggregatedOutput,
+    query: options.queryText,
+    dir: options.dir,
+    workdir: options.workdir,
+    output: options.aggregatedOutput,
+  };
+
+  return renderTemplate(options.aggregateTemplate, aggregateVars);
 }
 
 function shouldUseFileMode(options: QueryTaskOptions): boolean {
@@ -283,4 +355,15 @@ function mergeRuntimeTemplateVars(
   }
 
   return result;
+}
+
+function isCustomQueryTemplate(
+  candidateTemplate: string | undefined,
+  defaultTemplate: string,
+): candidateTemplate is string {
+  if (!candidateTemplate) {
+    return false;
+  }
+
+  return candidateTemplate !== defaultTemplate;
 }
