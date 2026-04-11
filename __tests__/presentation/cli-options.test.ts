@@ -426,6 +426,34 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--quiet Suppress info-level output");
   });
 
+  it("expands --revertable into commit and keep-artifacts", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--revertable",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.commitAfterComplete).toBe(true);
+    expect(call.keepArtifacts).toBe(true);
+  });
+
+  it("shows --revertable in run help text", async () => {
+    const runTask = vi.fn(async () => 0);
+    const result = await invokeRunAndCaptureHelpOutput([
+      "run",
+      "--help",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+
+    const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--revertable Shorthand for --commit --keep-artifacts");
+  });
+
   it("logs a CLI error and exits with code 1 on zero --rounds", async () => {
     const runTask = vi.fn(async () => 0);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);

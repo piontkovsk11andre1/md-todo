@@ -242,8 +242,8 @@ By default, `revert` targets the latest completed+committed run in the current r
 Revertable run requirements:
 
 - The original run status is `completed`.
-- The original run used `--commit`.
-- The original run used `--keep-artifacts` so `run.json` still exists.
+- The original run used `--commit` (or `--revertable`).
+- The original run used `--keep-artifacts` (or `--revertable`) so `run.json` still exists.
 - The original run metadata includes `extra.commitSha`.
 
 Commit timing affects revert granularity:
@@ -1052,6 +1052,7 @@ These options are available on `rundown run`.
 | `--redo` | Reset checked checkboxes in all resolved source files before task selection. Implies `--all`. | off |
 | `--reset-after` | Reset all checkboxes in all resolved source files after run completion. | off |
 | `--clean` | Shorthand for `--redo --reset-after`. | off |
+| `--revertable` | Shorthand for `--commit --keep-artifacts`. | off |
 | `--force-unlock` | Remove stale source lockfiles before acquiring run locks. Active locks held by live processes are not removed. | off |
 
 `--commit-message` is only applied when `--commit` is enabled.

@@ -442,6 +442,7 @@ program
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--commit", "Auto-commit checked task file after successful completion", false)
   .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
+  .option("--revertable", "Shorthand for --commit --keep-artifacts", false)
   .option("--on-complete <command>", "Run a shell command after successful task completion")
   .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
   .option("--redo", "Reset all checkboxes in the source file before running", false)
@@ -790,6 +791,7 @@ function configureRunLikeCommandOptions(command: Command): Command {
       "Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)",
       "per-task",
     )
+    .option("--revertable", "Shorthand for --commit --keep-artifacts", false)
     .option("--on-complete <command>", "Run a shell command after successful task completion")
     .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
     .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)

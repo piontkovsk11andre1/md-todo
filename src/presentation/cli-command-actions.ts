@@ -210,14 +210,15 @@ export function createRunCommandAction({
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
-    const keepArtifacts = opts.keepArtifacts as boolean;
+    const revertable = Boolean(opts.revertable as boolean | undefined);
+    const keepArtifacts = (opts.keepArtifacts as boolean) || revertable;
     const trace = opts.trace as boolean;
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
     const traceOnly = opts.traceOnly as boolean;
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
     const commitMode = parseCommitMode(opts.commitMode as string | undefined);
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
@@ -330,7 +331,8 @@ export function createLoopCommandAction({
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
     const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const revertable = Boolean(opts.revertable as boolean | undefined);
+    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
     const commitMode = parseCommitMode(opts.commitMode as string | undefined);
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
@@ -376,7 +378,7 @@ export function createLoopCommandAction({
             repairAttempts,
             dryRun,
             printPrompt,
-            keepArtifacts: sharedRuntimeOptions.keepArtifacts,
+            keepArtifacts: sharedRuntimeOptions.keepArtifacts || revertable,
             trace: sharedRuntimeOptions.trace,
             traceStats,
             traceOnly,
@@ -1141,7 +1143,8 @@ export function createDoCommandAction({
     const noRepair = resolveNoRepairFlag(opts);
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined);
+    const revertable = Boolean(opts.revertable as boolean | undefined);
+    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
     const commitMode = "per-task" as const;
     const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
@@ -1194,7 +1197,7 @@ export function createDoCommandAction({
       repairAttempts,
       dryRun,
       printPrompt,
-      keepArtifacts: sharedRuntimeOptions.keepArtifacts,
+      keepArtifacts: sharedRuntimeOptions.keepArtifacts || revertable,
       trace: sharedRuntimeOptions.trace,
       traceOnly,
       varsFileOption: sharedRuntimeOptions.varsFileOption,
