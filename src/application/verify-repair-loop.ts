@@ -225,6 +225,70 @@ export async function runVerifyRepairLoop(
     }));
   };
 
+  const detectUsageLimitInOutputs = (
+    phase: "verify" | "repair",
+    outputs: Array<{ stdout: string | undefined; matchedPhase: "verify" | "repair" }>,
+    similarityFailureReason: string,
+    patternFailureReason: string,
+  ): VerifyRepairLoopResult | null => {
+    if (
+      !shouldRunUsageLimitDetection
+      || typeof input.executionStdout !== "string"
+    ) {
+      return null;
+    }
+
+    for (const output of outputs) {
+      if (typeof output.stdout !== "string") {
+        continue;
+      }
+
+      if (containsKnownUsageLimitPattern(output.stdout)) {
+        emitUsageLimitDetected({
+          phase,
+          reason: patternFailureReason,
+          similarityDetected: false,
+          knownPatternDetected: true,
+          executionStdout: input.executionStdout,
+          matchedPhase: output.matchedPhase,
+          matchedStdout: output.stdout,
+        });
+        cumulativeFailureReasons.push(patternFailureReason);
+        emitRepairOutcome(false, totalRepairAttempts);
+        emitVerificationEfficiency();
+        emit({ kind: "error", message: patternFailureReason });
+        return {
+          valid: false,
+          failureReason: patternFailureReason,
+          usageLimitDetected: true,
+        };
+      }
+
+      if (areOutputsSuspiciouslySimilar(input.executionStdout, output.stdout)) {
+        emitUsageLimitDetected({
+          phase,
+          reason: similarityFailureReason,
+          similarityDetected: true,
+          knownPatternDetected: false,
+          executionStdout: input.executionStdout,
+          matchedPhase: output.matchedPhase,
+          matchedStdout: output.stdout,
+        });
+        cumulativeFailureReasons.push(similarityFailureReason);
+        emitRepairOutcome(false, totalRepairAttempts);
+        emitVerificationEfficiency();
+        emit({ kind: "error", message: similarityFailureReason });
+        return {
+          valid: false,
+          failureReason: similarityFailureReason,
+          usageLimitDetected: true,
+        };
+      }
+    }
+
+    return null;
+  };
+
   let verifyAttempts = 0;
   let repairAttempts = 0;
   let totalRepairAttempts = 0;
@@ -509,6 +573,16 @@ export async function runVerifyRepairLoop(
   }
 
   if (resolveDiagnosis && maxResolveRepairAttempts > 0) {
+    const resolveOutputUsageLimitResult = detectUsageLimitInOutputs(
+      "repair",
+      [{ stdout: resolveDiagnosis, matchedPhase: "repair" }],
+      "Possible API usage limit detected: resolve output is identical or near-identical to execution output; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+    );
+    if (resolveOutputUsageLimitResult) {
+      return resolveOutputUsageLimitResult;
+    }
+
     emit({
       kind: "warn",
       message: "Resolve-informed repair phase: attempting up to "
@@ -545,6 +619,19 @@ export async function runVerifyRepairLoop(
         cliExecutionOptions: input.cliExecutionOptions,
         cliExpansionEnabled: input.cliExpansionEnabled,
       });
+
+      const resolveRepairUsageLimitResult = detectUsageLimitInOutputs(
+        "repair",
+        [
+          { stdout: resolveRepairResult.repairStdout, matchedPhase: "repair" },
+          { stdout: resolveRepairResult.verificationStdout, matchedPhase: "verify" },
+        ],
+        "Possible API usage limit detected: identical or near-identical responses across execution and resolve-informed repair phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+        "Possible API usage limit detected: resolve-informed repair output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      );
+      if (resolveRepairUsageLimitResult) {
+        return resolveRepairUsageLimitResult;
+      }
 
       verifyAttempts += 1;
       const resolveRepairFailureReason = resolveRepairResult.valid
