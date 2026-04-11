@@ -10,6 +10,7 @@ import {
   maybeResetFileCheckboxes,
   resetFileCheckboxes,
   skipRemainingSiblingsUsingFileSystem,
+  writeFixAnnotationToFile,
 } from "../../src/application/checkbox-operations.js";
 
 function createTask(overrides: Partial<Task> = {}): Task {
@@ -63,6 +64,53 @@ describe("checkbox-operations", () => {
     checkTaskUsingFileSystem(task, fileSystem);
 
     expect(fileSystem.readText("todo.md")).toBe("- [x] First task\n- [ ] Second task\n");
+  });
+
+  it("writes fix annotation after marking task checked", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] First task\n- [ ] Second task\n",
+    });
+    const task = createTask({ text: "First task", line: 1 });
+
+    writeFixAnnotationToFile(task, "Cannot be verified because this is missing", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] First task",
+      "  - fix: Cannot be verified because this is missing",
+      "- [ ] Second task",
+      "",
+    ].join("\n"));
+  });
+
+  it("writes fallback fix annotation when failure reason is null", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] First task\n",
+    });
+    const task = createTask({ text: "First task", line: 1 });
+
+    writeFixAnnotationToFile(task, null, fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] First task",
+      "  - fix: Verification failed (no details).",
+      "",
+    ].join("\n"));
+  });
+
+  it("preserves CRLF when writing fix annotation", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] First task\r\n- [ ] Second task\r\n",
+    });
+    const task = createTask({ text: "First task", line: 1 });
+
+    writeFixAnnotationToFile(task, "failed", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] First task",
+      "  - fix: failed",
+      "- [ ] Second task",
+      "",
+    ].join("\r\n"));
   });
 
   it("serializes re-entrant checkbox updates on the same file without losing writes", () => {

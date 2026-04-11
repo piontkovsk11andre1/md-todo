@@ -189,6 +189,20 @@ export function checkTaskUsingFileSystem(task: Task, fileSystem: FileSystem): vo
 }
 
 /**
+ * Marks a task checked and appends a verification failure fix annotation.
+ */
+export function writeFixAnnotationToFile(task: Task, failureReason: string | null, fileSystem: FileSystem): void {
+  const reason = failureReason?.trim().length ? failureReason.trim() : "Verification failed (no details).";
+
+  withSerializedFileMutation(task.file, () => {
+    const source = fileSystem.readText(task.file);
+    const checkedSource = markChecked(source, task);
+    const updated = insertSubitems(checkedSource, task, [`fix: ${reason}`]);
+    fileSystem.writeText(task.file, updated);
+  });
+}
+
+/**
  * Inserts formatted trace-statistics lines beneath a completed task.
  *
  * The insertion point is after the task's existing descendant block, so any
