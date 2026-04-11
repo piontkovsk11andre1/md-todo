@@ -2725,6 +2725,86 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, "dirty.txt"))).toBe(true);
   });
 
+  it("undo enforces dirty-worktree safety unless --force and keeps task state consistent when blocked", async () => {
+    const blockedWorkspace = makeTempWorkspace();
+    setupUndoDirtyWorkspace(blockedWorkspace, {
+      runId: "run-20260411T161022955Z-undo-blocked",
+      taskText: "Write docs",
+    });
+
+    const blockedResult = await runCli([
+      "undo",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], blockedWorkspace);
+
+    expect(blockedResult.code).toBe(1);
+    expect(blockedResult.errors.some((line) => line.includes("Working directory is not clean"))).toBe(true);
+    expect(fs.readFileSync(path.join(blockedWorkspace, "roadmap.md"), "utf-8")).toContain("- [x] Write docs");
+
+    const forcedWorkspace = makeTempWorkspace();
+    setupUndoDirtyWorkspace(forcedWorkspace, {
+      runId: "run-20260411T161022955Z-undo-force",
+      taskText: "Write docs",
+    });
+
+    const forcedResult = await runCli([
+      "undo",
+      "--force",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], forcedWorkspace);
+
+    expect(forcedResult.code).toBe(0);
+    expect(forcedResult.logs.some((line) => line.includes("--force enabled: skipping clean-worktree precondition check."))).toBe(true);
+    expect(fs.readFileSync(path.join(forcedWorkspace, "roadmap.md"), "utf-8")).toContain("- [ ] Write docs");
+  });
+
+  it("migrate down mirrors undo dirty-worktree safety and --force behavior", async () => {
+    const blockedWorkspace = makeTempWorkspace();
+    setupUndoDirtyWorkspace(blockedWorkspace, {
+      runId: "run-20260411T161022955Z-down-blocked",
+      taskText: "Write docs",
+    });
+
+    const blockedResult = await runCli([
+      "migrate",
+      "down",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], blockedWorkspace);
+
+    expect(blockedResult.code).toBe(1);
+    expect(blockedResult.errors.some((line) => line.includes("Working directory is not clean"))).toBe(true);
+    expect(fs.readFileSync(path.join(blockedWorkspace, "roadmap.md"), "utf-8")).toContain("- [x] Write docs");
+
+    const forcedWorkspace = makeTempWorkspace();
+    setupUndoDirtyWorkspace(forcedWorkspace, {
+      runId: "run-20260411T161022955Z-down-force",
+      taskText: "Write docs",
+    });
+
+    const forcedResult = await runCli([
+      "migrate",
+      "down",
+      "--force",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK')",
+    ], forcedWorkspace);
+
+    expect(forcedResult.code).toBe(0);
+    expect(forcedResult.logs.some((line) => line.includes("--force enabled: skipping clean-worktree precondition check."))).toBe(true);
+    expect(fs.readFileSync(path.join(forcedWorkspace, "roadmap.md"), "utf-8")).toContain("- [ ] Write docs");
+  });
+
   it("revert --dry-run prints planned runs and git commands", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -10857,6 +10937,31 @@ function writeSavedRun(
     status: options.status,
     extra: options.extra,
   }, null, 2), "utf-8");
+}
+
+function setupUndoDirtyWorkspace(
+  workspace: string,
+  options: {
+    runId: string;
+    taskText: string;
+  },
+): void {
+  const roadmapPath = path.join(workspace, "roadmap.md");
+  fs.writeFileSync(roadmapPath, `- [x] ${options.taskText}\n`, "utf-8");
+
+  execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["add", "."], { cwd: workspace, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: workspace, stdio: "ignore" });
+
+  fs.writeFileSync(roadmapPath, `- [x] ${options.taskText}\n\nDirty change\n`, "utf-8");
+
+  writeSavedRun(workspace, {
+    runId: options.runId,
+    status: "completed",
+    taskText: options.taskText,
+  });
 }
 
 function readSavedRunMetadata(workspace: string): Array<{
