@@ -27,6 +27,19 @@ export async function isGitRepoWithGitClient(gitClient: GitClient, cwd: string):
 }
 
 /**
+ * Initializes a Git repository in the provided directory when one does not
+ * already exist.
+ */
+export async function initGitRepo(gitClient: GitClient, cwd: string): Promise<void> {
+  const inGitRepo = await isGitRepoWithGitClient(gitClient, cwd);
+  if (inGitRepo) {
+    return;
+  }
+
+  await gitClient.run(["init"], cwd);
+}
+
+/**
  * Checks whether the repository has pending changes after excluding generated
  * runtime artifacts and lock files.
  */

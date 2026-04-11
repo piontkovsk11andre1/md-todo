@@ -26,6 +26,10 @@ import { createInitProject, type InitProjectOptions } from "./application/init-p
 import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
+import {
+  createStartProject,
+  type StartProjectOptions,
+} from "./application/start-project.js";
 import { createLogRuns, type LogRunsOptions } from "./application/log-runs.js";
 import {
   createManageArtifacts,
@@ -117,6 +121,7 @@ export type App = {
   nextTask: (options: NextTaskOptions) => Promise<number>;
   logRuns: (options: LogRunsOptions) => number;
   initProject: (options?: InitProjectOptions) => Promise<number>;
+  startProject: (options?: StartProjectOptions) => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
   emitOutput?: (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
   releaseAllLocks?: () => void;
@@ -617,6 +622,11 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       output: ports.output,
     }),
+    startProject: (ports) => createStartProject({
+      gitClient: ports.gitClient,
+      pathOperations: ports.pathOperations,
+      workingDirectory: ports.workingDirectory,
+    }),
     manageArtifacts: (ports) => createManageArtifacts({
       artifactStore: ports.artifactStore,
       directoryOpener: ports.directoryOpener,
@@ -652,6 +662,7 @@ function createAppFromFactories(
   const nextTask = factories.nextTask(ports);
   const logRuns = factories.logRuns(ports);
   const initProject = factories.initProject(ports);
+  const startProject = factories.startProject(ports);
   const manageArtifacts = factories.manageArtifacts(ports);
   const inFlightRunTasks = new Set<Promise<number>>();
 
@@ -681,6 +692,7 @@ function createAppFromFactories(
     nextTask,
     logRuns,
     initProject,
+    startProject,
     manageArtifacts,
     emitOutput: (event) => {
       ports.output.emit(event);

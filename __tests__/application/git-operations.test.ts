@@ -4,6 +4,7 @@ import type { GitClient, PathOperationsPort } from "../../src/domain/ports/index
 import {
   buildCommitMessage,
   commitCheckedTaskWithGitClient,
+  initGitRepo,
   isGitRepoWithGitClient,
   isPathInsideRepo,
   isWorkingDirectoryClean,
@@ -25,6 +26,36 @@ describe("git-operations", () => {
 
     vi.mocked(gitClient.run).mockRejectedValueOnce(new Error("not a repo"));
     await expect(isGitRepoWithGitClient(gitClient, "/repo")).resolves.toBe(false);
+  });
+
+  it("initializes git repository when cwd is not a repo", async () => {
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse") {
+          throw new Error("not a repo");
+        }
+        return "";
+      }),
+    };
+
+    await expect(initGitRepo(gitClient, "/repo")).resolves.toBeUndefined();
+    expect(gitClient.run).toHaveBeenNthCalledWith(1, ["rev-parse", "--is-inside-work-tree"], "/repo");
+    expect(gitClient.run).toHaveBeenNthCalledWith(2, ["init"], "/repo");
+  });
+
+  it("does not initialize git repository when cwd is already in a repo", async () => {
+    const gitClient: GitClient = {
+      run: vi.fn(async (args: string[]) => {
+        if (args[0] === "rev-parse") {
+          return "true";
+        }
+        return "";
+      }),
+    };
+
+    await expect(initGitRepo(gitClient, "/repo")).resolves.toBeUndefined();
+    expect(gitClient.run).toHaveBeenCalledTimes(1);
+    expect(gitClient.run).toHaveBeenCalledWith(["rev-parse", "--is-inside-work-tree"], "/repo");
   });
 
   it("checks worktree cleanliness while excluding artifact paths", async () => {
