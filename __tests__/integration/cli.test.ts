@@ -3305,6 +3305,68 @@ describe.sequential("CLI integration", () => {
     expect(stderrOutput.includes("still failing after repair")).toBe(true);
   });
 
+  it("reverify returns 2 when resolve outcome is unresolved", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--repair-attempts",
+      "2",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "if(prompt.includes('Diagnose why verification still fails after repair attempts are exhausted.')){console.log('UNRESOLVED: cannot isolate root cause from available signals');process.exit(0);}",
+        "if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK: still failing after repeated repairs');process.exit(0);}",
+        "if(prompt.includes('Repair the selected task after a failed verification pass.')){process.exit(0);}",
+        "process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Resolve phase could not diagnose the issue"))).toBe(true);
+  });
+
+  it("reverify returns 2 when resolve-informed repair attempts are exhausted", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Write docs\n", "utf-8");
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-completed",
+      status: "completed",
+    });
+
+    const result = await runCli([
+      "reverify",
+      "--repair-attempts",
+      "2",
+      "--resolve-repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "if(prompt.includes('Diagnose why verification still fails after repair attempts are exhausted.')){console.log('RESOLVED: tests keep failing because the integration fixture is still incorrect');process.exit(0);}",
+        "if(prompt.includes('Verify whether the selected task is complete.')){console.log('NOT_OK: failure persists after resolve-informed repair');process.exit(0);}",
+        "if(prompt.includes('Repair the selected task after a failed verification pass.')){process.exit(0);}",
+        "process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.errors.some((line) => line.includes("Resolve-informed repair attempts exhausted after 1 attempt(s)."))).toBe(true);
+  });
+
   it("reverify keeps checked and unchecked checkbox states unchanged on failure", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
