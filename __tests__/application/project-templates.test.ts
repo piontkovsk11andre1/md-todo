@@ -10,6 +10,7 @@ import {
   DEFAULT_QUERY_SEED_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
+  DEFAULT_RESOLVE_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_VERIFY_TEMPLATE,
@@ -29,6 +30,7 @@ describe("project-templates", () => {
       discussFinished: DEFAULT_DISCUSS_FINISHED_TEMPLATE,
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
+      resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
@@ -69,6 +71,7 @@ describe("project-templates", () => {
       discussFinished: DEFAULT_DISCUSS_FINISHED_TEMPLATE,
       verify: "VERIFY",
       repair: DEFAULT_REPAIR_TEMPLATE,
+      resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
@@ -79,6 +82,7 @@ describe("project-templates", () => {
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "execute.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "help.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research.md"));
+    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "resolve.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "trace.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-seed.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-execute.md"));
@@ -104,6 +108,27 @@ describe("project-templates", () => {
 
     expect(templates.help).toBe("HELP");
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "help.md"));
+  });
+
+  it("loads resolve template override from resolve.md", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("resolve.md")) {
+          return "RESOLVE";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.resolve).toBe("RESOLVE");
+    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "resolve.md"));
   });
 
   it("loads query template overrides from query-*.md files", () => {

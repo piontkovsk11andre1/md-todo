@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
+  DEFAULT_RESOLVE_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
@@ -16,6 +17,7 @@ describe("default prompt templates", () => {
     expect(DEFAULT_TASK_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
     expect(DEFAULT_VERIFY_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
     expect(DEFAULT_REPAIR_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
+    expect(DEFAULT_RESOLVE_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
     expect(DEFAULT_PLAN_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
     expect(DEFAULT_RESEARCH_TEMPLATE.startsWith(sharedPrefix)).toBe(true);
   });

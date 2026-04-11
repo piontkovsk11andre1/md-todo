@@ -8,6 +8,7 @@ import {
   DEFAULT_QUERY_SEED_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
+  DEFAULT_RESOLVE_TEMPLATE,
   DEFAULT_TASK_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_VERIFY_TEMPLATE,
@@ -31,6 +32,7 @@ export interface ProjectTemplates {
   discussFinished: string;
   verify: string;
   repair: string;
+  resolve: string;
   plan: string;
   research: string;
   trace: string;
@@ -59,6 +61,7 @@ export function loadProjectTemplatesFromPorts(
       discussFinished: DEFAULT_DISCUSS_FINISHED_TEMPLATE,
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
+      resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       trace: DEFAULT_TRACE_TEMPLATE,
@@ -80,6 +83,7 @@ export function loadProjectTemplatesFromPorts(
       DEFAULT_DISCUSS_FINISHED_TEMPLATE,
     verify: templateLoader.load(pathOperations.join(dir, "verify.md")) ?? DEFAULT_VERIFY_TEMPLATE,
     repair: templateLoader.load(pathOperations.join(dir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
+    resolve: templateLoader.load(pathOperations.join(dir, "resolve.md")) ?? DEFAULT_RESOLVE_TEMPLATE,
     plan: templateLoader.load(pathOperations.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
     research: templateLoader.load(pathOperations.join(dir, "research.md")) ?? DEFAULT_RESEARCH_TEMPLATE,
     trace: templateLoader.load(pathOperations.join(dir, "trace.md")) ?? DEFAULT_TRACE_TEMPLATE,

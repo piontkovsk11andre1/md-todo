@@ -336,7 +336,7 @@ Layered worker resolution (lowest to highest priority):
 
 ### Templates (\`.rundown/*.md\`)
 
-Customizable templates: \`execute.md\`, \`verify.md\`, \`repair.md\`, \`plan.md\`, \`discuss.md\`, \`research.md\`, \`help.md\`. Built-in defaults are used when files are absent.
+Customizable templates: \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`discuss.md\`, \`research.md\`, \`help.md\`. Built-in defaults are used when files are absent.
 
 ## Behavior
 
@@ -429,6 +429,43 @@ Task-state ownership rules:
 - rundown will update task completion only after validation succeeds.
 
 After making corrections, the task will be validated again.
+{{traceInstructions}}
+`;
+
+/**
+ * Default resolve-phase prompt template used after repair attempts are exhausted.
+ */
+export const DEFAULT_RESOLVE_TEMPLATE = `\
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
+${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
+
+## Phase
+
+Diagnose why verification still fails after repair attempts are exhausted.
+
+Review all available context and determine the most likely root cause.
+
+## Verification failure
+
+{{verificationFailureMessage}}
+
+## Original execution stdout
+
+{{executionStdout}}
+
+## Repair attempt history
+
+{{repairAttemptHistory}}
+
+Return exactly one verdict line on stdout:
+
+- \`RESOLVED: <root cause diagnosis>\`
+- \`UNRESOLVED: <why diagnosis is not possible from available context>\`
+
+Output only the verdict line and nothing else.
+
+Do not modify the source Markdown task file or change its checkbox state.
 {{traceInstructions}}
 `;
 
