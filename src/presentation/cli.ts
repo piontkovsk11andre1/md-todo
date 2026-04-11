@@ -55,6 +55,7 @@ import {
   createUndoCommandAction,
   createRunCommandAction,
   createStartCommandAction,
+  createTestCommandAction,
   createUnlockCommandAction,
 } from "./cli-command-actions.js";
 
@@ -320,6 +321,21 @@ program
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .allowUnknownOption(false)
   .action(withCliAction(createMigrateCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+  })));
+
+program
+  .command("test")
+  .description("Verify predicted-state specs and create new spec assertions.")
+  .argument("[action]", "Test action: new")
+  .argument("[prompt]", "Assertion text for `test new`")
+  .option("--dir <path>", "Specs directory (default: ./specs)", "./specs")
+  .option("--run", "Immediately verify the created spec after `test new`", false)
+  .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(withCliAction(createTestCommandAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
   })));

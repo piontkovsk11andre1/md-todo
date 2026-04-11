@@ -186,6 +186,8 @@ type MigrateAction =
   | "user-experience"
   | "user-session";
 
+type TestAction = "new";
+
 interface MigrateCommandOptions {
   action?: MigrateAction;
   downCount?: number;
@@ -198,6 +200,17 @@ interface MigrateCommandOptions {
 }
 
 type MigrateCommandHandler = (options: MigrateCommandOptions) => CliActionResult;
+
+interface TestCommandOptions {
+  action?: TestAction;
+  prompt?: string;
+  run: boolean;
+  dir?: string;
+  workerPattern: ParsedWorkerPattern;
+  showAgentOutput: boolean;
+}
+
+type TestCommandHandler = (options: TestCommandOptions) => CliActionResult;
 
 function resolveWorkerPattern(
   worker: string | string[] | boolean | undefined,
@@ -993,6 +1006,41 @@ export function createMigrateCommandAction({
 }
 
 /**
+ * Creates the `test` command action handler.
+ *
+ * The returned action validates `test` action routing and forwards the request
+ * to the application `testSpecs` use case.
+ */
+export function createTestCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+}: WorkerActionDependencies): (
+  action: string | undefined,
+  prompt: string | undefined,
+  opts: CliOpts,
+) => CliActionResult {
+  return (action: string | undefined, prompt: string | undefined, opts: CliOpts) => {
+    const normalizedAction = normalizeOptionalString(action);
+    if (normalizedAction !== undefined && !isTestAction(normalizedAction)) {
+      throw new Error("Invalid test action: " + normalizedAction + ". Allowed: new.");
+    }
+
+    if (prompt !== undefined && normalizedAction !== "new") {
+      throw new Error("The optional [prompt] argument is only supported for `test new <prompt>`.");
+    }
+
+    return resolveTestCommandHandler(getApp())({
+      action: normalizedAction,
+      prompt: normalizeOptionalString(prompt),
+      run: Boolean(opts.run as boolean | undefined),
+      dir: normalizeOptionalString(opts.dir),
+      workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
+      showAgentOutput: resolveShowAgentOutputOption(opts),
+    });
+  };
+}
+
+/**
  * Creates the `query` command action handler.
  */
 export function createQueryCommandAction({
@@ -1647,6 +1695,21 @@ function resolveMigrateCommandHandler(appInstance: CliApp): MigrateCommandHandle
   throw new Error("The `migrate` command is not available in this build.");
 }
 
+/**
+ * Resolves the active test command implementation for the current app build.
+ */
+function resolveTestCommandHandler(appInstance: CliApp): TestCommandHandler {
+  const maybeTestHandler = appInstance as CliApp & {
+    testSpecs?: TestCommandHandler;
+  };
+
+  if (typeof maybeTestHandler.testSpecs === "function") {
+    return maybeTestHandler.testSpecs;
+  }
+
+  throw new Error("The `test` command is not available in this build.");
+}
+
 function isMigrateAction(value: string): value is MigrateAction {
   return value === "up"
     || value === "down"
@@ -1656,4 +1719,8 @@ function isMigrateAction(value: string): value is MigrateAction {
     || value === "review"
     || value === "user-experience"
     || value === "user-session";
+}
+
+function isTestAction(value: string): value is TestAction {
+  return value === "new";
 }
