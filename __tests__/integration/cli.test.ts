@@ -11040,6 +11040,12 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "undo.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "test-verify.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate-context.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate-snapshot.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate-backlog.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate-review.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "migrate-ux.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "tools"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, ".rundown", "config.json"))).toBe(true);
@@ -11064,6 +11070,12 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(customConfigDir, "trace.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "undo.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "test-verify.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate-context.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate-snapshot.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate-backlog.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate-review.md"))).toBe(true);
+    expect(fs.existsSync(path.join(customConfigDir, "migrate-ux.md"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "tools"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "vars.json"))).toBe(true);
     expect(fs.existsSync(path.join(customConfigDir, "config.json"))).toBe(true);

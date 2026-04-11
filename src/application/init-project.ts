@@ -1,6 +1,12 @@
 import {
   DEFAULT_CONFIG_CONTENT,
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
+  DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
+  DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
+  DEFAULT_MIGRATE_REVIEW_TEMPLATE,
+  DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
+  DEFAULT_MIGRATE_TEMPLATE,
+  DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
@@ -112,6 +118,12 @@ export function createInitProject(
     write("trace.md", DEFAULT_TRACE_TEMPLATE);
     write("undo.md", DEFAULT_UNDO_TEMPLATE);
     write("test-verify.md", DEFAULT_TEST_VERIFY_TEMPLATE);
+    write("migrate.md", DEFAULT_MIGRATE_TEMPLATE);
+    write("migrate-context.md", DEFAULT_MIGRATE_CONTEXT_TEMPLATE);
+    write("migrate-snapshot.md", DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE);
+    write("migrate-backlog.md", DEFAULT_MIGRATE_BACKLOG_TEMPLATE);
+    write("migrate-review.md", DEFAULT_MIGRATE_REVIEW_TEMPLATE);
+    write("migrate-ux.md", DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE);
     write("vars.json", DEFAULT_VARS_FILE_CONTENT);
 
     // Generate config content: embed worker(s) when provided, otherwise use default.
