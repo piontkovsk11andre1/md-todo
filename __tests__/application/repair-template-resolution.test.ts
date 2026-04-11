@@ -102,6 +102,7 @@ describe("repair-template-resolution", () => {
 
     expect(resolved).toBe("RESEARCH RESOLVE");
     expect(templateLoader.load).toHaveBeenCalledWith(path.join("/workspace", ".rundown", "research-resolve.md"));
+    expect(templateLoader.load).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to .rundown/resolve.md when command-specific resolve template is missing", () => {
@@ -124,8 +125,15 @@ describe("repair-template-resolution", () => {
     });
 
     expect(resolved).toBe("PROJECT RESOLVE");
-    expect(templateLoader.load).toHaveBeenCalledWith(path.join("/workspace", ".rundown", "research-resolve.md"));
-    expect(templateLoader.load).toHaveBeenCalledWith(path.join("/workspace", ".rundown", "resolve.md"));
+    expect(templateLoader.load).toHaveBeenNthCalledWith(
+      1,
+      path.join("/workspace", ".rundown", "research-resolve.md"),
+    );
+    expect(templateLoader.load).toHaveBeenNthCalledWith(
+      2,
+      path.join("/workspace", ".rundown", "resolve.md"),
+    );
+    expect(templateLoader.load).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to default resolve template when project overrides are unavailable", () => {
@@ -166,6 +174,7 @@ describe("repair-template-resolution", () => {
 
     expect(resolved).toBe("PROJECT RESOLVE");
     expect(templateLoader.load).toHaveBeenCalledWith(path.join("/workspace", ".rundown", "resolve.md"));
+    expect(templateLoader.load).toHaveBeenCalledTimes(1);
   });
 
   it("resolves research artifact path from inline rundown research command", () => {
