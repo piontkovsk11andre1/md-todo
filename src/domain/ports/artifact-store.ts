@@ -27,6 +27,7 @@ export type ArtifactStorePhase =
   | "execute"
   | "verify"
   | "repair"
+  | "resolve"
   | "plan"
   | "discuss"
   | "help"

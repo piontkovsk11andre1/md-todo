@@ -153,7 +153,7 @@ export async function resolve(options: ResolveOptions): Promise<ResolveResult> {
         ...(options.executionEnv ?? {}),
       },
       artifactContext: options.artifactContext,
-      artifactPhase: "repair" as const,
+      artifactPhase: "resolve" as const,
       artifactPhaseLabel: "cli-resolve-template",
       artifactExtra: {
         promptType: "resolve-template",
@@ -179,7 +179,7 @@ export async function resolve(options: ResolveOptions): Promise<ResolveResult> {
     env: options.executionEnv,
     configDir: options.configDir,
     artifactContext: options.artifactContext,
-    artifactPhase: "repair",
+    artifactPhase: "resolve",
     artifactExtra: { promptType: "resolve" },
   });
 

@@ -21,7 +21,7 @@ export interface CommandExecutionOptions {
   // Optional context object recorded alongside generated artifacts.
   artifactContext?: unknown;
   // Optional artifact phase identifier used for run segmentation.
-  artifactPhase?: "execute" | "verify" | "repair" | "worker" | "plan" | "discuss";
+  artifactPhase?: "execute" | "verify" | "repair" | "resolve" | "worker" | "plan" | "discuss";
   // Optional human-readable label for the artifact phase.
   artifactPhaseLabel?: string;
   // Optional additional metadata attached to generated artifacts.

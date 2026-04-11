@@ -10,6 +10,7 @@ export type RuntimePhase =
   | "execute"
   | "verify"
   | "repair"
+  | "resolve"
   | "plan"
   | "discuss"
   | "help"
@@ -129,7 +130,7 @@ interface PhaseMetadata {
 export interface ScannedRuntimePhase {
   sequence: number;
   phaseLabel: string;
-  phase: "execute" | "verify" | "repair";
+  phase: "execute" | "verify" | "repair" | "resolve";
   dir: string;
   metadataFile: string;
   exitCode?: number | null;
@@ -146,6 +147,7 @@ export interface ScannedRuntimePhases {
   execute: ScannedRuntimePhase[];
   verify: ScannedRuntimePhase[];
   repair: ScannedRuntimePhase[];
+  resolve: ScannedRuntimePhase[];
   all: ScannedRuntimePhase[];
 }
 
@@ -400,7 +402,7 @@ export function scanRuntimeArtifactPhases(runDir: string): ScannedRuntimePhases 
   const discovered: ScannedRuntimePhase[] = [];
 
   if (!fs.existsSync(runDir)) {
-    return { execute: [], verify: [], repair: [], all: [] };
+    return { execute: [], verify: [], repair: [], resolve: [], all: [] };
   }
 
   const phaseDirs = fs.readdirSync(runDir, { withFileTypes: true })
@@ -420,7 +422,12 @@ export function scanRuntimeArtifactPhases(runDir: string): ScannedRuntimePhases 
       continue;
     }
 
-    if (metadata.phase !== "execute" && metadata.phase !== "verify" && metadata.phase !== "repair") {
+    if (
+      metadata.phase !== "execute"
+      && metadata.phase !== "verify"
+      && metadata.phase !== "repair"
+      && metadata.phase !== "resolve"
+    ) {
       continue;
     }
 
@@ -446,6 +453,7 @@ export function scanRuntimeArtifactPhases(runDir: string): ScannedRuntimePhases 
     execute: discovered.filter((phase) => phase.phase === "execute"),
     verify: discovered.filter((phase) => phase.phase === "verify"),
     repair: discovered.filter((phase) => phase.phase === "repair"),
+    resolve: discovered.filter((phase) => phase.phase === "resolve"),
     all: discovered,
   };
 }

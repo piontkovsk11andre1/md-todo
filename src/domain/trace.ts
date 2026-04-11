@@ -52,6 +52,7 @@ export type TracePhase =
   | "execute"
   | "verify"
   | "repair"
+  | "resolve"
   | "plan"
   | "discuss"
   | "rundown-delegate"

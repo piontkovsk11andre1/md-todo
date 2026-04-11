@@ -1130,10 +1130,10 @@ describe("verify-repair-loop output", () => {
     expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
       event_type: "usage.limit_detected",
       payload: expect.objectContaining({
-        phase: "repair",
+        phase: "resolve",
         similarity_detected: false,
         known_pattern_detected: true,
-        matched_phase: "repair",
+        matched_phase: "resolve",
         matched_stdout: "HTTP 429 Too Many Requests: billing quota reached for this account",
       }),
     }));
@@ -1197,10 +1197,10 @@ describe("verify-repair-loop output", () => {
     expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
       event_type: "usage.limit_detected",
       payload: expect.objectContaining({
-        phase: "repair",
+        phase: "resolve",
         similarity_detected: true,
         known_pattern_detected: false,
-        matched_phase: "repair",
+        matched_phase: "resolve",
         matched_stdout: repeatedOutput,
       }),
     }));

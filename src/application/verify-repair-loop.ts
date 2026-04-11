@@ -206,12 +206,12 @@ export async function runVerifyRepairLoop(
   };
 
   const emitUsageLimitDetected = (payload: {
-    phase: "execute" | "verify" | "repair";
+    phase: "execute" | "verify" | "repair" | "resolve";
     reason: string;
     similarityDetected: boolean;
     knownPatternDetected: boolean;
     executionStdout: string | null;
-    matchedPhase: "execute" | "verify" | "repair";
+    matchedPhase: "execute" | "verify" | "repair" | "resolve";
     matchedStdout: string | null;
   }): void => {
     if (!input.trace || !runId) {
@@ -234,8 +234,8 @@ export async function runVerifyRepairLoop(
   };
 
   const detectUsageLimitInOutputs = (
-    phase: "verify" | "repair",
-    outputs: Array<{ stdout: string | undefined; matchedPhase: "verify" | "repair" }>,
+    phase: "verify" | "repair" | "resolve",
+    outputs: Array<{ stdout: string | undefined; matchedPhase: "verify" | "repair" | "resolve" }>,
     similarityFailureReason: string,
     patternFailureReason: string,
   ): VerifyRepairLoopResult | null => {
@@ -644,8 +644,8 @@ export async function runVerifyRepairLoop(
 
   if (resolveDiagnosis && maxResolveRepairAttempts > 0) {
     const resolveOutputUsageLimitResult = detectUsageLimitInOutputs(
-      "repair",
-      [{ stdout: resolveDiagnosis, matchedPhase: "repair" }],
+      "resolve",
+      [{ stdout: resolveDiagnosis, matchedPhase: "resolve" }],
       "Possible API usage limit detected: resolve output is identical or near-identical to execution output; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
       "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
     );

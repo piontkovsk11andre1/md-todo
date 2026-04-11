@@ -411,6 +411,7 @@ describe("runtime-artifacts", () => {
     expect(scanned.execute).toHaveLength(1);
     expect(scanned.verify).toHaveLength(0);
     expect(scanned.repair).toHaveLength(0);
+    expect(scanned.resolve).toHaveLength(0);
     expect(scanned.all).toHaveLength(1);
     expect(scanned.execute[0]).toMatchObject({
       phase: "execute",
@@ -579,6 +580,7 @@ describe("runtime-artifacts", () => {
       execute: [],
       verify: [],
       repair: [],
+      resolve: [],
       all: [],
     });
   });
@@ -592,6 +594,7 @@ describe("runtime-artifacts", () => {
       execute: [],
       verify: [],
       repair: [],
+      resolve: [],
       all: [],
     });
   });
