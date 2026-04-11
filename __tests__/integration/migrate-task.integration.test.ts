@@ -32,6 +32,14 @@ const describeIfSatelliteMigrateAvailable = hasMigrateCommand
   && hasMigrateSatelliteActions
   ? describe
   : describe.skip;
+const hasMigrateUserSessionAction = cliSource.includes("user-session");
+const hasMigrateConfirmOption = cliSource.includes("--confirm");
+const describeIfUserSessionMigrateAvailable = hasMigrateCommand
+  && hasMigrateTaskUseCase
+  && hasMigrateUserSessionAction
+  && hasMigrateConfirmOption
+  ? describe
+  : describe.skip;
 
 describeIfMigrateAvailable("migrate-task integration", () => {
   it("falls back to the first ranked proposal in non-interactive mode", async () => {
@@ -121,6 +129,37 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
   }
 });
 
+describeIfUserSessionMigrateAvailable("migrate user-session integration", () => {
+  it("triggers backlog rebuild after session and applies --confirm write gates in non-interactive mode", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectWithSatelliteTemplates(workspace);
+
+    const result = await withTerminalTty(false, async () => runCli([
+      "migrate",
+      "user-session",
+      "--confirm",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildUserSessionBacklogWorkerScript(),
+    ], workspace));
+
+    expect(result.code).toBe(0);
+
+    const migrationPath = path.join(workspace, "migrations", "0001-initialize.md");
+    const backlogPath = path.join(workspace, "migrations", "0001--backlog.md");
+
+    expect(fs.readFileSync(migrationPath, "utf-8")).toContain("session-summary-1");
+    expect(fs.readFileSync(backlogPath, "utf-8")).toContain("session-backlog-2");
+
+    const stdout = result.stdoutWrites.join("");
+    expect(stdout).toContain("session-summary-1");
+    expect(stdout).toContain("session-backlog-2");
+  });
+});
+
 function scaffoldPredictionProject(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
@@ -155,6 +194,29 @@ function buildSequencedWorkerScript(action: string): string {
     "console.log(`# ${action}`);",
     "console.log('');",
     "console.log(`generated-${action}-${sequence}`);",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildUserSessionBacklogWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const markerPath=path.join(process.cwd(),'.user-session.seq');",
+    "let sequence=1;",
+    "if(fs.existsSync(markerPath)){",
+    "  sequence=Number.parseInt(fs.readFileSync(markerPath,'utf-8'),10)+1;",
+    "}",
+    "fs.writeFileSync(markerPath,String(sequence));",
+    "if(sequence===1){",
+    "  console.log('# Session Summary');",
+    "  console.log('');",
+    "  console.log('session-summary-1');",
+    "  process.exit(0);",
+    "}",
+    "console.log('# Backlog');",
+    "console.log('');",
+    "console.log('session-backlog-2');",
     "process.exit(0);",
   ].join("\n");
 }
