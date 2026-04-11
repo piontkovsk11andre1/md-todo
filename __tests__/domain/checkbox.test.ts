@@ -218,6 +218,17 @@ describe("resetAllCheckboxes", () => {
     expect(result).toBe("- [ ] Parent\n  - [ ] Child\n  - [ ] Child two\n");
   });
 
+  it("should reset checked tasks while preserving fix sub-items", () => {
+    const source =
+      "- [x] Parent task\n  - fix: Cannot be verified because this is missing\n  - [x] Child task\n    - fix: Child verification failed\n";
+
+    const result = resetAllCheckboxes(source, "test.md");
+
+    expect(result).toBe(
+      "- [ ] Parent task\n  - fix: Cannot be verified because this is missing\n  - [ ] Child task\n    - fix: Child verification failed\n",
+    );
+  });
+
   it("should preserve non-task [x] markers inside fenced code blocks", () => {
     const source =
       "- [x] Real task\n\n```md\n- [x] Not a real task\nconst flag = '[x]';\n```\n\n- [ ] Another real task\n";
