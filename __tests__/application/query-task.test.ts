@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createQueryTask, type QueryTaskDependencies, type QueryTaskOptions } from "../../src/application/query-task.js";
 import {
   DEFAULT_QUERY_EXECUTION_TEMPLATE,
+  DEFAULT_QUERY_SEED_TEMPLATE,
   DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
+  DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
+  DEFAULT_QUERY_YN_SEED_TEMPLATE,
 } from "../../src/domain/defaults.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import type { ApplicationOutputEvent, ArtifactStore, FileSystem } from "../../src/domain/ports/index.js";
@@ -204,6 +207,124 @@ describe("query-task", () => {
     const outputJson = outputWrite?.[1] as string;
     expect(outputJson).toContain("# Custom aggregate");
     expect(outputJson).toContain("## Step 1: Evidence");
+  });
+
+  it("selects seed template by format (default vs yn vs success-error)", async () => {
+    const cases: Array<{
+      format: QueryTaskOptions["format"];
+      expectedSeedTemplate: string;
+    }> = [
+      { format: "markdown", expectedSeedTemplate: DEFAULT_QUERY_SEED_TEMPLATE },
+      { format: "yn", expectedSeedTemplate: DEFAULT_QUERY_YN_SEED_TEMPLATE },
+      { format: "success-error", expectedSeedTemplate: DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE },
+    ];
+
+    for (const testCase of cases) {
+      const { dependencies, fileSystem } = createDependencies({ cwd: "/workspace" });
+      const queryTask = createQueryTask(dependencies);
+
+      vi.mocked(fileSystem.readdir).mockReturnValue([
+        { name: "step-1.md", isFile: true, isDirectory: false },
+      ]);
+      vi.mocked(fileSystem.readText).mockImplementation((filePath: string) => {
+        if (/step-1\.md$/.test(filePath)) {
+          return "# Verdict\n\nsuccess";
+        }
+        return "";
+      });
+
+      await queryTask(createOptions({
+        format: testCase.format,
+        output: testCase.format === "markdown" ? undefined : "/tmp/query/result.txt",
+      }));
+
+      const queryWrite = vi.mocked(fileSystem.writeText).mock.calls.find(([filePath]) => /[\\/]query\.md$/.test(filePath));
+      expect(queryWrite).toBeDefined();
+      expect(queryWrite?.[1]).toContain(testCase.expectedSeedTemplate.replace("{{query}}", "Is auth enforced?").split("\n")[4]);
+    }
+  });
+
+  it("selects stream vs file execution mode based on format/output", async () => {
+    const cases: Array<{
+      name: string;
+      format: QueryTaskOptions["format"];
+      output?: string;
+      expectedTemplate: string;
+      expectedWorkdirCreated: boolean;
+      expectedShowAgentOutput: boolean;
+    }> = [
+      {
+        name: "markdown without output uses stream mode",
+        format: "markdown",
+        output: undefined,
+        expectedTemplate: DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
+        expectedWorkdirCreated: false,
+        expectedShowAgentOutput: true,
+      },
+      {
+        name: "markdown with output uses file mode",
+        format: "markdown",
+        output: "/tmp/query/result.md",
+        expectedTemplate: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+        expectedWorkdirCreated: true,
+        expectedShowAgentOutput: false,
+      },
+      {
+        name: "json uses file mode",
+        format: "json",
+        output: undefined,
+        expectedTemplate: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+        expectedWorkdirCreated: true,
+        expectedShowAgentOutput: false,
+      },
+      {
+        name: "yn uses file mode",
+        format: "yn",
+        output: undefined,
+        expectedTemplate: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+        expectedWorkdirCreated: true,
+        expectedShowAgentOutput: false,
+      },
+      {
+        name: "success-error uses file mode",
+        format: "success-error",
+        output: undefined,
+        expectedTemplate: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+        expectedWorkdirCreated: true,
+        expectedShowAgentOutput: false,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const { dependencies, fileSystem, runTask } = createDependencies({ cwd: "/workspace" });
+      const queryTask = createQueryTask(dependencies);
+
+      vi.mocked(fileSystem.readdir).mockReturnValue([
+        { name: "step-1.md", isFile: true, isDirectory: false },
+      ]);
+      vi.mocked(fileSystem.readText).mockImplementation((filePath: string) => {
+        if (/step-1\.md$/.test(filePath)) {
+          return "# Verdict\n\nY";
+        }
+        return "";
+      });
+
+      await queryTask(createOptions({
+        format: testCase.format,
+        output: testCase.output,
+        showAgentOutput: false,
+      }));
+
+      expect(runTask, testCase.name).toHaveBeenCalledWith(expect.objectContaining({
+        taskTemplateOverride: testCase.expectedTemplate,
+        showAgentOutput: testCase.expectedShowAgentOutput,
+      }));
+
+      const createdWorkdir = vi.mocked(fileSystem.mkdir).mock.calls.some(
+        ([dir]) => /[\\/]runs[\\/]run-query[\\/]workdir$/.test(dir),
+      );
+      expect(createdWorkdir, testCase.name).toBe(testCase.expectedWorkdirCreated);
+    }
   });
 });
 
