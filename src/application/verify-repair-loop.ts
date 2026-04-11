@@ -130,6 +130,18 @@ export async function runVerifyRepairLoop(
     : 1;
   const formatResolveRepairAttempt = (attemptNumber: number): string => "Resolve-informed repair attempt "
     + attemptNumber + " of " + maxResolveRepairAttempts;
+  const summarizeDiagnosis = (diagnosis: string | null): string => {
+    if (!diagnosis) {
+      return "(no diagnosis provided)";
+    }
+
+    const normalized = diagnosis.replace(/\s+/g, " ").trim();
+    if (normalized.length <= 240) {
+      return normalized;
+    }
+
+    return normalized.slice(0, 237) + "...";
+  };
   const seededResolveDiagnosis = typeof input.templateVars.resolvedDiagnosis === "string"
     && input.templateVars.resolvedDiagnosis.trim().length > 0
     ? input.templateVars.resolvedDiagnosis.trim()
@@ -634,6 +646,10 @@ export async function runVerifyRepairLoop(
       kind: "warn",
       message: "Repair phase exhausted; running resolve phase to diagnose root cause.",
     });
+    emit({
+      kind: "info",
+      message: "Resolve phase: collecting failure context from " + attempts + " repair attempt(s).",
+    });
 
     const resolveResult = await dependencies.taskRepair.resolve({
       task: input.task,
@@ -661,6 +677,10 @@ export async function runVerifyRepairLoop(
     const resolveFailureReason = resolveResult.diagnosis ?? "Resolve phase returned no diagnosis.";
     if (!resolveResult.resolved) {
       cumulativeFailureReasons.push(resolveFailureReason);
+      emit({
+        kind: "warn",
+        message: "Resolve phase outcome: unresolved. " + summarizeDiagnosis(resolveFailureReason),
+      });
       emitRepairOutcome(false, totalRepairAttempts);
       emitVerificationEfficiency();
       emit({
@@ -674,6 +694,14 @@ export async function runVerifyRepairLoop(
     }
 
     resolveDiagnosis = resolveFailureReason;
+    emit({
+      kind: "success",
+      message: "Resolve phase outcome: resolved diagnosis captured.",
+    });
+    emit({
+      kind: "info",
+      message: "Resolve diagnosis: " + summarizeDiagnosis(resolveDiagnosis),
+    });
     emit({
       kind: "info",
       message: "Resolve phase identified a diagnosis; running resolve-informed repair.",
@@ -703,6 +731,12 @@ export async function runVerifyRepairLoop(
       resolveRepairAttempts += 1;
       repairAttempts = attempts + resolveRepairAttempts;
       totalRepairAttempts = repairAttempts;
+      emit({
+        kind: "info",
+        message: indentRepairMessage("Applying resolve diagnosis to repair attempt "
+          + resolveRepairAttempts
+          + "."),
+      });
       emit({
         kind: "info",
         message: indentRepairMessage(formatResolveRepairAttempt(resolveRepairAttempts) + ": starting..."),
