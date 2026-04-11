@@ -127,6 +127,31 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
       expect(satelliteFiles).toStrictEqual([`0001--${action}.md`]);
     });
   }
+
+  it("migrate context removes the previous context satellite before writing the new one", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectWithSatelliteTemplates(workspace);
+    fs.writeFileSync(path.join(workspace, "migrations", "0002-next.md"), "# 0002 next\n\n- [ ] step\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "context",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildSequencedWorkerScript("context"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const previousContext = path.join(workspace, "migrations", "0001--context.md");
+    const newContext = path.join(workspace, "migrations", "0002--context.md");
+    expect(fs.existsSync(previousContext)).toBe(false);
+    expect(fs.existsSync(newContext)).toBe(true);
+    expect(fs.readFileSync(newContext, "utf-8")).toContain("generated-context-1");
+  });
 });
 
 describeIfUserSessionMigrateAvailable("migrate user-session integration", () => {
