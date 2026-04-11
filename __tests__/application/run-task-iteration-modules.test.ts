@@ -3308,6 +3308,122 @@ describe("complete-task-iteration", () => {
     expect(failRun).toHaveBeenCalledWith(2, "verification-failed", "verification-failed", 2);
   });
 
+  it("uses research-repair template for inline rundown research tasks", async () => {
+    const inlineResearchTask = createInlineTask(
+      task.file,
+      "cli: rundown research \"38. Fix output for every command.md\"",
+    );
+    const fileSystem = createInMemoryFileSystem({
+      [inlineResearchTask.file]: "- [ ] cli: rundown research \"38. Fix output for every command.md\"\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: inlineResearchTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.templateLoader.load = vi.fn((templatePath: string) => {
+      if (templatePath.endsWith("research-repair.md")) {
+        return "RESEARCH REPAIR TEMPLATE";
+      }
+      return null;
+    });
+
+    const runVerifyRepairLoopSpy = vi.spyOn(verifyRepairLoopModule, "runVerifyRepairLoop").mockResolvedValue({
+      valid: true,
+      failureReason: null,
+    });
+    vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+      },
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: inlineResearchTask,
+      sourceText: "- [ ] cli: rundown research \"38. Fix output for every command.md\"",
+      expandedSource: "- [ ] cli: rundown research \"38. Fix output for every command.md\"",
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "{{task}}",
+        repair: "DEFAULT REPAIR TEMPLATE",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: true,
+      runMode: "wait",
+      verificationPrompt: "verify",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "Verification failed. Task not checked.",
+      verificationFailureRunReason: "Verification failed.",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, groupEnded: true });
+    expect(runVerifyRepairLoopSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        repairTemplate: "RESEARCH REPAIR TEMPLATE",
+        targetArtifactPath: path.resolve(path.dirname(inlineResearchTask.file), "38. Fix output for every command.md"),
+        targetArtifactPathDisplay: "38. Fix output for every command.md",
+        controllingTaskPath: path.resolve(inlineResearchTask.file),
+        controllingTaskPathDisplay: path.basename(inlineResearchTask.file),
+        controllingTaskFile: inlineResearchTask.file,
+        selectedTaskMetadata: expect.any(String),
+      }),
+    );
+
+    const verifyLoopInput = runVerifyRepairLoopSpy.mock.calls[0]?.[1];
+    const selectedTaskMetadata = typeof verifyLoopInput?.selectedTaskMetadata === "string"
+      ? JSON.parse(verifyLoopInput.selectedTaskMetadata) as Record<string, unknown>
+      : null;
+    expect(selectedTaskMetadata).toMatchObject({
+      text: inlineResearchTask.text,
+      index: inlineResearchTask.index,
+      line: inlineResearchTask.line,
+      file: inlineResearchTask.file,
+      controllingTaskPath: path.resolve(inlineResearchTask.file),
+      isInlineCli: true,
+      cliCommand: inlineResearchTask.cliCommand,
+    });
+  });
+
   it("skips usage-limit detection entirely when shouldVerify is false", async () => {
     const fileSystem = createInMemoryFileSystem({
       [task.file]: "- [ ] Ship release\n",

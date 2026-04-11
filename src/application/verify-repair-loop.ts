@@ -50,6 +50,13 @@ export interface VerifyRepairLoopInput {
   maxRepairAttempts: number;
   allowRepair: boolean;
   templateVars: Record<string, unknown>;
+  lastValidationError?: string;
+  targetArtifactPath?: string;
+  targetArtifactPathDisplay?: string;
+  controllingTaskPath?: string;
+  controllingTaskPathDisplay?: string;
+  controllingTaskFile?: string;
+  selectedTaskMetadata?: string;
   executionEnv?: Record<string, string>;
   artifactContext: ArtifactContext;
   trace: boolean;
@@ -72,6 +79,11 @@ export interface VerifyRepairLoopResult {
   valid: boolean;
   failureReason: string | null;
   usageLimitDetected?: boolean;
+}
+
+interface RepairValidationErrorClassification {
+  contentShapeValidationError: string;
+  taskStateValidationError: string;
 }
 
 /**
@@ -369,7 +381,21 @@ export async function runVerifyRepairLoop(
       maxRetries: 1,
       mode: "wait",
       configDir: input.configDir,
-      templateVars: input.templateVars,
+      templateVars: {
+        ...input.templateVars,
+        ...(previousFailure !== undefined ? { lastValidationError: previousFailure } : {}),
+        ...classifyRepairValidationErrors(previousFailure),
+        ...(input.targetArtifactPath !== undefined ? { targetArtifactPath: input.targetArtifactPath } : {}),
+        ...(input.targetArtifactPathDisplay !== undefined
+          ? { targetArtifactPathDisplay: input.targetArtifactPathDisplay }
+          : {}),
+        ...(input.controllingTaskPath !== undefined ? { controllingTaskPath: input.controllingTaskPath } : {}),
+        ...(input.controllingTaskPathDisplay !== undefined
+          ? { controllingTaskPathDisplay: input.controllingTaskPathDisplay }
+          : {}),
+        ...(input.controllingTaskFile !== undefined ? { controllingTaskFile: input.controllingTaskFile } : {}),
+        ...(input.selectedTaskMetadata !== undefined ? { selectedTaskMetadata: input.selectedTaskMetadata } : {}),
+      },
       executionEnv: input.executionEnv,
       artifactContext: input.artifactContext,
       onWorkerOutput: emitWorkerOutput,
@@ -485,4 +511,40 @@ function resolveTraceRunId(artifactContext: ArtifactContext): string | null {
   return typeof runId === "string" && runId.length > 0
     ? runId
     : null;
+}
+
+function classifyRepairValidationErrors(
+  failureReason: string | null | undefined,
+): RepairValidationErrorClassification {
+  if (typeof failureReason !== "string") {
+    return {
+      contentShapeValidationError: "",
+      taskStateValidationError: "",
+    };
+  }
+
+  const normalized = failureReason.trim();
+  if (normalized.length === 0) {
+    return {
+      contentShapeValidationError: "",
+      taskStateValidationError: "",
+    };
+  }
+
+  const taskStatePattern = /\b(unchecked|checkbox|checkmark|task\s+not\s+checked|mark(?:ed|ing)?\s+.*\[x\]|\[x\])\b/i;
+  const contentShapePattern = /\b(worker\s+chatter|artifact|markdown|document|content|body|transcript|format|shape|enriched)\b/i;
+  const hasTaskStateSignal = taskStatePattern.test(normalized);
+  const hasContentShapeSignal = contentShapePattern.test(normalized);
+
+  if (hasTaskStateSignal) {
+    return {
+      contentShapeValidationError: hasContentShapeSignal ? normalized : "",
+      taskStateValidationError: normalized,
+    };
+  }
+
+  return {
+    contentShapeValidationError: normalized,
+    taskStateValidationError: "",
+  };
 }

@@ -35,6 +35,12 @@ import {
   RUN_REASON_VERIFICATION_FAILED,
   RUN_REASON_USAGE_LIMIT_DETECTED,
 } from "../domain/run-reasons.js";
+import {
+  normalizeRepairPathForDisplay,
+  resolveInlineRundownTargetArtifactPath,
+  resolveRepairTemplateForTask,
+  serializeSelectedTaskMetadata,
+} from "./repair-template-resolution.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 type ArtifactContext = ArtifactRunContext;
@@ -186,6 +192,36 @@ export async function completeTaskIteration(params: {
   // Run verification and optional repair before marking the task as complete.
   const taskForVerification = verificationTask ?? task;
   if (shouldVerify) {
+    const resolvedRepairTemplate = resolveRepairTemplateForTask({
+      task: taskForVerification,
+      configDir: dependencies.configDir,
+      templateLoader: dependencies.templateLoader,
+      pathOperations: dependencies.pathOperations,
+      defaultRepairTemplate: templates.repair,
+    });
+    const controllingTaskPath = dependencies.pathOperations.resolve(taskForVerification.file);
+    const controllingTaskFile = task.file;
+    const targetArtifactPath = resolveInlineRundownTargetArtifactPath({
+      task: taskForVerification,
+      pathOperations: dependencies.pathOperations,
+    });
+    const cwd = dependencies.workingDirectory.cwd();
+    const targetArtifactPathDisplay = targetArtifactPath
+      ? normalizeRepairPathForDisplay({
+        absolutePath: targetArtifactPath,
+        cwd,
+        pathOperations: dependencies.pathOperations,
+      })
+      : undefined;
+    const controllingTaskPathDisplay = normalizeRepairPathForDisplay({
+      absolutePath: controllingTaskPath,
+      cwd,
+      pathOperations: dependencies.pathOperations,
+    });
+    const selectedTaskMetadata = serializeSelectedTaskMetadata({
+      task: taskForVerification,
+      controllingTaskPath,
+    });
     const verifyPhaseTrace = traceRunSession.beginPhase("verify", automationCommand);
     traceRunSession.emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
     let valid: boolean;
@@ -211,7 +247,7 @@ export async function completeTaskIteration(params: {
         source: expandedSource,
         contextBefore: expandedContextBefore,
         verifyTemplate: templates.verify,
-        repairTemplate: templates.repair,
+        repairTemplate: resolvedRepairTemplate,
         executionStdout,
         workerPattern: automationWorkerPattern,
         configDir: dependencies.configDir?.configDir,
@@ -229,6 +265,12 @@ export async function completeTaskIteration(params: {
         executionOutputCaptured,
         isInlineCliTask,
         isToolExpansionTask,
+        targetArtifactPath: targetArtifactPath ?? undefined,
+        targetArtifactPathDisplay,
+        controllingTaskPath,
+        controllingTaskPathDisplay,
+        controllingTaskFile,
+        selectedTaskMetadata,
         onVerificationEfficiency: (metrics) => {
           verificationEfficiency = metrics;
         },

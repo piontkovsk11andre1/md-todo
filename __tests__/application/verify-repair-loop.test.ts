@@ -1516,6 +1516,212 @@ describe("verify-repair-loop output", () => {
       message: expect.stringContaining("Last validation error"),
     });
   });
+
+  it("passes structured repair context and latest validation error into repair template vars", async () => {
+    const repair = vi.fn(async () => ({ valid: false, attempts: 1 }));
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("artifact contains worker chatter")
+      .mockReturnValueOnce("selected task still unchecked");
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output: {
+        emit: vi.fn(),
+      },
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: { existingVar: "preserved" },
+      artifactContext: { runId: "run-structured-context" },
+      trace: false,
+      targetArtifactPath: "/workspace/migrations/38. Fix output for every command.md",
+      targetArtifactPathDisplay: "38. Fix output for every command.md",
+      controllingTaskPath: "/workspace/migrations/Research.md",
+      controllingTaskPathDisplay: "Research.md",
+      controllingTaskFile: "migrations/Research.md",
+      selectedTaskMetadata: "{\"line\":5}",
+    });
+
+    expect(repair).toHaveBeenCalledWith(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        existingVar: "preserved",
+        lastValidationError: "selected task still unchecked",
+        contentShapeValidationError: "",
+        taskStateValidationError: "selected task still unchecked",
+        targetArtifactPath: "/workspace/migrations/38. Fix output for every command.md",
+        targetArtifactPathDisplay: "38. Fix output for every command.md",
+        controllingTaskPath: "/workspace/migrations/Research.md",
+        controllingTaskPathDisplay: "Research.md",
+        controllingTaskFile: "migrations/Research.md",
+        selectedTaskMetadata: "{\"line\":5}",
+      }),
+    }));
+  });
+
+  it("routes content-only validation failures into content-shape channel", async () => {
+    const repair = vi.fn(async () => ({ valid: false, attempts: 1 }));
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("artifact contains worker chatter")
+      .mockReturnValueOnce("artifact contains worker chatter");
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output: {
+        emit: vi.fn(),
+      },
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-content-channel" },
+      trace: false,
+    });
+
+    expect(repair).toHaveBeenCalledWith(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        lastValidationError: "artifact contains worker chatter",
+        contentShapeValidationError: "artifact contains worker chatter",
+        taskStateValidationError: "",
+      }),
+    }));
+  });
+
+  it("routes checkbox-only validation failures into task-state channel", async () => {
+    const repair = vi.fn(async () => ({ valid: false, attempts: 1 }));
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("Selected task is still unchecked in `migrations/Research.md` line 5.")
+      .mockReturnValueOnce("Selected task is still unchecked in `migrations/Research.md` line 5.");
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output: {
+        emit: vi.fn(),
+      },
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-task-state-channel" },
+      trace: false,
+    });
+
+    expect(repair).toHaveBeenCalledWith(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        lastValidationError: "Selected task is still unchecked in `migrations/Research.md` line 5.",
+        contentShapeValidationError: "",
+        taskStateValidationError: "Selected task is still unchecked in `migrations/Research.md` line 5.",
+      }),
+    }));
+  });
+
+  it("routes combined content and checkbox validation failures into both channels", async () => {
+    const combinedFailure = "artifact contains worker chatter and selected task is still unchecked in migrations/Research.md line 5";
+    const repair = vi.fn(async () => ({ valid: false, attempts: 1 }));
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce(combinedFailure)
+      .mockReturnValueOnce(combinedFailure);
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output: {
+        emit: vi.fn(),
+      },
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-combined-channel" },
+      trace: false,
+    });
+
+    expect(repair).toHaveBeenCalledWith(expect.objectContaining({
+      templateVars: expect.objectContaining({
+        lastValidationError: combinedFailure,
+        contentShapeValidationError: combinedFailure,
+        taskStateValidationError: combinedFailure,
+      }),
+    }));
+  });
 });
 
 describe("output similarity utilities", () => {

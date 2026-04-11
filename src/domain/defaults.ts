@@ -395,7 +395,24 @@ Repair the selected task after a failed verification pass.
 
 {{verificationResult}}
 
+## Last validation error
+
+{{lastValidationError}}
+
+## Validation channels
+
+- Content-shape validation error: {{contentShapeValidationError}}
+- Task-state validation error: {{taskStateValidationError}}
+
 Please fix what is missing or incorrect. The validation above explains what still needs to be done.
+
+When both channels are present, prioritize content-shape fixes first and do not conflate them with task-state handling.
+
+Task-state ownership rules:
+
+- Do not emit checklist transitions like [x] / [ ] as task-state output.
+- Do not attempt to complete task-state bookkeeping in your response.
+- Runner/orchestrator owns checkbox completion after verification passes.
 
 - Do not change the checkbox in the source Markdown file.
 - Do not mark the task complete yourself.

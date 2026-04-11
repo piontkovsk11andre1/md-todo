@@ -7837,6 +7837,117 @@ describe.sequential("CLI integration", () => {
     expect(content).toBe("- [x] cli: echo one\n- [x] cli: echo two\n- [x] cli: echo three\n");
   });
 
+  it("all advances past repaired inline rundown research tasks for two documents", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    const researchListPath = path.join(migrationsDir, "Research.md");
+    const docOnePath = path.join(migrationsDir, "doc-one.md");
+    const docTwoPath = path.join(migrationsDir, "doc-two.md");
+    const workerOnePath = path.join(migrationsDir, "research-worker-one.cjs");
+    const workerTwoPath = path.join(migrationsDir, "research-worker-two.cjs");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.writeFileSync(
+      researchListPath,
+      [
+        `- [ ] cli: rundown research "doc-one.md" --repair-attempts 1 --worker "node ${path.basename(workerOnePath)}"`,
+        `- [ ] cli: rundown research "doc-two.md" --repair-attempts 1 --worker "node ${path.basename(workerTwoPath)}"`,
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(docOnePath, "# Doc One\n\nSeed one.\n", "utf-8");
+    fs.writeFileSync(docTwoPath, "# Doc Two\n\nSeed two.\n", "utf-8");
+
+    fs.writeFileSync(workerOnePath, [
+      "const fs = require('node:fs');",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      `const repairedMarkerPath = ${JSON.stringify(path.join(migrationsDir, "doc-one.repaired").replace(/\\/g, "/"))};`,
+      `const docPath = ${JSON.stringify(docOnePath.replace(/\\/g, "/"))};`,
+      "if (prompt.includes('Repair the selected task')) {",
+      "  fs.writeFileSync(repairedMarkerPath, '1', 'utf-8');",
+      "  fs.writeFileSync(docPath, '# Doc One\\n\\nSeed one.\\n\\nExpanded by repair one.\\n', 'utf-8');",
+      "  console.log('repair: doc one updated');",
+      "  process.exit(0);",
+      "}",
+      "if (prompt.includes('Verify whether the selected task is complete.')) {",
+      "  if (fs.existsSync(repairedMarkerPath)) {",
+      "    console.log('OK');",
+      "  } else {",
+      "    console.log('NOT_OK: artifact contains worker chatter and selected task is still unchecked in `migrations/Research.md` line 1.');",
+      "  }",
+      "  process.exit(0);",
+      "}",
+      "console.log('worker chatter from initial research execution');",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(workerTwoPath, [
+      "const fs = require('node:fs');",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      `const repairedMarkerPath = ${JSON.stringify(path.join(migrationsDir, "doc-two.repaired").replace(/\\/g, "/"))};`,
+      `const docPath = ${JSON.stringify(docTwoPath.replace(/\\/g, "/"))};`,
+      "if (prompt.includes('Repair the selected task')) {",
+      "  fs.writeFileSync(repairedMarkerPath, '1', 'utf-8');",
+      "  fs.writeFileSync(docPath, '# Doc Two\\n\\nSeed two.\\n\\nExpanded by repair two.\\n', 'utf-8');",
+      "  console.log('repair: doc two updated');",
+      "  process.exit(0);",
+      "}",
+      "if (prompt.includes('Verify whether the selected task is complete.')) {",
+      "  if (fs.existsSync(repairedMarkerPath)) {",
+      "    console.log('OK');",
+      "  } else {",
+      "    console.log('NOT_OK: artifact contains worker chatter and selected task is still unchecked in `migrations/Research.md` line 2.');",
+      "  }",
+      "  process.exit(0);",
+      "}",
+      "console.log('worker chatter from initial research execution');",
+    ].join("\n"), "utf-8");
+
+    const result = await runCli([
+      "all",
+      "migrations/Research.md",
+      "--repair-attempts",
+      "1",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        `const oneMarker=${JSON.stringify(path.join(migrationsDir, "doc-one.repaired").replace(/\\/g, "/"))};`,
+        `const twoMarker=${JSON.stringify(path.join(migrationsDir, "doc-two.repaired").replace(/\\/g, "/"))};`,
+        "const isDocOne=prompt.includes('doc-one.md');",
+        "const isDocTwo=prompt.includes('doc-two.md');",
+        "if(prompt.includes('Repair the selected task')){",
+        "  if(isDocOne){fs.writeFileSync(oneMarker,'1','utf-8');console.log('run repair one');process.exit(0);}",
+        "  if(isDocTwo){fs.writeFileSync(twoMarker,'1','utf-8');console.log('run repair two');process.exit(0);}",
+        "  process.exit(0);",
+        "}",
+        "if(prompt.includes('Verify whether the selected task is complete.')){",
+        "  if(isDocOne && fs.existsSync(oneMarker)){console.log('OK');process.exit(0);}",
+        "  if(isDocTwo && fs.existsSync(twoMarker)){console.log('OK');process.exit(0);}",
+        "  const line=isDocOne?1:isDocTwo?2:1;",
+        "  console.log('NOT_OK: artifact contains worker chatter and selected task is still unchecked in `migrations/Research.md` line '+line+'.');",
+        "  process.exit(0);",
+        "}",
+        "if(prompt.includes('Executing inline CLI:')||prompt.includes('cli: rundown research')){process.exit(0);}",
+        "process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.filter((line) => line.includes("Task checked:")).length).toBe(2);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: rundown research \"doc-one.md\""))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task checked: cli: rundown research \"doc-two.md\""))).toBe(true);
+    expect(fs.readFileSync(researchListPath, "utf-8")).toContain("- [x] cli: rundown research \"doc-one.md\"");
+    expect(fs.readFileSync(researchListPath, "utf-8")).toContain("- [x] cli: rundown research \"doc-two.md\"");
+    expect(result.logs.some((line) => line.includes("Repair succeeded after 1 attempt(s)."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("[1/2]") && line.includes("doc-one.md"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("[2/2]") && line.includes("doc-two.md"))).toBe(true);
+  });
+
   it("run --all stops on failure and preserves failure exit code", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");

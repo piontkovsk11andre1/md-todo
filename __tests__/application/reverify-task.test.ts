@@ -2084,9 +2084,9 @@ describe("reverify-task", () => {
     expect(vi.mocked(taskRepair.repair)).toHaveBeenCalledWith(expect.objectContaining({
       verifyTemplate: "<command>echo verify-Build release</command>\n<output>\nexpanded:echo verify-Build release\n</output>",
       repairTemplate: "<command>echo repair-Build release</command>\n<output>\nexpanded:echo repair-Build release\n</output>",
-      templateVars: {
+      templateVars: expect.objectContaining({
         userVariables: "(none)",
-      },
+      }),
     }));
   });
 

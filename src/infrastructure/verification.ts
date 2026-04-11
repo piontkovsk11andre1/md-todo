@@ -51,6 +51,29 @@ function extractVerdictLine(stdout: string): { verdict: string; hasPreamble: boo
   return { verdict: stripBackticks(lines.at(-1)!), hasPreamble: lines.length > 1 };
 }
 
+/**
+ * Extracts validator-centric failure details while excluding assistant chatter.
+ *
+ * For multi-line output, prefer canonical diff hunks when present; otherwise
+ * keep only the final non-empty line as the actionable failure reason.
+ */
+function extractFailureDetails(stdout: string): string {
+  const lines = stdout.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return "";
+  }
+
+  const hasDiffHeader = lines.some((line) => /^(diff --git|---\s|\+\+\+\s|@@\s)/.test(line));
+  const diffLikeLines = hasDiffHeader
+    ? lines.filter((line) => /^(diff --git|---\s|\+\+\+\s|@@\s|[-+])/.test(line))
+    : [];
+  if (diffLikeLines.length >= 2) {
+    return diffLikeLines.join("\n");
+  }
+
+  return stripBackticks(lines.at(-1)!);
+}
+
 const FORMAT_WARNING = "Verification worker produced extra output before the verdict. Only the last line was used. Reinforce output format in your verify prompt.";
 
 /**
@@ -101,7 +124,7 @@ function parseVerificationResult(output: { exitCode: number | null; stdout: stri
 
   // Any other non-empty stdout is treated as a human-readable failure reason.
   if (stdout !== "") {
-    const normalizedReason = stdout.replace(notOkPrefix, "").trim();
+    const normalizedReason = extractFailureDetails(stdout).replace(notOkPrefix, "").trim();
     return {
       ok: false,
       sidecarContent: normalizedReason === ""

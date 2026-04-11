@@ -34,6 +34,33 @@ export interface TemplateVars {
   /** Parsed verification result text (available during correction). */
   verificationResult?: string;
 
+  /** Structured copy of the last validation error for repair prompts. */
+  lastValidationError?: string;
+
+  /** Latest content-shape validation failure, when distinguishable. */
+  contentShapeValidationError?: string;
+
+  /** Latest task-state validation failure, when distinguishable. */
+  taskStateValidationError?: string;
+
+  /** Target artifact path associated with the selected task, when known. */
+  targetArtifactPath?: string;
+
+  /** CWD-normalized display value for targetArtifactPath when available. */
+  targetArtifactPathDisplay?: string;
+
+  /** Path to the task file that controls checkbox state for the selected task. */
+  controllingTaskPath?: string;
+
+  /** CWD-normalized display value for controllingTaskPath when available. */
+  controllingTaskPathDisplay?: string;
+
+  /** Original task file value from task metadata for display and diagnostics. */
+  controllingTaskFile?: string;
+
+  /** JSON metadata describing the selected task identity and shape. */
+  selectedTaskMetadata?: string;
+
   /** Command output from the previous run (if captured). */
   commandOutput?: string;
 

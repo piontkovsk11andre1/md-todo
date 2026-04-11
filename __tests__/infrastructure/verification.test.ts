@@ -378,6 +378,57 @@ describe("verify", () => {
     expect(verificationStore.write).toHaveBeenCalledWith(task, "missing unit tests");
   });
 
+  it("stores only the last non-empty line for free-form multiline failures", async () => {
+    const file = "Tasks.md";
+    const task = makeTask(file);
+    const verificationStore = createVerificationStore();
+
+    runWorkerMock.mockResolvedValue({
+      exitCode: 0,
+      stdout: "I reviewed the repository and found multiple issues.\nartifact contains worker chatter",
+      stderr: "",
+    });
+
+    const result = await verify({
+      task,
+      source: file,
+      contextBefore: "",
+      template: "{{task}}",
+      command: ["worker"],
+      verificationStore,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(verificationStore.write).toHaveBeenCalledWith(task, "artifact contains worker chatter");
+  });
+
+  it("preserves diff-like validator output for repair context", async () => {
+    const file = "Tasks.md";
+    const task = makeTask(file);
+    const verificationStore = createVerificationStore();
+
+    runWorkerMock.mockResolvedValue({
+      exitCode: 0,
+      stdout: "diff --git a/tasks.md b/tasks.md\n--- a/tasks.md\n+++ b/tasks.md\n@@ -1 +1 @@\n-- [ ] Ship release\n+- [x] Ship release",
+      stderr: "",
+    });
+
+    const result = await verify({
+      task,
+      source: file,
+      contextBefore: "",
+      template: "{{task}}",
+      command: ["worker"],
+      verificationStore,
+    });
+
+    expect(result.valid).toBe(false);
+    expect(verificationStore.write).toHaveBeenCalledWith(
+      task,
+      "diff --git a/tasks.md b/tasks.md\n--- a/tasks.md\n+++ b/tasks.md\n@@ -1 +1 @@\n-- [ ] Ship release\n+- [x] Ship release",
+    );
+  });
+
   it("accepts backtick-wrapped OK verdict", async () => {
     const file = "Tasks.md";
     const task = makeTask(file);

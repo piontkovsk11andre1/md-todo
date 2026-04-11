@@ -27,7 +27,6 @@ import {
 } from "./cli-block-handlers.js";
 import {
   loadProjectTemplatesFromPorts,
-  type ProjectTemplates,
 } from "./project-templates.js";
 import { formatTaskLabel } from "./run-task-utils.js";
 import {
@@ -41,6 +40,12 @@ import {
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { formatNoItemsFound, formatNoItemsFoundFor, formatSuccessFailureSummary, pluralize } from "./run-task-utils.js";
+import {
+  normalizeRepairPathForDisplay,
+  resolveInlineRundownTargetArtifactPath,
+  resolveRepairTemplateForTask,
+  serializeSelectedTaskMetadata,
+} from "./repair-template-resolution.js";
 import type {
   ArtifactStoreStatus,
   ArtifactRunMetadata,
@@ -279,10 +284,20 @@ export function createReverifyTask(
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
+      const resolvedRepairTemplate = resolveRepairTemplateForTask({
+        task: taskContext.task,
+        configDir: dependencies.configDir,
+        templateLoader: dependencies.templateLoader,
+        pathOperations: dependencies.pathOperations,
+        defaultRepairTemplate: templates.repair,
+      });
       const cliBlockExecutor = dependencies.cliBlockExecutor;
       const promptContext = buildReverifyPromptContext(
         taskContext,
-        templates,
+        {
+          verifyTemplate: templates.verify,
+          repairTemplate: resolvedRepairTemplate,
+        },
         trace,
         dependencies.memoryResolver?.resolve(taskContext.task.file) ?? null,
         templateVarsWithUserVariables,
@@ -393,6 +408,28 @@ export function createReverifyTask(
         keepArtifacts,
       });
       const traceWriter = dependencies.createTraceWriter(trace, artifactContext);
+      const controllingTaskPath = dependencies.pathOperations.resolve(taskContext.task.file);
+      const controllingTaskFile = selectedRun.task.file;
+      const targetArtifactPath = resolveInlineRundownTargetArtifactPath({
+        task: taskContext.task,
+        pathOperations: dependencies.pathOperations,
+      });
+      const targetArtifactPathDisplay = targetArtifactPath
+        ? normalizeRepairPathForDisplay({
+          absolutePath: targetArtifactPath,
+          cwd,
+          pathOperations: dependencies.pathOperations,
+        })
+        : undefined;
+      const controllingTaskPathDisplay = normalizeRepairPathForDisplay({
+        absolutePath: controllingTaskPath,
+        cwd,
+        pathOperations: dependencies.pathOperations,
+      });
+      const selectedTaskMetadata = serializeSelectedTaskMetadata({
+        task: taskContext.task,
+        controllingTaskPath,
+      });
       const traceStartedAtMs = Date.now();
       let traceCompleted = false;
       let artifactsFinalized = false;
@@ -479,6 +516,12 @@ export function createReverifyTask(
           cliBlockExecutor,
           cliExecutionOptions: cliExecutionOptionsWithTemplateFailureAbort,
           runMode: "wait",
+          targetArtifactPath: targetArtifactPath ?? undefined,
+          targetArtifactPathDisplay,
+          controllingTaskPath,
+          controllingTaskPathDisplay,
+          controllingTaskFile,
+          selectedTaskMetadata,
         });
 
         if (!verificationResult.valid) {
@@ -695,7 +738,10 @@ function isCompletedRun(run: ArtifactRunMetadata): boolean {
  */
 function buildReverifyPromptContext(
   taskContext: ResolvedTaskContext,
-  templates: Pick<ProjectTemplates, "verify" | "repair">,
+  templates: {
+    verifyTemplate: string;
+    repairTemplate: string;
+  },
   trace: boolean,
   memoryMetadata: MemoryMetadata | null,
   extraTemplateVars: ExtraTemplateVars,
@@ -715,8 +761,8 @@ function buildReverifyPromptContext(
 
   // Render both templates from the same variable set to keep context aligned.
   return {
-    verificationPrompt: renderTemplate(templates.verify, vars),
-    repairPrompt: renderTemplate(templates.repair, vars),
+    verificationPrompt: renderTemplate(templates.verifyTemplate, vars),
+    repairPrompt: renderTemplate(templates.repairTemplate, vars),
   };
 }
 
