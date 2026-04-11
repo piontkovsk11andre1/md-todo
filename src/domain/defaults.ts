@@ -380,6 +380,269 @@ Do not modify the source Markdown task file or change its checkbox state.
 `;
 
 /**
+ * Default migrate prompt template used to propose the next migration.
+ */
+export const DEFAULT_MIGRATE_TEMPLATE = `\
+You are planning the next migration step for a prediction-driven project.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Latest context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Latest backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Propose ranked alternatives for the next migration.
+
+Return exactly this format:
+
+1. \`<kebab-case-name>\` - <short title>
+   - Why now: <reason tied to design/context>
+   - Scope: <clear boundaries>
+   - Risks: <main tradeoff>
+
+2. \`<kebab-case-name>\` - <short title>
+   - Why now: <reason tied to design/context>
+   - Scope: <clear boundaries>
+   - Risks: <main tradeoff>
+
+3. \`<kebab-case-name>\` - <short title>
+   - Why now: <reason tied to design/context>
+   - Scope: <clear boundaries>
+   - Risks: <main tradeoff>
+
+Rules:
+- Names must be kebab-case and suitable for \`NNNN-name.md\`.
+- Keep each alternative independent and actionable.
+- Rank by expected value for the project right now.
+`;
+
+/**
+ * Default migrate-context template used to build incremental context.
+ */
+export const DEFAULT_MIGRATE_CONTEXT_TEMPLATE = `\
+You are updating migration context incrementally.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Previous context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Latest backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Produce an updated context document that merges the previous context with the
+new information introduced by the latest migration.
+
+Rules:
+- Preserve still-valid context from previous context.
+- Focus on durable facts, constraints, and decisions.
+- Remove or correct outdated assumptions.
+- Return Markdown only.
+`;
+
+/**
+ * Default migrate-snapshot template used to capture current state.
+ */
+export const DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE = `\
+You are producing a migration snapshot of project state.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Latest context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Latest backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Write a concise state snapshot in Markdown covering:
+- Current implemented direction
+- Active assumptions
+- Known gaps and risks
+- Immediate next opportunities
+
+Use concrete references to migration history where relevant.
+`;
+
+/**
+ * Default migrate-backlog template used to extract technical debt/work items.
+ */
+export const DEFAULT_MIGRATE_BACKLOG_TEMPLATE = `\
+You are generating a backlog from migration progress.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Latest context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Existing backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Generate a prioritized Markdown backlog of follow-up work.
+
+Rules:
+- Include only items justified by design/context/history.
+- Separate near-term tasks from longer-term debt.
+- Keep items specific enough to become migrations.
+- Remove stale items already addressed.
+`;
+
+/**
+ * Default migrate-review template used to compare current state to design.
+ */
+export const DEFAULT_MIGRATE_REVIEW_TEMPLATE = `\
+You are reviewing migration progress against intended design.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Latest context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Latest backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Write a Markdown review with:
+- Alignment: where implementation trajectory matches design
+- Drift: where trajectory diverges and why
+- Risk: implications of drift
+- Recommendations: concrete corrective next migrations
+`;
+
+/**
+ * Default migrate UX template used to generate user scenarios and questions.
+ */
+export const DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE = `\
+You are evaluating user experience implications of migration progress.
+
+## Position
+
+- Current migration number: {{position}}
+
+## Design
+
+{{design}}
+
+## Latest context
+
+{{latestContext}}
+
+## Latest migration
+
+{{latestMigration}}
+
+## Latest backlog
+
+{{latestBacklog}}
+
+## Migration history
+
+{{migrationHistory}}
+
+## Task
+
+Write a Markdown UX analysis with:
+- Primary user scenarios
+- Friction points and uncertainty
+- Missing validations
+- Open questions for product/design
+
+For open questions, use this exact checklist format:
+
+- [ ] question: <clear user/product question>
+`;
+
+/**
  * Default undo prompt template used by the undo command.
  */
 export const DEFAULT_UNDO_TEMPLATE = DEFAULT_TASK_TEMPLATE;
