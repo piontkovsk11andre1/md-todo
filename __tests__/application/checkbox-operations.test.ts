@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
 import type { FileSystem } from "../../src/domain/ports/index.js";
+import * as checkboxDomainModule from "../../src/domain/checkbox.js";
+import * as plannerDomainModule from "../../src/domain/planner.js";
 
 import {
   captureCheckboxState,
@@ -80,6 +82,38 @@ describe("checkbox-operations", () => {
       "- [ ] Second task",
       "",
     ].join("\n"));
+  });
+
+  it("applies markChecked before insertSubitems so task line references stay stable", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] First task\n- [ ] Second task\n- [ ] Third task\n",
+    });
+    const task = createTask({ text: "Second task", line: 2 });
+    const markCheckedSpy = vi.spyOn(checkboxDomainModule, "markChecked");
+    const insertSubitemsSpy = vi.spyOn(plannerDomainModule, "insertSubitems");
+
+    try {
+      writeFixAnnotationToFile(task, "failed", fileSystem);
+
+      expect(markCheckedSpy).toHaveBeenCalledTimes(1);
+      expect(insertSubitemsSpy).toHaveBeenCalledTimes(1);
+      expect(markCheckedSpy.mock.invocationCallOrder[0]).toBeLessThan(insertSubitemsSpy.mock.invocationCallOrder[0] ?? 0);
+      expect(insertSubitemsSpy).toHaveBeenCalledWith(
+        "- [ ] First task\n- [x] Second task\n- [ ] Third task\n",
+        expect.objectContaining({ line: 2, text: "Second task" }),
+        ["fix: failed"],
+      );
+      expect(fileSystem.readText("todo.md")).toBe([
+        "- [ ] First task",
+        "- [x] Second task",
+        "  - fix: failed",
+        "- [ ] Third task",
+        "",
+      ].join("\n"));
+    } finally {
+      markCheckedSpy.mockRestore();
+      insertSubitemsSpy.mockRestore();
+    }
   });
 
   it("writes fallback fix annotation when failure reason is null", () => {
