@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseCooldown, parseMaxItems, parseScanCount } from "../../src/presentation/cli-options.js";
+import {
+  parseCooldown,
+  parseMaxItems,
+  parseResolveRepairAttempts,
+  parseScanCount,
+} from "../../src/presentation/cli-options.js";
 
 describe("parseCooldown", () => {
   it("returns milliseconds for positive cooldown seconds", () => {
@@ -56,5 +61,20 @@ describe("parseMaxItems", () => {
     expect(() => parseMaxItems("1.5")).toThrow("Invalid --max-items value: 1.5");
     expect(() => parseMaxItems("abc")).toThrow("Invalid --max-items value: abc");
     expect(() => parseMaxItems("1.5")).toThrow("Must be a non-negative integer (0 or greater)");
+  });
+});
+
+describe("parseResolveRepairAttempts", () => {
+  it("defaults to one resolve-informed repair attempt when omitted", () => {
+    expect(parseResolveRepairAttempts(undefined)).toBe(1);
+  });
+
+  it("parses explicit resolve-informed repair-attempt values", () => {
+    expect(parseResolveRepairAttempts("0")).toBe(0);
+    expect(parseResolveRepairAttempts("3")).toBe(3);
+  });
+
+  it("rejects non-integer values", () => {
+    expect(() => parseResolveRepairAttempts("abc")).toThrow("Invalid --resolve-repair-attempts value: abc");
   });
 });

@@ -36,8 +36,24 @@ describe("CLI run option normalization", () => {
     expect(call.runAll).toBe(false);
     expect(call.noRepair).toBe(false);
     expect(call.repairAttempts).toBe(1);
+    expect(call.resolveRepairAttempts).toBe(1);
     expect(call.forceExecute).toBe(false);
     expect(call.ignoreCliBlock).toBe(false);
+  });
+
+  it("passes --resolve-repair-attempts override to run task", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "run",
+      "tasks.md",
+      "--resolve-repair-attempts",
+      "4",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(call.resolveRepairAttempts).toBe(4);
   });
 
   it("passes --ignore-cli-block flag to run task", async () => {

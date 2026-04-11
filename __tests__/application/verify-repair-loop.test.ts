@@ -873,6 +873,62 @@ describe("verify-repair-loop output", () => {
     });
   });
 
+  it("uses a single resolve-informed repair attempt when limit is zero", async () => {
+    const output = {
+      emit: vi.fn(),
+    };
+
+    const repair = vi.fn()
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" })
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "resolve-repair-1", verificationStdout: "resolve-verify-1" });
+
+    const result = await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false, stdout: "NOT_OK: initial failure" })),
+      },
+      taskRepair: {
+        repair,
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: vi.fn(() => "repair failed"),
+        remove: vi.fn(),
+      },
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 1,
+      maxResolveRepairAttempts: 0,
+      allowRepair: true,
+      templateVars: {
+        resolvedDiagnosis: "Root cause diagnosis",
+      },
+      artifactContext: { runId: "run-resolve-zero" },
+      trace: false,
+    });
+
+    expect(result).toEqual({
+      valid: false,
+      failureReason: "repair failed",
+    });
+    expect(repair).toHaveBeenCalledTimes(2);
+    expect(output.emit).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Resolve-informed repair phase"),
+    }));
+    expect(output.emit).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Resolve-informed repair attempts exhausted after 1 attempt(s).",
+    }));
+  });
+
   it("emits per-attempt failure reasons for each failed repair before success", async () => {
     const output = {
       emit: vi.fn(),
