@@ -879,6 +879,10 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Query phase 1/3: research"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Query phase 2/3: plan"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Query phase 3/3: execute (stream mode)"))).toBe(true);
+    const firstStepLogIndex = result.logs.findIndex((line) => stripAnsi(line).includes("# Trace request entry points"));
+    const secondStepLogIndex = result.logs.findIndex((line) => stripAnsi(line).includes("# Summarize authentication flow"));
+    expect(firstStepLogIndex).toBeGreaterThanOrEqual(0);
+    expect(secondStepLogIndex).toBeGreaterThan(firstStepLogIndex);
 
     const probeEntries = fs.readFileSync(phaseProbePath, "utf-8")
       .trim()
