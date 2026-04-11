@@ -146,10 +146,41 @@ function extractYnVerdict(content: string): "Y" | "N" | undefined {
 
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    if (/^Y$/i.test(line) || /^verdict\s*:\s*Y$/i.test(line)) {
+    const normalized = normalizeVerdictLine(line);
+
+    const explicitMatch = /^(?:final\s+)?(?:verdict|answer|result)\s*(?::|is)?\s*(Y|N|YES|NO|SUCCESS|FAIL(?:URE)?|PASS(?:ED)?)\b/i.exec(normalized);
+    if (explicitMatch) {
+      const token = explicitMatch[1].toLowerCase();
+      if (token === "y" || token === "yes" || token === "success" || token === "pass" || token === "passed") {
+        return "Y";
+      }
+      if (token === "n" || token === "no" || token === "fail" || token === "failed" || token === "failure") {
+        return "N";
+      }
+    }
+
+    if (
+      /^Y$/i.test(normalized)
+      || /^YES$/i.test(normalized)
+      || /^verdict\s*:\s*Y$/i.test(normalized)
+      || /^verdict\s*:\s*YES$/i.test(normalized)
+      || /^verdict\s+is\s+Y$/i.test(normalized)
+      || /^verdict\s+is\s+YES$/i.test(normalized)
+      || /^success$/i.test(normalized)
+      || /^pass(?:ed)?$/i.test(normalized)
+    ) {
       return "Y";
     }
-    if (/^N$/i.test(line) || /^verdict\s*:\s*N$/i.test(line)) {
+    if (
+      /^N$/i.test(normalized)
+      || /^NO$/i.test(normalized)
+      || /^verdict\s*:\s*N$/i.test(normalized)
+      || /^verdict\s*:\s*NO$/i.test(normalized)
+      || /^verdict\s+is\s+N$/i.test(normalized)
+      || /^verdict\s+is\s+NO$/i.test(normalized)
+      || /^failure$/i.test(normalized)
+      || /^fail(?:ed)?$/i.test(normalized)
+    ) {
       return "N";
     }
   }
@@ -165,17 +196,52 @@ function extractSuccessErrorVerdict(content: string): string | undefined {
 
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    if (/^success$/i.test(line) || /^verdict\s*:\s*success$/i.test(line)) {
+    const normalized = normalizeVerdictLine(line);
+
+    const explicitMatch = /^(?:final\s+)?(?:verdict|answer|result)\s*(?::|is)?\s*(success|failure|pass(?:ed)?|fail(?:ed)?|Y|N|YES|NO)\b(?:\s*[:\-]\s*(.+))?$/i.exec(normalized);
+    if (explicitMatch) {
+      const token = explicitMatch[1].toLowerCase();
+      const reason = explicitMatch[2]?.trim();
+      if (token === "success" || token === "pass" || token === "passed" || token === "y" || token === "yes") {
+        return "success";
+      }
+      if (token === "failure" || token === "fail" || token === "failed" || token === "n" || token === "no") {
+        return reason && reason.length > 0 ? `failure: ${reason}` : "failure: no reason provided";
+      }
+    }
+
+    if (
+      /^success$/i.test(normalized)
+      || /^yes$/i.test(normalized)
+      || /^y$/i.test(normalized)
+      || /^verdict\s*:\s*success$/i.test(normalized)
+      || /^verdict\s+is\s+success$/i.test(normalized)
+      || /^final\s+verdict\s*:\s*success$/i.test(normalized)
+      || /^final\s+answer\s*:\s*success$/i.test(normalized)
+      || /^pass(?:ed)?$/i.test(normalized)
+    ) {
       return "success";
     }
 
-    const match = /^failure\s*:\s*(.+)$/i.exec(line) ?? /^verdict\s*:\s*failure\s*:\s*(.+)$/i.exec(line);
+    const match = /^failure\s*[:\-]\s*(.+)$/i.exec(normalized)
+      ?? /^verdict\s*:\s*failure\s*[:\-]\s*(.+)$/i.exec(normalized)
+      ?? /^verdict\s+is\s+failure\s*[:\-]\s*(.+)$/i.exec(normalized)
+      ?? /^fail(?:ed)?\s*[:\-]\s*(.+)$/i.exec(normalized);
     if (match) {
       const reason = match[1].trim();
       return reason.length > 0 ? `failure: ${reason}` : "failure: no reason provided";
     }
 
-    if (/^failure$/i.test(line) || /^verdict\s*:\s*failure$/i.test(line)) {
+    if (
+      /^failure$/i.test(normalized)
+      || /^no$/i.test(normalized)
+      || /^n$/i.test(normalized)
+      || /^verdict\s*:\s*failure$/i.test(normalized)
+      || /^verdict\s+is\s+failure$/i.test(normalized)
+      || /^final\s+verdict\s*:\s*failure$/i.test(normalized)
+      || /^final\s+answer\s*:\s*failure$/i.test(normalized)
+      || /^fail(?:ed)?$/i.test(normalized)
+    ) {
       return "failure: no reason provided";
     }
   }
@@ -231,6 +297,16 @@ function extractStepIndex(fileName: string): number | undefined {
 
 function ensureTrailingNewline(value: string): string {
   return value.endsWith("\n") ? value : `${value}\n`;
+}
+
+function normalizeVerdictLine(line: string): string {
+  let normalized = line.trim();
+  normalized = normalized.replace(/^[-*+]\s+/, "");
+  normalized = normalized.replace(/^\d+[.)]\s+/, "");
+  normalized = normalized.replace(/^[>`]+\s*/, "");
+  normalized = normalized.replace(/[*_`]/g, "");
+  normalized = normalized.replace(/[.;,!?]+$/g, "");
+  return normalized.trim();
 }
 
 function listStepFiles(workdir: string, dependencies: QueryOutputDependencies): string[] {

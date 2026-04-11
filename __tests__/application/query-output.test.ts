@@ -171,8 +171,12 @@ describe("query-output", () => {
 
   it("extracts yn and success-error verdict formats", () => {
     expect(formatQueryOutput("notes\n\nverdict: Y", "yn", "q")).toBe("Y");
+    expect(formatQueryOutput("notes\n\nFinal answer: no", "yn", "q")).toBe("N");
     expect(formatQueryOutput("analysis\n\nfailure: missing coverage", "success-error", "q")).toBe("failure: missing coverage");
     expect(formatQueryOutput("conclusion\n\nY", "success-error", "q")).toBe("success");
+    expect(formatQueryOutput("conclusion\n\nFinal verdict: N", "success-error", "q")).toBe("failure: no reason provided");
+    expect(formatQueryOutput("conclusion\n\n- **Verdict:** failure: missing coverage.", "success-error", "q")).toBe("failure: missing coverage");
+    expect(formatQueryOutput("conclusion\n\n- `Verdict: Y`", "yn", "q")).toBe("Y");
   });
 
   it("uses safe default verdicts when none are found", () => {
