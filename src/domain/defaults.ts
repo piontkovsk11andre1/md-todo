@@ -608,6 +608,156 @@ Return the full updated Markdown document and nothing else.
 `;
 
 /**
+ * Default query seed template used to frame natural-language investigations.
+ */
+export const DEFAULT_QUERY_SEED_TEMPLATE = `\
+# Query: {{query}}
+
+## Objective
+
+Research the codebase and produce a comprehensive answer to the query above.
+This document describes what to investigate - not what to build.
+
+## Analysis directory
+
+\`{{dir}}\`
+
+## Output directory
+
+Each investigation step writes findings to \`{{workdir}}\` when file output mode is enabled.
+`;
+
+/**
+ * Query seed template for yes/no verdict-oriented checks.
+ */
+export const DEFAULT_QUERY_YN_SEED_TEMPLATE = `\
+# Query: {{query}}
+
+## Objective
+
+Investigate the codebase and answer the query as a strict yes/no check.
+Conclude with a single verdict token: \`Y\` or \`N\`.
+
+## Analysis directory
+
+\`{{dir}}\`
+
+## Output directory
+
+Each investigation step writes findings to \`{{workdir}}\` when file output mode is enabled.
+`;
+
+/**
+ * Query seed template for success/failure verification-style checks.
+ */
+export const DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE = `\
+# Query: {{query}}
+
+## Objective
+
+Investigate the codebase and evaluate whether the query condition passes.
+Conclude with exactly one verdict line: \`success\` or \`failure: <reason>\`.
+
+## Analysis directory
+
+\`{{dir}}\`
+
+## Output directory
+
+Each investigation step writes findings to \`{{workdir}}\` when file output mode is enabled.
+`;
+
+/**
+ * Default file-mode query execution template.
+ */
+export const DEFAULT_QUERY_EXECUTION_TEMPLATE = `\
+You are executing one step of a query investigation plan.
+
+## Step
+
+- Index: {{taskIndex}}
+- Task: {{task}}
+
+## Directories
+
+- Analysis root: \`{{dir}}\`
+- Workdir: \`{{workdir}}\`
+
+## Instructions
+
+Investigate the task using the analysis root as the codebase context.
+Write your findings to this file and do not print the findings to stdout:
+
+\`{{workdir}}/step-{{taskIndex}}.md\`
+
+The file must be Markdown and should include:
+
+1. A short title for the step
+2. Key findings with concrete evidence (files, symbols, behaviors)
+3. Open questions or uncertainty, if any
+4. A concise conclusion for this step
+`;
+
+/**
+ * Default stream-mode query execution template.
+ */
+export const DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE = `\
+You are executing one step of a query investigation plan.
+
+## Step
+
+- Index: {{taskIndex}}
+- Task: {{task}}
+
+## Directory
+
+- Analysis root: \`{{dir}}\`
+
+## Instructions
+
+Investigate the task and print findings directly to stdout in Markdown.
+Do not write step output files in this mode.
+
+Include:
+
+1. A short title for the step
+2. Key findings with concrete evidence (files, symbols, behaviors)
+3. Open questions or uncertainty, if any
+4. A concise conclusion for this step
+`;
+
+/**
+ * Default query aggregation template used to combine step findings.
+ */
+export const DEFAULT_QUERY_AGGREGATION_TEMPLATE = `\
+You are aggregating completed query investigation results.
+
+## Query
+
+{{query}}
+
+## Analysis directory
+
+\`{{dir}}\`
+
+## Workdir
+
+\`{{workdir}}\`
+
+## Instructions
+
+Read all step output files in the workdir (for example, \`step-01.md\`, \`step-02.md\`, ...)
+and produce one coherent final response in Markdown.
+
+The final response should:
+
+1. Directly answer the query
+2. Synthesize evidence across steps
+3. Call out ambiguities or gaps explicitly
+4. End with a concise conclusion
+`;
+
+/**
  * Default trace-phase prompt template used to produce an analysis.summary payload.
  */
 export const DEFAULT_TRACE_TEMPLATE = `\

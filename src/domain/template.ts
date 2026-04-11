@@ -28,6 +28,12 @@ export interface TemplateVars {
   /** Full source file content. */
   source: string;
 
+  /** Target analysis directory for research/query style workflows. */
+  dir?: string;
+
+  /** Per-run working directory for intermediate query artifacts. */
+  workdir?: string;
+
   /** Payload text passed to tool templates. */
   payload?: string;
 
