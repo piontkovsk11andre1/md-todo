@@ -107,6 +107,18 @@ describe("query-output", () => {
     expect(aggregated).toContain("## Step 3: Tenth");
   });
 
+  it("ignores non-markdown and empty files during aggregation", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      "/work/notes.txt": "not markdown",
+      "/work/step-01.md": "   \n",
+      "/work/step-02.md": "Evidence without heading",
+    });
+
+    const aggregated = await aggregateQueryOutput("/work", { fileSystem });
+
+    expect(aggregated).toBe("## Step 2: step-02.md\n\nEvidence without heading");
+  });
+
   it("formats query output as json with parsed steps", () => {
     const markdown = [
       "## Step 1: Discover",
@@ -132,10 +144,40 @@ describe("query-output", () => {
     expect(parsed.output).toBe(markdown);
   });
 
+  it("uses a fallback json step when aggregated markdown has no step headings", () => {
+    const markdown = "Single block result";
+
+    const formatted = formatQueryOutput(markdown, "json", "is this complete?");
+    const parsed = JSON.parse(formatted) as {
+      query: string;
+      steps: Array<{ title: string; content: string }>;
+      output: string;
+    };
+
+    expect(parsed.query).toBe("is this complete?");
+    expect(parsed.steps).toEqual([
+      {
+        title: "Result",
+        content: "Single block result",
+      },
+    ]);
+    expect(parsed.output).toBe(markdown);
+  });
+
+  it("passes markdown output through unchanged", () => {
+    const markdown = "# Final answer\n\nDone.";
+    expect(formatQueryOutput(markdown, "markdown", "q")).toBe(markdown);
+  });
+
   it("extracts yn and success-error verdict formats", () => {
     expect(formatQueryOutput("notes\n\nverdict: Y", "yn", "q")).toBe("Y");
     expect(formatQueryOutput("analysis\n\nfailure: missing coverage", "success-error", "q")).toBe("failure: missing coverage");
     expect(formatQueryOutput("conclusion\n\nY", "success-error", "q")).toBe("success");
+  });
+
+  it("uses safe default verdicts when none are found", () => {
+    expect(formatQueryOutput("analysis without verdict", "yn", "q")).toBe("N");
+    expect(formatQueryOutput("analysis without verdict", "success-error", "q")).toBe("failure: verdict not found");
   });
 
   it("resolves format-driven exit codes", () => {
@@ -145,6 +187,11 @@ describe("query-output", () => {
     expect(resolveQueryExitCode("success-error", "failure: nope")).toBe(1);
     expect(resolveQueryExitCode("markdown", "anything")).toBe(0);
     expect(resolveQueryExitCode("json", "{}")).toBe(0);
+  });
+
+  it("treats success-error output case-insensitively for exit code", () => {
+    expect(resolveQueryExitCode("success-error", "SUCCESS")).toBe(0);
+    expect(resolveQueryExitCode("success-error", " Failure: reason ")).toBe(1);
   });
 
   it("writes output file through provided file-system dependency", async () => {

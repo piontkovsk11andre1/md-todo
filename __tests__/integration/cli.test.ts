@@ -806,6 +806,94 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(path.join(workspace, ".rundown", `${sourceName}.lock`))).toBe(false);
   });
 
+  it("query runs research, plan, and run end-to-end against --dir", async () => {
+    const workspace = makeTempWorkspace();
+    const analysisDir = path.join(workspace, "analysis");
+    const workerScriptPath = path.join(workspace, "query-e2e-worker.cjs");
+    const phaseProbePath = path.join(analysisDir, "query-e2e-probe.jsonl");
+
+    fs.mkdirSync(analysisDir, { recursive: true });
+    fs.writeFileSync(path.join(analysisDir, "service.ts"), "export const authEnabled = true;\n", "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const path = require('node:path');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const sourceMatch = prompt.match(/## Source file\\s+`([^`]+)`/m);",
+        "const sourcePath = sourceMatch ? sourceMatch[1] : '';",
+        `const phaseProbePath = ${JSON.stringify(phaseProbePath.replace(/\\/g, "/"))};`,
+        "const record = (phase, extra = {}) => {",
+        "  fs.appendFileSync(phaseProbePath, JSON.stringify({ phase, cwd: process.cwd(), ...extra }) + '\\n', 'utf-8');",
+        "};",
+        "if (prompt.includes('Research and enrich the source document with implementation context.')) {",
+        "  record('research');",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  if (source.includes('## Research Context')) {",
+        "    console.log(source);",
+        "  } else {",
+        "    console.log(source.trimEnd() + '\\n\\n## Research Context\\n\\n- Located authentication entry points\\n');",
+        "  }",
+        "  process.exit(0);",
+        "}",
+        "if (prompt.includes('Edit the source Markdown file directly to improve plan coverage.')) {",
+        "  record('plan');",
+        "  const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "  let updated = source;",
+        "  if (!updated.includes('- [ ] Trace request entry points')) {",
+        "    updated = updated.trimEnd() + '\\n\\n- [ ] Trace request entry points\\n';",
+        "  }",
+        "  if (!updated.includes('- [ ] Summarize authentication flow')) {",
+        "    updated = updated.trimEnd() + '\\n- [ ] Summarize authentication flow\\n';",
+        "  }",
+        "  fs.writeFileSync(sourcePath, updated.endsWith('\\n') ? updated : `${updated}\\n`, 'utf-8');",
+        "  process.exit(0);",
+        "}",
+        "if (prompt.includes('You are executing one step of a query investigation plan.')) {",
+        "  const taskMatch = prompt.match(/- Task: (.+)/);",
+        "  const task = taskMatch ? taskMatch[1].trim() : 'unknown';",
+        "  record('run', { task });",
+        "  console.log(`# ${task}\\n\\n- Evidence gathered from ${process.cwd()}\\n`);",
+        "  process.exit(0);",
+        "}",
+        "record('unknown');",
+        "process.exit(95);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "query",
+      "map authentication flow",
+      "--dir",
+      analysisDir,
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Query phase 1/3: research"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Query phase 2/3: plan"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Query phase 3/3: execute (stream mode)"))).toBe(true);
+
+    const probeEntries = fs.readFileSync(phaseProbePath, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { phase: string; cwd: string; task?: string });
+    const phaseSequence = probeEntries.map((entry) => entry.phase);
+    expect(phaseSequence[0]).toBe("research");
+    expect(phaseSequence[1]).toBe("plan");
+    expect(phaseSequence.filter((phase) => phase === "run")).toHaveLength(2);
+    expect(probeEntries.every((entry) => path.resolve(entry.cwd) === path.resolve(analysisDir))).toBe(true);
+    expect(probeEntries.filter((entry) => entry.phase === "run").map((entry) => entry.task)).toEqual([
+      "Trace request entry points",
+      "Summarize authentication flow",
+    ]);
+  });
+
   it("explore forwards --scan-count, --deep, and --max-items to the plan phase only", async () => {
     const workspace = makeTempWorkspace();
     const sourceName = "roadmap.md";
