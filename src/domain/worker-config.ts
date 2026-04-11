@@ -25,6 +25,9 @@ export interface WorkersConfig {
 export const WORKER_CONFIG_COMMAND_NAMES = [
   "help",
   "run",
+  "migrate",
+  "undo",
+  "test",
   "plan",
   "discuss",
   "research",
