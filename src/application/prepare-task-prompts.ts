@@ -144,6 +144,8 @@ export async function prepareTaskPrompts(params: {
   extraTemplateVars: ExtraTemplateVars;
   cliExpansionEnabled: boolean;
   ignoreCliBlock: boolean;
+  cwd: string;
+  taskTemplateOverride?: string;
   cliExecutionOptions: CommandExecutionOptions | undefined;
   artifactContext: ArtifactRunContext | null;
   traceWriter: TraceWriterPort;
@@ -162,6 +164,8 @@ export async function prepareTaskPrompts(params: {
     extraTemplateVars,
     cliExpansionEnabled,
     ignoreCliBlock,
+    cwd,
+    taskTemplateOverride,
     cliExecutionOptions,
     artifactContext,
     traceWriter,
@@ -227,6 +231,7 @@ export async function prepareTaskPrompts(params: {
     dependencies.templateLoader,
     dependencies.pathOperations,
   );
+  const taskTemplate = taskTemplateOverride ?? templates.task;
   const templateVarsWithTrace: ExtraTemplateVars = {
     ...extraTemplateVars,
     userVariables:
@@ -247,7 +252,7 @@ export async function prepareTaskPrompts(params: {
     ...buildTaskHierarchyTemplateVars(task),
   };
 
-  const renderedPrompt = renderTemplate(templates.task, vars);
+  const renderedPrompt = renderTemplate(taskTemplate, vars);
   const taskTemplateCliBlockCount = extractCliBlocks(renderedPrompt).length;
   let prompt = renderedPrompt;
   // Expand CLI blocks in the task template and allow caller-defined failure handling.
@@ -255,7 +260,7 @@ export async function prepareTaskPrompts(params: {
     content: renderedPrompt,
     cliExpansionEnabled,
     cliBlockExecutor,
-    cwd: dependencies.workingDirectory.cwd(),
+    cwd,
     baseCliExpansionOptions,
     artifactContext,
     traceWriter,
@@ -284,7 +289,7 @@ export async function prepareTaskPrompts(params: {
       content: renderedVerificationPrompt,
       cliExpansionEnabled,
       cliBlockExecutor,
-      cwd: dependencies.workingDirectory.cwd(),
+      cwd,
       baseCliExpansionOptions,
       artifactContext,
       traceWriter,

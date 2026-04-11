@@ -148,6 +148,7 @@ export interface PlanTaskDependencies {
  */
 export interface PlanTaskOptions {
   source: string;
+  cwd?: string;
   scanCount?: number;
   maxItems?: number;
   deep?: number;
@@ -198,6 +199,7 @@ export function createPlanTask(
       cliBlockTimeoutMs,
       verbose = false,
     } = options;
+    const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
       ? undefined
       : { timeoutMs: cliBlockTimeoutMs };
@@ -241,7 +243,7 @@ export function createPlanTask(
         varsFileOption,
         dependencies.configDir?.configDir,
       );
-      const cwd = dependencies.workingDirectory.cwd();
+      const cwd = executionCwd;
       const fileTemplateVars = varsFilePath
         ? dependencies.templateVarsLoader.load(
           varsFilePath,

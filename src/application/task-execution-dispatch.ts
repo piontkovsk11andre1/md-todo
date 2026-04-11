@@ -94,6 +94,7 @@ export async function dispatchTaskExecution(params: {
   resolvedWorkerCommand: string[];
   resolvedWorkerPattern: ParsedWorkerPattern;
   trace: boolean;
+  cwd: string;
   executionEnv?: Record<string, string>;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: CommandExecutionOptions | undefined;
@@ -135,6 +136,7 @@ export async function dispatchTaskExecution(params: {
     resolvedWorkerCommand,
     resolvedWorkerPattern,
     trace,
+    cwd,
     executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
@@ -221,7 +223,7 @@ export async function dispatchTaskExecution(params: {
       workerCommand: selectedWorkerCommand,
       mode,
       trace,
-      cwd: dependencies.workingDirectory.cwd(),
+      cwd,
       executionEnv,
       artifactContext,
       keepArtifacts,
@@ -400,7 +402,7 @@ export async function dispatchTaskExecution(params: {
       prompt: renderedToolPrompt,
       mode,
       trace,
-      cwd: dependencies.workingDirectory.cwd(),
+      cwd,
       env: executionEnv,
       configDir: dependencies.configDir?.configDir,
       artifactContext,
@@ -469,7 +471,7 @@ export async function dispatchTaskExecution(params: {
     prompt,
     mode,
     trace,
-    cwd: dependencies.workingDirectory.cwd(),
+    cwd,
     env: executionEnv,
     configDir: dependencies.configDir?.configDir,
     artifactContext,

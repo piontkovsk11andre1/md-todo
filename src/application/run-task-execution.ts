@@ -120,6 +120,7 @@ export interface RunTaskDependencies {
  */
 export interface RunTaskOptions {
   source: string;
+  cwd?: string;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
   sortMode: SortMode;
@@ -153,6 +154,7 @@ export interface RunTaskOptions {
   ignoreCliBlock: boolean;
   cacheCliBlocks?: boolean;
   verbose: boolean;
+  taskTemplateOverride?: string;
 }
 
 /**
@@ -210,7 +212,10 @@ export function createRunTaskExecution(
       ignoreCliBlock,
       cacheCliBlocks,
       verbose,
+      cwd: overriddenCwd,
+      taskTemplateOverride,
     } = options;
+    const executionCwd = overriddenCwd ?? dependencies.workingDirectory.cwd();
 
     let cliBlockExecutor = cacheCliBlocks
       ? createCachedCommandExecutor(defaultCliBlockExecutor)
@@ -287,7 +292,7 @@ export function createRunTaskExecution(
     const fileTemplateVars = varsFilePath
       ? dependencies.templateVarsLoader.load(
         varsFilePath,
-        dependencies.workingDirectory.cwd(),
+        executionCwd,
         dependencies.configDir?.configDir,
       )
       : {};
@@ -479,7 +484,7 @@ export function createRunTaskExecution(
 
       // `--commit` requires a clean git repository before task execution starts.
       if (commitAfterComplete) {
-        const cwd = dependencies.workingDirectory.cwd();
+        const cwd = executionCwd;
         const inGitRepo = await isGitRepoWithGitClient(dependencies.gitClient, cwd);
         if (!inGitRepo) {
           emit({ kind: "warn", message: "--commit: not inside a git repository, skipping." });
@@ -806,6 +811,8 @@ export function createRunTaskExecution(
                   cliExecutionOptions,
                   cliBlockExecutor,
                   executionEnv: rundownVarEnv,
+                  cwd: executionCwd,
+                  taskTemplateOverride,
                   nowIso,
                 },
                 traceConfig: {

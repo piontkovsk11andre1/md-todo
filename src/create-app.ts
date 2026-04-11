@@ -123,6 +123,7 @@ export type App = {
 
 export interface PlanTaskCommandOptions {
   source: string;
+  cwd?: string;
   scanCount?: number;
   maxItems?: number;
   deep?: number;
@@ -143,6 +144,7 @@ export interface PlanTaskCommandOptions {
 
 export interface ResearchTaskCommandOptions {
   source: string;
+  cwd?: string;
   mode: ResearchTaskUseCaseOptions["mode"];
   workerPattern: ResearchTaskUseCaseOptions["workerPattern"];
   showAgentOutput: boolean;
@@ -450,6 +452,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
 
       return async (options) => runPlanTask({
         ...options,
+        cwd: options.cwd,
         maxItems: options.maxItems,
       });
     },
@@ -469,6 +472,80 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       output: ports.output,
     }),
     queryTask: (ports) => createQueryTask({
+      runTask: createRunTask({
+        sourceResolver: ports.sourceResolver,
+        taskSelector: ports.taskSelector,
+        workerExecutor: ports.workerExecutor,
+        taskVerification: ports.taskVerification,
+        taskRepair: ports.taskRepair,
+        workingDirectory: ports.workingDirectory,
+        fileSystem: ports.fileSystem,
+        fileLock: ports.fileLock,
+        templateLoader: ports.templateLoader,
+        verificationStore: ports.verificationStore,
+        artifactStore: ports.artifactStore,
+        gitClient: ports.gitClient,
+        processRunner: ports.processRunner,
+        pathOperations: ports.pathOperations,
+        toolResolver: ports.toolResolver,
+        memoryResolver: ports.memoryResolver,
+        memoryWriter: ports.memoryWriter,
+        templateVarsLoader: ports.templateVarsLoader,
+        workerConfigPort: ports.workerConfigPort,
+        traceWriter: ports.traceWriter,
+        cliBlockExecutor: ports.cliBlockExecutor,
+        configDir: ports.configDir,
+        createTraceWriter: (trace, artifactContext) => {
+          if (!trace) {
+            return ports.traceWriter;
+          }
+
+          return createArtifactTraceWriter(ports, artifactContext);
+        },
+        output: ports.output,
+      }),
+      researchTask: createResearchTask({
+        workerExecutor: ports.workerExecutor,
+        cliBlockExecutor: ports.cliBlockExecutor,
+        artifactStore: ports.artifactStore,
+        fileSystem: ports.fileSystem,
+        fileLock: ports.fileLock,
+        workingDirectory: ports.workingDirectory,
+        pathOperations: ports.pathOperations,
+        memoryResolver: ports.memoryResolver,
+        templateLoader: ports.templateLoader,
+        templateVarsLoader: ports.templateVarsLoader,
+        workerConfigPort: ports.workerConfigPort,
+        configDir: ports.configDir,
+        output: ports.output,
+      }),
+      planTask: createPlanTask({
+        workerExecutor: ports.workerExecutor,
+        workingDirectory: ports.workingDirectory,
+        cliBlockExecutor: ports.cliBlockExecutor,
+        fileSystem: ports.fileSystem,
+        fileLock: ports.fileLock,
+        templateLoader: ports.templateLoader,
+        pathOperations: ports.pathOperations,
+        memoryResolver: ports.memoryResolver,
+        templateVarsLoader: ports.templateVarsLoader,
+        workerConfigPort: ports.workerConfigPort,
+        artifactStore: ports.artifactStore,
+        traceWriter: ports.traceWriter,
+        configDir: ports.configDir,
+        createTraceWriter: (trace, artifactContext) => {
+          if (!trace) {
+            return ports.traceWriter;
+          }
+
+          return createArtifactTraceWriter(ports, artifactContext);
+        },
+        output: ports.output,
+      }),
+      artifactStore: ports.artifactStore,
+      fileSystem: ports.fileSystem,
+      pathOperations: ports.pathOperations,
+      workingDirectory: ports.workingDirectory,
       output: ports.output,
     }),
     unlockTask: (ports) => createUnlockTask({

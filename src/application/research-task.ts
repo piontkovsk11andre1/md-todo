@@ -77,6 +77,7 @@ export interface ResearchTaskDependencies {
  */
 export interface ResearchTaskOptions {
   source: string;
+  cwd?: string;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;
@@ -121,6 +122,7 @@ export function createResearchTask(
       forceUnlock,
       verbose = false,
     } = options;
+    const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
     let researchSuccessCount = 0;
     let researchFailureCount = 0;
     let researchGroupStarted = false;
@@ -186,7 +188,7 @@ export function createResearchTask(
           varsFileOption,
           dependencies.configDir?.configDir,
         );
-        const cwd = dependencies.workingDirectory.cwd();
+        const cwd = executionCwd;
         const fileTemplateVars = varsFilePath
           ? dependencies.templateVarsLoader.load(
             varsFilePath,
@@ -389,7 +391,7 @@ export function createResearchTask(
           varsFileOption,
           dependencies.configDir?.configDir,
         );
-        const cwd = dependencies.workingDirectory.cwd();
+        const cwd = executionCwd;
         const fileTemplateVars = varsFilePath
           ? dependencies.templateVarsLoader.load(
             varsFilePath,

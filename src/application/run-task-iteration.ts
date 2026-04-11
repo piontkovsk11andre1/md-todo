@@ -117,6 +117,8 @@ interface IterationPromptConfig {
   cliExecutionOptions: CommandExecutionOptions | undefined;
   cliBlockExecutor: CommandExecutor;
   executionEnv?: Record<string, string>;
+  cwd: string;
+  taskTemplateOverride?: string;
   nowIso: () => string;
 }
 
@@ -386,7 +388,7 @@ export async function runTaskIteration(params: {
   // Initialize artifact and trace context only for real execution modes.
   if (!execution.printPrompt && !execution.dryRun) {
     state.artifactContext = dependencies.artifactStore.createContext({
-      cwd: dependencies.workingDirectory.cwd(),
+      cwd: prompts.cwd,
       configDir: dependencies.configDir?.configDir,
       commandName: "run",
       workerCommand: onlyVerify ? automationCommand : resolvedWorkerCommand,
@@ -413,6 +415,8 @@ export async function runTaskIteration(params: {
     extraTemplateVars: prompts.extraTemplateVars,
     cliExpansionEnabled: execution.cliExpansionEnabled,
     ignoreCliBlock: execution.ignoreCliBlock,
+    cwd: prompts.cwd,
+    taskTemplateOverride: prompts.taskTemplateOverride,
     cliExecutionOptions: prompts.cliExecutionOptions,
     artifactContext: state.artifactContext,
     traceWriter: state.traceWriter,
@@ -549,6 +553,7 @@ export async function runTaskIteration(params: {
     resolvedWorkerCommand,
     resolvedWorkerPattern,
     trace: execution.trace,
+    cwd: prompts.cwd,
     executionEnv: prompts.executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort:
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbort,
