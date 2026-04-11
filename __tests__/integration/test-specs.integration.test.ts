@@ -86,6 +86,66 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     expect(combinedOutput).toContain("user-can-upload-files.md");
     expect(combinedOutput).toMatch(/ok|pass/i);
   });
+
+  it("rundown test new --mode tui writes a slugged spec in specs/", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictedState(workspace);
+
+    const result = await runCli([
+      "test",
+      "new",
+      "--mode",
+      "tui",
+      "--dir",
+      "specs",
+      "--",
+      "node",
+      "-e",
+      "console.log('User can export reports');process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const createdSpecPath = path.join(workspace, "specs", "user-can-export-reports.md");
+    expect(fs.existsSync(createdSpecPath)).toBe(true);
+    expect(fs.readFileSync(createdSpecPath, "utf-8")).toContain("User can export reports");
+
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("user-can-export-reports.md");
+  });
+
+  it("rundown test new --mode tui handles cancellation without writing a spec", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictedState(workspace);
+
+    const result = await runCli([
+      "test",
+      "new",
+      "--mode",
+      "tui",
+      "--dir",
+      "specs",
+      "--",
+      "node",
+      "-e",
+      "console.error('cancelled by user');process.exit(130);",
+    ], workspace);
+
+    expect(result.code).not.toBe(0);
+    expect(fs.readdirSync(path.join(workspace, "specs"))).toEqual([]);
+
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toMatch(/cancel|canceled|cancelled/i);
+  });
 });
 
 function scaffoldPredictedState(workspace: string): void {
