@@ -147,6 +147,23 @@ describe("checkbox-operations", () => {
     ].join("\r\n"));
   });
 
+  it("preserves newline characters in fix annotation reason", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": "- [ ] First task\n- [ ] Second task\n",
+    });
+    const task = createTask({ text: "First task", line: 1 });
+
+    writeFixAnnotationToFile(task, "failed line one\nfailed line two", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [x] First task",
+      "  - fix: failed line one",
+      "failed line two",
+      "- [ ] Second task",
+      "",
+    ].join("\n"));
+  });
+
   it("indents fix annotation for top-level tasks", () => {
     const fileSystem = createFileSystem({
       "todo.md": "- [ ] Top task\n- [ ] Next task\n",
