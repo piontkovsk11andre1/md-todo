@@ -8,6 +8,7 @@ import { runTaskIteration } from "../../src/application/run-task-iteration.js";
 import { runTraceEnrichment } from "../../src/application/trace-enrichment.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
 import { includeHandler } from "../../src/domain/builtin-tools/include.js";
+import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import * as verifyRepairLoopModule from "../../src/application/verify-repair-loop.js";
 import * as runLifecycleModule from "../../src/application/run-lifecycle.js";
@@ -441,6 +442,141 @@ describe("dry-run-dispatch", () => {
 });
 
 describe("run-task-iteration", () => {
+  it("re-parses normalized fast payload so loop aliases still route through built-in handler", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const taskText = "fast: each: service-a, service-b";
+    const task = createTask(taskFile, taskText);
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: `- [ ] ${taskText}\n`,
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: (toolName) => resolveBuiltinTool(toolName),
+      listKnownToolNames: () => listBuiltinToolNames(),
+    };
+    const emit = (event: Parameters<typeof runTaskIteration>[0]["emit"] extends (arg: infer T) => void ? T : never) => {
+      events.push(event);
+    };
+
+    const dispatchSpy = vi.spyOn(taskExecutionDispatchModule, "dispatchTaskExecution").mockImplementation(async (params) => {
+      expect(params.task.text).toBe("each: service-a, service-b");
+      expect(params.prefixChain?.handler?.tool.name).toBe("for");
+      expect(params.prefixChain?.handler?.payload).toBe("service-a, service-b");
+      return {
+        kind: "ready-for-completion",
+        shouldVerify: false,
+        cliExecutionOptionsForVerification: undefined,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+      };
+    });
+    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration").mockResolvedValue({
+      continueLoop: false,
+      exitCode: 0,
+    });
+
+    const traceRunSession = createTraceRunSession({
+      getTraceWriter: () => dependencies.traceWriter,
+      source: "tasks.md",
+      mode: "wait",
+      transport: "file",
+      traceEnabled: false,
+    });
+
+    await runTaskIteration({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+        artifactContext: null,
+        traceEnrichmentContext: null,
+      },
+      context: {
+        source: `- [ ] ${taskText}`,
+        fileSource: `- [ ] ${taskText}`,
+        taskIndex: 0,
+        totalTasks: 1,
+        files: [taskFile],
+        task,
+      },
+      execution: {
+        mode: "wait",
+        verbose: false,
+        taskIndex: 0,
+        totalTasks: 1,
+        keepArtifacts: true,
+        printPrompt: false,
+        dryRun: false,
+        dryRunSuppressesCliExpansion: false,
+        cliExpansionEnabled: true,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        forceExecute: false,
+        showAgentOutput: false,
+        hideHookOutput: false,
+        trace: false,
+      },
+      worker: {
+        workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+        loadedWorkerConfig: undefined,
+      },
+      verifyConfig: {
+        configuredOnlyVerify: false,
+        configuredShouldVerify: true,
+        maxRepairAttempts: 0,
+        allowRepair: false,
+      },
+      completion: {
+        effectiveRunAll: false,
+        commitAfterComplete: false,
+        deferCommitUntilPostRun: false,
+        commitMessageTemplate: undefined,
+        onCompleteCommand: undefined,
+        onFailCommand: undefined,
+        extraTemplateVars: {},
+      },
+      prompts: {
+        extraTemplateVars: {},
+        cliExecutionOptions: undefined,
+        cliBlockExecutor: {
+          execute: vi.fn(async () => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          })),
+        },
+        nowIso: () => "2026-01-01T00:00:00.000Z",
+      },
+      traceConfig: {
+        traceRunSession,
+        pendingPreRunResetTraceEvents: [],
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+      },
+      lifecycle: {
+        failRun: vi.fn(async () => 1),
+        finishRun: vi.fn(async () => 0),
+        resetArtifacts: vi.fn(),
+      },
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledTimes(1);
+    expect(completeSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("emits group-start with task counter before dispatching task execution", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

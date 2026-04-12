@@ -6,6 +6,7 @@ import { handleTemplateCliFailure } from "./cli-block-handlers.js";
 import { handleDryRunOrPrintPrompt } from "./dry-run-dispatch.js";
 import { formatTaskLabel } from "./run-task-utils.js";
 import { afterTaskFailed } from "./run-lifecycle.js";
+import { parsePrefixChain } from "../domain/prefix-chain.js";
 import { toRuntimeTaskMetadata } from "./task-context-resolution.js";
 import { prepareTaskPrompts } from "./prepare-task-prompts.js";
 import { createTraceRunSession } from "./trace-run-session.js";
@@ -328,11 +329,15 @@ export async function runTaskIteration(params: {
       ...taskForIntent,
       text: taskIntentDecision.normalizedTaskText,
     };
+  const hasResolvedPrefixChain = prefixChain.handler !== undefined || prefixChain.modifiers.length > 0;
+  const executionPrefixChain = hasResolvedPrefixChain
+    ? prefixChain
+    : parsePrefixChain(taskForExecution.text, dependencies.toolResolver);
   const taskForLifecycle = execution.forceStrippedTaskText === undefined
     ? taskForExecution
     : task;
 
-  const modifierProfile = extractPrefixModifierProfile(prefixChain);
+  const modifierProfile = extractPrefixModifierProfile(executionPrefixChain);
   // Resolve the effective worker command using CLI, config, and task metadata.
   const resolvedWorker = resolveWorkerPatternForInvocation({
     commandName: "run",
@@ -563,7 +568,7 @@ export async function runTaskIteration(params: {
     memoryCapturePrefix: taskIntentDecision.memoryCapturePrefix,
     toolName: taskIntentDecision.toolName,
     toolPayload: taskIntentDecision.toolPayload,
-    prefixChain,
+    prefixChain: executionPrefixChain,
     task: taskForExecution,
     prompt: preparedPrompts.prompt,
     expandedContextBefore: preparedPrompts.expandedContextBefore,

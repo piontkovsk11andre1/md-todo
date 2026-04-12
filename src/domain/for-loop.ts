@@ -81,12 +81,7 @@ export function getForCurrentValue(subItems: readonly SubItem[]): string | undef
 
 export function resolveForLoopItems(subItems: readonly SubItem[], payload: string): ResolvedForLoopItems {
   const metadataItems = getForItemValues(subItems);
-  const metadataCurrent = getForCurrentValue(subItems);
-  const canResumeFromMetadata = metadataItems.length > 0
-    && metadataCurrent !== undefined
-    && metadataItems.includes(metadataCurrent);
-
-  if (canResumeFromMetadata) {
+  if (metadataItems.length > 0) {
     return {
       items: metadataItems,
       source: "metadata",
