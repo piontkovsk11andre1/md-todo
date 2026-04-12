@@ -258,6 +258,26 @@ Use \`--all\` to process all tasks sequentially. Use \`--commit\` to auto-commit
 **call** — Run a clean full-pass execution (\`--all --clean --cache-cli-blocks\`). Single command for a complete pass over a source.
 \`rundown call <source> -- <worker>\`
 
+### Choosing the right execution flow
+
+Use this decision policy so intent maps to the right command:
+
+- **\`plan\`** — Use when the user wants to *generate or refine TODO tasks* from a document before execution.
+  - Signals: "plan this", "break this into tasks", "turn this spec into a checklist"
+  - Example: \`rundown plan docs/feature.md --scan-count 3 -- opencode run\`
+- **\`explore\`** — Use when the user wants *research + planning together* (understand first, then produce tasks).
+  - Signals: "explore this", "analyze then plan", "research this file and create tasks"
+  - Example: \`rundown explore docs/feature.md --deep 1 -- opencode run\`
+- **\`run\`** — Use when the user wants to *execute tasks incrementally* (one task or controlled multi-task run).
+  - Signals: "do the next task", "run this task list", "execute tasks with verification"
+  - Example (next task): \`rundown run docs/todo.md -- opencode run\`
+  - Example (all tasks): \`rundown run docs/todo.md --all --verify -- opencode run\`
+- **\`call\`** — Use when the user wants a *clean, full-pass execution* in one command and defaults are acceptable.
+  - Signals: "run everything cleanly", "full pass", "just process the whole file"
+  - Example: \`rundown call docs/todo.md -- opencode run\`
+
+When both \`run --all\` and \`call\` could work, recommend \`call\` for a clean full pass, and recommend \`run\` when the user needs fine-grained control over flags (for example \`--commit\`, \`--repair-attempts\`, or \`--mode tui\`).
+
 **loop** — Repeat call executions with cooldown between iterations.
 \`rundown loop <source> [--cooldown <s>] [--iterations <n>] [--continue-on-error] -- <worker>\`
 
