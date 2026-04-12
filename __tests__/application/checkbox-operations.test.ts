@@ -165,6 +165,100 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("does not reset checked tasks outside the active loop subtree", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [ ] for: This, That",
+        "  - for-item: This",
+        "  - for-item: That",
+        "  - for-current: This",
+        "  - [x] Loop child",
+        "- [ ] Unrelated parent",
+        "  - [x] Unrelated checked child",
+      ].join("\n"),
+    });
+    const task = createTask({
+      text: "for: This, That",
+      line: 1,
+      index: 0,
+      file: "todo.md",
+      children: [
+        createTask({ text: "Loop child", line: 5, index: 1, depth: 1, file: "todo.md", checked: true }),
+      ],
+      subItems: [
+        { text: "for-item: This", line: 2, depth: 1 },
+        { text: "for-item: That", line: 3, depth: 1 },
+        { text: "for-current: This", line: 4, depth: 1 },
+      ],
+    });
+
+    const result = advanceForLoopUsingFileSystem(task, fileSystem);
+
+    expect(result).toEqual({
+      advanced: true,
+      completed: false,
+      current: "That",
+      remainingItems: 0,
+    });
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] for: This, That",
+      "  - for-item: This",
+      "  - for-item: That",
+      "  - for-current: That",
+      "  - [ ] Loop child",
+      "- [ ] Unrelated parent",
+      "  - [x] Unrelated checked child",
+    ].join("\n"));
+  });
+
+  it("does not mutate fenced checkboxes while advancing loop cursor", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [ ] for: This, That",
+        "  - for-item: This",
+        "  - for-item: That",
+        "  - for-current: This",
+        "  - [x] Loop child",
+        "  ```md",
+        "  - [x] Example fenced checkbox",
+        "  ```",
+      ].join("\n"),
+    });
+    const task = createTask({
+      text: "for: This, That",
+      line: 1,
+      index: 0,
+      file: "todo.md",
+      children: [
+        createTask({ text: "Loop child", line: 5, index: 1, depth: 1, file: "todo.md", checked: true }),
+      ],
+      subItems: [
+        { text: "for-item: This", line: 2, depth: 1 },
+        { text: "for-item: That", line: 3, depth: 1 },
+        { text: "for-current: This", line: 4, depth: 1 },
+      ],
+    });
+
+    const result = advanceForLoopUsingFileSystem(task, fileSystem);
+
+    expect(result).toEqual({
+      advanced: true,
+      completed: false,
+      current: "That",
+      remainingItems: 0,
+    });
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] for: This, That",
+      "  - for-item: This",
+      "  - for-item: That",
+      "  - for-current: That",
+      "  - [ ] Loop child",
+      "  ```md",
+      "  - [x] Example fenced checkbox",
+      "  ```",
+    ].join("\n"));
+  });
+
   it("writes fix annotation after marking task checked", () => {
     const fileSystem = createFileSystem({
       "todo.md": "- [ ] First task\n- [ ] Second task\n",

@@ -198,6 +198,49 @@ describe("parseTasks", () => {
     expect(tasks[0]!.children).toEqual([tasks[1], tasks[2]]);
   });
 
+  it("keeps checkbox children that start with for-item text as executable tasks", () => {
+    const md = [
+      "- [ ] for: All controllers",
+      "  - for-item: Alpha",
+      "  - for-current: Alpha",
+      "  - [ ] for-item: run smoke checks",
+      "  - [ ] Do this",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(3);
+    expect(tasks[0]!.text).toBe("for: All controllers");
+    expect(tasks[0]!.subItems).toEqual([
+      { text: "for-item: Alpha", line: 2, depth: 1 },
+      { text: "for-current: Alpha", line: 3, depth: 1 },
+    ]);
+    expect(tasks[0]!.children).toEqual([tasks[1], tasks[2]]);
+    expect(tasks[1]!.text).toBe("for-item: run smoke checks");
+    expect(tasks[2]!.text).toBe("Do this");
+  });
+
+  it("ignores fenced for-loop metadata-like lines during parsing", () => {
+    const md = [
+      "- [ ] for: All controllers",
+      "  - for-item: Alpha",
+      "  - [ ] Do this",
+      "  ```md",
+      "  - for-item: Shadow",
+      "  - [ ] Fake task",
+      "  ```",
+      "- [ ] Sibling task",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(3);
+    expect(tasks[0]!.subItems).toEqual([{ text: "for-item: Alpha", line: 2, depth: 1 }]);
+    expect(tasks[0]!.children).toEqual([tasks[1]]);
+    expect(tasks[1]!.text).toBe("Do this");
+    expect(tasks[2]!.text).toBe("Sibling task");
+  });
+
   it("captures taskProfile for each/foreach aliases via generic prefix-task detection", () => {
     const md = [
       "- [ ] each: API endpoints",
