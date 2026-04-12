@@ -339,6 +339,82 @@ describe("plan-task", () => {
     expect(prompt).toContain("append=||");
   });
 
+  it("uses empty prepend guidance when only append guidance exists", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const markdownContent = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: markdownContent,
+    });
+    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
+    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
+
+    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
+      if (filePath === markdownFile) {
+        return markdownContent;
+      }
+      if (filePath === prependPath) {
+        throw new Error("missing file");
+      }
+      if (filePath === appendPath) {
+        return "Prefer final verification and handoff tasks when relevant.";
+      }
+      return "";
+    });
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
+      "prepend=|{{planPrependGuidance}}|",
+      "append=|{{planAppendGuidance}}|",
+    ].join("\n"));
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("prepend=||");
+    expect(prompt).toContain("append=|Prefer final verification and handoff tasks when relevant.|");
+  });
+
+  it("uses empty append guidance when only prepend guidance exists", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const markdownContent = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: markdownContent,
+    });
+    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
+    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
+
+    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
+      if (filePath === markdownFile) {
+        return markdownContent;
+      }
+      if (filePath === prependPath) {
+        return "Prefer early discovery and setup checks.";
+      }
+      if (filePath === appendPath) {
+        throw new Error("missing file");
+      }
+      return "";
+    });
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
+      "prepend=|{{planPrependGuidance}}|",
+      "append=|{{planAppendGuidance}}|",
+    ].join("\n"));
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("prepend=|Prefer early discovery and setup checks.|");
+    expect(prompt).toContain("append=||");
+  });
+
   it("keeps custom plan templates backward compatible when guidance placeholders are absent", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
