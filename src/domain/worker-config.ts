@@ -141,8 +141,8 @@ export function applyTraceStatisticsDefaults(
   };
 }
 
-// Matches a sub-item like "profile: build" and captures the profile name.
-const PROFILE_SUBITEM_PATTERN = /^profile\s*:\s*(.+)$/i;
+// Matches a sub-item like "profile=build" and captures the profile name.
+const PROFILE_SUBITEM_PATTERN = /^profile\s*=\s*(.+)$/i;
 
 /**
  * Normalizes profile names by trimming whitespace and rejecting empty values.
@@ -160,7 +160,7 @@ function normalizeProfileName(profileName: string | undefined): string | undefin
 }
 
 /**
- * Extracts the first valid `profile:` reference from parsed task sub-items.
+ * Extracts the first valid `profile=` reference from parsed task sub-items.
  *
  * @param subItems Parsed sub-items associated with a task.
  * @returns Normalized profile name when present, otherwise `undefined`.

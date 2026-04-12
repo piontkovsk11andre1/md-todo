@@ -104,7 +104,9 @@ const FRONTMATTER_BLOCK_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/;
 // Matches simple `key: value` lines within frontmatter.
 const FRONTMATTER_KEY_VALUE_PATTERN = /^\s*([^:#\s][^:]*)\s*:\s*(.*)$/;
 // Detects directive list items that set a profile context.
-const PROFILE_DIRECTIVE_PATTERN = /^profile\s*:\s*(.+)$/i;
+const PROFILE_DIRECTIVE_PATTERN = /^profile\s*=\s*(.+)$/i;
+// Detects legacy profile syntax that is now rejected.
+const LEGACY_PROFILE_DIRECTIVE_PATTERN = /^profile\s*:\s*(.+)$/i;
 // Detects directive list items that append args to nested cli tasks.
 const CLI_ARGS_DIRECTIVE_PATTERN = /^cli[-\s]?args\s*:\s*(.*)$/i;
 // Detects directive list items that switch tasks to verify-only intent.
@@ -268,6 +270,10 @@ function walkForTasks(
 
   if (isListItem(node) && node.checked !== null && node.checked !== undefined) {
     const text = extractText(node);
+    const line = node.position?.start.line ?? 0;
+    if (LEGACY_PROFILE_DIRECTIVE_PATTERN.test(text)) {
+      throwInvalidLegacyProfileSyntaxError(line);
+    }
     const pos = node.position;
     const isInlineCli = CLI_PREFIX.test(text);
 
@@ -311,6 +317,10 @@ function walkForTasks(
     currentParentTask = task;
   } else if (isListItem(node)) {
     const text = extractText(node);
+    const line = node.position?.start.line ?? 0;
+    if (LEGACY_PROFILE_DIRECTIVE_PATTERN.test(text)) {
+      throwInvalidLegacyProfileSyntaxError(line);
+    }
     const directive = parseDirectiveParent(text);
     const isCliArgsDirectiveSubItem = Boolean(directive.cliArgs);
 
@@ -354,6 +364,13 @@ function walkForTasks(
       walkForTasks(child, tasks, file, nextDepth, currentParentTask, nextDirectiveContext);
     }
   }
+}
+
+function throwInvalidLegacyProfileSyntaxError(line: number): never {
+  const lineSuffix = line > 0 ? ` at line ${line}` : "";
+  throw new Error(
+    `Invalid profile syntax${lineSuffix}: use profile=<name> (not profile: <name>).`,
+  );
 }
 
 /**
