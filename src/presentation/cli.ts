@@ -320,7 +320,7 @@ const migrateCommand = program
   .description("Generate and manage revision-aware prediction migrations.")
   .argument(
     "[action]",
-    "Migration action: up | down [n] | save | snapshot | backlog | context | review | user-experience | user-session",
+    "Migration action: up | down [n] | save | diff | preview | snapshot | backlog | context | review | user-experience | user-session",
   )
   .argument("[count]", "Optional number of runs to undo for down")
   .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")

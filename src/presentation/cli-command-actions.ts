@@ -200,6 +200,8 @@ type MigrateAction =
   | "up"
   | "down"
   | "save"
+  | "diff"
+  | "preview"
   | "snapshot"
   | "backlog"
   | "context"
@@ -1015,7 +1017,7 @@ export function createMigrateCommandAction({
       throw new Error(
         "Invalid migrate action: "
           + normalizedAction
-          + ". Allowed: up, down, save, snapshot, backlog, context, review, user-experience, user-session.",
+          + ". Allowed: up, down, save, diff, preview, snapshot, backlog, context, review, user-experience, user-session.",
       );
     }
 
@@ -1764,6 +1766,8 @@ function isMigrateAction(value: string): value is MigrateAction {
   return value === "up"
     || value === "down"
     || value === "save"
+    || value === "diff"
+    || value === "preview"
     || value === "snapshot"
     || value === "backlog"
     || value === "context"

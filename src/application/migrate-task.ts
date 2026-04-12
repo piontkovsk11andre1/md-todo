@@ -53,6 +53,8 @@ type MigrateAction =
   | "up"
   | "down"
   | "save"
+  | "diff"
+  | "preview"
   | "snapshot"
   | "backlog"
   | "context"
@@ -145,6 +147,45 @@ export function createMigrateTask(
     const action = options.action;
     const projectRoot = path.dirname(migrationsDir);
     const configDir = path.join(projectRoot, ".rundown");
+    if (action === "save") {
+      const saveResult = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot);
+      if (saveResult.kind === "unchanged") {
+        emit({
+          kind: "info",
+          message:
+            "No design changes detected in docs/current/ since "
+            + saveResult.latestRevision.name
+            + "; skipped creating a new revision snapshot.",
+        });
+      } else {
+        const savedRevision = saveResult.revision;
+        emit({
+          kind: "success",
+          message:
+            "Saved design revision "
+            + savedRevision.name
+            + " from docs/current/ to "
+            + savedRevision.absolutePath
+            + " ("
+            + String(savedRevision.copiedFileCount)
+            + " file"
+            + (savedRevision.copiedFileCount === 1 ? "" : "s")
+            + ").",
+        });
+      }
+      return EXIT_CODE_SUCCESS;
+    }
+
+    if (action === "diff" || action === "preview") {
+      emitDesignRevisionDiffPreview({
+        fileSystem: dependencies.fileSystem,
+        projectRoot,
+        emit,
+        includeSourceReferences: action === "preview",
+      });
+      return EXIT_CODE_SUCCESS;
+    }
+
     const loadedWorkerConfig = dependencies.fileSystem.exists(configDir)
       ? dependencies.workerConfigPort.load(configDir)
       : undefined;
@@ -226,35 +267,6 @@ export function createMigrateTask(
         keepArtifacts: options.keepArtifacts,
         showAgentOutput: options.showAgentOutput,
       });
-    }
-
-    if (action === "save") {
-      const saveResult = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot);
-      if (saveResult.kind === "unchanged") {
-        emit({
-          kind: "info",
-          message:
-            "No design changes detected in docs/current/ since "
-            + saveResult.latestRevision.name
-            + "; skipped creating a new revision snapshot.",
-        });
-      } else {
-        const savedRevision = saveResult.revision;
-        emit({
-          kind: "success",
-          message:
-            "Saved design revision "
-            + savedRevision.name
-            + " from docs/current/ to "
-            + savedRevision.absolutePath
-            + " ("
-            + String(savedRevision.copiedFileCount)
-            + " file"
-            + (savedRevision.copiedFileCount === 1 ? "" : "s")
-            + ").",
-        });
-      }
-      return EXIT_CODE_SUCCESS;
     }
 
     const state = readMigrationState(dependencies.fileSystem, migrationsDir);
@@ -381,6 +393,39 @@ export function createMigrateTask(
       return EXIT_CODE_FAILURE;
     }
   };
+}
+
+function emitDesignRevisionDiffPreview(input: {
+  fileSystem: FileSystem;
+  projectRoot: string;
+  emit: ApplicationOutputPort["emit"];
+  includeSourceReferences: boolean;
+}): void {
+  const { fileSystem, projectRoot, emit, includeSourceReferences } = input;
+  const diff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, { target: "current" });
+
+  emit({
+    kind: "info",
+    message: includeSourceReferences ? "Design revision diff preview:" : "Design revision diff:",
+  });
+  emit({ kind: "info", message: diff.summary });
+
+  if (includeSourceReferences) {
+    const sourceReferenceLines = diff.sourceReferences.length > 0
+      ? diff.sourceReferences.map((sourcePath) => `- ${sourcePath}`).join("\n") + "\n"
+      : "- (none)\n";
+    emit({ kind: "text", text: "Sources:\n" + sourceReferenceLines });
+  }
+
+  if (diff.changes.length === 0) {
+    emit({ kind: "info", message: "No file-level design changes detected." });
+    return;
+  }
+
+  const changeLines = diff.changes
+    .map((change) => `- ${change.kind}: ${change.relativePath}`)
+    .join("\n");
+  emit({ kind: "text", text: "Changes:\n" + changeLines + "\n" });
 }
 
 function persistPredictionBaselineSnapshot(fileSystem: FileSystem, migrationsDir: string): void {
@@ -1188,6 +1233,8 @@ export function isMigrationAction(value: string | undefined): value is MigrateAc
   return value === "up"
     || value === "down"
     || value === "save"
+    || value === "diff"
+    || value === "preview"
     || value === "snapshot"
     || value === "backlog"
     || value === "context"
@@ -1195,6 +1242,7 @@ export function isMigrationAction(value: string | undefined): value is MigrateAc
     || value === "user-experience"
     || value === "user-session";
 }
+
 
 export function getMigrationActionFromArg(value: string | undefined): MigrateAction | undefined {
   if (value === undefined || value.trim() === "") {

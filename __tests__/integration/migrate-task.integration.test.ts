@@ -35,6 +35,8 @@ const describeIfSatelliteMigrateAvailable = hasMigrateCommand
   : describe.skip;
 const hasMigrateUserSessionAction = cliSource.includes("user-session");
 const hasMigrateSaveAction = cliSource.includes("save");
+const hasMigrateDiffAction = cliSource.includes("diff");
+const hasMigratePreviewAction = cliSource.includes("preview");
 const hasMigrateConfirmOption = cliSource.includes("--confirm");
 const describeIfUserSessionMigrateAvailable = hasMigrateCommand
   && hasMigrateTaskUseCase
@@ -45,6 +47,12 @@ const describeIfUserSessionMigrateAvailable = hasMigrateCommand
 const describeIfSaveMigrateAvailable = hasMigrateCommand
   && hasMigrateTaskUseCase
   && hasMigrateSaveAction
+  ? describe
+  : describe.skip;
+const describeIfRevisionPreviewActionsAvailable = hasMigrateCommand
+  && hasMigrateTaskUseCase
+  && hasMigrateDiffAction
+  && hasMigratePreviewAction
   ? describe
   : describe.skip;
 
@@ -601,6 +609,72 @@ describeIfSaveMigrateAvailable("migrate save integration", () => {
     ].join("\n"));
     expect(combinedOutput).toContain("No design changes detected in docs/current/");
     expect(combinedOutput).toContain("rev.2");
+  });
+});
+
+describeIfRevisionPreviewActionsAvailable("migrate revision diff/preview integration", () => {
+  it("migrate diff previews revision changes without requiring a worker command", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1", "notes"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "current", "notes"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "# Design\n\nOld version.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "removed.md"), "Removed\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Design\n\nNew version.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "added.md"), "Added\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "notes", "x.md"), "same\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "notes", "x.md"), "same\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "diff",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design revision diff:");
+    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+    expect(combinedOutput).toContain("- added: added.md");
+    expect(combinedOutput).toContain("- modified: Design.md");
+    expect(combinedOutput).toContain("- removed: removed.md");
+    expect(combinedOutput).not.toContain("No worker command available");
+  });
+
+  it("migrate preview includes revision sources plus file-level change summary", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "old\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "new\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "preview",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design revision diff preview:");
+    expect(combinedOutput).toContain("Sources:");
+    expect(combinedOutput).toMatch(/docs[\\/]rev\.1/);
+    expect(combinedOutput).toMatch(/docs[\\/]current/);
+    expect(combinedOutput).toContain("Changes:");
+    expect(combinedOutput).toContain("- modified: Design.md");
   });
 });
 
