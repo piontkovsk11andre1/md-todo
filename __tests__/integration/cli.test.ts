@@ -4054,7 +4054,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(outputLogPath)).toBe(true);
   });
 
-  it("run writes global output log even when runtime artifacts are not preserved", async () => {
+  it("run writes success-path output to global log even when runtime artifacts are not preserved", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] cli: echo hello\n", "utf-8");
 
@@ -4072,6 +4072,11 @@ describe.sequential("CLI integration", () => {
     const entries = readGlobalOutputLogEntries(workspace);
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.some((entry) => entry.command === "run")).toBe(true);
+    expect(entries.some((entry) => {
+      return entry.command === "run"
+        && entry.stream === "stdout"
+        && entry.kind !== "commander";
+    })).toBe(true);
 
     expect(readSavedRunMetadata(workspace)).toHaveLength(0);
   });
@@ -4111,11 +4116,33 @@ describe.sequential("CLI integration", () => {
     expect(secondLines.length).toBeGreaterThan(firstLines.length);
     expect(secondLines.slice(0, firstLines.length)).toEqual(firstLines);
 
-    const firstEntries = firstLines.map((line) => JSON.parse(line) as { command?: string });
+    const firstEntries = firstLines.map((line) => JSON.parse(line) as {
+      command?: string;
+      session_id?: string;
+    });
     const appendedEntries = secondLines.slice(firstLines.length)
-      .map((line) => JSON.parse(line) as { command?: string });
+      .map((line) => JSON.parse(line) as {
+        command?: string;
+        session_id?: string;
+      });
     expect(firstEntries.some((entry) => entry.command === "run")).toBe(true);
     expect(appendedEntries.some((entry) => entry.command === "run")).toBe(true);
+
+    const firstSessionIds = new Set(
+      firstEntries
+        .map((entry) => entry.session_id)
+        .filter((sessionId): sessionId is string => typeof sessionId === "string"),
+    );
+    const appendedSessionIds = new Set(
+      appendedEntries
+        .map((entry) => entry.session_id)
+        .filter((sessionId): sessionId is string => typeof sessionId === "string"),
+    );
+    expect(firstSessionIds.size).toBeGreaterThan(0);
+    expect(appendedSessionIds.size).toBeGreaterThan(0);
+    for (const sessionId of appendedSessionIds) {
+      expect(firstSessionIds.has(sessionId)).toBe(false);
+    }
 
     expect(readSavedRunMetadata(workspace).length).toBeGreaterThan(0);
   });
@@ -4354,7 +4381,7 @@ describe.sequential("CLI integration", () => {
     expect(stripAnsi(ansiCliEntry?.message ?? "")).toBe(ansiCliEntry?.message ?? "");
   });
 
-  it("captures invalid flag errors in .rundown/logs/output.jsonl", async () => {
+  it("captures parse-time Commander invalid flag errors in .rundown/logs/output.jsonl", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli([
@@ -4370,10 +4397,12 @@ describe.sequential("CLI integration", () => {
     expect(entries.some((entry) => entry.command === "run")).toBe(true);
     expect(entries.some((entry) => {
       return entry.kind === "commander"
+        && entry.level === "error"
         && entry.stream === "stderr"
         && entry.message.toLowerCase().includes("unknown option")
         && entry.message.includes("--show-agent-outputs");
     })).toBe(true);
+    expect(readSavedRunMetadata(workspace)).toHaveLength(0);
   });
 
   it("captures execution failures in .rundown/logs/output.jsonl", async () => {
@@ -4393,6 +4422,7 @@ describe.sequential("CLI integration", () => {
     expect(entries.some((entry) => {
       return entry.command === "run"
         && entry.kind === "error"
+        && entry.level === "error"
         && entry.stream === "stderr"
         && entry.message.includes("Inline CLI exited with code");
     })).toBe(true);
@@ -13143,6 +13173,7 @@ function listFilesRecursively(rootDir: string): string[] {
 
 function readGlobalOutputLogEntries(workspace: string): Array<{
   command: string;
+  level: string;
   kind: string;
   stream: string;
   message: string;
@@ -13157,12 +13188,14 @@ function readGlobalOutputLogEntries(workspace: string): Array<{
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as {
       command?: unknown;
+      level?: unknown;
       kind?: unknown;
       stream?: unknown;
       message?: unknown;
     })
     .map((entry) => ({
       command: typeof entry.command === "string" ? entry.command : "",
+      level: typeof entry.level === "string" ? entry.level : "",
       kind: typeof entry.kind === "string" ? entry.kind : "",
       stream: typeof entry.stream === "string" ? entry.stream : "",
       message: typeof entry.message === "string" ? entry.message : "",
