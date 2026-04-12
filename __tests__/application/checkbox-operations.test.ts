@@ -825,6 +825,40 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("retains user-authored child notes and TODOs while removing mixed runtime annotations", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] Parent",
+        "  - note: keep parent note",
+        "  - total time: 5s",
+        "    - execution: 2s",
+        "  - [ ] Keep this user child TODO",
+        "    - note: keep nested user note",
+        "    - detail: skipped: phrase in note should remain",
+        "  - fix: generated repair hint",
+        "    - repair: 1s",
+        "  - skipped: no output",
+        "  - observation: verify attempts: phrase in note should remain",
+        "- [x] Sibling",
+        "  - note: keep sibling note",
+        "  - verify attempts: 1",
+      ].join("\n"),
+    });
+
+    resetFileCheckboxes("todo.md", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] Parent",
+      "  - note: keep parent note",
+      "  - [ ] Keep this user child TODO",
+      "    - note: keep nested user note",
+      "    - detail: skipped: phrase in note should remain",
+      "  - observation: verify attempts: phrase in note should remain",
+      "- [ ] Sibling",
+      "  - note: keep sibling note",
+    ].join("\n"));
+  });
+
   it("treats checkbox-prefixed stale labels as stale during reset", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
