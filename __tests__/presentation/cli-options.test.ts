@@ -11,6 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("../../src/create-app.js");
+  vi.doUnmock("../../src/domain/workspace-link.js");
   vi.doUnmock("../../src/infrastructure/cancellable-sleep.js");
   vi.doUnmock("../../src/infrastructure/adapters/config-dir-adapter.js");
   vi.doUnmock("../../src/infrastructure/adapters/global-output-log-writer.js");
@@ -1479,6 +1480,161 @@ describe("CLI run option normalization", () => {
         configDir: {
           configDir,
           isExplicit: true,
+        },
+      }),
+    }));
+    expect(runTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers linked-workspace config-dir discovery when workspace.link resolves", async () => {
+    const runTask = vi.fn(async () => 0);
+    const createApp = vi.fn(() => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }));
+    const invocationDir = process.cwd();
+    const linkedWorkspaceRoot = path.join(invocationDir, "linked-workspace-root");
+    const linkedConfigDir = path.join(linkedWorkspaceRoot, ".rundown");
+    const resolve = vi.fn((candidateDir: string) => {
+      if (candidateDir === linkedWorkspaceRoot) {
+        return {
+          configDir: linkedConfigDir,
+          isExplicit: false,
+        };
+      }
+
+      if (candidateDir === invocationDir) {
+        return {
+          configDir: path.join(invocationDir, ".rundown"),
+          isExplicit: false,
+        };
+      }
+
+      return undefined;
+    });
+    const previousEnv = captureEnv();
+
+    process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+    process.env.RUNDOWN_TEST_MODE = "1";
+
+    vi.doMock("../../src/create-app.js", () => ({ createApp }));
+    vi.doMock("../../src/domain/workspace-link.js", () => ({
+      resolveWorkspaceLink: () => ({
+        status: "resolved",
+        linkPath: path.join(invocationDir, ".rundown", "workspace.link"),
+        relativeTarget: "../linked-workspace-root",
+        workspaceRoot: linkedWorkspaceRoot,
+      }),
+    }));
+    vi.doMock("../../src/infrastructure/adapters/config-dir-adapter.js", () => ({
+      createConfigDirAdapter: () => ({ resolve }),
+    }));
+
+    try {
+      const { parseCliArgs } = await import("../../src/presentation/cli.js");
+      await parseCliArgs([
+        "run",
+        "tasks.md",
+        "--worker",
+        "opencode run",
+      ]);
+    } catch (error) {
+      const message = String(error);
+      if (!/CLI exited with code \d+/.test(message)) {
+        throw error;
+      }
+    } finally {
+      restoreEnv(previousEnv);
+    }
+
+    expect(resolve).toHaveBeenCalledWith(linkedWorkspaceRoot);
+    expect(resolve).not.toHaveBeenCalledWith(invocationDir);
+    expect(createApp).toHaveBeenCalledWith(expect.objectContaining({
+      ports: expect.objectContaining({
+        configDir: {
+          configDir: linkedConfigDir,
+          isExplicit: false,
+        },
+      }),
+    }));
+    expect(runTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to invocation config-dir discovery when linked workspace has no config", async () => {
+    const runTask = vi.fn(async () => 0);
+    const createApp = vi.fn(() => ({
+      runTask,
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }));
+    const invocationDir = process.cwd();
+    const linkedWorkspaceRoot = path.join(invocationDir, "linked-workspace-root");
+    const invocationConfigDir = path.join(invocationDir, ".rundown");
+    const resolve = vi.fn((candidateDir: string) => {
+      if (candidateDir === linkedWorkspaceRoot) {
+        return undefined;
+      }
+
+      if (candidateDir === invocationDir) {
+        return {
+          configDir: invocationConfigDir,
+          isExplicit: false,
+        };
+      }
+
+      return undefined;
+    });
+    const previousEnv = captureEnv();
+
+    process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+    process.env.RUNDOWN_TEST_MODE = "1";
+
+    vi.doMock("../../src/create-app.js", () => ({ createApp }));
+    vi.doMock("../../src/domain/workspace-link.js", () => ({
+      resolveWorkspaceLink: () => ({
+        status: "resolved",
+        linkPath: path.join(invocationDir, ".rundown", "workspace.link"),
+        relativeTarget: "../linked-workspace-root",
+        workspaceRoot: linkedWorkspaceRoot,
+      }),
+    }));
+    vi.doMock("../../src/infrastructure/adapters/config-dir-adapter.js", () => ({
+      createConfigDirAdapter: () => ({ resolve }),
+    }));
+
+    try {
+      const { parseCliArgs } = await import("../../src/presentation/cli.js");
+      await parseCliArgs([
+        "run",
+        "tasks.md",
+        "--worker",
+        "opencode run",
+      ]);
+    } catch (error) {
+      const message = String(error);
+      if (!/CLI exited with code \d+/.test(message)) {
+        throw error;
+      }
+    } finally {
+      restoreEnv(previousEnv);
+    }
+
+    expect(resolve).toHaveBeenNthCalledWith(1, linkedWorkspaceRoot);
+    expect(resolve).toHaveBeenNthCalledWith(2, invocationDir);
+    expect(createApp).toHaveBeenCalledWith(expect.objectContaining({
+      ports: expect.objectContaining({
+        configDir: {
+          configDir: invocationConfigDir,
+          isExplicit: false,
         },
       }),
     }));
