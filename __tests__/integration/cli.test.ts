@@ -4736,6 +4736,87 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(roadmapPath, "utf-8")).toContain("- [x] Draft release plan");
   });
 
+  it("run writes expanded successful source cli blocks into the staged prompt file", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "node -e \"process.stdout.write('prompt-file-success\\n')\"",
+        "```",
+        "",
+        "- [ ] Validate prompt file cli success",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--show-agent-output",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];process.stdout.write(fs.readFileSync(p,'utf-8'));",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("<command>node -e")).toBe(true);
+    expect(combinedOutput.includes("prompt-file-success")).toBe(true);
+  });
+
+  it("run writes failed source cli block diagnostics into the staged prompt file", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "node -e \"process.stderr.write('prompt-file-failure\\n');process.exit(7)\"",
+        "```",
+        "",
+        "- [ ] Validate prompt file cli failure",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--show-agent-output",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];process.stdout.write(fs.readFileSync(p,'utf-8'));",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes('`cli` fenced command failed in source markdown (exit 7)')).toBe(true);
+    expect(combinedOutput.includes('<command exit_code="7">node -e')).toBe(true);
+    expect(combinedOutput.includes("prompt-file-failure")).toBe(true);
+  });
+
   it("run --keep-artifacts writes cli fenced block stdout/stderr files", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
