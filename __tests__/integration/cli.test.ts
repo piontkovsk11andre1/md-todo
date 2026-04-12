@@ -8988,6 +8988,158 @@ describe.sequential("CLI integration", () => {
     ].join("\n"));
   });
 
+  it("run progresses each-loop lifecycle across pre-bake, per-item execution, reset, and parent completion", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "for-loop-lifecycle-worker.cjs");
+    const lifecycleLogPath = path.join(workspace, "for-loop-lifecycle.log");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "- [ ] each: Alpha, Beta",
+        "  - [ ] Do once",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+        `const sourcePath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const lifecycleLogPath = ${JSON.stringify(lifecycleLogPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "const currentMatch = source.match(/for-current\\s*:\\s*(.+)/i);",
+        "const current = currentMatch ? currentMatch[1].trim() : 'none';",
+        "if (selectedTask === 'Do once') {",
+        "  fs.appendFileSync(lifecycleLogPath, `${selectedTask}|${current}\\n`, 'utf-8');",
+        "}",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const runOnce = async (): Promise<number> => {
+      const result = await runCli([
+        "run",
+        "roadmap.md",
+        "--no-verify",
+        "--worker",
+        "node",
+        workerScriptPath.replace(/\\/g, "/"),
+      ], workspace);
+      return result.code;
+    };
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      expect(await runOnce()).toBe(0);
+      const source = fs.readFileSync(roadmapPath, "utf-8");
+      if (source.includes("- [x] each: Alpha, Beta")) {
+        break;
+      }
+    }
+    const lifecycle = fs.readFileSync(lifecycleLogPath, "utf-8").split("\n").filter(Boolean);
+    expect(lifecycle.some((line) => line === "Do once|Alpha")).toBe(true);
+    expect(lifecycle.length).toBeGreaterThanOrEqual(1);
+
+    const finalSource = fs.readFileSync(roadmapPath, "utf-8");
+    expect(finalSource.includes("- [x] each: Alpha, Beta")).toBe(true);
+    expect(finalSource.includes("for-item: Alpha")).toBe(true);
+    expect(finalSource.includes("for-item: Beta")).toBe(true);
+  });
+
+  it("run resumes interrupted for-loop from persisted for-current and retries only the current-item child", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "for-loop-resume-worker.cjs");
+    const lifecycleLogPath = path.join(workspace, "for-loop-resume.log");
+    const failureMarkerPath = path.join(workspace, "for-loop-beta-failure.marker");
+
+    fs.writeFileSync(roadmapPath, [
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [x] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+        `const sourcePath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const lifecycleLogPath = ${JSON.stringify(lifecycleLogPath.replace(/\\/g, "/"))};`,
+        `const failureMarkerPath = ${JSON.stringify(failureMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "const currentMatch = source.match(/for-current\\s*:\\s*(.+)/i);",
+        "const current = currentMatch ? currentMatch[1].trim() : 'none';",
+        "if (selectedTask === 'Do this' || selectedTask === 'Do that') {",
+        "  fs.appendFileSync(lifecycleLogPath, `${selectedTask}|${current}\\n`, 'utf-8');",
+        "}",
+        "if (selectedTask === 'Do that' && current === 'Beta' && !fs.existsSync(failureMarkerPath)) {",
+        "  fs.writeFileSync(failureMarkerPath, '1', 'utf-8');",
+        "  process.exit(1);",
+        "}",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const firstResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(firstResult.code).toBe(1);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [x] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"));
+
+    let resumed = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const retryResult = await runCli([
+        "run",
+        "roadmap.md",
+        "--no-verify",
+        "--worker",
+        "node",
+        workerScriptPath.replace(/\\/g, "/"),
+      ], workspace);
+      if (retryResult.code === 0) {
+        resumed = true;
+        break;
+      }
+    }
+    expect(resumed).toBe(true);
+
+    const lifecycle = fs.readFileSync(lifecycleLogPath, "utf-8").split("\n").filter(Boolean);
+    expect(lifecycle.filter((line) => line === "Do that|Beta").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("run --redo --all resets checked tasks before execution and runs all tasks", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");

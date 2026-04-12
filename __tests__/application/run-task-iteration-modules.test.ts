@@ -9,6 +9,7 @@ import { runTraceEnrichment } from "../../src/application/trace-enrichment.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
 import { includeHandler } from "../../src/domain/builtin-tools/include.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
+import { parseTasks } from "../../src/domain/parser.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import * as verifyRepairLoopModule from "../../src/application/verify-repair-loop.js";
 import * as runLifecycleModule from "../../src/application/run-lifecycle.js";
@@ -4971,6 +4972,438 @@ describe("complete-task-iteration", () => {
     expect(afterTaskCompleteSpy).not.toHaveBeenCalled();
     expect(finishRun).not.toHaveBeenCalled();
     expect(resetArtifacts).toHaveBeenCalledTimes(1);
+  });
+
+  it("advances loop metadata and keeps parent unchecked while iterations remain", async () => {
+    const loopTask = createTask(path.join(cwd, "tasks.md"), "for: Alpha, Beta", {
+      subItems: [
+        { text: "for-item: Alpha", line: 2, depth: 1 },
+        { text: "for-item: Beta", line: 3, depth: 1 },
+        { text: "for-current: Alpha", line: 4, depth: 1 },
+      ],
+      children: [
+        createTask(path.join(cwd, "tasks.md"), "Do this", {
+          index: 1,
+          line: 5,
+          depth: 1,
+          checked: true,
+        }),
+        createTask(path.join(cwd, "tasks.md"), "Do that", {
+          index: 2,
+          line: 6,
+          depth: 1,
+          checked: true,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [loopTask.file]: [
+        "- [ ] for: Alpha, Beta",
+        "  - for-item: Alpha",
+        "  - for-item: Beta",
+        "  - for-current: Alpha",
+        "  - [x] Do this",
+        "  - [x] Do that",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: loopTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+    const checkTaskSpy = vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem");
+    const resetArtifacts = vi.fn();
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts,
+      keepArtifacts: true,
+      effectiveRunAll: true,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: loopTask,
+      sourceText: fileSystem.readText(loopTask.file),
+      expandedSource: fileSystem.readText(loopTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: true, groupEnded: false });
+    expect(checkTaskSpy).not.toHaveBeenCalled();
+    expect(resetArtifacts).toHaveBeenCalledTimes(1);
+    expect(state.tasksCompleted).toBe(1);
+    expect(fileSystem.readText(loopTask.file)).toBe([
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [ ] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"));
+  });
+
+  it("completes loop parent after final iteration and clears for-current", async () => {
+    const loopTask = createTask(path.join(cwd, "tasks.md"), "for: Alpha, Beta", {
+      subItems: [
+        { text: "for-item: Alpha", line: 2, depth: 1 },
+        { text: "for-item: Beta", line: 3, depth: 1 },
+        { text: "for-current: Beta", line: 4, depth: 1 },
+      ],
+      children: [
+        createTask(path.join(cwd, "tasks.md"), "Do this", {
+          index: 1,
+          line: 5,
+          depth: 1,
+          checked: true,
+        }),
+        createTask(path.join(cwd, "tasks.md"), "Do that", {
+          index: 2,
+          line: 6,
+          depth: 1,
+          checked: true,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [loopTask.file]: [
+        "- [ ] for: Alpha, Beta",
+        "  - for-item: Alpha",
+        "  - for-item: Beta",
+        "  - for-current: Beta",
+        "  - [x] Do this",
+        "  - [x] Do that",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: loopTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+    const finishRun = vi.fn(async () => 0);
+    const resetArtifacts = vi.fn();
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts,
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: loopTask,
+      sourceText: fileSystem.readText(loopTask.file),
+      expandedSource: fileSystem.readText(loopTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, groupEnded: true });
+    expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, undefined);
+    expect(resetArtifacts).not.toHaveBeenCalled();
+    expect(fileSystem.readText(loopTask.file)).toBe([
+      "- [x] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - [x] Do this",
+      "  - [x] Do that",
+      "",
+    ].join("\n"));
+  });
+
+  it("resumes loop completion from persisted for-current cursor after interruption", async () => {
+    const loopTask = createTask(path.join(cwd, "tasks.md"), "for: Alpha, Beta", {
+      subItems: [
+        { text: "for-item: Alpha", line: 2, depth: 1 },
+        { text: "for-item: Beta", line: 3, depth: 1 },
+        { text: "for-current: Alpha", line: 4, depth: 1 },
+      ],
+      children: [
+        createTask(path.join(cwd, "tasks.md"), "Do this", {
+          index: 1,
+          line: 5,
+          depth: 1,
+          checked: true,
+        }),
+        createTask(path.join(cwd, "tasks.md"), "Do that", {
+          index: 2,
+          line: 6,
+          depth: 1,
+          checked: true,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [loopTask.file]: [
+        "- [ ] for: Alpha, Beta",
+        "  - for-item: Alpha",
+        "  - for-item: Beta",
+        "  - for-current: Alpha",
+        "  - [x] Do this",
+        "  - [x] Do that",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: loopTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const firstPassState = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+
+    const firstPassResult = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: firstPassState,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: true,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: loopTask,
+      sourceText: fileSystem.readText(loopTask.file),
+      expandedSource: fileSystem.readText(loopTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-pass-1",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-pass-1"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(firstPassResult).toEqual({ continueLoop: true, groupEnded: false });
+    expect(fileSystem.readText(loopTask.file)).toBe([
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [ ] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"));
+
+    // Simulate an interrupted process: file persists cursor+metadata, then the next
+    // run resumes and finishes child work for the current item before completion.
+    fileSystem.writeText(loopTask.file, [
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [x] Do this",
+      "  - [x] Do that",
+      "",
+    ].join("\n"));
+
+    const latestAfterResume = parseTasks(fileSystem.readText(loopTask.file), loopTask.file);
+    const resumedLoopTask = latestAfterResume.find((candidate) => candidate.text === "for: Alpha, Beta");
+    expect(resumedLoopTask).toBeDefined();
+
+    const resumeState = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+
+    const resumedResult = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: resumeState,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: true,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: resumedLoopTask!,
+      sourceText: fileSystem.readText(loopTask.file),
+      expandedSource: fileSystem.readText(loopTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-resume",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-resume"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(resumedResult).toEqual({ continueLoop: true, groupEnded: true });
+    expect(fileSystem.readText(loopTask.file)).toBe([
+      "- [x] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - [x] Do this",
+      "  - [x] Do that",
+      "",
+    ].join("\n"));
   });
 
   it("inserts trace statistics after checking the task when enabled", async () => {
