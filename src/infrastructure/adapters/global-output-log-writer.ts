@@ -32,28 +32,31 @@ export interface GlobalOutputLogWriter {
  * Errors are swallowed to preserve best-effort logging behavior.
  */
 export function createGlobalOutputLogWriter(filePath: string, fs: FileSystem): GlobalOutputLogWriter {
-  // Track whether the destination directory has already been created.
   let parentDirectoryEnsured = false;
+  const parentDirectory = path.dirname(filePath);
 
   return {
     write(entry) {
       try {
         if (!parentDirectoryEnsured) {
-          // Lazily create the log directory to avoid unnecessary filesystem work.
-          fs.mkdir(path.dirname(filePath), { recursive: true });
+          fs.mkdir(parentDirectory, { recursive: true });
           parentDirectoryEnsured = true;
         }
 
-        // Append each entry as an independent record to preserve chronological order.
         nodeFs.appendFileSync(filePath, serializeGlobalOutputLogEntry(entry), {
           encoding: "utf-8",
           flag: "a",
         });
-      } catch {
-        // best-effort logging: never interrupt command flow on log write failures
+      } catch (error) {
+        if (isErrnoWithCode(error, "ENOENT")) {
+          parentDirectoryEnsured = false;
+        }
       }
     },
-    // This implementation writes synchronously, so there is nothing to flush.
     flush() {},
   };
+}
+
+function isErrnoWithCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
