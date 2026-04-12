@@ -626,11 +626,18 @@ describe("run-task orchestration", () => {
   });
 
 
-  it("applies post-run reset only after a completed run", async () => {
+  it("applies stale-annotation cleanup during post-run reset", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [ ] cli: echo hello\n",
+      [taskFile]: [
+        "- [ ] cli: echo hello",
+        "  - fix: stale verification note",
+        "  - skipped: stale skip note",
+        "  - total time: 3s",
+        "    - execution: 2s",
+        "  - note: keep authored note",
+      ].join("\n"),
     });
     const { dependencies } = createDependencies({
       cwd,
@@ -642,14 +649,24 @@ describe("run-task orchestration", () => {
     const code = await createRunTask(dependencies)(createOptions({ verify: false, resetAfter: true }));
 
     expect(code).toBe(0);
-    expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
+    expect(fileSystem.readText(taskFile)).toBe([
+      "- [ ] cli: echo hello",
+      "  - note: keep authored note",
+    ].join("\n"));
   });
 
-  it("applies pre-run reset at the start of every round", async () => {
+  it("applies stale-annotation cleanup during pre-run --redo reset", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [x] cli: echo hello\n",
+      [taskFile]: [
+        "- [x] cli: echo hello",
+        "  - fix: stale verification note",
+        "  - skipped: stale skip note",
+        "  - total time: 5s",
+        "    - execution: 4s",
+        "  - note: keep authored note",
+      ].join("\n"),
     });
     const { dependencies } = createDependencies({
       cwd,
@@ -678,14 +695,24 @@ describe("run-task orchestration", () => {
 
     expect(code).toBe(0);
     expect(executeInlineCli).toHaveBeenCalledTimes(2);
-    expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
+    expect(fileSystem.readText(taskFile)).toBe([
+      "- [ ] cli: echo hello",
+      "  - note: keep authored note",
+    ].join("\n"));
   });
 
-  it("applies inter-round reset after successful non-final rounds", async () => {
+  it("applies stale-annotation cleanup during inter-round --reset-after resets", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [ ] cli: echo hello\n",
+      [taskFile]: [
+        "- [ ] cli: echo hello",
+        "  - fix: stale verification note",
+        "  - skipped: stale skip note",
+        "  - total time: 1s",
+        "    - execution: 1s",
+        "  - note: keep authored note",
+      ].join("\n"),
     });
     const { dependencies } = createDependencies({
       cwd,
@@ -714,7 +741,10 @@ describe("run-task orchestration", () => {
 
     expect(code).toBe(0);
     expect(executeInlineCli).toHaveBeenCalledTimes(2);
-    expect(fileSystem.readText(taskFile)).toContain("- [ ] cli: echo hello");
+    expect(fileSystem.readText(taskFile)).toBe([
+      "- [ ] cli: echo hello",
+      "  - note: keep authored note",
+    ].join("\n"));
   });
 
   it("preserves single-pass behavior for --dry-run across multiple rounds", async () => {
