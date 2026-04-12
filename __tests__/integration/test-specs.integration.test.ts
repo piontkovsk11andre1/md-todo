@@ -144,9 +144,10 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     expect(combinedOutput).toContain("Missing assertion text for `test new`.");
   });
 
-  it("rundown test resolves design from docs/current and ignores revision archives", async () => {
+  it("rundown test resolves design from docs/current and ignores revision archives without root Design.md", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictedState(workspace, { template: "{{design}}" });
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
     fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
     fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n\nPrimary current design.\n", "utf-8");
@@ -178,6 +179,7 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "Design.md"))).toBe(false);
     const combinedOutput = stripAnsi([
       ...result.logs,
       ...result.errors,

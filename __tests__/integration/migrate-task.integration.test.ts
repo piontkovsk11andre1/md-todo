@@ -49,6 +49,54 @@ const describeIfSaveMigrateAvailable = hasMigrateCommand
   : describe.skip;
 
 describeIfMigrateAvailable("migrate-task integration", () => {
+  it("generates migrations from managed docs context without requiring root Design.md", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n\nManaged docs design source.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "api.md"), "Current API details.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "# Revision\n\nLegacy revision text.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "migrate.md"),
+      [
+        "DESIGN={{design}}",
+        "HAS_MANAGED={{designContextHasManagedDocs}}",
+        "SOURCES={{designContextSourceReferences}}",
+        "DIFF={{revisionDiffSummary}}",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildTemplateVarsAssertionWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "Design.md"))).toBe(false);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".template-vars-prompt.txt"), "utf-8");
+    expect(capturedPrompt).toContain("Managed docs design source.");
+    expect(capturedPrompt).toContain("Current API details.");
+    expect(capturedPrompt).not.toContain("Legacy revision text.");
+    expect(capturedPrompt).toContain("HAS_MANAGED=true");
+    expect(capturedPrompt).toContain("SOURCES=- ");
+    expect(capturedPrompt).toMatch(/docs[\\/]current/);
+    expect(capturedPrompt).toMatch(/docs[\\/]rev\.1/);
+    expect(capturedPrompt).toContain("DIFF=Compared rev.1 -> current:");
+    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+  });
+
   it("exposes revision-aware migrate template aliases without breaking legacy fields", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
