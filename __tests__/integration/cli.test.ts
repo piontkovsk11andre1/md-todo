@@ -117,6 +117,11 @@ async function runCli(args: string[], cwd: string): Promise<{
 
   try {
     const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    if (previousEnv === undefined) {
+      delete process.env.RUNDOWN_DISABLE_AUTO_PARSE;
+    } else {
+      process.env.RUNDOWN_DISABLE_AUTO_PARSE = previousEnv;
+    }
     await parseCliArgs(normalizedArgs);
     return { code: 0, logs, errors, stdoutWrites, stderrWrites };
   } catch (error) {
@@ -9431,6 +9436,57 @@ describe.sequential("CLI integration", () => {
     const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
     expect(capturedPrompt).toContain("CONFIG_DIR_OVERRIDE_MARKER");
     expect(capturedPrompt).not.toContain("WORKSPACE_CONFIG_MARKER");
+    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+  });
+
+  it("root interactive help expands rundown --help --everything in help templates", async () => {
+    const workspace = makeTempWorkspace();
+    const customConfigDir = path.join(workspace, "custom-config");
+    const workerScriptPath = path.join(workspace, "capture-help-prompt-from-cli-block.cjs");
+    const promptCapturePath = path.join(workspace, "captured-help-prompt-from-cli-block.txt");
+
+    fs.mkdirSync(customConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(customConfigDir, "config.json"), JSON.stringify({
+      workers: {
+        tui: ["node", workerScriptPath.replace(/\\/g, "/")],
+      },
+    }, null, 2), "utf-8");
+    fs.writeFileSync(path.join(customConfigDir, "help.md"), [
+      "# Help Template",
+      "",
+      "before-cli-help-output",
+      "```cli",
+      "rundown --help --everything",
+      "```",
+      "after-cli-help-output",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(workerScriptPath, [
+      "const fs = require('node:fs');",
+      "const promptPath = process.argv[process.argv.length - 1];",
+      `const capturePath = ${JSON.stringify(promptCapturePath.replace(/\\/g, "/"))};`,
+      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+      "fs.writeFileSync(capturePath, prompt, 'utf-8');",
+      "process.exit(0);",
+      "",
+    ].join("\n"), "utf-8");
+
+    const result = await withTerminalTty(true, () => runCli([
+      "--config-dir",
+      customConfigDir,
+    ], workspace));
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(promptCapturePath)).toBe(true);
+    const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
+    expect(capturedPrompt).toContain("before-cli-help-output");
+    expect(capturedPrompt).toContain("<command>rundown --help --everything</command>");
+    expect(capturedPrompt).toContain("Usage: rundown [options] [command]");
+    expect(capturedPrompt).toContain("Commands:\n");
+    expect(capturedPrompt).toContain("Options:\n");
+    expect(capturedPrompt).toContain("after-cli-help-output");
+    expect(capturedPrompt).not.toContain("```cli");
     expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
   });
 
