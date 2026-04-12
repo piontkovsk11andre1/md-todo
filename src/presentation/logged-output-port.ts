@@ -154,8 +154,7 @@ function resolveLogStream(event: ApplicationOutputEvent): GlobalOutputLogStream 
 function resolveLogMessage(event: ApplicationOutputEvent): string {
   switch (event.kind) {
     case "group-start": {
-      const counter = event.counter ? `[${event.counter.current}/${event.counter.total}] ` : "";
-      return `${counter}${event.label}`;
+      return formatGroupStartMessage(event.label, event.counter);
     }
     case "group-end":
       return event.message ? `${event.status} - ${event.message}` : event.status;
@@ -195,6 +194,29 @@ function resolveLogMessage(event: ApplicationOutputEvent): string {
     default:
       return "";
   }
+}
+
+/**
+ * Formats a deterministic plain-text group-start message.
+ */
+function formatGroupStartMessage(
+  label: string,
+  counter?: { current: number; total: number },
+): string {
+  if (!counter) {
+    return label;
+  }
+
+  const hasValidCounter = Number.isFinite(counter.current)
+    && Number.isFinite(counter.total)
+    && counter.total > 0;
+  if (!hasValidCounter) {
+    return label;
+  }
+
+  const current = Math.max(0, Math.floor(counter.current));
+  const total = Math.max(1, Math.floor(counter.total));
+  return `[${current}/${total}] ${label}`;
 }
 
 /**

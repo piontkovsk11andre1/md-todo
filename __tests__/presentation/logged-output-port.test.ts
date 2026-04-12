@@ -446,6 +446,46 @@ describe("createLoggedOutputPort", () => {
     }));
   });
 
+  it("falls back to plain group label when counters are invalid", () => {
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: vi.fn() },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["all"],
+        cwd: "/workspace",
+        pid: 791,
+        version: "1.2.3",
+        sessionId: "session-group-invalid-counter",
+      },
+      now: () => "2026-03-28T14:10:00.000Z",
+    });
+
+    port.emit({
+      kind: "group-start",
+      label: "Task with invalid counter",
+      counter: { current: Number.NaN, total: Number.POSITIVE_INFINITY },
+    });
+    port.emit({
+      kind: "group-start",
+      label: "Task with non-positive total",
+      counter: { current: 3, total: 0 },
+    });
+
+    expect(writer.write).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "group-start",
+      message: "Task with invalid counter",
+    }));
+    expect(writer.write).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "group-start",
+      message: "Task with non-positive total",
+    }));
+  });
+
   it("formats progress messages safely when counters are invalid or non-positive", () => {
     const writer = {
       write: vi.fn(),
