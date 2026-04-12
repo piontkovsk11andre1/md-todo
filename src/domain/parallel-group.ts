@@ -14,7 +14,7 @@ const BUILTIN_TOOL_RESOLVER: ToolResolverPort = {
  * Returns true when task text resolves to a parallel-group control-flow task.
  *
  * This supports both direct prefixes (`parallel: setup`) and composed prefix
- * chains (`profile: fast, parallel: setup`).
+ * chains (`profile=fast, parallel: setup`).
  */
 export function isParallelGroupTaskText(taskText: string, toolResolver?: ToolResolverPort): boolean {
   if (classifyTaskIntent(taskText, toolResolver).intent === "parallel-group") {

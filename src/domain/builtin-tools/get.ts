@@ -5,8 +5,13 @@ import type { ProcessRunMode } from "../ports/process-runner.js";
 const GET_RESULT_PREFIX_PATTERN = /^get-result\s*:\s*(.*)$/i;
 const GET_MODE_PREFIX_PATTERN = /^get-mode\s*:\s*(.*)$/i;
 const GET_POLICY_PREFIX_PATTERN = /^get-policy\s*:\s*(.*)$/i;
+const GET_EMPTY_MODE_PREFIX_PATTERN = /^get-empty\s*:\s*(.*)$/i;
+const GET_EMPTY_POLICY_PREFIX_PATTERN = /^get-empty-policy\s*:\s*(.*)$/i;
+
+const GET_EMPTY_RESULT_MARKER = "(empty)";
 
 type GetRerunPolicy = "reuse" | "refresh";
+type GetEmptyResultPolicy = "marker" | "fail";
 
 interface ImmediateChildLine {
   index: number;
@@ -59,6 +64,17 @@ function parseRerunPolicyValue(rawValue: string): GetRerunPolicy | undefined {
   return undefined;
 }
 
+function parseEmptyResultPolicyValue(rawValue: string): GetEmptyResultPolicy | undefined {
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === "marker") {
+    return "marker";
+  }
+  if (normalized === "fail") {
+    return "fail";
+  }
+  return undefined;
+}
+
 function resolveRerunPolicy(subItems: readonly { text: string }[]):
   | { ok: true; policy: GetRerunPolicy }
   | { ok: false; invalidValue: string } {
@@ -73,6 +89,29 @@ function resolveRerunPolicy(subItems: readonly { text: string }[]):
 
     const rawValue = normalizeResultValue(match[1] ?? "");
     const parsed = parseRerunPolicyValue(rawValue);
+    if (!parsed) {
+      return { ok: false, invalidValue: rawValue };
+    }
+    policy = parsed;
+  }
+
+  return { ok: true, policy };
+}
+
+function resolveEmptyResultPolicy(subItems: readonly { text: string }[]):
+  | { ok: true; policy: GetEmptyResultPolicy }
+  | { ok: false; invalidValue: string } {
+  let policy: GetEmptyResultPolicy = "marker";
+
+  for (const subItem of subItems) {
+    const match = subItem.text.match(GET_EMPTY_MODE_PREFIX_PATTERN)
+      ?? subItem.text.match(GET_EMPTY_POLICY_PREFIX_PATTERN);
+    if (!match) {
+      continue;
+    }
+
+    const rawValue = normalizeResultValue(match[1] ?? "");
+    const parsed = parseEmptyResultPolicyValue(rawValue);
     if (!parsed) {
       return { ok: false, invalidValue: rawValue };
     }
@@ -224,6 +263,15 @@ export const getHandler: ToolHandlerFn = async (context) => {
     };
   }
 
+  const emptyResultPolicyResolution = resolveEmptyResultPolicy(context.task.subItems);
+  if (!emptyResultPolicyResolution.ok) {
+    return {
+      exitCode: 1,
+      failureMessage: `Get empty-result policy must be \`marker\` or \`fail\`; received: ${emptyResultPolicyResolution.invalidValue || "(empty)"}.`,
+      failureReason: "Get empty-result policy is invalid.",
+    };
+  }
+
   const existingResults = findExistingResults(context.task.subItems);
   if (existingResults.length > 0 && policyResolution.policy === "reuse") {
     context.emit({
@@ -287,10 +335,31 @@ export const getHandler: ToolHandlerFn = async (context) => {
 
   const extractedResults = extractResults(runResult.stdout);
   if (extractedResults.length === 0) {
+    if (emptyResultPolicyResolution.policy === "fail") {
+      context.emit({
+        kind: "warn",
+        message: "Get extraction returned no results; failing task because empty-result policy is set to fail.",
+      });
+      return {
+        exitCode: 1,
+        failureMessage: "Get extraction returned no results (empty-result policy: fail).",
+        failureReason: "Get extraction produced an empty result set and empty-result policy is fail.",
+      };
+    }
+
+    const source = context.fileSystem.readText(context.task.file);
+    const updatedSource = upsertResultSubItems(source, context, [GET_EMPTY_RESULT_MARKER]);
+    if (updatedSource !== source) {
+      context.fileSystem.writeText(context.task.file, updatedSource);
+    }
+
+    context.emit({
+      kind: "info",
+      message: "Get extraction returned no results; persisted explicit empty marker as `get-result: (empty)`.",
+    });
     return {
-      exitCode: 1,
-      failureMessage: "Get extraction returned no results.",
-      failureReason: "Get extraction produced an empty result set.",
+      skipExecution: true,
+      shouldVerify: false,
     };
   }
 

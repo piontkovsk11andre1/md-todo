@@ -212,7 +212,7 @@ describe("builtin-tools/get getHandler", () => {
     );
   });
 
-  it("fails when extraction succeeds but returns no values", async () => {
+  it("persists an explicit empty marker when extraction succeeds but returns no values", async () => {
     const { context, writeText } = createContext({
       source: "- [ ] get: All current names of this and that\n",
       subItems: [],
@@ -225,9 +225,34 @@ describe("builtin-tools/get getHandler", () => {
 
     const result = await getHandler(context);
 
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
+    expect(writtenSource).toBe(
+      "- [ ] get: All current names of this and that\n"
+      + "  - get-result: (empty)\n",
+    );
+  });
+
+  it("fails empty extraction when get-empty policy is fail", async () => {
+    const { context, writeText } = createContext({
+      source: "- [ ] get: All current names of this and that\n  - get-empty: fail\n",
+      subItems: [{ text: "get-empty: fail", line: 2, depth: 1 }],
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: '{"results":[]}',
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
     expect(result.exitCode).toBe(1);
-    expect(result.failureMessage).toBe("Get extraction returned no results.");
-    expect(result.failureReason).toBe("Get extraction produced an empty result set.");
+    expect(result.failureMessage).toBe("Get extraction returned no results (empty-result policy: fail).");
+    expect(result.failureReason).toBe("Get extraction produced an empty result set and empty-result policy is fail.");
     expect(writeText).not.toHaveBeenCalled();
   });
 

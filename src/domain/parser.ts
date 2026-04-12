@@ -50,7 +50,7 @@ export interface Task {
   directiveProfile?: string;
   /** CLI args inherited from parent `cli-args:` directive items. */
   directiveCliArgs?: string;
-  /** Profile declared as a task-level `profile:` sub-item for prefix-intent tasks. */
+  /** Profile declared as a task-level `profile=` sub-item for prefix-intent tasks. */
   taskProfile?: string;
 }
 
