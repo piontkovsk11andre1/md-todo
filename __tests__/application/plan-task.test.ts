@@ -339,6 +339,48 @@ describe("plan-task", () => {
     expect(prompt).toContain("append=||");
   });
 
+  it("keeps custom plan templates backward compatible when guidance placeholders are absent", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const markdownContent = "# Roadmap\nBuild a new release process.\n";
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: markdownContent,
+    });
+    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
+    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
+
+    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
+      if (filePath === markdownFile) {
+        return markdownContent;
+      }
+      if (filePath === prependPath) {
+        return "Prefer early setup checks.";
+      }
+      if (filePath === appendPath) {
+        return "Prefer final validation tasks.";
+      }
+      return "";
+    });
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
+      "# Custom Plan Prompt",
+      "Task={{task}}",
+      "File={{file}}",
+    ].join("\n"));
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("# Custom Plan Prompt");
+    expect(prompt).toContain("Task=Roadmap");
+    expect(prompt).toContain(`File=${markdownFile}`);
+    expect(prompt).not.toContain("Prefer early setup checks.");
+    expect(prompt).not.toContain("Prefer final validation tasks.");
+  });
+
   it("includes memory path and summary in plan prompt without memory body text", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
