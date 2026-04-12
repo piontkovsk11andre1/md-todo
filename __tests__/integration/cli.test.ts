@@ -4169,6 +4169,75 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(localLogPath)).toBe(false);
   });
 
+  it("writes global output log under an explicit relative --config-dir", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "project");
+    const explicitConfigDir = path.join(workspace, "custom-config");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(explicitConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");
+
+    const result = await runCli([
+      "next",
+      "tasks.md",
+      "--config-dir",
+      "../custom-config",
+    ], projectDir);
+
+    expect(result.code).toBe(0);
+
+    const explicitLogPath = path.join(explicitConfigDir, "logs", "output.jsonl");
+    const localLogPath = path.join(projectDir, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(explicitLogPath)).toBe(true);
+    expect(fs.existsSync(localLogPath)).toBe(false);
+  });
+
+  it("writes global output log under linked workspace config dir when workspace.link resolves", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceWorkspace = path.join(workspace, "source-workspace");
+    const linkedInvocationDir = path.join(workspace, "linked-invocation");
+    const linkedConfigDir = path.join(sourceWorkspace, ".rundown");
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.mkdirSync(linkedConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(linkedConfigDir, "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, "tasks.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const result = await runCli(["next", path.join(sourceWorkspace, "tasks.md")], linkedInvocationDir);
+    expect(result.code).toBe(0);
+
+    const linkedLogPath = path.join(linkedConfigDir, "logs", "output.jsonl");
+    const invocationLogPath = path.join(linkedInvocationDir, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(linkedLogPath)).toBe(true);
+    expect(fs.existsSync(invocationLogPath)).toBe(false);
+  });
+
+  it("falls back to invocation .rundown output log path when linked workspace has no discovered config dir", async () => {
+    const workspace = makeTempWorkspace();
+    const sourceWorkspace = path.join(workspace, "source-workspace");
+    const linkedInvocationDir = path.join(workspace, "linked-invocation");
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, "tasks.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const result = await runCli(["next", path.join(sourceWorkspace, "tasks.md")], linkedInvocationDir);
+    expect(result.code).toBe(0);
+
+    const invocationLogPath = path.join(linkedInvocationDir, ".rundown", "logs", "output.jsonl");
+    const linkedLogPath = path.join(sourceWorkspace, ".rundown", "logs", "output.jsonl");
+    expect(fs.existsSync(invocationLogPath)).toBe(true);
+    expect(fs.existsSync(linkedLogPath)).toBe(false);
+  });
+
   it("writes stable single-line JSONL entries suitable for Promtail ingestion", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "tasks.md"), "- [ ] Ship release notes\n", "utf-8");

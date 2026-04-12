@@ -44,6 +44,7 @@ export function createAppForInvocation(
     logState,
   }: CreateAppForInvocationDependencies,
 ): CreateAppForInvocationResult {
+  const invocationCwd = process.cwd();
   // Reuse injected state when available; otherwise create a new invocation log context.
   const invocationLogState = logState ?? createCliInvocationLogState(argv, {
     cliVersion,
@@ -52,7 +53,7 @@ export function createAppForInvocation(
     resolveConfigDirForInvocation: (invocationArgv, cwd) => resolveConfigDirForInvocation(invocationArgv, cwd),
   });
   // Resolve config directory once so both app behavior and logs use the same value.
-  const configDirOverride = resolveConfigDirForInvocation(argv);
+  const configDirOverride = resolveConfigDirForInvocation(argv, invocationLogState.context.cwd || invocationCwd);
   // Wrap CLI output to ensure all user-facing messages are captured in invocation logs.
   const loggedOutputPort = createLoggedOutputPort({
     output: cliOutputPort,
@@ -87,7 +88,7 @@ export function resolveConfigDirForInvocation(
     : undefined;
   if (explicitConfigDir) {
     return {
-      configDir: path.resolve(explicitConfigDir),
+      configDir: path.resolve(cwd, explicitConfigDir),
       isExplicit: true,
     };
   }
