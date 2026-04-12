@@ -72,21 +72,21 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("## Rundown feature reference for planning");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`verify:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`fast:`");
-    expect(DEFAULT_PLAN_TEMPLATE).toContain("`profile: <name>`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`profile=<name>`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`memory:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`include: <path>`");
-    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile: fast, verify: release checks pass`");
-    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile: complex; memory: record migration constraints`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked items");
 
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("## Rundown feature reference for deep planning");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`verify:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`fast:`");
-    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`profile: <name>`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`profile=<name>`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memory:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`include: <path>`");
-    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile: fast, verify: release checks pass`");
-    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile: complex; memory: record migration constraints`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
   });
 
   it("maps sample prompts to rundown workflows and preserves migration + fallback guidance in help template", () => {

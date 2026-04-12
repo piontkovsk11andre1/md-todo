@@ -2015,8 +2015,8 @@ describe("run-task-execution helpers", () => {
     const taskFile = `${cwd}/tasks.md`;
     const { dependencies, events } = createDependencies({
       cwd,
-      task: createTask(taskFile, "force: profile: fast, verify: tests pass"),
-      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] force: profile: fast, verify: tests pass\n" }),
+      task: createTask(taskFile, "force: profile=fast, verify: tests pass"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] force: profile=fast, verify: tests pass\n" }),
       gitClient: createGitClientMock(),
       workerConfig: {
         workers: {
@@ -2564,14 +2564,14 @@ describe("run-task-execution helpers", () => {
     const taskFile = `${cwd}/tasks.md`;
     const fileSystem = createInMemoryFileSystem({
       [taskFile]: [
-        "- [ ] profile: fast, parallel: setup all environments",
+        "- [ ] profile=fast, parallel: setup all environments",
         "  - [x] cli: npm install",
         "  - [x] cli: pip install -r requirements.txt",
       ].join("\n") + "\n",
     });
     const { dependencies } = createDependencies({
       cwd,
-      task: createTask(taskFile, "profile: fast, parallel: setup all environments"),
+      task: createTask(taskFile, "profile=fast, parallel: setup all environments"),
       fileSystem,
       gitClient: createGitClientMock(),
     });
@@ -2588,7 +2588,7 @@ describe("run-task-execution helpers", () => {
     expect(dependencies.workerExecutor.executeInlineCli).not.toHaveBeenCalled();
     expect(dependencies.workerExecutor.executeRundownTask).not.toHaveBeenCalled();
     expect(fileSystem.readText(taskFile)).toBe([
-      "- [x] profile: fast, parallel: setup all environments",
+      "- [x] profile=fast, parallel: setup all environments",
       "  - [x] cli: npm install",
       "  - [x] cli: pip install -r requirements.txt",
       "",

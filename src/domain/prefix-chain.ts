@@ -205,7 +205,7 @@ function splitAtToolBoundaries(
  *
  * Supports:
  * - Single prefix:    `verify: tests pass`
- * - Chained prefixes: `profile: fast, verify: tests pass`
+ * - Chained prefixes: `profile=fast, verify: tests pass`
  * - Mixed delimiters: `profile: fast; memory: capture notes`
  * - No prefix:        `plain task text` → empty chain
  *

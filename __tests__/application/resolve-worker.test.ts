@@ -32,7 +32,7 @@ describe("resolve-worker", () => {
       source: "---\nprofile: complex\n---\n\n- [ ] discuss item\n",
       task: {
         directiveProfile: "fast",
-        subItems: [{ text: "profile: ignored", line: 2, depth: 1 }],
+        subItems: [{ text: "profile=ignored", line: 2, depth: 1 }],
       },
       cliWorkerCommand: [],
       emit: (event) => events.push(event),
@@ -45,7 +45,7 @@ describe("resolve-worker", () => {
       "gpt-5.3-codex",
     ]);
     expect(events.some((event) => event.kind === "warn"
-      && event.message === "\"profile: ignored\" as a task sub-item is not supported — use it as a parent list item or in file frontmatter.")).toBe(true);
+      && event.message === "\"profile=ignored\" as a task sub-item is not supported — use it as a parent list item or in file frontmatter.")).toBe(true);
   });
 
   it("emits worker source description only when verbose is true", () => {
@@ -147,7 +147,7 @@ describe("resolve-worker", () => {
       task: {
         directiveProfile: "directiveProfile",
         taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        subItems: [{ text: "profile=taskProfile", line: 5, depth: 1 }],
       },
       cliWorkerCommand: [],
       taskIntent: "tool-expansion",
@@ -203,7 +203,7 @@ describe("resolve-worker", () => {
       task: {
         directiveProfile: "slow",
         taskProfile: "fast",
-        subItems: [{ text: "profile: fast", line: 2, depth: 1 }],
+        subItems: [{ text: "profile=fast", line: 2, depth: 1 }],
       },
       cliWorkerCommand: [],
       taskIntent: "verify-only",
@@ -237,7 +237,7 @@ describe("resolve-worker", () => {
       task: {
         directiveProfile: "directiveProfile",
         taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        subItems: [{ text: "profile=taskProfile", line: 5, depth: 1 }],
       },
       cliWorkerCommand: [],
       taskIntent: "verify-only",
@@ -295,7 +295,7 @@ describe("resolve-worker", () => {
       task: {
         directiveProfile: "directiveProfile",
         taskProfile: "taskProfile",
-        subItems: [{ text: "profile: taskProfile", line: 5, depth: 1 }],
+        subItems: [{ text: "profile=taskProfile", line: 5, depth: 1 }],
       },
       cliWorkerCommand: [],
       taskIntent: "memory-capture",
@@ -433,7 +433,7 @@ describe("resolve-worker", () => {
       },
       source: "- [ ] memory: release context\n",
       task: {
-        subItems: [{ text: "profile: fast", line: 2, depth: 1 }],
+        subItems: [{ text: "profile=fast", line: 2, depth: 1 }],
       },
       cliWorkerCommand: [],
       emit: (event) => events.push(event),

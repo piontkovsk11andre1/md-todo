@@ -1353,7 +1353,7 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("## Rundown feature reference for planning");
     expect(firstPrompt).toContain("`verify:` skips execution and runs only the verification phase");
     expect(firstPrompt).toContain("`fast:` executes the task but skips the verification phase entirely");
-    expect(firstPrompt).toContain("`profile: <name>`");
+    expect(firstPrompt).toContain("`profile=<name>`");
     expect(firstPrompt).toContain("`memory:` for tasks that should capture reusable context");
     expect(firstPrompt).toContain("`include: <path>`");
     expect(firstPrompt).toContain("Prefix composition is supported with `, ` or `; ` separators");

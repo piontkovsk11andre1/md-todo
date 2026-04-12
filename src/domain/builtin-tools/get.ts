@@ -3,6 +3,10 @@ import type { ToolHandlerContext, ToolHandlerFn } from "../ports/tool-handler-po
 import type { ProcessRunMode } from "../ports/process-runner.js";
 
 const GET_RESULT_PREFIX_PATTERN = /^get-result\s*:\s*(.*)$/i;
+const GET_MODE_PREFIX_PATTERN = /^get-mode\s*:\s*(.*)$/i;
+const GET_POLICY_PREFIX_PATTERN = /^get-policy\s*:\s*(.*)$/i;
+
+type GetRerunPolicy = "reuse" | "refresh";
 
 interface ImmediateChildLine {
   index: number;
@@ -42,6 +46,40 @@ function findExistingResults(subItems: readonly { text: string }[]): string[] {
   }
 
   return results;
+}
+
+function parseRerunPolicyValue(rawValue: string): GetRerunPolicy | undefined {
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === "reuse") {
+    return "reuse";
+  }
+  if (normalized === "refresh") {
+    return "refresh";
+  }
+  return undefined;
+}
+
+function resolveRerunPolicy(subItems: readonly { text: string }[]):
+  | { ok: true; policy: GetRerunPolicy }
+  | { ok: false; invalidValue: string } {
+  let policy: GetRerunPolicy = "reuse";
+
+  for (const subItem of subItems) {
+    const match = subItem.text.match(GET_MODE_PREFIX_PATTERN)
+      ?? subItem.text.match(GET_POLICY_PREFIX_PATTERN);
+    if (!match) {
+      continue;
+    }
+
+    const rawValue = normalizeResultValue(match[1] ?? "");
+    const parsed = parseRerunPolicyValue(rawValue);
+    if (!parsed) {
+      return { ok: false, invalidValue: rawValue };
+    }
+    policy = parsed;
+  }
+
+  return { ok: true, policy };
 }
 
 function tryParseJsonResults(raw: string): string[] | null {
@@ -177,16 +215,32 @@ export const getHandler: ToolHandlerFn = async (context) => {
     };
   }
 
+  const policyResolution = resolveRerunPolicy(context.task.subItems);
+  if (!policyResolution.ok) {
+    return {
+      exitCode: 1,
+      failureMessage: `Get rerun policy must be \`reuse\` or \`refresh\`; received: ${policyResolution.invalidValue || "(empty)"}.`,
+      failureReason: "Get rerun policy is invalid.",
+    };
+  }
+
   const existingResults = findExistingResults(context.task.subItems);
-  if (existingResults.length > 0) {
+  if (existingResults.length > 0 && policyResolution.policy === "reuse") {
     context.emit({
       kind: "info",
-      message: "Get results already present; reusing existing values.",
+      message: "Get results already present; reusing existing values (rerun policy: reuse).",
     });
     return {
       skipExecution: true,
       shouldVerify: false,
     };
+  }
+
+  if (existingResults.length > 0 && policyResolution.policy === "refresh") {
+    context.emit({
+      kind: "info",
+      message: "Get rerun policy set to refresh; replacing existing get-result values.",
+    });
   }
 
   const extractionPrompt = buildExtractionPrompt(query);
@@ -248,7 +302,9 @@ export const getHandler: ToolHandlerFn = async (context) => {
 
   context.emit({
     kind: "info",
-    message: "Get extraction generated " + extractedResults.length + " result(s).",
+    message: existingResults.length > 0
+      ? "Get extraction refreshed " + extractedResults.length + " result(s)."
+      : "Get extraction generated " + extractedResults.length + " result(s).",
   });
   return {
     skipExecution: true,

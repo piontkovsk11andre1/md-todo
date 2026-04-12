@@ -137,6 +137,52 @@ describe("builtin-tools/get getHandler", () => {
     expect(writeText).not.toHaveBeenCalled();
   });
 
+  it("refreshes existing get-result sub-items when get-mode is refresh", async () => {
+    const source = "- [ ] get: All current names of this and that\n  - get-mode: refresh\n  - get-result: This\n";
+    const { context, writeText, runWorker } = createContext({
+      source,
+      subItems: [
+        { text: "get-mode: refresh", line: 2, depth: 1 },
+        { text: "get-result: This", line: 3, depth: 1 },
+      ],
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: '{"results":["That"]}',
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    expect(runWorker).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
+    expect(writtenSource).toBe(
+      "- [ ] get: All current names of this and that\n"
+      + "  - get-mode: refresh\n"
+      + "  - get-result: That\n",
+    );
+  });
+
+  it("fails when get-mode value is invalid", async () => {
+    const { context, writeText, runWorker } = createContext({
+      source: "- [ ] get: All current names of this and that\n  - get-mode: replace\n",
+      subItems: [{ text: "get-mode: replace", line: 2, depth: 1 }],
+    });
+
+    const result = await getHandler(context);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.failureMessage).toBe("Get rerun policy must be `reuse` or `refresh`; received: replace.");
+    expect(result.failureReason).toBe("Get rerun policy is invalid.");
+    expect(runWorker).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it("extracts results and writes get-result sub-items", async () => {
     const source = "- [ ] get: All current names of this and that\n  - note: keep context\n";
     const { context, writeText, runWorker } = createContext({
