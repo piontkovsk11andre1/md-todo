@@ -5173,6 +5173,82 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Dry run — would run"))).toBe(false);
   });
 
+  it("run --print-prompt exposes workspace context vars in non-linked and linked invocations", async () => {
+    const readWorkspaceContextValue = (output: string, key: string): string => {
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = output.match(new RegExp(`${escapedKey}=([^\\r\\n]*)`));
+      return match?.[1] ?? "";
+    };
+
+    const nonLinkedWorkspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(nonLinkedWorkspace, "roadmap.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const nonLinkedResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], nonLinkedWorkspace);
+
+    const nonLinkedOutput = [
+      ...nonLinkedResult.logs,
+      ...nonLinkedResult.errors,
+      ...nonLinkedResult.stdoutWrites,
+      ...nonLinkedResult.stderrWrites,
+    ].join("\n");
+    expect(nonLinkedResult.code).toBe(0);
+    expect(readWorkspaceContextValue(nonLinkedOutput, "invocationDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(nonLinkedOutput, "isLinkedWorkspace")).toBe("false");
+
+    const linkedSandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(linkedSandbox, "source-workspace");
+    const linkedInvocationDir = path.join(linkedSandbox, "linked-invocation");
+    const workspaceLinkPath = path.join(linkedInvocationDir, ".rundown", "workspace.link");
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      workspaceLinkPath,
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, "roadmap.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const linkedResult = await runCli([
+      "run",
+      path.join(sourceWorkspace, "roadmap.md"),
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], linkedInvocationDir);
+
+    const linkedOutput = [
+      ...linkedResult.logs,
+      ...linkedResult.errors,
+      ...linkedResult.stdoutWrites,
+      ...linkedResult.stderrWrites,
+    ].join("\n");
+    expect(linkedResult.code).toBe(0);
+    const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
+    const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
+    const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
+    expect(linkedInvocationValue.length > 0).toBe(true);
+    expect(linkedWorkspaceValue.length > 0).toBe(true);
+    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
+    expect(linkedInvocationValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
+    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
+    expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
+  });
+
   it("run --config-dir uses templates from the specified directory", async () => {
     const workspace = makeTempWorkspace();
     const projectDir = path.join(workspace, "project");
@@ -9885,6 +9961,98 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("plan-cli-block-output")).toBe(true);
   });
 
+  it("plan --print-prompt exposes workspace context vars in non-linked and linked invocations", async () => {
+    const readWorkspaceContextValue = (output: string, key: string): string => {
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = output.match(new RegExp(`${escapedKey}=([^\\r\\n]*)`));
+      return match?.[1] ?? "";
+    };
+
+    const nonLinkedWorkspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(nonLinkedWorkspace, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.mkdirSync(path.join(nonLinkedWorkspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(nonLinkedWorkspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(nonLinkedWorkspace, ".rundown", "plan.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const nonLinkedResult = await runCli([
+      "plan",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], nonLinkedWorkspace);
+
+    const nonLinkedOutput = [
+      ...nonLinkedResult.logs,
+      ...nonLinkedResult.errors,
+      ...nonLinkedResult.stdoutWrites,
+      ...nonLinkedResult.stderrWrites,
+    ].join("\n");
+    expect(nonLinkedResult.code).toBe(0);
+    expect(readWorkspaceContextValue(nonLinkedOutput, "invocationDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(nonLinkedOutput, "isLinkedWorkspace")).toBe("false");
+
+    const linkedSandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(linkedSandbox, "source-workspace");
+    const linkedInvocationDir = path.join(linkedSandbox, "linked-invocation");
+    const workspaceLinkPath = path.join(linkedInvocationDir, ".rundown", "workspace.link");
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      workspaceLinkPath,
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.mkdirSync(path.join(sourceWorkspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "plan.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const linkedResult = await runCli([
+      "plan",
+      path.join(sourceWorkspace, "roadmap.md"),
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], linkedInvocationDir);
+
+    const linkedOutput = [
+      ...linkedResult.logs,
+      ...linkedResult.errors,
+      ...linkedResult.stdoutWrites,
+      ...linkedResult.stderrWrites,
+    ].join("\n");
+    expect(linkedResult.code).toBe(0);
+    const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
+    const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
+    const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
+    expect(linkedInvocationValue.length > 0).toBe(true);
+    expect(linkedWorkspaceValue.length > 0).toBe(true);
+    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
+    expect(linkedInvocationValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
+    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
+    expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
+  });
+
   it("plan hides planner stderr by default", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
@@ -11016,6 +11184,98 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("<command>echo research-cli-block-output</command>")).toBe(true);
     expect(combinedOutput.includes("research-cli-block-output")).toBe(true);
     expect(combinedOutput.includes("Source=# Roadmap")).toBe(true);
+  });
+
+  it("research --print-prompt exposes workspace context vars in non-linked and linked invocations", async () => {
+    const readWorkspaceContextValue = (output: string, key: string): string => {
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = output.match(new RegExp(`${escapedKey}=([^\\r\\n]*)`));
+      return match?.[1] ?? "";
+    };
+
+    const nonLinkedWorkspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(nonLinkedWorkspace, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.mkdirSync(path.join(nonLinkedWorkspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(nonLinkedWorkspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(nonLinkedWorkspace, ".rundown", "research.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const nonLinkedResult = await runCli([
+      "research",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], nonLinkedWorkspace);
+
+    const nonLinkedOutput = [
+      ...nonLinkedResult.logs,
+      ...nonLinkedResult.errors,
+      ...nonLinkedResult.stdoutWrites,
+      ...nonLinkedResult.stderrWrites,
+    ].join("\n");
+    expect(nonLinkedResult.code).toBe(0);
+    expect(readWorkspaceContextValue(nonLinkedOutput, "invocationDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceDir")).toBe(path.resolve(nonLinkedWorkspace));
+    expect(readWorkspaceContextValue(nonLinkedOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(nonLinkedOutput, "isLinkedWorkspace")).toBe("false");
+
+    const linkedSandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(linkedSandbox, "source-workspace");
+    const linkedInvocationDir = path.join(linkedSandbox, "linked-invocation");
+    const workspaceLinkPath = path.join(linkedInvocationDir, ".rundown", "workspace.link");
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      workspaceLinkPath,
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.mkdirSync(path.join(sourceWorkspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "research.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const linkedResult = await runCli([
+      "research",
+      path.join(sourceWorkspace, "roadmap.md"),
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], linkedInvocationDir);
+
+    const linkedOutput = [
+      ...linkedResult.logs,
+      ...linkedResult.errors,
+      ...linkedResult.stdoutWrites,
+      ...linkedResult.stderrWrites,
+    ].join("\n");
+    expect(linkedResult.code).toBe(0);
+    const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
+    const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
+    const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
+    expect(linkedInvocationValue.length > 0).toBe(true);
+    expect(linkedWorkspaceValue.length > 0).toBe(true);
+    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
+    expect(linkedInvocationValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
+    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
+    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
+    expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
   });
 
   it("research updates markdown and persists artifacts", async () => {
