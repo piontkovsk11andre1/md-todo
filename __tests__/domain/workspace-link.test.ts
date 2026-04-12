@@ -87,4 +87,31 @@ describe("resolveWorkspaceLink", () => {
       reason: "target-missing",
     });
   });
+
+  it("returns invalid when workspace link target is not a directory", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-workspace-link-"));
+    tempDirs.push(tempDir);
+
+    const invocationDir = path.join(tempDir, "project");
+    const configDir = path.join(invocationDir, ".rundown");
+    const staleTargetFile = path.join(tempDir, "stale-root.txt");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(staleTargetFile, "stale", "utf-8");
+
+    const relativeTarget = path.relative(invocationDir, staleTargetFile).replace(/\\/g, "/");
+    fs.writeFileSync(path.join(configDir, "workspace.link"), relativeTarget, "utf-8");
+
+    const result = resolveWorkspaceLink({
+      currentDir: invocationDir,
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      linkPath: path.join(invocationDir, WORKSPACE_LINK_RELATIVE_PATH),
+      relativeTarget,
+      reason: "target-not-directory",
+    });
+  });
 });
