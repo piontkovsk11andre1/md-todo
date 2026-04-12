@@ -48,6 +48,25 @@ describe("resolveRuntimeWorkspaceContext", () => {
       isLinkedWorkspace: true,
     });
   });
+
+  it("marks linked mode active when workspace.link path is provided", () => {
+    const context = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd: "/workspace/linked",
+        invocationDir: "/workspace/linked",
+        workspaceDir: "/workspace/linked",
+        workspaceLinkPath: "./.rundown/workspace.link",
+      },
+      pathOperations,
+    );
+
+    expect(context).toEqual({
+      invocationDir: path.resolve("/workspace/linked"),
+      workspaceDir: path.resolve("/workspace/linked"),
+      workspaceLinkPath: path.resolve("/workspace/linked/.rundown/workspace.link"),
+      isLinkedWorkspace: true,
+    });
+  });
 });
 
 describe("buildWorkspaceContextTemplateVars", () => {

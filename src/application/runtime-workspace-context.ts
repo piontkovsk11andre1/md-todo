@@ -31,11 +31,16 @@ export function resolveRuntimeWorkspaceContext(
 ): RuntimeWorkspaceContext {
   const invocationDir = pathOperations.resolve(input.invocationDir ?? input.executionCwd);
   const resolvedWorkspaceDir = pathOperations.resolve(input.workspaceDir ?? input.executionCwd);
+  const resolvedWorkspaceLinkPath = input.workspaceLinkPath
+    ? (pathOperations.isAbsolute(input.workspaceLinkPath)
+      ? pathOperations.resolve(input.workspaceLinkPath)
+      : pathOperations.resolve(invocationDir, input.workspaceLinkPath))
+    : "";
   const inferredLinkedWorkspace = invocationDir !== resolvedWorkspaceDir;
-  const isLinkedWorkspace = input.isLinkedWorkspace ?? inferredLinkedWorkspace;
+  const isLinkedWorkspace = input.isLinkedWorkspace ?? (inferredLinkedWorkspace || resolvedWorkspaceLinkPath.length > 0);
   const workspaceDir = isLinkedWorkspace ? resolvedWorkspaceDir : invocationDir;
-  const workspaceLinkPath = isLinkedWorkspace && input.workspaceLinkPath
-    ? pathOperations.resolve(input.workspaceLinkPath)
+  const workspaceLinkPath = isLinkedWorkspace && resolvedWorkspaceLinkPath
+    ? resolvedWorkspaceLinkPath
     : "";
 
   return {
