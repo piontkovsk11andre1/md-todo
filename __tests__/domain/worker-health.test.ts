@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildWorkerHealthProfileKey,
+  buildWorkerHealthWorkerKey,
   evaluateWorkerHealthEligibility,
   evaluateWorkerProfileEligibility,
+  normalizeWorkerCommandIdentity,
   WORKER_FAILURE_CLASS_EXECUTION_FAILURE_OTHER,
   WORKER_FAILURE_CLASS_SUCCESS,
   WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
@@ -120,5 +123,29 @@ describe("worker-health domain", () => {
       blockedBy: ["worker", "profile"],
       nextEligibleAt: "2026-04-12T09:00:30.000Z",
     });
+  });
+
+  it("normalizes equivalent worker command forms to a stable identity", () => {
+    const variants = [
+      ["OpenCode.cmd", "run", "--model=gpt-5.3-codex"],
+      ["opencode", "run", "--model", "gpt-5.3-codex"],
+      ["\"opencode.exe\"", "run", "--model='gpt-5.3-codex'"],
+      ["C:\\Tools\\OpenCode.BAT", "run", "--model", "gpt-5.3-codex"],
+    ] as const;
+
+    const normalized = variants.map((command) => normalizeWorkerCommandIdentity(command));
+    expect(normalized).toEqual([
+      ["opencode", "run", "--model", "gpt-5.3-codex"],
+      ["opencode", "run", "--model", "gpt-5.3-codex"],
+      ["opencode", "run", "--model", "gpt-5.3-codex"],
+      ["opencode", "run", "--model", "gpt-5.3-codex"],
+    ]);
+    expect(new Set(normalized.map((tokens) => JSON.stringify(tokens))).size).toBe(1);
+  });
+
+  it("builds stable worker/profile health keys", () => {
+    expect(buildWorkerHealthWorkerKey(["OpenCode.EXE", "run", "--model=gpt-5.3-codex"]))
+      .toBe("worker:[\"opencode\",\"run\",\"--model\",\"gpt-5.3-codex\"]");
+    expect(buildWorkerHealthProfileKey("  fast   lane ")).toBe("profile:fast lane");
   });
 });

@@ -62,7 +62,7 @@ describe("worker health store", () => {
     };
 
     expect(persisted.schemaVersion).toBe(1);
-    expect(persisted.entries[0]?.key).toBe("worker:primary");
+    expect(persisted.entries[0]?.key).toBe("worker:[\"primary\"]");
     expect(Number.isFinite(Date.parse(persisted.updatedAt))).toBe(true);
 
     const loaded = readWorkerHealthSnapshot(cwd);
@@ -111,7 +111,7 @@ describe("worker health store", () => {
     const loaded = readWorkerHealthSnapshot(cwd);
     expect(loaded.entries).toEqual([
       {
-        key: "worker:ok",
+        key: "worker:[\"ok\"]",
         status: "healthy",
         source: "worker",
         lastFailureClass: "execution_failure_other",

@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { CONFIG_DIR_NAME } from "../domain/ports/config-dir-port.js";
 import type { WorkerHealthSnapshot } from "../domain/ports/worker-health-store.js";
 import {
+  normalizeWorkerHealthKey,
   WORKER_FAILURE_CLASS_EXECUTION_FAILURE_OTHER,
   WORKER_FAILURE_CLASS_SUCCESS,
   WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
@@ -101,9 +102,11 @@ function normalizeEntry(value: unknown): WorkerHealthEntry | null {
     return null;
   }
 
-  const key = typeof value.key === "string" ? value.key.trim() : "";
   const status = normalizeStatus(value.status);
   const source = normalizeSource(value.source);
+  const key = typeof value.key === "string" && source
+    ? normalizeWorkerHealthKey(source, value.key)
+    : "";
   if (!key || !status || !source) {
     return null;
   }

@@ -70,6 +70,75 @@ export interface WorkerProfileEligibilityEvaluation {
   nextEligibleAt?: string;
 }
 
+const WORKER_KEY_PREFIX = "worker:";
+const PROFILE_KEY_PREFIX = "profile:";
+const WORKER_KEY_EXECUTABLE_EXTENSIONS = [".cmd", ".exe", ".bat", ".ps1"];
+
+/**
+ * Normalizes profile identity text for stable health-key construction.
+ */
+export function normalizeProfileIdentity(profileName: string): string {
+  return profileName.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Normalizes worker command tokens so equivalent forms map to the same identity.
+ */
+export function normalizeWorkerCommandIdentity(command: readonly string[]): string[] {
+  const normalizedTokens: string[] = [];
+
+  for (const rawToken of command) {
+    const token = normalizeToken(rawToken);
+    if (token.length === 0) {
+      continue;
+    }
+
+    const splitFlag = splitLongFlagWithEquals(token);
+    if (!splitFlag) {
+      normalizedTokens.push(token);
+      continue;
+    }
+
+    normalizedTokens.push(splitFlag.flag);
+    const normalizedFlagValue = normalizeToken(splitFlag.value);
+    if (normalizedFlagValue.length > 0) {
+      normalizedTokens.push(normalizedFlagValue);
+    }
+  }
+
+  if (normalizedTokens.length === 0) {
+    return [];
+  }
+
+  normalizedTokens[0] = normalizeExecutableToken(normalizedTokens[0]!);
+  return normalizedTokens;
+}
+
+/**
+ * Builds a canonical worker-level key from a worker command.
+ */
+export function buildWorkerHealthWorkerKey(command: readonly string[]): string {
+  return WORKER_KEY_PREFIX + JSON.stringify(normalizeWorkerCommandIdentity(command));
+}
+
+/**
+ * Builds a canonical profile-level key from a profile name.
+ */
+export function buildWorkerHealthProfileKey(profileName: string): string {
+  return PROFILE_KEY_PREFIX + normalizeProfileIdentity(profileName);
+}
+
+/**
+ * Normalizes persisted keys according to source scope.
+ */
+export function normalizeWorkerHealthKey(source: WorkerHealthSource, key: string): string {
+  if (source === "profile") {
+    return normalizeProfileHealthKey(key);
+  }
+
+  return normalizeWorkerHealthWorkerKey(key);
+}
+
 /**
  * Evaluates whether a single health entry is eligible right now.
  */
@@ -169,4 +238,98 @@ function parseTimestampMs(value: string | undefined): number | undefined {
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeWorkerHealthWorkerKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const withoutPrefix = trimmed.toLowerCase().startsWith(WORKER_KEY_PREFIX)
+    ? trimmed.slice(WORKER_KEY_PREFIX.length)
+    : trimmed;
+  const parsed = tryParseWorkerKeyPayload(withoutPrefix);
+
+  if (parsed) {
+    return buildWorkerHealthWorkerKey(parsed);
+  }
+
+  return buildWorkerHealthWorkerKey([withoutPrefix]);
+}
+
+function normalizeProfileHealthKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length === 0) {
+    return "";
+  }
+
+  const withoutPrefix = trimmed.toLowerCase().startsWith(PROFILE_KEY_PREFIX)
+    ? trimmed.slice(PROFILE_KEY_PREFIX.length)
+    : trimmed;
+  const normalized = normalizeProfileIdentity(withoutPrefix);
+  return normalized.length > 0 ? buildWorkerHealthProfileKey(normalized) : "";
+}
+
+function tryParseWorkerKeyPayload(value: string): string[] | null {
+  if (!value.startsWith("[") || !value.endsWith("]")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((token) => typeof token !== "string")) {
+      return null;
+    }
+
+    return parsed as string[];
+  } catch {
+    return null;
+  }
+}
+
+function splitLongFlagWithEquals(token: string): { flag: string; value: string } | null {
+  if (!token.startsWith("--")) {
+    return null;
+  }
+
+  const separatorIndex = token.indexOf("=");
+  if (separatorIndex <= 2) {
+    return null;
+  }
+
+  return {
+    flag: token.slice(0, separatorIndex),
+    value: token.slice(separatorIndex + 1),
+  };
+}
+
+function normalizeExecutableToken(token: string): string {
+  const normalizedPath = token.replaceAll("\\", "/");
+  const rawBaseName = normalizedPath.includes("/")
+    ? normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1)
+    : normalizedPath;
+
+  const loweredBaseName = rawBaseName.toLowerCase();
+  for (const extension of WORKER_KEY_EXECUTABLE_EXTENSIONS) {
+    if (loweredBaseName.endsWith(extension)) {
+      return loweredBaseName.slice(0, loweredBaseName.length - extension.length);
+    }
+  }
+
+  return loweredBaseName;
+}
+
+function normalizeToken(token: string): string {
+  const trimmed = token.trim();
+  if (trimmed.length < 2) {
+    return trimmed;
+  }
+
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'") && trimmed.endsWith(quote)) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
 }
