@@ -310,7 +310,7 @@ program
   .description("Generate and manage prediction migrations.")
   .argument(
     "[action]",
-    "Migration action: up | down [n] | snapshot | backlog | context | review | user-experience | user-session",
+    "Migration action: up | down [n] | save | snapshot | backlog | context | review | user-experience | user-session",
   )
   .argument("[count]", "Optional number of runs to undo for down")
   .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")

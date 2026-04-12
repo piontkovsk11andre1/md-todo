@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   discoverDesignRevisionDirectories,
   parseDesignRevisionDirectoryName,
+  saveDesignRevisionSnapshot,
 } from "../../application/design-context.ts";
 import type {
   FileSystem,
@@ -132,5 +133,70 @@ describe("discoverDesignRevisionDirectories", () => {
   it("returns empty list when docs directory is missing", () => {
     const fileSystem = new InMemoryFileSystem({});
     expect(discoverDesignRevisionDirectories(fileSystem, "/repo")).toEqual([]);
+  });
+});
+
+describe("saveDesignRevisionSnapshot", () => {
+  it("saves docs/current into next monotonic revision directory", () => {
+    const projectRoot = "/repo";
+    const docsDir = "/repo/docs";
+    const docsCurrentDir = "/repo/docs/current";
+    const docsCurrentNestedDir = "/repo/docs/current/notes";
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        [docsDir]: [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.03", isDirectory: true, isFile: false },
+          { name: "rev.bad", isDirectory: true, isFile: false },
+        ],
+        [docsCurrentDir]: [
+          { name: "Design.md", isDirectory: false, isFile: true },
+          { name: "notes", isDirectory: true, isFile: false },
+        ],
+        [docsCurrentNestedDir]: [
+          { name: "api.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/docs/current/Design.md": "# Design\n",
+        "/repo/docs/current/notes/api.md": "- endpoint\n",
+      },
+      stats: {
+        [docsDir]: { isDirectory: true, isFile: false },
+        [docsCurrentDir]: { isDirectory: true, isFile: false },
+        [docsCurrentNestedDir]: { isDirectory: true, isFile: false },
+        "/repo/docs/rev.1": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.03": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.bad": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, projectRoot);
+
+    expect(saved).toEqual({
+      index: 4,
+      name: "rev.4",
+      absolutePath: "/repo/docs/rev.4",
+      sourcePath: "/repo/docs/current",
+      copiedFileCount: 2,
+    });
+    expect(fileSystem.readText("/repo/docs/rev.4/Design.md")).toBe("# Design\n");
+    expect(fileSystem.readText("/repo/docs/rev.4/notes/api.md")).toBe("- endpoint\n");
+  });
+
+  it("throws with guidance when docs/current is missing", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [],
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(() => saveDesignRevisionSnapshot(fileSystem, "/repo")).toThrow(
+      "Design working directory is missing: /repo/docs/current. Create docs/current/ first (or run `rundown start ...`).",
+    );
   });
 });

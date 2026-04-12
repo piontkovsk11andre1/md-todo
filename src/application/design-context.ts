@@ -12,6 +12,14 @@ export interface DesignRevisionDirectory {
   absolutePath: string;
 }
 
+export interface SavedDesignRevision {
+  index: number;
+  name: string;
+  absolutePath: string;
+  sourcePath: string;
+  copiedFileCount: number;
+}
+
 export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string): DesignContextResolution {
   const docsCurrentDir = path.join(projectRoot, "docs", "current");
   const docsCurrentFiles = collectDesignFiles(fileSystem, docsCurrentDir);
@@ -96,6 +104,44 @@ export function parseDesignRevisionDirectoryName(name: string): { index: number 
   return { index: parsedIndex };
 }
 
+export function saveDesignRevisionSnapshot(fileSystem: FileSystem, projectRoot: string): SavedDesignRevision {
+  const docsDir = path.join(projectRoot, "docs");
+  const docsCurrentDir = path.join(docsDir, "current");
+
+  if (!isDirectory(fileSystem, docsCurrentDir)) {
+    throw new Error(
+      "Design working directory is missing: "
+      + docsCurrentDir
+      + ". Create docs/current/ first (or run `rundown start ...`).",
+    );
+  }
+
+  const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
+  let nextIndex = 1;
+  for (const revision of revisions) {
+    if (revision.index >= nextIndex) {
+      nextIndex = revision.index + 1;
+    }
+  }
+
+  const revisionName = `rev.${nextIndex}`;
+  const revisionDir = path.join(docsDir, revisionName);
+  if (fileSystem.exists(revisionDir)) {
+    throw new Error("Design revision directory already exists: " + revisionDir);
+  }
+
+  fileSystem.mkdir(revisionDir, { recursive: true });
+  const copiedFileCount = copyDirectoryContents(fileSystem, docsCurrentDir, revisionDir);
+
+  return {
+    index: nextIndex,
+    name: revisionName,
+    absolutePath: revisionDir,
+    sourcePath: docsCurrentDir,
+    copiedFileCount,
+  };
+}
+
 function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): string[] {
   if (!isDirectory(fileSystem, directoryPath)) {
     return [];
@@ -147,6 +193,42 @@ function formatDesignWorkspaceContext(fileSystem: FileSystem, docsCurrentDir: st
   }
 
   return sections.join("\n").trim();
+}
+
+function copyDirectoryContents(fileSystem: FileSystem, fromDirectory: string, toDirectory: string): number {
+  let copiedFileCount = 0;
+  const queue: Array<{ fromDir: string; toDir: string }> = [{ fromDir: fromDirectory, toDir: toDirectory }];
+
+  while (queue.length > 0) {
+    const pair = queue.shift();
+    if (!pair) {
+      continue;
+    }
+
+    const entries = fileSystem.readdir(pair.fromDir)
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+
+    for (const entry of entries) {
+      const sourcePath = path.join(pair.fromDir, entry.name);
+      const destinationPath = path.join(pair.toDir, entry.name);
+
+      if (entry.isDirectory) {
+        fileSystem.mkdir(destinationPath, { recursive: true });
+        queue.push({ fromDir: sourcePath, toDir: destinationPath });
+        continue;
+      }
+
+      if (!entry.isFile) {
+        continue;
+      }
+
+      fileSystem.writeText(destinationPath, fileSystem.readText(sourcePath));
+      copiedFileCount += 1;
+    }
+  }
+
+  return copiedFileCount;
 }
 
 function findPrimaryDesignPath(filePaths: string[]): string | null {

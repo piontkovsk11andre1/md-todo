@@ -34,11 +34,17 @@ const describeIfSatelliteMigrateAvailable = hasMigrateCommand
   ? describe
   : describe.skip;
 const hasMigrateUserSessionAction = cliSource.includes("user-session");
+const hasMigrateSaveAction = cliSource.includes("save");
 const hasMigrateConfirmOption = cliSource.includes("--confirm");
 const describeIfUserSessionMigrateAvailable = hasMigrateCommand
   && hasMigrateTaskUseCase
   && hasMigrateUserSessionAction
   && hasMigrateConfirmOption
+  ? describe
+  : describe.skip;
+const describeIfSaveMigrateAvailable = hasMigrateCommand
+  && hasMigrateTaskUseCase
+  && hasMigrateSaveAction
   ? describe
   : describe.skip;
 
@@ -303,6 +309,60 @@ describeIfUserSessionMigrateAvailable("migrate user-session integration", () => 
     ].join("\n"));
     expect(combinedOutput).toContain("session-summary-2");
     expect(combinedOutput).toContain("session-backlog-3");
+  });
+});
+
+describeIfSaveMigrateAvailable("migrate save integration", () => {
+  it("snapshots docs/current into the next monotonic docs/rev.N directory", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "current", "notes"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.3"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "notes", "api.md"), "API details\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "save",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, "docs", "rev.4", "Design.md"), "utf-8")).toBe("# Current design\n");
+    expect(fs.readFileSync(path.join(workspace, "docs", "rev.4", "notes", "api.md"), "utf-8")).toBe("API details\n");
+  });
+
+  it("fails with a clear message when docs/current is missing", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
+
+    const result = await runCli([
+      "migrate",
+      "save",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design working directory is missing:");
+    expect(combinedOutput).toContain("docs/current");
   });
 });
 

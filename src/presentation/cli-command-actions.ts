@@ -199,6 +199,7 @@ interface QueryActionDependencies extends WorkerActionDependencies {
 type MigrateAction =
   | "up"
   | "down"
+  | "save"
   | "snapshot"
   | "backlog"
   | "context"
@@ -1014,7 +1015,7 @@ export function createMigrateCommandAction({
       throw new Error(
         "Invalid migrate action: "
           + normalizedAction
-          + ". Allowed: up, down, snapshot, backlog, context, review, user-experience, user-session.",
+          + ". Allowed: up, down, save, snapshot, backlog, context, review, user-experience, user-session.",
       );
     }
 
@@ -1762,6 +1763,7 @@ function resolveTestCommandHandler(appInstance: CliApp): TestCommandHandler {
 function isMigrateAction(value: string): value is MigrateAction {
   return value === "up"
     || value === "down"
+    || value === "save"
     || value === "snapshot"
     || value === "backlog"
     || value === "context"

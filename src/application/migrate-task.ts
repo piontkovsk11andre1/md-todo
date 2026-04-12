@@ -42,11 +42,12 @@ import {
   type PredictionTrackedFileKind,
 } from "../domain/prediction-reconciliation.js";
 import { resolveWorkspaceLink } from "../domain/workspace-link.js";
-import { resolveDesignContext } from "./design-context.js";
+import { resolveDesignContext, saveDesignRevisionSnapshot } from "./design-context.js";
 
 type MigrateAction =
   | "up"
   | "down"
+  | "save"
   | "snapshot"
   | "backlog"
   | "context"
@@ -220,6 +221,24 @@ export function createMigrateTask(
         keepArtifacts: options.keepArtifacts,
         showAgentOutput: options.showAgentOutput,
       });
+    }
+
+    if (action === "save") {
+      const savedRevision = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot);
+      emit({
+        kind: "success",
+        message:
+          "Saved design revision "
+          + savedRevision.name
+          + " from docs/current/ to "
+          + savedRevision.absolutePath
+          + " ("
+          + String(savedRevision.copiedFileCount)
+          + " file"
+          + (savedRevision.copiedFileCount === 1 ? "" : "s")
+          + ").",
+      });
+      return EXIT_CODE_SUCCESS;
     }
 
     const state = readMigrationState(dependencies.fileSystem, migrationsDir);
@@ -1126,6 +1145,7 @@ export async function confirmBeforeWrite(
 export function isMigrationAction(value: string | undefined): value is MigrateAction {
   return value === "up"
     || value === "down"
+    || value === "save"
     || value === "snapshot"
     || value === "backlog"
     || value === "context"
