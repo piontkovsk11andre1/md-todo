@@ -44,7 +44,7 @@ describe("global output log serialization", () => {
       ts: `${ansiRed}2026-03-27T00:00:00.000Z${ansiReset}`,
       level: "error",
       stream: "stderr",
-      kind: `${ansiRed}error${ansiReset}`,
+      kind: `${ansiRed}error${ansiReset}` as unknown as "error",
       message: `${ansiRed}boom${ansiReset}`,
       command: `${ansiRed}run${ansiReset}`,
       argv: [`${ansiRed}run${ansiReset}`, `${ansiRed}tasks.md${ansiReset}`],
@@ -62,5 +62,30 @@ describe("global output log serialization", () => {
     expect(parsed["version"]).toBe("1.0.0");
     expect(parsed["session_id"]).toBe("session-2");
     expect(parsed["argv"]).toEqual(["run", "tasks.md"]);
+    expect(parsed["level"]).toBe("error");
+    expect(parsed["stream"]).toBe("stderr");
+    expect(parsed["kind"]).toBe("error");
+  });
+
+  it("keeps multi-line message content escaped within one JSONL line", () => {
+    const line = serializeGlobalOutputLogEntry({
+      ts: "2026-03-27T00:00:00.000Z",
+      level: "info",
+      stream: "stdout",
+      kind: "task",
+      message: "parent line\n  child line",
+      command: "run",
+      argv: ["run", "tasks.md"],
+      cwd: "/workspace",
+      pid: 123,
+      version: "1.0.0",
+      session_id: "session-3",
+    });
+
+    expect(line.endsWith("\n")).toBe(true);
+    expect(line.slice(0, -1).includes("\n")).toBe(false);
+
+    const parsed = JSON.parse(line.trim()) as Record<string, unknown>;
+    expect(parsed["message"]).toBe("parent line\n  child line");
   });
 });

@@ -85,10 +85,13 @@ export function serializeGlobalOutputLogEntry(entry: GlobalOutputLogEntry): stri
  * @returns Sanitized entry with terminal escape codes stripped.
  */
 export function sanitizeGlobalOutputLogEntry(entry: GlobalOutputLogEntry): GlobalOutputLogEntry {
+  const level = stripAnsi(entry.level) as GlobalOutputLogLevel;
+  const stream = stripAnsi(entry.stream) as GlobalOutputLogStream;
+
   return {
     ts: stripAnsi(entry.ts),
-    level: entry.level,
-    stream: entry.stream,
+    level,
+    stream,
     kind: stripAnsi(entry.kind) as GlobalOutputLogKind,
     message: stripAnsi(entry.message),
     command: stripAnsi(entry.command),
