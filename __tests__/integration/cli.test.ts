@@ -5247,6 +5247,34 @@ describe.sequential("CLI integration", () => {
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
     expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
+
+    const brokenLinkSandbox = makeTempWorkspace();
+    const brokenLinkInvocationDir = path.join(brokenLinkSandbox, "broken-linked-invocation");
+    fs.mkdirSync(path.join(brokenLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "workspace.link"), "../missing-workspace", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, "roadmap.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const brokenLinkResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], brokenLinkInvocationDir);
+
+    const brokenLinkOutput = [
+      ...brokenLinkResult.logs,
+      ...brokenLinkResult.errors,
+      ...brokenLinkResult.stdoutWrites,
+      ...brokenLinkResult.stderrWrites,
+    ].join("\n");
+    expect(brokenLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(brokenLinkOutput, "invocationDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("run --config-dir uses templates from the specified directory", async () => {
@@ -10051,6 +10079,41 @@ describe.sequential("CLI integration", () => {
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
     expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
+
+    const brokenLinkSandbox = makeTempWorkspace();
+    const brokenLinkInvocationDir = path.join(brokenLinkSandbox, "broken-linked-invocation");
+    fs.mkdirSync(path.join(brokenLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "workspace.link"), "../missing-workspace", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "plan.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const brokenLinkResult = await runCli([
+      "plan",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], brokenLinkInvocationDir);
+
+    const brokenLinkOutput = [
+      ...brokenLinkResult.logs,
+      ...brokenLinkResult.errors,
+      ...brokenLinkResult.stdoutWrites,
+      ...brokenLinkResult.stderrWrites,
+    ].join("\n");
+    expect(brokenLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(brokenLinkOutput, "invocationDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("plan hides planner stderr by default", async () => {
@@ -11276,6 +11339,41 @@ describe.sequential("CLI integration", () => {
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
     expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
+
+    const brokenLinkSandbox = makeTempWorkspace();
+    const brokenLinkInvocationDir = path.join(brokenLinkSandbox, "broken-linked-invocation");
+    fs.mkdirSync(path.join(brokenLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "workspace.link"), "../missing-workspace", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(brokenLinkInvocationDir, ".rundown", "research.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const brokenLinkResult = await runCli([
+      "research",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], brokenLinkInvocationDir);
+
+    const brokenLinkOutput = [
+      ...brokenLinkResult.logs,
+      ...brokenLinkResult.errors,
+      ...brokenLinkResult.stdoutWrites,
+      ...brokenLinkResult.stderrWrites,
+    ].join("\n");
+    expect(brokenLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(brokenLinkOutput, "invocationDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
+    expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("research updates markdown and persists artifacts", async () => {
