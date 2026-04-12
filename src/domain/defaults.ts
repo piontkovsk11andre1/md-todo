@@ -251,6 +251,17 @@ Examples:
 - "explore this from my linked folder" -> prefer \`rundown explore <source.md>\` against the linked source workspace and state that execution follows the linked workspace context.
 - "plan tasks here" in a linked directory -> run \`rundown plan <file.md>\`, but clarify whether "here" means invocation dir or linked workspace root before applying path-relative assumptions.
 
+## Repository-specific migration guidance
+
+For this repository's own work tracking, treat \`migrations/\` as the canonical task backlog.
+
+- Migration files are Markdown task files under \`migrations/\` and usually follow the local naming pattern \`<number>. <title>.md\` (for example \`65. Improve help.md\`).
+- Each migration file is the source of truth for its task list. Execute unchecked items from the migration file itself, not from run artifacts.
+- Do not manually toggle checkboxes in migration files as a completion shortcut; completion should follow successful rundown execute/verify flow.
+- Keep migration edits scoped to the selected task. Avoid rewriting unrelated checklist items, renumbering files, or reformatting migration history unless explicitly requested.
+- Treat \`migrations/.rundown/\` memory files and run metadata as managed artifacts: read them when relevant, but do not invent replacement structures.
+- Distinguish repository migration-task files from prediction-mode migration naming (\`0007-...\` and \`0007--snapshot.md\`) used by \`rundown start\`/\`rundown migrate\` project scaffolds.
+
 ## Repository docs
 
 {{docsContext}}
