@@ -7,6 +7,7 @@ const GET_MODE_PREFIX_PATTERN = /^get-mode\s*:\s*(.*)$/i;
 const GET_POLICY_PREFIX_PATTERN = /^get-policy\s*:\s*(.*)$/i;
 const GET_EMPTY_MODE_PREFIX_PATTERN = /^get-empty\s*:\s*(.*)$/i;
 const GET_EMPTY_POLICY_PREFIX_PATTERN = /^get-empty-policy\s*:\s*(.*)$/i;
+const GET_RESULT_SAFE_INLINE_CODE_PATTERN = /[:`*_{}\[\]()#+!|~<>\\]/;
 
 const GET_EMPTY_RESULT_MARKER = "(empty)";
 
@@ -34,6 +35,18 @@ function buildExtractionPrompt(query: string): string {
 
 function normalizeResultValue(value: string): string {
   return value.replace(/\r?\n/g, " ").trim();
+}
+
+function renderGetResultValue(value: string): string {
+  if (!GET_RESULT_SAFE_INLINE_CODE_PATTERN.test(value)) {
+    return value;
+  }
+
+  const tickRuns = value.match(/`+/g) ?? [];
+  const maxTickRunLength = tickRuns.reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = "`".repeat(Math.max(1, maxTickRunLength + 1));
+  const padded = value.startsWith("`") || value.endsWith("`") ? ` ${value} ` : value;
+  return `${fence}${padded}${fence}`;
 }
 
 function findExistingResults(subItems: readonly { text: string }[]): string[] {
@@ -232,7 +245,7 @@ function upsertResultSubItems(source: string, context: ToolHandlerContext, resul
   const immediateChildren = collectImmediateChildren(lines, parentLineIndex, childIndentLength, parentIndentLength);
   const existingResultChildren = immediateChildren.filter((child) => GET_RESULT_PREFIX_PATTERN.test(child.text));
 
-  const nextResultLines = results.map((result) => `${childIndent}- get-result: ${result}`);
+  const nextResultLines = results.map((result) => `${childIndent}- get-result: ${renderGetResultValue(result)}`);
   const insertIndex = existingResultChildren.length > 0
     ? existingResultChildren[0]!.index
     : parentLineIndex + 1;
