@@ -12,6 +12,7 @@ import {
 } from "../../src/application/run-task-execution.js";
 import {
   WORKER_FAILURE_CLASS_SUCCESS,
+  WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
   WORKER_HEALTH_STATUS_COOLING_DOWN,
   WORKER_HEALTH_STATUS_HEALTHY,
   WORKER_HEALTH_STATUS_UNAVAILABLE,
@@ -1485,6 +1486,230 @@ describe("run-task-execution helpers", () => {
       kind: "warn",
       message: "Force retry 3 of 3 — restarting task iteration from scratch",
     }));
+  });
+
+  it("uses default health-policy behavior when healthPolicy config is missing", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const workerHealthStore = {
+      read: vi.fn(() => ({
+        schemaVersion: 1,
+        updatedAt: "2026-04-12T09:00:00.000Z",
+        entries: [],
+      })),
+      write: vi.fn(),
+      filePath: vi.fn(() => `${cwd}/.rundown/worker-health.json`),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "implement fallback behavior"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] implement fallback behavior\n" }),
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+      },
+    });
+    dependencies.workerHealthStore = workerHealthStore;
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "connection reset by peer" })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "ok", stderr: "" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, workerCommand: [] }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["fallback", "worker"],
+      }),
+    }));
+
+    const persistedSnapshot = workerHealthStore.write.mock.calls.at(-1)?.[0];
+    expect(persistedSnapshot).toBeDefined();
+    if (!persistedSnapshot) {
+      throw new Error("Expected persisted worker health snapshot.");
+    }
+
+    const primaryEntry = persistedSnapshot.entries.find(
+      (entry: { key: string; source: string }) => entry.source === "worker"
+        && entry.key === buildWorkerHealthWorkerKey(["primary", "worker"]),
+    );
+    expect(primaryEntry).toEqual(expect.objectContaining({
+      status: WORKER_HEALTH_STATUS_UNAVAILABLE,
+      lastFailureClass: WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
+    }));
+
+    const fallbackEntry = persistedSnapshot.entries.find(
+      (entry: { key: string; source: string }) => entry.source === "worker"
+        && entry.key === buildWorkerHealthWorkerKey(["fallback", "worker"]),
+    );
+    expect(fallbackEntry).toEqual(expect.objectContaining({
+      status: WORKER_HEALTH_STATUS_HEALTHY,
+      lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
+      failureCountWindow: 0,
+    }));
+  });
+
+  it("enforces per-task failover limit and stops before additional fallbacks", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "implement failover limits"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] implement failover limits\n" }),
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [
+            ["fallback", "one"],
+            ["fallback", "two"],
+          ],
+        },
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 1,
+        },
+      },
+    });
+
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "timed out" })
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "connection reset by peer" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, workerCommand: [] }));
+
+    expect(code).toBe(1);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["fallback", "one"],
+      }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("Failover exhausted: per-task failover attempt limit reached"),
+    }));
+  });
+
+  it("enforces per-run failover limit across multiple tasks", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] task one\n- [ ] task two\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "task one"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 2,
+          maxFailoverAttemptsPerRun: 1,
+        },
+      },
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return [{
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      }];
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "{{task}}";
+      }
+      return null;
+    };
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "timed out" })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "ok", stderr: "" })
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "connection reset by peer" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, runAll: true, workerCommand: [] }));
+
+    expect(code).toBe(1);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(3);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("Failover exhausted: per-run failover attempt limit reached"),
+    }));
+  });
+
+  it("does not create retry-boundary stash entries when commit-mode retries start clean", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const gitClient = createGitClientMock();
+    gitClient.run = vi.fn(async (args: string[]) => {
+      if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+        return "true";
+      }
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+        return cwd;
+      }
+      if (args[0] === "check-ignore") {
+        throw new Error("not ignored");
+      }
+      if (args[0] === "status" && args[1] === "--porcelain") {
+        return "";
+      }
+      if (args[0] === "add" || args[0] === "commit") {
+        return "";
+      }
+      if (args[0] === "rev-parse" && args[1] === "HEAD") {
+        return "abc123";
+      }
+      return "";
+    });
+
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "implement fallback behavior"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] implement fallback behavior\n" }),
+      gitClient,
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+      },
+    });
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "timed out" })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "ok", stderr: "" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      workerCommand: [],
+      commitAfterComplete: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    const stashCalls = vi.mocked(gitClient.run).mock.calls.filter(([args]) => args[0] === "stash");
+    expect(stashCalls).toHaveLength(0);
   });
 
   it("passes stripped force payload into iteration prefix parsing", async () => {

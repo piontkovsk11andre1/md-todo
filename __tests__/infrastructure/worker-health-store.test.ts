@@ -82,6 +82,37 @@ describe("worker health store", () => {
     expect(readWorkerHealthSnapshot(cwd).entries).toEqual([]);
   });
 
+  it("recovers from corrupt store content during atomic update", () => {
+    const cwd = createWorkspace();
+    const filePath = workerHealthStoreFilePath(cwd);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, "{not-json", "utf-8");
+
+    const updated = updateWorkerHealthSnapshot((snapshot) => ({
+      ...snapshot,
+      entries: [
+        {
+          key: "worker:primary",
+          source: "worker",
+          status: "cooling_down",
+          cooldownUntil: "2026-04-12T10:20:00.000Z",
+          lastFailureClass: "usage_limit",
+          failureCountWindow: 1,
+        },
+      ],
+    }), cwd);
+
+    expect(updated.entries).toEqual([
+      expect.objectContaining({
+        key: "worker:[\"primary\"]",
+        source: "worker",
+        status: "cooling_down",
+        lastFailureClass: "usage_limit",
+      }),
+    ]);
+    expect(() => JSON.parse(fs.readFileSync(filePath, "utf-8"))).not.toThrow();
+  });
+
   it("filters invalid entries during tolerant reads", () => {
     const cwd = createWorkspace();
     const filePath = workerHealthStoreFilePath(cwd);
