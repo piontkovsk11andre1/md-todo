@@ -74,7 +74,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(workspace, ".git"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, ".git"))).toBe(false);
 
-    expect(fs.existsSync(path.join(projectDir, "Design.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "docs", "current", "Design.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);

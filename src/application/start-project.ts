@@ -50,7 +50,8 @@ export function createStartProject(
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
     }
 
-    const designPath = dependencies.pathOperations.join(targetDirectory, "Design.md");
+    const docsCurrentDir = dependencies.pathOperations.join(targetDirectory, "docs", "current");
+    const designPath = dependencies.pathOperations.join(docsCurrentDir, "Design.md");
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
     const migrationsDir = dependencies.pathOperations.join(targetDirectory, "migrations");
     const specsDir = dependencies.pathOperations.join(targetDirectory, "specs");
@@ -82,6 +83,11 @@ export function createStartProject(
       buildWorkspaceLinkTarget(dependencies.pathOperations, targetDirectory, invocationDirectory),
       emit,
     );
+
+    if (!dependencies.fileSystem.exists(docsCurrentDir)) {
+      dependencies.fileSystem.mkdir(docsCurrentDir, { recursive: true });
+      emit({ kind: "success", message: "Created " + docsCurrentDir + "/" });
+    }
 
     writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
     writeFileIfMissing(dependencies.fileSystem, agentsPath, DEFAULT_AGENTS_TEMPLATE, emit);
