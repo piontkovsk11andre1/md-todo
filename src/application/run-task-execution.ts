@@ -253,6 +253,49 @@ interface RetryBoundaryGitCheckpoint {
   taskLine: number;
 }
 
+async function captureRetryBoundaryBaselineStashHash(params: {
+  gitClient: GitClient;
+  cwd: string;
+  configDir: ConfigDirResult | undefined;
+  pathOperations: PathOperationsPort;
+  taskFile: string;
+  taskLine: number;
+}): Promise<string | null> {
+  const {
+    gitClient,
+    cwd,
+    configDir,
+    pathOperations,
+    taskFile,
+    taskLine,
+  } = params;
+  const isClean = await isWorkingDirectoryClean(gitClient, cwd, configDir, pathOperations);
+  if (isClean) {
+    return null;
+  }
+
+  const baselineMessage = "rundown retry-baseline "
+    + taskFile
+    + ":"
+    + taskLine
+    + " "
+    + new Date().toISOString();
+  await gitClient.run([
+    "stash",
+    "push",
+    "--include-untracked",
+    "--message",
+    baselineMessage,
+  ], cwd);
+  const baselineStashHash = (await gitClient.run(["rev-parse", "--verify", "stash@{0}"], cwd)).trim();
+  if (baselineStashHash.length === 0) {
+    throw new Error("Failed to capture retry-boundary baseline stash reference.");
+  }
+
+  await gitClient.run(["stash", "apply", baselineStashHash], cwd);
+  return baselineStashHash;
+}
+
 async function preserveGitStateForRetryBoundary(params: {
   gitClient: GitClient;
   cwd: string;
@@ -261,6 +304,7 @@ async function preserveGitStateForRetryBoundary(params: {
   taskFile: string;
   taskLine: number;
   reason: RetryBoundaryGitCheckpoint["reason"];
+  baselineStashHash?: string;
 }): Promise<RetryBoundaryGitCheckpoint | null> {
   const {
     gitClient,
@@ -270,6 +314,7 @@ async function preserveGitStateForRetryBoundary(params: {
     taskFile,
     taskLine,
     reason,
+    baselineStashHash,
   } = params;
   const isClean = await isWorkingDirectoryClean(gitClient, cwd, configDir, pathOperations);
   if (isClean) {
@@ -299,6 +344,10 @@ async function preserveGitStateForRetryBoundary(params: {
   const isCleanAfterStash = await isWorkingDirectoryClean(gitClient, cwd, configDir, pathOperations);
   if (!isCleanAfterStash) {
     throw new Error("Retry boundary could not produce a clean working tree after stashing.");
+  }
+
+  if (typeof baselineStashHash === "string" && baselineStashHash.length > 0) {
+    await gitClient.run(["stash", "apply", baselineStashHash], cwd);
   }
 
   return {
@@ -964,6 +1013,9 @@ export function createRunTaskExecution(
             let selectedTaskResult = batchSelection;
             let activeForceExtraction = initialForceExtraction;
             let attempt = 0;
+            const shouldTrackRetryBoundaryBaseline = deferCommitUntilPostRun
+              && state.tasksCompleted > 0
+              && (maxTaskAttempts > 1 || maxFailoverAttemptsPerTask > 0);
             let forceRetryMetadata: {
               attemptNumber: number;
               maxAttempts: number;
@@ -973,12 +1025,32 @@ export function createRunTaskExecution(
             let iterationResult: Awaited<ReturnType<typeof runTaskIteration>> | undefined;
             let taskFailoverAttemptsUsed = 0;
             const retryBoundaryGitCheckpoints: RetryBoundaryGitCheckpoint[] = [];
+            let retryBoundaryBaselineStashHash: string | null = null;
+            let retryBoundaryBaselineCaptured = false;
 
             const maybePreserveGitStateForRetryBoundary = async (
               reason: RetryBoundaryGitCheckpoint["reason"],
             ): Promise<number | null> => {
               if (!commitRetryBoundaryGitEnabled) {
                 return null;
+              }
+
+              if (shouldTrackRetryBoundaryBaseline && !retryBoundaryBaselineCaptured) {
+                try {
+                  retryBoundaryBaselineStashHash = await captureRetryBoundaryBaselineStashHash({
+                    gitClient: dependencies.gitClient,
+                    cwd: executionCwd,
+                    configDir: dependencies.configDir,
+                    pathOperations: dependencies.pathOperations,
+                    taskFile: selectedTaskResult.task.file,
+                    taskLine: selectedTaskResult.task.line,
+                  });
+                  retryBoundaryBaselineCaptured = true;
+                } catch (error) {
+                  const message = "--commit: failed to capture retry baseline git state: " + String(error);
+                  emit({ kind: "error", message });
+                  return 1;
+                }
               }
 
               try {
@@ -990,6 +1062,7 @@ export function createRunTaskExecution(
                   taskFile: selectedTaskResult.task.file,
                   taskLine: selectedTaskResult.task.line,
                   reason,
+                  baselineStashHash: retryBoundaryBaselineStashHash ?? undefined,
                 });
                 if (!checkpoint) {
                   return null;

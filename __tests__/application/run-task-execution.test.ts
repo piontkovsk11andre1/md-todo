@@ -1338,6 +1338,126 @@ describe("run-task-execution helpers", () => {
     }));
   });
 
+  it("reapplies deferred commit baseline state across failover retry boundaries in file-done mode", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const gitClient = createGitClientMock();
+    let generalStatusCallCount = 0;
+    let stashTopHash = "";
+    let stashPushCount = 0;
+    gitClient.run = vi.fn(async (args: string[]) => {
+      if (args[0] === "rev-parse" && args[1] === "--is-inside-work-tree") {
+        return "true";
+      }
+      if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
+        return cwd;
+      }
+      if (args[0] === "check-ignore") {
+        throw new Error("not ignored");
+      }
+      if (args[0] === "status" && args[1] === "--porcelain") {
+        if (args.includes("--untracked-files=no")) {
+          return " M tasks.md";
+        }
+        generalStatusCallCount += 1;
+        if (generalStatusCallCount === 1) {
+          return "";
+        }
+        if (generalStatusCallCount === 4) {
+          return "";
+        }
+        return " M tasks.md";
+      }
+      if (args[0] === "stash" && args[1] === "push") {
+        stashPushCount += 1;
+        stashTopHash = stashPushCount === 1
+          ? "1111111111111111111111111111111111111111"
+          : "2222222222222222222222222222222222222222";
+        return "Saved working directory and index state";
+      }
+      if (args[0] === "rev-parse" && args[1] === "--verify" && args[2] === "stash@{0}") {
+        return stashTopHash;
+      }
+      if (args[0] === "stash" && args[1] === "apply") {
+        return "";
+      }
+      if (args[0] === "add" || args[0] === "commit") {
+        return "";
+      }
+      if (args[0] === "rev-parse" && args[1] === "HEAD") {
+        return "abc123";
+      }
+      return "";
+    });
+
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] first task\n- [ ] second task\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "first task"),
+      fileSystem,
+      gitClient,
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+      },
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return [{
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      }];
+    });
+
+    let workerCallCount = 0;
+    dependencies.workerExecutor.runWorker = vi.fn(async () => {
+      workerCallCount += 1;
+      if (workerCallCount === 2) {
+        return { exitCode: null, stdout: "", stderr: "timed out" };
+      }
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      runAll: true,
+      workerCommand: [],
+      commitAfterComplete: true,
+      commitMode: "file-done",
+    }));
+
+    expect(code).toBe(0);
+    const stashPushCalls = vi.mocked(gitClient.run).mock.calls.filter(
+      ([args]) => args[0] === "stash" && args[1] === "push",
+    );
+    const stashApplyCalls = vi.mocked(gitClient.run).mock.calls.filter(
+      ([args]) => args[0] === "stash" && args[1] === "apply",
+    );
+    expect(stashPushCalls).toHaveLength(2);
+    expect(stashApplyCalls).toHaveLength(2);
+    expect(stashApplyCalls[0]?.[0]).toEqual([
+      "stash",
+      "apply",
+      "1111111111111111111111111111111111111111",
+    ]);
+    expect(stashApplyCalls[1]?.[0]).toEqual([
+      "stash",
+      "apply",
+      "1111111111111111111111111111111111111111",
+    ]);
+  });
+
   it("runs all force attempts on repeated failure and returns final failRun exit code", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;
