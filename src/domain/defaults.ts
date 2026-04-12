@@ -243,6 +243,10 @@ Read these files when you need detailed reference for a specific topic.
 
 {{commandIndex}}
 
+\`\`\`cli
+rundown --help --everything
+\`\`\`
+
 ### Key commands in detail
 
 **run** — Execute the next unchecked TODO task from a source file or directory.
