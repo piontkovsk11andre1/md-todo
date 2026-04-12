@@ -1,6 +1,7 @@
 import { markChecked, markTasksChecked, resetAllCheckboxes } from "../domain/checkbox.js";
 import { computeChildIndent, insertSubitems } from "../domain/planner.js";
 import { parseTasks, type Task } from "../domain/parser.js";
+import { getForCurrentValue, getForItemValues, isForLoopTaskText } from "../domain/for-loop.js";
 import { findRemainingSiblings, findUncheckedDescendants } from "../domain/task-selection.js";
 import type { FileSystem } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -252,6 +253,300 @@ export function checkTaskUsingFileSystem(task: Task, fileSystem: FileSystem): vo
     const updated = markChecked(source, effectiveTask);
     fileSystem.writeText(task.file, updated);
   });
+}
+
+function findTaskByIdentity(tasks: Task[], task: Task): Task | undefined {
+  return tasks.find((candidate) => candidate.line === task.line && candidate.index === task.index)
+    ?? tasks.find((candidate) => candidate.line === task.line);
+}
+
+function resolveLoopChildTasks(tasks: Task[], loopTask: Task): Task[] {
+  const loopInTree = findTaskByIdentity(tasks, loopTask);
+  if (loopInTree) {
+    return loopInTree.children;
+  }
+
+  return tasks.filter((candidate) => {
+    if (candidate.line === loopTask.line && candidate.index === loopTask.index) {
+      return false;
+    }
+
+    if (candidate.depth !== loopTask.depth + 1) {
+      return false;
+    }
+
+    return candidate.line > loopTask.line;
+  });
+}
+
+function resetForLoopChildTasks(source: string, loopTask: Task, file: string): string {
+  const tasks = parseTasks(source, file);
+  const childTasks = resolveLoopChildTasks(tasks, loopTask);
+  const checkedChildren = childTasks.filter((childTask) => childTask.checked);
+  if (checkedChildren.length === 0) {
+    return source;
+  }
+
+  let updated = source;
+  for (const childTask of checkedChildren) {
+    updated = markUncheckedTask(updated, childTask);
+  }
+  return updated;
+}
+
+function markUncheckedTask(source: string, task: Task): string {
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  const lines = source.split(/\r?\n/);
+  const lineIndex = task.line - 1;
+  if (lineIndex < 0 || lineIndex >= lines.length) {
+    throw new Error(`Task line ${task.line} is out of range in ${task.file}`);
+  }
+
+  const line = lines[lineIndex] ?? "";
+  const updatedLine = line.replace(/\[(?:x|X)\]/, "[ ]");
+  if (updatedLine === line) {
+    return source;
+  }
+
+  lines[lineIndex] = updatedLine;
+  return lines.join(eol);
+}
+
+function rewriteForLoopMetadataLines(lines: string[], loopTask: Task, nextCurrent?: string): void {
+  const parentLineIndex = loopTask.line - 1;
+  if (parentLineIndex < 0 || parentLineIndex >= lines.length) {
+    return;
+  }
+
+  const parentLine = lines[parentLineIndex] ?? "";
+  const parentIndentLength = getLeadingWhitespaceLength(parentLine);
+  const childIndent = computeChildIndent(parentLine);
+  const childIndentLength = childIndent.length;
+
+  const existingForItems: string[] = [];
+  const metadataIndices: number[] = [];
+
+  for (let index = parentLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim().length === 0) {
+      continue;
+    }
+
+    const lineIndentLength = getLeadingWhitespaceLength(line);
+    if (lineIndentLength <= parentIndentLength) {
+      break;
+    }
+
+    if (lineIndentLength !== childIndentLength) {
+      continue;
+    }
+
+    const bulletMatch = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (!bulletMatch) {
+      continue;
+    }
+
+    const childText = (bulletMatch[1] ?? "").trim();
+    const forItem = childText.match(/^for-item\s*:\s*(.*)$/i);
+    if (forItem) {
+      existingForItems.push((forItem[1] ?? "").trim());
+      metadataIndices.push(index);
+      continue;
+    }
+
+    if (/^for-current\s*:/i.test(childText)) {
+      metadataIndices.push(index);
+      continue;
+    }
+  }
+
+  for (let index = metadataIndices.length - 1; index >= 0; index -= 1) {
+    const lineIndex = metadataIndices[index];
+    if (lineIndex !== undefined) {
+      lines.splice(lineIndex, 1);
+    }
+  }
+
+  const metadataLines = existingForItems.map((value) => `${childIndent}- for-item: ${value}`);
+  if (nextCurrent !== undefined) {
+    metadataLines.push(`${childIndent}- for-current: ${nextCurrent}`);
+  }
+
+  let insertionIndex = parentLineIndex + 1;
+  for (let index = parentLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim().length === 0) {
+      continue;
+    }
+    const lineIndentLength = getLeadingWhitespaceLength(line);
+    if (lineIndentLength <= parentIndentLength) {
+      break;
+    }
+
+    if (lineIndentLength !== childIndentLength) {
+      continue;
+    }
+
+    if (!/^\s*[-*+]\s+/.test(line)) {
+      continue;
+    }
+
+    insertionIndex = index;
+    break;
+  }
+
+  if (metadataLines.length > 0) {
+    lines.splice(insertionIndex, 0, ...metadataLines);
+  }
+}
+
+function appendForCurrentMetadataIfMissing(source: string, loopTask: Task, currentValue: string): string {
+  const eol = source.includes("\r\n") ? "\r\n" : "\n";
+  const lines = source.split(/\r?\n/);
+  const parentLineIndex = loopTask.line - 1;
+  if (parentLineIndex < 0 || parentLineIndex >= lines.length) {
+    return source;
+  }
+
+  const parentLine = lines[parentLineIndex] ?? "";
+  const parentIndentLength = getLeadingWhitespaceLength(parentLine);
+  const childIndent = computeChildIndent(parentLine);
+  const childIndentLength = childIndent.length;
+
+  let hasForCurrent = false;
+  let insertionIndex = parentLineIndex + 1;
+  for (let index = parentLineIndex + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.trim().length === 0) {
+      continue;
+    }
+    const lineIndentLength = getLeadingWhitespaceLength(line);
+    if (lineIndentLength <= parentIndentLength) {
+      break;
+    }
+
+    if (lineIndentLength === childIndentLength) {
+      const bulletMatch = line.match(/^\s*[-*+]\s+(.*)$/);
+      const childText = (bulletMatch?.[1] ?? "").trim();
+      if (/^for-current\s*:/i.test(childText)) {
+        hasForCurrent = true;
+        break;
+      }
+
+      if (/^\[[ xX]\]\s+/.test(childText)) {
+        insertionIndex = index;
+        break;
+      }
+
+      if (/^for-item\s*:/i.test(childText)) {
+        insertionIndex = index + 1;
+      }
+    }
+  }
+
+  if (hasForCurrent) {
+    return source;
+  }
+
+  lines.splice(insertionIndex, 0, `${childIndent}- for-current: ${currentValue}`);
+  return lines.join(eol);
+}
+
+export function advanceForLoopUsingFileSystem(
+  loopTask: Task,
+  fileSystem: FileSystem,
+): {
+  advanced: boolean;
+  completed: boolean;
+  current?: string;
+  remainingItems: number;
+} {
+  let outcome = {
+    advanced: false,
+    completed: false,
+    current: undefined as string | undefined,
+    remainingItems: 0,
+  };
+
+  withSerializedFileMutation(loopTask.file, () => {
+    let source = fileSystem.readText(loopTask.file);
+    const latestTasks = parseTasks(source, loopTask.file);
+    const latestLoopTask = findTaskByIdentity(latestTasks, loopTask);
+    if (!latestLoopTask || !isForLoopTaskText(latestLoopTask.text)) {
+      return;
+    }
+
+    const itemValues = getForItemValues(latestLoopTask.subItems);
+    if (itemValues.length === 0) {
+      return;
+    }
+
+    const currentValue = getForCurrentValue(latestLoopTask.subItems);
+    const currentIndex = currentValue === undefined
+      ? -1
+      : itemValues.findIndex((item) => item === currentValue);
+    const nextIndex = currentIndex + 1;
+
+    if (currentValue === undefined && nextIndex < itemValues.length) {
+      const initialCurrent = itemValues[nextIndex]!;
+      const updatedSource = appendForCurrentMetadataIfMissing(source, latestLoopTask, initialCurrent);
+      if (updatedSource !== source) {
+        fileSystem.writeText(loopTask.file, updatedSource);
+      }
+      outcome = {
+        advanced: true,
+        completed: false,
+        current: initialCurrent,
+        remainingItems: Math.max(0, itemValues.length - (nextIndex + 1)),
+      };
+      return;
+    }
+
+    if (nextIndex >= itemValues.length) {
+      const eol = source.includes("\r\n") ? "\r\n" : "\n";
+      const lines = source.split(/\r?\n/);
+      rewriteForLoopMetadataLines(lines, latestLoopTask, undefined);
+      const updatedSource = lines.join(eol);
+      if (updatedSource !== source) {
+        fileSystem.writeText(loopTask.file, updatedSource);
+      }
+      outcome = {
+        advanced: false,
+        completed: true,
+        current: undefined,
+        remainingItems: 0,
+      };
+      return;
+    }
+
+    const nextCurrent = itemValues[nextIndex]!;
+    const sourceAfterReset = resetForLoopChildTasks(source, latestLoopTask, loopTask.file);
+    source = sourceAfterReset;
+
+    const tasksAfterReset = parseTasks(source, loopTask.file);
+    const latestLoopAfterReset = findTaskByIdentity(tasksAfterReset, latestLoopTask)
+      ?? findTaskByIdentity(tasksAfterReset, loopTask);
+    if (!latestLoopAfterReset) {
+      return;
+    }
+
+    const eol = source.includes("\r\n") ? "\r\n" : "\n";
+    const lines = source.split(/\r?\n/);
+    rewriteForLoopMetadataLines(lines, latestLoopAfterReset, nextCurrent);
+    const updatedSource = lines.join(eol);
+    if (updatedSource !== source) {
+      fileSystem.writeText(loopTask.file, updatedSource);
+    }
+
+    outcome = {
+      advanced: true,
+      completed: false,
+      current: nextCurrent,
+      remainingItems: Math.max(0, itemValues.length - (nextIndex + 1)),
+    };
+  });
+
+  return outcome;
 }
 
 /**

@@ -136,6 +136,40 @@ describe("filterRunnable", () => {
 
     expect(filterRunnable([parent, child])).toEqual([child]);
   });
+
+  it("keeps for-loop parents runnable while metadata is not yet initialized", () => {
+    const loopParent = makeTask({
+      text: "for: controllers",
+      depth: 0,
+      index: 0,
+      children: [
+        makeTask({ text: "Do this", depth: 1, index: 1, checked: false }),
+      ],
+      subItems: [
+        { text: "for-item: This", line: 2, depth: 1 },
+        { text: "for-item: That", line: 3, depth: 1 },
+      ],
+    });
+
+    expect(filterRunnable([loopParent])).toEqual([loopParent]);
+  });
+
+  it("blocks for-loop parents once for-current metadata is present and children remain unchecked", () => {
+    const loopParent = makeTask({
+      text: "for: controllers",
+      depth: 0,
+      index: 0,
+      children: [
+        makeTask({ text: "Do this", depth: 1, index: 1, checked: false }),
+      ],
+      subItems: [
+        { text: "for-item: This", line: 2, depth: 1 },
+        { text: "for-current: This", line: 3, depth: 1 },
+      ],
+    });
+
+    expect(filterRunnable([loopParent])).toEqual([loopParent]);
+  });
 });
 
 describe("findRemainingSiblings", () => {

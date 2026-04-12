@@ -6,6 +6,7 @@ import { hasUncheckedDescendants } from "../domain/task-selection.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import { handleTemplateCliFailure } from "./cli-block-handlers.js";
 import {
+  advanceForLoopUsingFileSystem,
   checkTaskUsingFileSystem,
   insertTraceStatisticsUsingFileSystem,
   skipRemainingSiblingsUsingFileSystem,
@@ -33,6 +34,7 @@ import type { TraceStatisticsConfig } from "../domain/worker-config.js";
 import { formatStatisticsLines } from "../domain/trace-statistics.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
 import { pluralize } from "./run-task-utils.js";
+import { isForLoopTaskText } from "../domain/for-loop.js";
 import {
   RUN_REASON_VERIFICATION_FAILED,
   RUN_REASON_USAGE_LIMIT_DETECTED,
@@ -135,6 +137,10 @@ export async function completeTaskIteration(params: {
   verificationFailureRunReason: string;
   skipRemainingSiblingsReason?: string;
   toolExpansionInsertedChildCount?: number;
+  forLoopAdvanced?: {
+    current: string;
+    remainingItems: number;
+  };
   failOnCompleteHookError?: boolean;
   persistFailureAnnotation?: boolean;
   traceStatisticsConfig?: TraceStatisticsConfig;
@@ -195,6 +201,7 @@ export async function completeTaskIteration(params: {
     verificationFailureRunReason,
     skipRemainingSiblingsReason,
     toolExpansionInsertedChildCount,
+    forLoopAdvanced,
     failOnCompleteHookError,
     persistFailureAnnotation = true,
     traceStatisticsConfig,
@@ -406,6 +413,32 @@ export async function completeTaskIteration(params: {
         exitCode: await failRun(1, "failed", message, 1),
         groupEnded: false,
       };
+    }
+  }
+
+  const isLoopTask = isForLoopTaskText(task.text);
+  if (isLoopTask) {
+    if (forLoopAdvanced) {
+      emit({
+        kind: "info",
+        message: "Loop advanced to item: " + forLoopAdvanced.current
+          + " (" + forLoopAdvanced.remainingItems + " remaining).",
+      });
+      state.tasksCompleted++;
+      resetArtifacts();
+      return { continueLoop: true, groupEnded: false };
+    }
+
+    const completionTransition = advanceForLoopUsingFileSystem(task, dependencies.fileSystem);
+    if (completionTransition.advanced && completionTransition.current) {
+      emit({
+        kind: "info",
+        message: "Loop advanced to item: " + completionTransition.current
+          + " (" + completionTransition.remainingItems + " remaining).",
+      });
+      state.tasksCompleted++;
+      resetArtifacts();
+      return { continueLoop: true, groupEnded: false };
     }
   }
 

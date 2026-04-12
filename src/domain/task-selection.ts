@@ -1,4 +1,5 @@
 import type { Task } from "./parser.js";
+import { getForCurrentValue, isForLoopTaskText } from "./for-loop.js";
 
 /**
  * Options that control how unchecked descendant checks are performed.
@@ -23,6 +24,11 @@ export function hasUncheckedDescendants(
   allTasks: Task[],
   options: DescendantSelectionOptions = {},
 ): boolean {
+  const isForLoopTask = isForLoopTaskText(task.text);
+  if (isForLoopTask && getForCurrentValue(task.subItems) === undefined) {
+    return false;
+  }
+
   // Prefer tree traversal when parser-attached children are available.
   if (options.useChildren) {
     const children = task.children ?? [];

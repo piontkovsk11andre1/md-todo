@@ -4,6 +4,7 @@ import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { insertSubitems } from "../domain/planner.js";
 import { parseTasks } from "../domain/parser.js";
 import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
+import { advanceForLoopUsingFileSystem } from "./checkbox-operations.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
   ArtifactRunContext,
@@ -47,6 +48,10 @@ export type TaskExecutionDispatchResult =
     cliExecutionOptionsForVerification: CommandExecutionOptions | undefined;
     skipRemainingSiblingsReason?: string;
     toolExpansionInsertedChildCount?: number;
+    forLoopAdvanced?: {
+      current: string;
+      remainingItems: number;
+    };
   }
   | {
     kind: "execution-failed";
@@ -303,6 +308,9 @@ export async function dispatchTaskExecution(params: {
 
       traceRunSession.completePhase(executePhaseTrace, 0, "", "", true);
       const skipRemainingSiblingsReason = chainResult.skipRemainingSiblings?.reason;
+      const forLoopAdvanceResult = chainResult.childFile || prefixChain?.handler?.tool.name !== "for"
+        ? undefined
+        : advanceForLoopUsingFileSystem(task, dependencies.fileSystem);
       return {
         kind: "ready-for-completion",
         // Sibling-skip control-flow uses skip annotations as the audit trail,
@@ -313,6 +321,14 @@ export async function dispatchTaskExecution(params: {
         verificationFailureRunReason: "Verification failed after all repair attempts.",
         skipRemainingSiblingsReason,
         toolExpansionInsertedChildCount: chainResult.childTaskCount > 0 ? chainResult.childTaskCount : undefined,
+        ...(forLoopAdvanceResult?.advanced && forLoopAdvanceResult.current
+          ? {
+            forLoopAdvanced: {
+              current: forLoopAdvanceResult.current,
+              remainingItems: forLoopAdvanceResult.remainingItems,
+            },
+          }
+          : {}),
       };
     }
 

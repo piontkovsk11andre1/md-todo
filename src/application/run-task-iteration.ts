@@ -684,6 +684,7 @@ export async function runTaskIteration(params: {
     verificationFailureRunReason: dispatchResult.verificationFailureRunReason,
     skipRemainingSiblingsReason: dispatchResult.skipRemainingSiblingsReason,
     toolExpansionInsertedChildCount: dispatchResult.toolExpansionInsertedChildCount,
+    forLoopAdvanced: dispatchResult.forLoopAdvanced,
     failOnCompleteHookError: execution.forceStrippedTaskText !== undefined,
     persistFailureAnnotation: execution.persistFailureAnnotation,
     traceStatisticsConfig: completion.traceStatisticsConfig,
