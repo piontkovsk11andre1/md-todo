@@ -162,6 +162,55 @@ describe("research-task", () => {
     expect(prompt).not.toContain("Injected source");
   });
 
+  it("keeps workspace context template variables authoritative over user vars", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+    ].join("\n"));
+    vi.mocked(dependencies.templateVarsLoader.load).mockReturnValue({
+      invocationDir: "/fake/file/invocation",
+      workspaceDir: "/fake/file/workspace",
+      workspaceLinkPath: "/fake/file/workspace.link",
+      isLinkedWorkspace: "false",
+    });
+
+    const researchTask = createResearchTask(dependencies);
+    const code = await researchTask(createOptions({
+      source: markdownFile,
+      printPrompt: true,
+      varsFileOption: "custom-vars.json",
+      cliTemplateVarArgs: [
+        "invocationDir=/fake/cli/invocation",
+        "workspaceDir=/fake/cli/workspace",
+        "workspaceLinkPath=/fake/cli/workspace.link",
+        "isLinkedWorkspace=false",
+      ],
+      invocationDir: "/real/invocation",
+      workspaceDir: "/real/workspace",
+      workspaceLinkPath: "/real/invocation/.rundown/workspace.link",
+      isLinkedWorkspace: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`invocationDir=${path.resolve("/real/invocation")}`);
+    expect(prompt).toContain(`workspaceDir=${path.resolve("/real/workspace")}`);
+    expect(prompt).toContain(`workspaceLinkPath=${path.resolve("/real/invocation/.rundown/workspace.link")}`);
+    expect(prompt).toContain("isLinkedWorkspace=true");
+    expect(prompt).not.toContain(path.resolve("/fake/file/invocation"));
+    expect(prompt).not.toContain(path.resolve("/fake/cli/invocation"));
+  });
+
   it("reports dry-run details without executing research worker", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
