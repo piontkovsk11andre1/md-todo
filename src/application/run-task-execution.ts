@@ -139,9 +139,11 @@ function updateWorkerHealthForAttemptOutcome(params: {
 }): WorkerHealthSnapshot {
   const { snapshot, workerCommand, profileName, failureClass, healthPolicy, now } = params;
   const workerKey = buildWorkerHealthWorkerKey(workerCommand);
-  const shouldUpdateProfile = failureClass === WORKER_FAILURE_CLASS_SUCCESS;
-  const profileKey = shouldUpdateProfile && typeof profileName === "string"
-    ? buildWorkerHealthProfileKey(profileName)
+  const normalizedProfileName = typeof profileName === "string"
+    ? profileName.trim()
+    : "";
+  const profileKey = normalizedProfileName.length > 0
+    ? buildWorkerHealthProfileKey(normalizedProfileName)
     : "";
   const updateTargets: Array<{ source: WorkerHealthEntry["source"]; key: string }> = [
     { source: "worker", key: workerKey },

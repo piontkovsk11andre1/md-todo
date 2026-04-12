@@ -10,6 +10,7 @@ import {
   isOpenCodeWorkerCommand,
   toRuntimeTaskMetadata,
 } from "../../src/application/run-task-execution.js";
+import type { WorkerHealthSnapshot } from "../../src/domain/ports/worker-health-store.js";
 import {
   WORKER_FAILURE_CLASS_SUCCESS,
   WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
@@ -1552,6 +1553,71 @@ describe("run-task-execution helpers", () => {
       status: WORKER_HEALTH_STATUS_HEALTHY,
       lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
       failureCountWindow: 0,
+    }));
+  });
+
+  it("persists profile-level failure health across runs and blocks later profile resolution", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    let persistedSnapshot: WorkerHealthSnapshot = {
+      schemaVersion: 1,
+      updatedAt: "2026-04-12T09:00:00.000Z",
+      entries: [],
+    };
+    const workerHealthStore = {
+      read: vi.fn(() => persistedSnapshot),
+      write: vi.fn((nextSnapshot: WorkerHealthSnapshot) => {
+        persistedSnapshot = nextSnapshot;
+      }),
+      filePath: vi.fn(() => `${cwd}/.rundown/worker-health.json`),
+    };
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "implement fallback behavior", { directiveProfile: "fast" }),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] implement fallback behavior\n" }),
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+        profiles: {
+          fast: ["primary", "worker"],
+        },
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 0,
+        },
+      },
+    });
+    dependencies.workerHealthStore = workerHealthStore;
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "connection reset by peer" });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const firstRunCode = await runTask(createOptions({ verify: false, workerCommand: [] }));
+
+    expect(firstRunCode).toBe(1);
+    const profileEntryAfterFirstRun = persistedSnapshot.entries.find(
+      (entry) => entry.source === "profile" && entry.key === buildWorkerHealthProfileKey("fast"),
+    );
+    expect(profileEntryAfterFirstRun).toEqual(expect.objectContaining({
+      key: buildWorkerHealthProfileKey("fast"),
+      source: "profile",
+      lastFailureClass: WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
+    }));
+    expect(profileEntryAfterFirstRun?.status === WORKER_HEALTH_STATUS_UNAVAILABLE
+      || profileEntryAfterFirstRun?.status === WORKER_HEALTH_STATUS_COOLING_DOWN).toBe(true);
+
+    const emittedEventCountAfterFirstRun = events.length;
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({ exitCode: 0, stdout: "ok", stderr: "" }));
+    const secondRunCode = await runTask(createOptions({ verify: false, workerCommand: [] }));
+
+    expect(secondRunCode).toBe(1);
+    expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
+    expect(events.slice(emittedEventCountAfterFirstRun)).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("No worker command available"),
     }));
   });
 
