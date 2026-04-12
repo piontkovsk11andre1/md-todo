@@ -272,6 +272,51 @@ function normalizeTodoChildLine(line: string): string {
 }
 
 const CHECKBOX_PATTERN = /^\s*[-*+]\s+\[([ xX])\]\s+\S/;
+const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
+
+function classifyTodoLinesOutsideFences(lines: string[]): { proseLines: string[]; todoLines: string[]; todoIndices: number[] } {
+  const proseLines: string[] = [];
+  const todoLines: string[] = [];
+  const todoIndices: number[] = [];
+  let openFence: { char: "`" | "~"; length: number } | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const fenceMatch = line.match(FENCE_PATTERN);
+    if (fenceMatch) {
+      const marker = fenceMatch[1] ?? "";
+      const char = marker[0] as "`" | "~";
+      const length = marker.length;
+
+      if (openFence === null) {
+        openFence = { char, length };
+        proseLines.push(line);
+        continue;
+      }
+
+      if (openFence.char === char && length >= openFence.length) {
+        openFence = null;
+        proseLines.push(line);
+        continue;
+      }
+    }
+
+    if (openFence !== null) {
+      proseLines.push(line);
+      continue;
+    }
+
+    if (CHECKBOX_PATTERN.test(line)) {
+      todoLines.push(line);
+      todoIndices.push(index);
+      continue;
+    }
+
+    proseLines.push(line);
+  }
+
+  return { proseLines, todoLines, todoIndices };
+}
 
 /**
  * Collects all TODO checkbox lines and groups them at the end of the document.
@@ -287,16 +332,7 @@ export function relocateInsertedTodosToEnd(_beforeSource: string, afterSource: s
   const eol = afterSource.includes("\r\n") ? "\r\n" : "\n";
   const afterLines = afterSource.split(/\r?\n/);
 
-  const proseLines: string[] = [];
-  const todoLines: string[] = [];
-
-  for (const line of afterLines) {
-    if (CHECKBOX_PATTERN.test(line)) {
-      todoLines.push(line);
-    } else {
-      proseLines.push(line);
-    }
-  }
+  const { proseLines, todoLines, todoIndices } = classifyTodoLinesOutsideFences(afterLines);
 
   // Nothing to relocate if there are no TODOs or they were already all at the end.
   if (todoLines.length === 0) {
@@ -304,17 +340,30 @@ export function relocateInsertedTodosToEnd(_beforeSource: string, afterSource: s
   }
 
   // Check whether TODOs are already grouped at the end (no prose after the first TODO).
-  let firstTodoIndex = -1;
-  for (let i = 0; i < afterLines.length; i++) {
-    if (CHECKBOX_PATTERN.test(afterLines[i]!)) {
-      firstTodoIndex = i;
-      break;
-    }
-  }
+  const firstTodoIndex = todoIndices[0] ?? -1;
   // If all lines from the first TODO onward are either TODOs or blank, nothing to move.
   let alreadyGrouped = true;
-  for (let i = firstTodoIndex; i < afterLines.length; i++) {
+  let openFence: { char: "`" | "~"; length: number } | null = null;
+  for (let i = firstTodoIndex; i < afterLines.length; i += 1) {
     const line = afterLines[i]!;
+
+    const fenceMatch = line.match(FENCE_PATTERN);
+    if (fenceMatch) {
+      const marker = fenceMatch[1] ?? "";
+      const char = marker[0] as "`" | "~";
+      const length = marker.length;
+      if (openFence === null) {
+        openFence = { char, length };
+      } else if (openFence.char === char && length >= openFence.length) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    if (openFence !== null) {
+      continue;
+    }
+
     if (!CHECKBOX_PATTERN.test(line) && line.trim() !== "") {
       alreadyGrouped = false;
       break;

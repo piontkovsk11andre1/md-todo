@@ -3,6 +3,7 @@ import {
   insertSubitems,
   computeChildIndent,
   validatePlanEdit,
+  relocateInsertedTodosToEnd,
 } from "../../src/domain/planner.js";
 import type { Task } from "../../src/domain/parser.js";
 
@@ -356,5 +357,79 @@ describe("validatePlanEdit", () => {
 
     expect(result.valid).toBe(false);
     expect(result.rejectionReason).toContain("check off TODO items");
+  });
+});
+
+describe("relocateInsertedTodosToEnd", () => {
+  it("moves checkbox TODO lines outside fenced blocks to document end", () => {
+    const source = [
+      "# Spec",
+      "",
+      "Intro paragraph.",
+      "- [ ] Task A",
+      "More explanation.",
+      "- [ ] Task B",
+      "",
+    ].join("\n");
+
+    const result = relocateInsertedTodosToEnd(source, source);
+
+    expect(result).toBe([
+      "# Spec",
+      "",
+      "Intro paragraph.",
+      "More explanation.",
+      "",
+      "- [ ] Task A",
+      "- [ ] Task B",
+      "",
+    ].join("\n"));
+  });
+
+  it("does not treat checkbox-looking lines inside fenced blocks as TODOs", () => {
+    const source = [
+      "# Loop Example",
+      "",
+      "```markdown",
+      "- [ ] for: All controllers",
+      "  - [ ] Do this",
+      "  - [ ] Do that",
+      "```",
+      "",
+      "Implementation notes.",
+      "- [ ] Real task",
+      "",
+    ].join("\n");
+
+    const result = relocateInsertedTodosToEnd(source, source);
+
+    expect(result).toBe([
+      "# Loop Example",
+      "",
+      "```markdown",
+      "- [ ] for: All controllers",
+      "  - [ ] Do this",
+      "  - [ ] Do that",
+      "```",
+      "",
+      "Implementation notes.",
+      "- [ ] Real task",
+      "",
+    ].join("\n"));
+  });
+
+  it("returns original content when all TODOs are in fenced blocks", () => {
+    const source = [
+      "# Examples",
+      "",
+      "```",
+      "- [ ] example task",
+      "```",
+      "",
+      "No real tasks.",
+      "",
+    ].join("\n");
+
+    expect(relocateInsertedTodosToEnd(source, source)).toBe(source);
   });
 });
