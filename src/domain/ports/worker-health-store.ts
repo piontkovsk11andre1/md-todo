@@ -14,6 +14,14 @@ export interface WorkerHealthStore {
   read(configDirOrCwd?: string): WorkerHealthSnapshot;
   /** Persists worker health state with the current schema version. */
   write(snapshot: WorkerHealthSnapshot, configDirOrCwd?: string): void;
+  /**
+   * Atomically updates worker health by applying a read-modify-write transform
+   * against the latest persisted snapshot.
+   */
+  update?(
+    updater: (snapshot: WorkerHealthSnapshot) => WorkerHealthSnapshot,
+    configDirOrCwd?: string,
+  ): WorkerHealthSnapshot;
   /** Returns the absolute file path used for persistence. */
   filePath(configDirOrCwd?: string): string;
 }

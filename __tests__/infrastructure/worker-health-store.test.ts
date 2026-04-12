@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFsWorkerHealthStore } from "../../src/infrastructure/adapters/fs-worker-health-store.js";
 import {
   readWorkerHealthSnapshot,
+  updateWorkerHealthSnapshot,
   workerHealthStoreFilePath,
   writeWorkerHealthSnapshot,
 } from "../../src/infrastructure/worker-health-store.js";
@@ -133,6 +134,52 @@ describe("worker health store", () => {
     expect(files).toContain("worker-health.json");
     expect(files.some((file) => file.includes("worker-health.json.tmp-"))).toBe(false);
   });
+
+  it("applies atomic read-modify-write updates via updater callback", () => {
+    const cwd = createWorkspace();
+
+    writeWorkerHealthSnapshot({
+      schemaVersion: 1,
+      updatedAt: "2026-04-12T10:00:00.000Z",
+      entries: [
+        {
+          key: "worker:[\"primary\"]",
+          source: "worker",
+          status: "healthy",
+          failureCountWindow: 0,
+        },
+      ],
+    }, cwd);
+
+    const updated = updateWorkerHealthSnapshot((snapshot) => ({
+      ...snapshot,
+      updatedAt: "2026-04-12T10:05:00.000Z",
+      entries: [
+        ...snapshot.entries,
+        {
+          key: "worker:[\"fallback\"]",
+          source: "worker",
+          status: "cooling_down",
+          lastFailureClass: "usage_limit",
+          cooldownUntil: "2026-04-12T10:20:00.000Z",
+          failureCountWindow: 1,
+        },
+      ],
+    }), cwd);
+
+    expect(updated.entries).toEqual([
+      expect.objectContaining({ key: "worker:[\"primary\"]" }),
+      expect.objectContaining({
+        key: "worker:[\"fallback\"]",
+        source: "worker",
+        status: "cooling_down",
+        lastFailureClass: "usage_limit",
+      }),
+    ]);
+
+    const persisted = readWorkerHealthSnapshot(cwd);
+    expect(persisted.entries).toEqual(updated.entries);
+  });
 });
 
 describe("createFsWorkerHealthStore", () => {
@@ -165,6 +212,21 @@ describe("createFsWorkerHealthStore", () => {
       },
     ]);
     expect(store.filePath(cwd)).toBe(path.join(cwd, ".rundown", "worker-health.json"));
+
+    const updated = store.update?.((snapshot) => ({
+      ...snapshot,
+      entries: [
+        ...snapshot.entries,
+        {
+          key: "worker:[\"fallback\"]",
+          source: "worker",
+          status: "healthy",
+        },
+      ],
+    }), cwd);
+
+    expect(updated).toBeDefined();
+    expect(store.read(cwd).entries.some((entry) => entry.key === "worker:[\"fallback\"]")).toBe(true);
   });
 });
 

@@ -1,6 +1,7 @@
 import type { WorkerHealthStore } from "../../domain/ports/worker-health-store.js";
 import {
   readWorkerHealthSnapshot,
+  updateWorkerHealthSnapshot,
   workerHealthStoreFilePath,
   writeWorkerHealthSnapshot,
 } from "../worker-health-store.js";
@@ -15,6 +16,9 @@ export function createFsWorkerHealthStore(): WorkerHealthStore {
     },
     write(snapshot, configDirOrCwd) {
       writeWorkerHealthSnapshot(snapshot, configDirOrCwd);
+    },
+    update(updater, configDirOrCwd) {
+      return updateWorkerHealthSnapshot(updater, configDirOrCwd);
     },
     filePath(configDirOrCwd) {
       return workerHealthStoreFilePath(configDirOrCwd);

@@ -59,6 +59,29 @@ export function writeWorkerHealthSnapshot(
   writeJsonAtomic(filePath, payload);
 }
 
+/**
+ * Atomically applies a read-modify-write update to worker health.
+ */
+export function updateWorkerHealthSnapshot(
+  updater: (snapshot: WorkerHealthSnapshot) => WorkerHealthSnapshot,
+  configDirOrCwd: string = process.cwd(),
+): WorkerHealthSnapshot {
+  const filePath = workerHealthStoreFilePath(configDirOrCwd);
+  const lockPath = `${filePath}.lock`;
+
+  return withFileLock(lockPath, () => {
+    const currentSnapshot = readWorkerHealthSnapshot(configDirOrCwd);
+    const updatedSnapshot = normalizeSnapshotForWrite(updater(currentSnapshot));
+    const payload: WorkerHealthSnapshot = {
+      schemaVersion: CURRENT_WORKER_HEALTH_SCHEMA_VERSION,
+      updatedAt: updatedSnapshot.updatedAt,
+      entries: updatedSnapshot.entries,
+    };
+    writeJsonAtomic(filePath, payload);
+    return payload;
+  });
+}
+
 function normalizeSnapshotForWrite(value: unknown): WorkerHealthSnapshot {
   if (!isRecord(value)) {
     return createEmptySnapshot();
@@ -211,12 +234,58 @@ function writeJsonAtomic(filePath: string, value: unknown): void {
   }
 }
 
+function withFileLock<T>(lockPath: string, action: () => T): T {
+  ensureParentDir(lockPath);
+  const startedAtMs = Date.now();
+
+  // 5 seconds is enough for local critical sections while avoiding deadlocks.
+  const timeoutMs = 5_000;
+  const sleepMs = 25;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const fd = fs.openSync(lockPath, "wx");
+      try {
+        return action();
+      } finally {
+        fs.closeSync(fd);
+        try {
+          fs.unlinkSync(lockPath);
+        } catch {
+          // Ignore lock cleanup failures; stale lock recovery handles leftovers.
+        }
+      }
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "EEXIST") {
+        throw error;
+      }
+
+      if (Date.now() - startedAtMs >= timeoutMs) {
+        throw new Error(`Timed out waiting for worker-health lock: ${lockPath}`);
+      }
+
+      sleepSync(sleepMs);
+    }
+  }
+}
+
+function sleepSync(durationMs: number): void {
+  const waitBuffer = new SharedArrayBuffer(4);
+  const waitView = new Int32Array(waitBuffer);
+  Atomics.wait(waitView, 0, 0, durationMs);
+}
+
 function ensureParentDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error;
 }
 
 function resolveRuntimeConfigDir(startDir: string): string {

@@ -1267,28 +1267,41 @@ export function createRunTaskExecution(
 
               const exitCode = iterationResult.exitCode ?? 0;
               const didFail = !iterationResult.continueLoop && exitCode !== 0;
+              const executedWorkerCommand = iterationResult.executedWorkerCommand ?? [];
+              const executedWorkerProfileName = iterationResult.executedWorkerProfileName;
 
-              if ((iterationResult.executedWorkerCommand?.length ?? 0) > 0) {
+              if (executedWorkerCommand.length > 0) {
                 const healthOutcomeClass: WorkerFailureClass = didFail
                   ? (iterationResult.workerFailureClass ?? WORKER_FAILURE_CLASS_EXECUTION_FAILURE_OTHER)
                   : WORKER_FAILURE_CLASS_SUCCESS;
-                workerHealthSnapshot = updateWorkerHealthForAttemptOutcome({
-                  snapshot: workerHealthSnapshot,
-                  workerCommand: iterationResult.executedWorkerCommand ?? [],
-                  profileName: iterationResult.executedWorkerProfileName,
-                  failureClass: healthOutcomeClass,
-                  healthPolicy,
-                  now: new Date(),
-                });
+                const applyAttemptOutcomeUpdate = (snapshot: WorkerHealthSnapshot): WorkerHealthSnapshot => {
+                  return updateWorkerHealthForAttemptOutcome({
+                    snapshot,
+                    workerCommand: executedWorkerCommand,
+                    profileName: executedWorkerProfileName,
+                    failureClass: healthOutcomeClass,
+                    healthPolicy,
+                    now: new Date(),
+                  });
+                };
+
+                if (dependencies.workerHealthStore?.update) {
+                  workerHealthSnapshot = dependencies.workerHealthStore.update(
+                    applyAttemptOutcomeUpdate,
+                    workerHealthStoreBaseDir,
+                  );
+                } else {
+                  workerHealthSnapshot = applyAttemptOutcomeUpdate(workerHealthSnapshot);
+                }
                 workerHealthEntries = workerHealthSnapshot.entries;
-                if (dependencies.workerHealthStore) {
+                if (dependencies.workerHealthStore && !dependencies.workerHealthStore.update) {
                   dependencies.workerHealthStore.write(workerHealthSnapshot, workerHealthStoreBaseDir);
                 }
               }
 
               const shouldRetryFailover = didFail
                 && isFailoverRetryableFailureClass(iterationResult.workerFailureClass)
-                && (iterationResult.executedWorkerCommand?.length ?? 0) > 0;
+                && executedWorkerCommand.length > 0;
               if (shouldRetryFailover) {
                 const hasTaskBudget = taskFailoverAttemptsUsed < maxFailoverAttemptsPerTask;
                 const hasRunBudget = maxFailoverAttemptsPerRun === undefined
@@ -1334,11 +1347,11 @@ export function createRunTaskExecution(
                 continue;
               }
 
-              if (
-                didFail
-                && taskFailoverAttemptsUsed > 0
-                && (iterationResult.executedWorkerCommand?.length ?? 0) === 0
-              ) {
+                if (
+                  didFail
+                  && taskFailoverAttemptsUsed > 0
+                  && executedWorkerCommand.length === 0
+                ) {
                 emit({
                   kind: "error",
                   message: "Failover exhausted: no eligible fallback workers remain after health filtering.",
