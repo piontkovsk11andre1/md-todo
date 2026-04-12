@@ -4,7 +4,12 @@ import type { WorkerConfigPort } from "../../domain/ports/worker-config-port.js"
 import {
   DEFAULT_TRACE_STATISTICS_FIELDS,
   TRACE_STATISTICS_FIELD_REGISTRY,
+  WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY,
+  WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER,
+  WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_COOLDOWN,
+  WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL,
   WORKER_CONFIG_COMMAND_NAMES,
+  type WorkerHealthPolicyConfig,
   type TraceStatisticsConfig,
   type WorkerCommand,
   type WorkerCommandProfiles,
@@ -160,6 +165,127 @@ function validateTraceStatisticsConfig(value: unknown, keyPath: string): TraceSt
   };
 }
 
+function validateNonNegativeNumber(value: unknown, keyPath: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected non-negative number.`);
+  }
+
+  return value;
+}
+
+function validatePositiveInteger(value: unknown, keyPath: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected positive integer.`);
+  }
+
+  return value;
+}
+
+function validateHealthPolicy(value: unknown, keyPath: string): WorkerHealthPolicyConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+  }
+
+  const result: WorkerHealthPolicyConfig = {};
+
+  const cooldowns = value.cooldownSecondsByFailureClass;
+  if (cooldowns !== undefined) {
+    if (!isPlainObject(cooldowns)) {
+      throw new Error(`Invalid worker config at ${keyPath}.cooldownSecondsByFailureClass: expected object.`);
+    }
+
+    const validatedCooldowns: NonNullable<WorkerHealthPolicyConfig["cooldownSecondsByFailureClass"]> = {};
+    if (cooldowns.usage_limit !== undefined) {
+      validatedCooldowns.usage_limit = validateNonNegativeNumber(
+        cooldowns.usage_limit,
+        `${keyPath}.cooldownSecondsByFailureClass.usage_limit`,
+      );
+    }
+    if (cooldowns.transport_unavailable !== undefined) {
+      validatedCooldowns.transport_unavailable = validateNonNegativeNumber(
+        cooldowns.transport_unavailable,
+        `${keyPath}.cooldownSecondsByFailureClass.transport_unavailable`,
+      );
+    }
+    if (cooldowns.execution_failure_other !== undefined) {
+      validatedCooldowns.execution_failure_other = validateNonNegativeNumber(
+        cooldowns.execution_failure_other,
+        `${keyPath}.cooldownSecondsByFailureClass.execution_failure_other`,
+      );
+    }
+
+    result.cooldownSecondsByFailureClass = validatedCooldowns;
+  }
+
+  if (value.maxFailoverAttemptsPerTask !== undefined) {
+    result.maxFailoverAttemptsPerTask = validatePositiveInteger(
+      value.maxFailoverAttemptsPerTask,
+      `${keyPath}.maxFailoverAttemptsPerTask`,
+    );
+  }
+
+  if (value.maxFailoverAttemptsPerRun !== undefined) {
+    result.maxFailoverAttemptsPerRun = validatePositiveInteger(
+      value.maxFailoverAttemptsPerRun,
+      `${keyPath}.maxFailoverAttemptsPerRun`,
+    );
+  }
+
+  if (value.fallbackStrategy !== undefined) {
+    const fallbackStrategy = value.fallbackStrategy;
+    if (
+      fallbackStrategy !== WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER
+      && fallbackStrategy !== WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY
+    ) {
+      throw new Error(
+        `Invalid worker config at ${keyPath}.fallbackStrategy: expected one of `
+          + `${WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER}, ${WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY}.`,
+      );
+    }
+
+    result.fallbackStrategy = fallbackStrategy;
+  }
+
+  const unavailableReevaluation = value.unavailableReevaluation;
+  if (unavailableReevaluation !== undefined) {
+    if (!isPlainObject(unavailableReevaluation)) {
+      throw new Error(`Invalid worker config at ${keyPath}.unavailableReevaluation: expected object.`);
+    }
+
+    const validatedUnavailableReevaluation: NonNullable<WorkerHealthPolicyConfig["unavailableReevaluation"]> = {};
+
+    if (unavailableReevaluation.mode !== undefined) {
+      const mode = unavailableReevaluation.mode;
+      if (
+        mode !== WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL
+        && mode !== WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_COOLDOWN
+      ) {
+        throw new Error(
+          `Invalid worker config at ${keyPath}.unavailableReevaluation.mode: expected one of `
+            + `${WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL}, ${WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_COOLDOWN}.`,
+        );
+      }
+
+      validatedUnavailableReevaluation.mode = mode;
+    }
+
+    if (unavailableReevaluation.probeCooldownSeconds !== undefined) {
+      validatedUnavailableReevaluation.probeCooldownSeconds = validateNonNegativeNumber(
+        unavailableReevaluation.probeCooldownSeconds,
+        `${keyPath}.unavailableReevaluation.probeCooldownSeconds`,
+      );
+    }
+
+    result.unavailableReevaluation = validatedUnavailableReevaluation;
+  }
+
+  return result;
+}
+
 /**
  * Validates the top-level worker configuration document.
  */
@@ -177,6 +303,7 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
     commands: commands === undefined ? undefined : validateCommandProfiles(commands, "commands"),
     profiles: profiles === undefined ? undefined : validateProfileMap(profiles, "profiles"),
     traceStatistics: validateTraceStatisticsConfig(value.traceStatistics, "traceStatistics"),
+    healthPolicy: validateHealthPolicy(value.healthPolicy, "healthPolicy"),
   };
 }
 

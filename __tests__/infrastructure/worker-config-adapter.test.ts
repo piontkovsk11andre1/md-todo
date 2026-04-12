@@ -338,4 +338,129 @@ describe("createWorkerConfigAdapter", () => {
       `Invalid worker config at \"${configPath}\": Invalid worker config at profiles.fast: expected string array.`,
     );
   });
+
+  it("loads healthPolicy config fields", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        healthPolicy: {
+          cooldownSecondsByFailureClass: {
+            usage_limit: 120,
+            transport_unavailable: 45,
+            execution_failure_other: 5,
+          },
+          maxFailoverAttemptsPerTask: 3,
+          maxFailoverAttemptsPerRun: 7,
+          fallbackStrategy: "strict_order",
+          unavailableReevaluation: {
+            mode: "cooldown",
+            probeCooldownSeconds: 300,
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      healthPolicy: {
+        cooldownSecondsByFailureClass: {
+          usage_limit: 120,
+          transport_unavailable: 45,
+          execution_failure_other: 5,
+        },
+        maxFailoverAttemptsPerTask: 3,
+        maxFailoverAttemptsPerRun: 7,
+        fallbackStrategy: "strict_order",
+        unavailableReevaluation: {
+          mode: "cooldown",
+          probeCooldownSeconds: 300,
+        },
+      },
+    });
+  });
+
+  it("rejects unknown healthPolicy fallback strategy", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        healthPolicy: {
+          fallbackStrategy: "randomized",
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at healthPolicy.fallbackStrategy: expected one of strict_order, priority.`,
+    );
+  });
+
+  it("rejects invalid healthPolicy cooldown values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        healthPolicy: {
+          cooldownSecondsByFailureClass: {
+            usage_limit: -1,
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at healthPolicy.cooldownSecondsByFailureClass.usage_limit: expected non-negative number.`,
+    );
+  });
+
+  it("rejects invalid healthPolicy failover attempt limits", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 0,
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at healthPolicy.maxFailoverAttemptsPerTask: expected positive integer.`,
+    );
+  });
+
+  it("rejects unknown unavailable reevaluation mode", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        healthPolicy: {
+          unavailableReevaluation: {
+            mode: "always",
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at \"${configPath}\": Invalid worker config at healthPolicy.unavailableReevaluation.mode: expected one of manual, cooldown.`,
+    );
+  });
 });

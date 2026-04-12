@@ -19,6 +19,35 @@ export interface WorkersConfig {
   fallbacks?: WorkerCommand[];
 }
 
+export const WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER = "strict_order" as const;
+export const WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY = "priority" as const;
+
+export type WorkerHealthPolicyFallbackStrategy =
+  | typeof WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER
+  | typeof WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY;
+
+export const WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL = "manual" as const;
+export const WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_COOLDOWN = "cooldown" as const;
+
+export type WorkerHealthPolicyUnavailableReevaluationMode =
+  | typeof WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL
+  | typeof WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_COOLDOWN;
+
+export interface WorkerHealthPolicyConfig {
+  cooldownSecondsByFailureClass?: {
+    usage_limit?: number;
+    transport_unavailable?: number;
+    execution_failure_other?: number;
+  };
+  maxFailoverAttemptsPerTask?: number;
+  maxFailoverAttemptsPerRun?: number;
+  fallbackStrategy?: WorkerHealthPolicyFallbackStrategy;
+  unavailableReevaluation?: {
+    mode?: WorkerHealthPolicyUnavailableReevaluationMode;
+    probeCooldownSeconds?: number;
+  };
+}
+
 /**
  * Known command names that support worker configuration overrides.
  */
@@ -86,6 +115,8 @@ export interface WorkerConfig {
   profiles?: Record<string, WorkerCommand>;
   // Optional trace statistics output configuration.
   traceStatistics?: TraceStatisticsConfig;
+  // Optional worker failover and health policy configuration.
+  healthPolicy?: WorkerHealthPolicyConfig;
 }
 
 /**
