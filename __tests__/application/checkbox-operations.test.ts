@@ -903,6 +903,74 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("cleans nested task trees across multiple branches while preserving actionable structure", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] Root A",
+        "  - [x] Branch A1",
+        "    - fix: generated for branch",
+        "      - verify: 1s",
+        "    - [ ] Keep branch child task",
+        "      - note: keep branch child note",
+        "  - total time: 4s",
+        "    - execution: 3s",
+        "- [x] Root B",
+        "  - note: keep root note",
+        "  - [x] Branch B1",
+        "    - skipped: generated annotation",
+        "    - [ ] Keep nested actionable child",
+        "      - detail: keep child detail",
+        "  - skipped: generated root annotation",
+        "- [ ] Already open root",
+        "  - [x] Checked child remains but should reset",
+      ].join("\n"),
+    });
+
+    resetFileCheckboxes("todo.md", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] Root A",
+      "  - [ ] Branch A1",
+      "    - [ ] Keep branch child task",
+      "      - note: keep branch child note",
+      "- [ ] Root B",
+      "  - note: keep root note",
+      "  - [ ] Branch B1",
+      "    - [ ] Keep nested actionable child",
+      "      - detail: keep child detail",
+      "- [ ] Already open root",
+      "  - [ ] Checked child remains but should reset",
+    ].join("\n"));
+  });
+
+  it("is idempotent across repeated reset passes", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] Parent",
+        "  - fix: generated annotation",
+        "    - repair: 1s",
+        "  - [ ] Keep child",
+        "    - note: keep this",
+        "- [x] Sibling",
+        "  - skipped: generated annotation",
+      ].join("\n"),
+    });
+
+    resetFileCheckboxes("todo.md", fileSystem);
+    const afterFirstReset = fileSystem.readText("todo.md");
+
+    resetFileCheckboxes("todo.md", fileSystem);
+    const afterSecondReset = fileSystem.readText("todo.md");
+
+    expect(afterFirstReset).toBe([
+      "- [ ] Parent",
+      "  - [ ] Keep child",
+      "    - note: keep this",
+      "- [ ] Sibling",
+    ].join("\n"));
+    expect(afterSecondReset).toBe(afterFirstReset);
+  });
+
   it("marks a single remaining sibling as checked and inserts skipped annotation", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
