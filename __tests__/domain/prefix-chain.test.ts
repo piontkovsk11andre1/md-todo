@@ -165,4 +165,26 @@ describe("parsePrefixChain", () => {
     expect(chain.handler?.payload).toBe("services");
     expect(chain.remainingText).toBe("services");
   });
+
+  it.each([",", ";"])("parses profile/fast composition with %s separator and keeps loop alias canonical", (separator) => {
+    const chain = parsePrefixChain(`profile: fast${separator} foreach: services`, builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.handler?.tool.name).toBe("for");
+    expect(chain.handler?.payload).toBe("services");
+    expect(chain.remainingText).toBe("services");
+  });
+
+  it.each(["for", "each", "foreach"])("keeps verify as terminal handler when %s appears inside verify payload", (alias) => {
+    const chain = parsePrefixChain(`profile: fast, verify: ${alias}: services`, builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe(`${alias}: services`);
+    expect(chain.remainingText).toBe(`${alias}: services`);
+  });
 });
