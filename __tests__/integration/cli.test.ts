@@ -9398,6 +9398,202 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(source);
   });
 
+  it("run loop --redo --all resets checked loop tasks and reruns loop children", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "loop-redo-marker.txt");
+    const workerScriptPath = path.join(workspace, "loop-redo-worker.cjs");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "- [x] for: Alpha",
+        "  - for-item: Alpha",
+        "  - for-current: Alpha",
+        "  - [x] Do once",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+        `const markerPath = ${JSON.stringify(markerPath.replace(/\\/g, "/"))};`,
+        "if (selectedTask === 'Do once') {",
+        "  fs.appendFileSync(markerPath, 'redo\\n', 'utf-8');",
+        "}",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--all",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => /Reset 2 checkbox(?:es)? in /.test(line) && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.readFileSync(markerPath, "utf-8")).toBe("redo\n");
+
+    const finalSource = fs.readFileSync(roadmapPath, "utf-8");
+    expect(finalSource).toContain("- [x] for: Alpha");
+    expect(finalSource).toContain("  - [x] Do once");
+  });
+
+  it("run loop --reset-after leaves loop checkboxes unchecked after execution", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "loop-reset-after-marker.txt");
+    const workerScriptPath = path.join(workspace, "loop-reset-after-worker.cjs");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "- [ ] for: Alpha",
+        "  - [ ] Do once",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+        `const markerPath = ${JSON.stringify(markerPath.replace(/\\/g, "/"))};`,
+        "if (selectedTask === 'Do once') {",
+        "  fs.appendFileSync(markerPath, 'reset-after\\n', 'utf-8');",
+        "}",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--reset-after",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(markerPath, "utf-8")).toBe("reset-after\n");
+
+    const finalSource = fs.readFileSync(roadmapPath, "utf-8");
+    expect(finalSource).toContain("- [ ] for: Alpha");
+    expect(finalSource).toContain("  - [ ] Do once");
+    expect(finalSource).not.toContain("[x]");
+  });
+
+  it("run loop --redo --dry-run does not execute loop children or mutate markdown", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "loop-redo-dry-run-marker.txt");
+    const workerScriptPath = path.join(workspace, "loop-redo-dry-run-worker.cjs");
+    const initialMarkdown = [
+      "- [ ] for: Alpha",
+      "  - for-item: Alpha",
+      "  - for-current: Alpha",
+      "  - [x] Do once",
+      "",
+    ].join("\n");
+
+    fs.writeFileSync(roadmapPath, initialMarkdown, "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const markerPath = ${JSON.stringify(markerPath.replace(/\\/g, "/"))};`,
+        "fs.appendFileSync(markerPath, 'dry-run\\n', 'utf-8');",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--redo",
+      "--all",
+      "--dry-run",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Dry run — would reset checkboxes (pre-run) in:") && line.includes("roadmap.md"))).toBe(true);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(initialMarkdown);
+  });
+
+  it("run loop --print-prompt preserves source and does not execute worker", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "loop-print-prompt-marker.txt");
+    const workerScriptPath = path.join(workspace, "loop-print-prompt-worker.cjs");
+    const initialMarkdown = [
+      "- [ ] for: Alpha",
+      "  - for-item: Alpha",
+      "  - for-current: Alpha",
+      "  - [ ] Do once",
+      "",
+    ].join("\n");
+
+    fs.writeFileSync(roadmapPath, initialMarkdown, "utf-8");
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const markerPath = ${JSON.stringify(markerPath.replace(/\\/g, "/"))};`,
+        "fs.appendFileSync(markerPath, 'print-prompt\\n', 'utf-8');",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("Do once"))).toBe(true);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(initialMarkdown);
+  });
+
   it("run --redo --all resets checked tasks before execution and runs all tasks", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
