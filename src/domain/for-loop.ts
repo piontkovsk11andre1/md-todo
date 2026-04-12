@@ -1,4 +1,4 @@
-import type { SubItem } from "./parser.js";
+import type { SubItem, Task } from "./parser.js";
 
 const LOOP_HANDLER_SEGMENT_PATTERN = /(^|[;,]\s*)(?:for|each|foreach)\s*:/i;
 const FOR_ITEM_PATTERN = /^for-item\s*:\s*(.*)$/i;
@@ -7,6 +7,9 @@ const FOR_LOOP_PAYLOAD_SPLIT_PATTERN = /[\r\n,]+/;
 const FOR_LOOP_METADATA_ESCAPE_PATTERN = /([\\`*_[\]<>])/g;
 const FOR_LOOP_METADATA_UNESCAPE_PATTERN = /\\([\\`*_[\]<>])/g;
 
+export const FOR_LOOP_MISSING_CHILDREN_FAILURE_MESSAGE = "For loop task requires nested checkbox child tasks.";
+export const FOR_LOOP_MISSING_CHILDREN_FAILURE_REASON = "For loop task has no nested checkbox children.";
+
 export interface ResolvedForLoopItems {
   items: string[];
   source: "metadata" | "payload";
@@ -14,6 +17,10 @@ export interface ResolvedForLoopItems {
 
 export function isForLoopTaskText(taskText: string): boolean {
   return LOOP_HANDLER_SEGMENT_PATTERN.test(taskText.trim());
+}
+
+export function hasForLoopCheckboxChildren(task: Pick<Task, "children">): boolean {
+  return task.children.length > 0;
 }
 
 export function parseForItemValue(text: string): string | undefined {

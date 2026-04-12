@@ -5,6 +5,11 @@ import { insertSubitems } from "../domain/planner.js";
 import { parseTasks } from "../domain/parser.js";
 import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { advanceForLoopUsingFileSystem, syncForLoopMetadataItemsUsingFileSystem } from "./checkbox-operations.js";
+import {
+  FOR_LOOP_MISSING_CHILDREN_FAILURE_MESSAGE,
+  FOR_LOOP_MISSING_CHILDREN_FAILURE_REASON,
+  hasForLoopCheckboxChildren,
+} from "../domain/for-loop.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
   ArtifactRunContext,
@@ -229,6 +234,15 @@ export async function dispatchTaskExecution(params: {
         executionFailureMessage:
           "Tool-handled tasks do not support detached mode because worker output is required.",
         executionFailureRunReason: "Tool-handled task cannot run in detached mode.",
+        executionFailureExitCode: 1,
+      };
+    }
+
+    if (prefixChain.handler?.tool.name === "for" && !hasForLoopCheckboxChildren(task)) {
+      return {
+        kind: "execution-failed",
+        executionFailureMessage: FOR_LOOP_MISSING_CHILDREN_FAILURE_MESSAGE,
+        executionFailureRunReason: FOR_LOOP_MISSING_CHILDREN_FAILURE_REASON,
         executionFailureExitCode: 1,
       };
     }

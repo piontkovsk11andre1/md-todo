@@ -1,5 +1,12 @@
 import type { ToolHandlerFn } from "../ports/tool-handler-port.js";
-import { formatForLoopItemMetadataLine, getForCurrentValue, resolveForLoopItems } from "../for-loop.js";
+import {
+  FOR_LOOP_MISSING_CHILDREN_FAILURE_MESSAGE,
+  FOR_LOOP_MISSING_CHILDREN_FAILURE_REASON,
+  formatForLoopItemMetadataLine,
+  getForCurrentValue,
+  hasForLoopCheckboxChildren,
+  resolveForLoopItems,
+} from "../for-loop.js";
 
 /**
  * Built-in for-each loop handler.
@@ -18,11 +25,11 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
     };
   }
 
-  if (context.task.children.length === 0) {
+  if (!hasForLoopCheckboxChildren(context.task)) {
     return {
       exitCode: 1,
-      failureMessage: "For loop task requires nested checkbox child tasks.",
-      failureReason: "For loop task has no nested checkbox children.",
+      failureMessage: FOR_LOOP_MISSING_CHILDREN_FAILURE_MESSAGE,
+      failureReason: FOR_LOOP_MISSING_CHILDREN_FAILURE_REASON,
     };
   }
 

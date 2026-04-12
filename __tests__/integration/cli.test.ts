@@ -9144,6 +9144,72 @@ describe.sequential("CLI integration", () => {
     expect(lifecycle.filter((line) => line === "Do that|Beta").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("run fails fast for loop parents without checkbox children, including resume-style reruns", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "for-loop-no-children-worker.cjs");
+    const workerProbePath = path.join(workspace, "for-loop-no-children.probe");
+
+    fs.writeFileSync(roadmapPath, [
+      "- [ ] for: Alpha, Beta",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        `const probePath = ${JSON.stringify(workerProbePath.replace(/\\/g, "/"))};`,
+        "fs.appendFileSync(probePath, 'worker-invoked\\n', 'utf-8');",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const firstResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(firstResult.code).toBe(1);
+    expect(firstResult.errors.some((line) => line.includes("For loop task requires nested checkbox child tasks."))).toBe(true);
+    expect(fs.existsSync(workerProbePath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] for: Alpha, Beta\n");
+
+    fs.writeFileSync(roadmapPath, [
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "",
+    ].join("\n"), "utf-8");
+
+    const resumedResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(resumedResult.code).toBe(1);
+    expect(resumedResult.errors.some((line) => line.includes("For loop task requires nested checkbox child tasks."))).toBe(true);
+    expect(fs.existsSync(workerProbePath)).toBe(false);
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "",
+    ].join("\n"));
+  });
+
   it("run --redo --all resets checked tasks before execution and runs all tasks", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
