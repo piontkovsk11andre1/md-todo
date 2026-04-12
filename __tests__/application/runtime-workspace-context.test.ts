@@ -69,6 +69,26 @@ describe("resolveRuntimeWorkspaceContext", () => {
     });
   });
 
+  it("uses deterministic non-linked fallback values for stale-link style inputs", () => {
+    const context = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd: "/workspace/invocation",
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/stale-target",
+        workspaceLinkPath: "/workspace/invocation/.rundown/workspace.link",
+        isLinkedWorkspace: false,
+      },
+      pathOperations,
+    );
+
+    expect(context).toEqual({
+      invocationDir: path.resolve("/workspace/invocation"),
+      workspaceDir: path.resolve("/workspace/invocation"),
+      workspaceLinkPath: "",
+      isLinkedWorkspace: false,
+    });
+  });
+
   it("normalizes invocation/workspace/link paths to absolute values", () => {
     const context = resolveRuntimeWorkspaceContext(
       {

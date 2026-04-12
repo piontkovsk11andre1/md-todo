@@ -247,6 +247,94 @@ describe("run-task-execution helpers", () => {
     expect(prompt).not.toContain(path.resolve("/real/invocation/.rundown/workspace.link"));
   });
 
+  it("emits deterministic fallback workspace context vars for stale-link runtime inputs", async () => {
+    const cwd = "/workspace/invocation";
+    const taskFile = `${cwd}/tasks.md`;
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return [
+          "invocationDir={{invocationDir}}",
+          "workspaceDir={{workspaceDir}}",
+          "workspaceLinkPath={{workspaceLinkPath}}",
+          "isLinkedWorkspace={{isLinkedWorkspace}}",
+        ].join("\n");
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      printPrompt: true,
+      verify: false,
+      invocationDir: "/real/invocation",
+      workspaceDir: "/real/stale-workspace",
+      workspaceLinkPath: "/real/invocation/.rundown/workspace.link",
+      isLinkedWorkspace: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`invocationDir=${path.resolve("/real/invocation")}`);
+    expect(prompt).toContain(`workspaceDir=${path.resolve("/real/invocation")}`);
+    expect(prompt).toContain("workspaceLinkPath=");
+    expect(prompt).toContain("isLinkedWorkspace=false");
+    expect(prompt).not.toContain(path.resolve("/real/stale-workspace"));
+    expect(prompt).not.toContain(path.resolve("/real/invocation/.rundown/workspace.link"));
+  });
+
+  it("keeps execution cwd rooted at resolved workspace even when link metadata falls back", async () => {
+    const invocationDir = "/workspace/invocation";
+    const workspaceDir = "/workspace/resolved";
+    const taskFile = `${workspaceDir}/tasks.md`;
+    const cliBlockExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "ok",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd: workspaceDir,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] build release\n" }),
+      gitClient: createGitClientMock(),
+      cliBlockExecutor,
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "```cli\npwd\n```";
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      invocationDir,
+      workspaceDir,
+      workspaceLinkPath: `${invocationDir}/.rundown/workspace.link`,
+      isLinkedWorkspace: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    expect(cliBlockExecutor.execute).toHaveBeenCalledWith(
+      "pwd",
+      workspaceDir,
+      expect.any(Object),
+    );
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      cwd: workspaceDir,
+    }));
+  });
+
   it("uses parser-appended cli-args directly for inline cli execution", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;
