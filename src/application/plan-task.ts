@@ -352,6 +352,18 @@ export function createPlanTask(
         dependencies.pathOperations,
       ).plan;
       const deepPlanTemplate = DEFAULT_DEEP_PLAN_TEMPLATE;
+      const planPrependGuidance = loadOptionalPlannerGuidance({
+        configDir: dependencies.configDir?.configDir,
+        fileName: "plan-prepend.md",
+        fileSystem: dependencies.fileSystem,
+        pathOperations: dependencies.pathOperations,
+      });
+      const planAppendGuidance = loadOptionalPlannerGuidance({
+        configDir: dependencies.configDir?.configDir,
+        fileName: "plan-append.md",
+        fileSystem: dependencies.fileSystem,
+        pathOperations: dependencies.pathOperations,
+      });
 
       const planPromptDocumentContext = buildPlanPromptDocumentContext(source);
       const scanStrategy = resolvePlanScanStrategy(scanCount);
@@ -374,6 +386,8 @@ export function createPlanTask(
         insertedTotal: initialInsertedTotal,
         existingTodoCount,
         hasExistingTodos: hasExistingTodos ? "true" : "false",
+        planPrependGuidance,
+        planAppendGuidance,
       };
 
       const renderedPrompt = renderTemplate(planTemplate, vars);
@@ -449,6 +463,8 @@ export function createPlanTask(
                 deep,
                 maxItems,
                 insertedTotal: initialInsertedTotal,
+                planPrependGuidance,
+                planAppendGuidance,
               });
               emit({ kind: "text", text: deepPrompt });
             }
@@ -517,6 +533,8 @@ export function createPlanTask(
               deep,
               maxItems,
               insertedTotal: initialInsertedTotal,
+              planPrependGuidance,
+              planAppendGuidance,
             });
             emit({ kind: "info", message: "Deep prompt length (first parent task): " + firstDeepPrompt.length + " chars" });
             if (deep > 1) {
@@ -987,6 +1005,8 @@ export function createPlanTask(
                 deep,
                 maxItems,
                 insertedTotal,
+                planPrependGuidance,
+                planAppendGuidance,
               });
 
               if (verbose) {
@@ -1414,6 +1434,8 @@ function buildPlanDeepPrompt(options: {
   deep: number;
   maxItems: number | undefined;
   insertedTotal: number;
+  planPrependGuidance: string;
+  planAppendGuidance: string;
 }): string {
   const remainingItemBudget = options.maxItems === undefined
     ? undefined
@@ -1432,6 +1454,8 @@ function buildPlanDeepPrompt(options: {
     maxItems: options.maxItems,
     insertedTotal: options.insertedTotal,
     remainingItemBudget,
+    planPrependGuidance: options.planPrependGuidance,
+    planAppendGuidance: options.planAppendGuidance,
   };
 
   const renderedTemplate = renderTemplate(options.deepPlanTemplate, deepVars);
@@ -1445,6 +1469,25 @@ function buildPlanDeepPrompt(options: {
   }
 
   return `${renderedTemplate}\n\n## Deep Pass Context\n\n${deepContextParts.join("\n")}\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
+}
+
+function loadOptionalPlannerGuidance(options: {
+  configDir: string | undefined;
+  fileName: "plan-prepend.md" | "plan-append.md";
+  fileSystem: FileSystem;
+  pathOperations: PathOperationsPort;
+}): string {
+  if (!options.configDir) {
+    return "";
+  }
+
+  const guidancePath = options.pathOperations.join(options.configDir, options.fileName);
+  try {
+    const guidance = options.fileSystem.readText(guidancePath);
+    return guidance.trim().length === 0 ? "" : guidance;
+  } catch {
+    return "";
+  }
 }
 
 /**
