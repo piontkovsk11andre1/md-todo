@@ -82,6 +82,7 @@ import type {
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import {
+  buildWorkerHealthProfileKey,
   WORKER_FAILURE_CLASS_EXECUTION_FAILURE_OTHER,
   WORKER_FAILURE_CLASS_SUCCESS,
   WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
@@ -131,86 +132,104 @@ function resolveCooldownSecondsForFailureClass(
 function updateWorkerHealthForAttemptOutcome(params: {
   snapshot: WorkerHealthSnapshot;
   workerCommand: readonly string[];
+  profileName?: string;
   failureClass: WorkerFailureClass;
   healthPolicy: WorkerHealthPolicyConfig | undefined;
   now: Date;
 }): WorkerHealthSnapshot {
-  const { snapshot, workerCommand, failureClass, healthPolicy, now } = params;
-  const key = buildWorkerHealthWorkerKey(workerCommand);
-  if (key.length === 0) {
+  const { snapshot, workerCommand, profileName, failureClass, healthPolicy, now } = params;
+  const workerKey = buildWorkerHealthWorkerKey(workerCommand);
+  const shouldUpdateProfile = failureClass === WORKER_FAILURE_CLASS_SUCCESS;
+  const profileKey = shouldUpdateProfile && typeof profileName === "string"
+    ? buildWorkerHealthProfileKey(profileName)
+    : "";
+  const updateTargets: Array<{ source: WorkerHealthEntry["source"]; key: string }> = [
+    { source: "worker", key: workerKey },
+  ];
+  if (profileKey.length > 0) {
+    updateTargets.push({ source: "profile", key: profileKey });
+  }
+
+  if (updateTargets.every((target) => target.key.length === 0)) {
     return snapshot;
   }
 
   const nowIso = now.toISOString();
   const entries = [...snapshot.entries];
-  const existingIndex = entries.findIndex((entry) => entry.source === "worker" && entry.key === key);
-  const existingEntry = existingIndex >= 0 ? entries[existingIndex] : undefined;
-  const currentFailureCount = existingEntry?.failureCountWindow ?? 0;
+  for (const target of updateTargets) {
+    if (target.key.length === 0) {
+      continue;
+    }
 
-  let nextEntry: WorkerHealthEntry = {
-    key,
-    source: "worker" as const,
-    status: WORKER_HEALTH_STATUS_HEALTHY,
-    failureCountWindow: currentFailureCount,
-    ...(existingEntry?.lastSuccessAt ? { lastSuccessAt: existingEntry.lastSuccessAt } : {}),
-  };
+    const existingIndex = entries.findIndex((entry) => entry.source === target.source && entry.key === target.key);
+    const existingEntry = existingIndex >= 0 ? entries[existingIndex] : undefined;
+    const currentFailureCount = existingEntry?.failureCountWindow ?? 0;
 
-  if (failureClass === WORKER_FAILURE_CLASS_SUCCESS) {
-    nextEntry = {
-      ...nextEntry,
+    let nextEntry: WorkerHealthEntry = {
+      key: target.key,
+      source: target.source,
       status: WORKER_HEALTH_STATUS_HEALTHY,
-      cooldownUntil: undefined,
-      lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
-      lastSuccessAt: nowIso,
-      lastFailureAt: undefined,
-      failureCountWindow: 0,
+      failureCountWindow: currentFailureCount,
+      ...(existingEntry?.lastSuccessAt ? { lastSuccessAt: existingEntry.lastSuccessAt } : {}),
     };
-  } else if (failureClass === WORKER_FAILURE_CLASS_USAGE_LIMIT) {
-    const cooldownSeconds = resolveCooldownSecondsForFailureClass(failureClass, healthPolicy);
-    nextEntry = {
-      ...nextEntry,
-      status: cooldownSeconds > 0 ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_UNAVAILABLE,
-      cooldownUntil: cooldownSeconds > 0
-        ? new Date(now.getTime() + (cooldownSeconds * 1000)).toISOString()
-        : undefined,
-      lastFailureClass: failureClass,
-      lastFailureAt: nowIso,
-      failureCountWindow: currentFailureCount + 1,
-    };
-  } else if (failureClass === WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE) {
-    const unavailableMode = healthPolicy?.unavailableReevaluation?.mode ?? "manual";
-    const probeCooldownSeconds = healthPolicy?.unavailableReevaluation?.probeCooldownSeconds
-      ?? healthPolicy?.cooldownSecondsByFailureClass?.transport_unavailable
-      ?? 300;
-    const shouldUseCooldown = unavailableMode === "cooldown";
-    nextEntry = {
-      ...nextEntry,
-      status: shouldUseCooldown ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_UNAVAILABLE,
-      cooldownUntil: shouldUseCooldown
-        ? new Date(now.getTime() + (probeCooldownSeconds * 1000)).toISOString()
-        : undefined,
-      lastFailureClass: failureClass,
-      lastFailureAt: nowIso,
-      failureCountWindow: currentFailureCount + 1,
-    };
-  } else {
-    const cooldownSeconds = resolveCooldownSecondsForFailureClass(failureClass, healthPolicy);
-    nextEntry = {
-      ...nextEntry,
-      status: cooldownSeconds > 0 ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_HEALTHY,
-      cooldownUntil: cooldownSeconds > 0
-        ? new Date(now.getTime() + (cooldownSeconds * 1000)).toISOString()
-        : undefined,
-      lastFailureClass: failureClass,
-      lastFailureAt: nowIso,
-      failureCountWindow: currentFailureCount + 1,
-    };
-  }
 
-  if (existingIndex >= 0) {
-    entries[existingIndex] = nextEntry;
-  } else {
-    entries.push(nextEntry);
+    if (failureClass === WORKER_FAILURE_CLASS_SUCCESS) {
+      nextEntry = {
+        ...nextEntry,
+        status: WORKER_HEALTH_STATUS_HEALTHY,
+        cooldownUntil: undefined,
+        lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
+        lastSuccessAt: nowIso,
+        lastFailureAt: undefined,
+        failureCountWindow: 0,
+      };
+    } else if (failureClass === WORKER_FAILURE_CLASS_USAGE_LIMIT) {
+      const cooldownSeconds = resolveCooldownSecondsForFailureClass(failureClass, healthPolicy);
+      nextEntry = {
+        ...nextEntry,
+        status: cooldownSeconds > 0 ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_UNAVAILABLE,
+        cooldownUntil: cooldownSeconds > 0
+          ? new Date(now.getTime() + (cooldownSeconds * 1000)).toISOString()
+          : undefined,
+        lastFailureClass: failureClass,
+        lastFailureAt: nowIso,
+        failureCountWindow: currentFailureCount + 1,
+      };
+    } else if (failureClass === WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE) {
+      const unavailableMode = healthPolicy?.unavailableReevaluation?.mode ?? "manual";
+      const probeCooldownSeconds = healthPolicy?.unavailableReevaluation?.probeCooldownSeconds
+        ?? healthPolicy?.cooldownSecondsByFailureClass?.transport_unavailable
+        ?? 300;
+      const shouldUseCooldown = unavailableMode === "cooldown";
+      nextEntry = {
+        ...nextEntry,
+        status: shouldUseCooldown ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_UNAVAILABLE,
+        cooldownUntil: shouldUseCooldown
+          ? new Date(now.getTime() + (probeCooldownSeconds * 1000)).toISOString()
+          : undefined,
+        lastFailureClass: failureClass,
+        lastFailureAt: nowIso,
+        failureCountWindow: currentFailureCount + 1,
+      };
+    } else {
+      const cooldownSeconds = resolveCooldownSecondsForFailureClass(failureClass, healthPolicy);
+      nextEntry = {
+        ...nextEntry,
+        status: cooldownSeconds > 0 ? WORKER_HEALTH_STATUS_COOLING_DOWN : WORKER_HEALTH_STATUS_HEALTHY,
+        cooldownUntil: cooldownSeconds > 0
+          ? new Date(now.getTime() + (cooldownSeconds * 1000)).toISOString()
+          : undefined,
+        lastFailureClass: failureClass,
+        lastFailureAt: nowIso,
+        failureCountWindow: currentFailureCount + 1,
+      };
+    }
+
+    if (existingIndex >= 0) {
+      entries[existingIndex] = nextEntry;
+    } else {
+      entries.push(nextEntry);
+    }
   }
 
   return {
@@ -1034,6 +1053,7 @@ export function createRunTaskExecution(
                 workerHealthSnapshot = updateWorkerHealthForAttemptOutcome({
                   snapshot: workerHealthSnapshot,
                   workerCommand: iterationResult.executedWorkerCommand ?? [],
+                  profileName: iterationResult.executedWorkerProfileName,
                   failureClass: healthOutcomeClass,
                   healthPolicy,
                   now: new Date(),

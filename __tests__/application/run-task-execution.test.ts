@@ -10,6 +10,14 @@ import {
   isOpenCodeWorkerCommand,
   toRuntimeTaskMetadata,
 } from "../../src/application/run-task-execution.js";
+import {
+  WORKER_FAILURE_CLASS_SUCCESS,
+  WORKER_HEALTH_STATUS_COOLING_DOWN,
+  WORKER_HEALTH_STATUS_HEALTHY,
+  WORKER_HEALTH_STATUS_UNAVAILABLE,
+  buildWorkerHealthProfileKey,
+  buildWorkerHealthWorkerKey,
+} from "../../src/domain/worker-health.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import {
   createDependencies,
@@ -360,6 +368,118 @@ describe("run-task-execution helpers", () => {
       expect.any(Object),
     );
     expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
+  });
+
+  it("updates worker and profile health to healthy on successful fallback execution", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const workerHealthStore = {
+      read: vi.fn(() => ({
+        schemaVersion: 1,
+        updatedAt: "2026-04-12T09:00:00.000Z",
+        entries: [
+          {
+            key: buildWorkerHealthWorkerKey(["primary", "worker"]),
+            source: "worker" as const,
+            status: WORKER_HEALTH_STATUS_UNAVAILABLE,
+            lastFailureClass: "transport_unavailable" as const,
+            lastFailureAt: "2026-04-12T08:59:00.000Z",
+            failureCountWindow: 4,
+          },
+          {
+            key: buildWorkerHealthWorkerKey(["fallback", "worker"]),
+            source: "worker" as const,
+            status: WORKER_HEALTH_STATUS_COOLING_DOWN,
+            cooldownUntil: "2026-04-12T08:00:00.000Z",
+            lastFailureClass: "usage_limit" as const,
+            lastFailureAt: "2026-04-12T07:59:00.000Z",
+            failureCountWindow: 2,
+          },
+          {
+            key: buildWorkerHealthProfileKey("fast"),
+            source: "profile" as const,
+            status: WORKER_HEALTH_STATUS_COOLING_DOWN,
+            cooldownUntil: "2026-04-12T08:00:00.000Z",
+            lastFailureClass: "usage_limit" as const,
+            lastFailureAt: "2026-04-12T07:58:00.000Z",
+            failureCountWindow: 3,
+          },
+        ],
+      })),
+      write: vi.fn(),
+      filePath: vi.fn(() => `${cwd}/.rundown/worker-health.json`),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "implement fallback behavior", { directiveProfile: "fast" }),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] implement fallback behavior\n" }),
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["primary", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+        profiles: {
+          fast: ["primary", "worker"],
+        },
+      },
+    });
+    dependencies.workerHealthStore = workerHealthStore;
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, workerCommand: [] }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledWith(expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["fallback", "worker"],
+      }),
+    }));
+    expect(workerHealthStore.write).toHaveBeenCalled();
+
+    const persistedSnapshot = workerHealthStore.write.mock.calls.at(-1)?.[0];
+    expect(persistedSnapshot).toBeDefined();
+    if (!persistedSnapshot) {
+      throw new Error("Expected persisted worker health snapshot.");
+    }
+
+    const fallbackEntry = persistedSnapshot.entries.find(
+      (entry: { key: string; source: string }) => entry.source === "worker"
+        && entry.key === buildWorkerHealthWorkerKey(["fallback", "worker"]),
+    );
+    expect(fallbackEntry).toBeDefined();
+    if (!fallbackEntry) {
+      throw new Error("Expected fallback worker health entry.");
+    }
+    expect(fallbackEntry).toEqual(expect.objectContaining({
+      key: buildWorkerHealthWorkerKey(["fallback", "worker"]),
+      source: "worker",
+      status: WORKER_HEALTH_STATUS_HEALTHY,
+      lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
+      failureCountWindow: 0,
+    }));
+    expect(fallbackEntry.cooldownUntil).toBeUndefined();
+    expect(fallbackEntry.lastFailureAt).toBeUndefined();
+    expect(typeof fallbackEntry.lastSuccessAt).toBe("string");
+
+    const profileEntry = persistedSnapshot.entries.find(
+      (entry: { key: string; source: string }) => entry.source === "profile"
+        && entry.key === buildWorkerHealthProfileKey("fast"),
+    );
+    expect(profileEntry).toBeDefined();
+    if (!profileEntry) {
+      throw new Error("Expected profile worker health entry.");
+    }
+    expect(profileEntry).toEqual(expect.objectContaining({
+      key: buildWorkerHealthProfileKey("fast"),
+      source: "profile",
+      status: WORKER_HEALTH_STATUS_HEALTHY,
+      lastFailureClass: WORKER_FAILURE_CLASS_SUCCESS,
+      failureCountWindow: 0,
+    }));
+    expect(profileEntry.cooldownUntil).toBeUndefined();
+    expect(profileEntry.lastFailureAt).toBeUndefined();
+    expect(typeof profileEntry.lastSuccessAt).toBe("string");
   });
 
   it("preserves quoted cli-args when executing inline cli tasks", async () => {

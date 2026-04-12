@@ -231,6 +231,7 @@ export async function runTaskIteration(params: {
   forceRetryableFailure?: boolean;
   workerFailureClass?: WorkerFailureClass;
   executedWorkerCommand?: string[];
+  executedWorkerProfileName?: string;
 }> {
   const { dependencies, emit, state, context, execution, worker, verifyConfig, completion, prompts, traceConfig, lifecycle } = params;
   const { source, fileSource, files, task } = context;
@@ -370,6 +371,7 @@ export async function runTaskIteration(params: {
     })
     : resolvedWorker;
   const verificationWorkerCommand = verificationWorker.workerCommand;
+  const verificationWorkerProfileName = verificationWorker.selectedProfileName;
   const automationCommand = getAutomationWorkerCommand(verificationWorkerCommand, "wait");
   const automationWorkerPattern = verificationWorkerCommand.length === automationCommand.length
     && verificationWorkerCommand.every((token, index) => token === automationCommand[index])
@@ -517,6 +519,9 @@ export async function runTaskIteration(params: {
       };
   }
   const selectedWorkerCommand = onlyVerify ? automationCommand : resolvedWorkerCommand;
+  const selectedWorkerProfileName = onlyVerify
+    ? verificationWorkerProfileName
+    : resolvedWorker.selectedProfileName;
   // Persist expanded prompt context for trace enrichment in later phases.
   state.traceEnrichmentContext = {
     task: taskForLifecycle,
@@ -582,6 +587,7 @@ export async function runTaskIteration(params: {
       continueLoop: false,
       forceRetryableFailure: dispatchResult.forceRetryableFailure === true,
       executedWorkerCommand: selectedWorkerCommand,
+      executedWorkerProfileName: selectedWorkerProfileName,
       workerFailureClass: classifyIterationFailure({
         runReason: dispatchResult.executionFailureRunReason,
         exitCode: dispatchResult.executionFailureExitCode,
@@ -611,6 +617,7 @@ export async function runTaskIteration(params: {
       continueLoop: false,
       forceRetryableFailure: false,
       executedWorkerCommand: selectedWorkerCommand,
+      executedWorkerProfileName: selectedWorkerProfileName,
       exitCode: await lifecycle.finishRun(0, "detached", true),
     };
   }
@@ -691,6 +698,7 @@ export async function runTaskIteration(params: {
   const normalizedCompletionResult = {
     ...completionResult,
     executedWorkerCommand: selectedWorkerCommand,
+    executedWorkerProfileName: selectedWorkerProfileName,
     workerFailureClass: completionResult.continueLoop
       ? undefined
       : classifyIterationFailure({

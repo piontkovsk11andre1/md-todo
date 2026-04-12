@@ -69,11 +69,13 @@ interface ResolveWorkerSelection {
   workerCommand: string[];
   candidates: ResolvedWorkerCandidate[];
   selectedCandidateIndex: number;
+  effectiveProfileName?: string;
 }
 
 interface ResolvedWorkerInvocation {
   workerCommand: string[];
   workerPattern: ParsedWorkerPattern;
+  selectedProfileName?: string;
 }
 
 /**
@@ -320,6 +322,7 @@ function resolveWorkerSelectionForInvocation(input: ResolveWorkerForInvocationIn
     workerCommand: selectedWorkerCommand,
     candidates: evaluatedCandidates,
     selectedCandidateIndex,
+    effectiveProfileName,
   };
 }
 
@@ -341,14 +344,13 @@ function buildParsedWorkerPattern(command: string[]): ParsedWorkerPattern {
 export function resolveWorkerPatternForInvocation(
   input: ResolveWorkerPatternForInvocationInput,
 ): ResolvedWorkerInvocation {
-  const cliWorkerCommand = input.cliWorkerPattern?.command ?? [];
-  const resolvedWorkerCommand = resolveWorkerForInvocation({
+  const selection = resolveWorkerSelectionForInvocation({
     commandName: input.commandName,
     workerConfig: input.workerConfig,
     source: input.source,
     task: input.task,
     modifierProfile: input.modifierProfile,
-    cliWorkerCommand,
+    cliWorkerCommand: input.cliWorkerPattern?.command ?? [],
     fallbackWorkerCommand: input.fallbackWorkerCommand,
     emit: input.emit,
     verbose: input.verbose,
@@ -358,6 +360,8 @@ export function resolveWorkerPatternForInvocation(
     workerHealthEntries: input.workerHealthEntries,
     evaluateWorkerHealthAtMs: input.evaluateWorkerHealthAtMs,
   });
+  const resolvedWorkerCommand = selection.workerCommand;
+  const selectedProfileName = selection.effectiveProfileName;
 
   if (resolvedWorkerCommand.length === 0) {
     return {
@@ -368,6 +372,7 @@ export function resolveWorkerPatternForInvocation(
         usesFile: false,
         appendFile: true,
       },
+      ...(selectedProfileName ? { selectedProfileName } : {}),
     };
   }
 
@@ -388,5 +393,6 @@ export function resolveWorkerPatternForInvocation(
   return {
     workerCommand: resolvedWorkerCommand,
     workerPattern,
+    ...(selectedProfileName ? { selectedProfileName } : {}),
   };
 }
