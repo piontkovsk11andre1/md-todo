@@ -37,7 +37,20 @@ function normalizeResultValue(value: string): string {
   return value.replace(/\r?\n/g, " ").trim();
 }
 
+function decodeRenderedGetResultValue(value: string): string {
+  const inlineCodeMatch = value.match(/^(`+)([\s\S]*?)\1$/);
+  if (!inlineCodeMatch) {
+    return value;
+  }
+
+  return inlineCodeMatch[2] ?? "";
+}
+
 function renderGetResultValue(value: string): string {
+  if (value === GET_EMPTY_RESULT_MARKER) {
+    return value;
+  }
+
   if (!GET_RESULT_SAFE_INLINE_CODE_PATTERN.test(value)) {
     return value;
   }
@@ -57,7 +70,7 @@ function findExistingResults(subItems: readonly { text: string }[]): string[] {
       continue;
     }
 
-    const normalized = normalizeResultValue(match[1] ?? "");
+    const normalized = normalizeResultValue(decodeRenderedGetResultValue(match[1] ?? ""));
     if (normalized.length > 0) {
       results.push(normalized);
     }
@@ -184,7 +197,7 @@ function parseTextResults(raw: string): string[] {
 
     const withoutBullet = trimmed.replace(/^([-*+]|\d+[.)])\s+/, "");
     const withoutPrefix = withoutBullet.replace(/^get-result\s*:\s*/i, "");
-    const normalized = normalizeResultValue(withoutPrefix);
+    const normalized = normalizeResultValue(decodeRenderedGetResultValue(withoutPrefix));
     if (normalized.length > 0) {
       parsed.push(normalized);
     }

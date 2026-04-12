@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { getHandler } from "../../../src/domain/builtin-tools/get.js";
+import { parseTasks } from "../../../src/domain/parser.js";
 import type { ToolHandlerContext } from "../../../src/domain/ports/tool-handler-port.js";
 
 interface CreateContextOptions {
@@ -209,6 +210,57 @@ describe("builtin-tools/get getHandler", () => {
       + "  - get-result: This\n"
       + "  - get-result: That\n"
       + "  - note: keep context\n",
+    );
+  });
+
+  it("wraps markdown-significant get-result values so parsed sub-items round-trip", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: '{"results":["core: [parser]*module*"]}',
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
+    expect(writtenSource).toBe(
+      "- [ ] get: All current names of this and that\n"
+      + "  - get-result: `core: [parser]*module*`\n",
+    );
+
+    const reparsed = parseTasks(writtenSource, "C:/workspace/todo.md")[0];
+    expect(reparsed?.subItems[0]?.text).toBe("get-result: core: [parser]*module*");
+  });
+
+  it("uses larger code fences when get-result values contain backticks", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: '{"results":["name with `tick` and : colon"]}',
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
+    expect(writtenSource).toBe(
+      "- [ ] get: All current names of this and that\n"
+      + "  - get-result: ``name with `tick` and : colon``\n",
     );
   });
 
