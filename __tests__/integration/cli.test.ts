@@ -7475,6 +7475,69 @@ describe.sequential("CLI integration", () => {
     );
   });
 
+  it("run and run --all use shared inline CLI failure output without changing failure control flow", async () => {
+    const workspace = makeTempWorkspace();
+    const failingScriptPath = path.join(workspace, "inline-cli-shared-failure.cjs");
+    const singleRunPath = path.join(workspace, "single-run.md");
+    const runAllPath = path.join(workspace, "run-all.md");
+
+    fs.writeFileSync(
+      failingScriptPath,
+      [
+        "process.stdout.write('shared-failure-stdout\\n');",
+        "process.stderr.write('shared-failure-stderr\\n');",
+        "process.exit(7);",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    fs.writeFileSync(singleRunPath, "- [ ] cli: node inline-cli-shared-failure.cjs\n", "utf-8");
+    fs.writeFileSync(
+      runAllPath,
+      "- [ ] cli: node inline-cli-shared-failure.cjs\n- [ ] cli: echo should-not-run\n",
+      "utf-8",
+    );
+
+    const singleResult = await runCli([
+      "run",
+      "single-run.md",
+      "--no-verify",
+    ], workspace);
+
+    expect(singleResult.code).toBe(1);
+    expect(singleResult.errors.some((line) => line.includes("Inline CLI exited with code 7"))).toBe(true);
+    const singleCombinedOutput = stripAnsi([
+      ...singleResult.logs,
+      ...singleResult.errors,
+      ...singleResult.stdoutWrites,
+      ...singleResult.stderrWrites,
+    ].join("\n"));
+    expect(singleCombinedOutput.includes("shared-failure-stdout")).toBe(true);
+    expect(singleCombinedOutput.includes("shared-failure-stderr")).toBe(true);
+
+    const allResult = await runCli([
+      "run",
+      "run-all.md",
+      "--all",
+      "--no-verify",
+    ], workspace);
+
+    expect(allResult.code).toBe(1);
+    expect(allResult.errors.some((line) => line.includes("Inline CLI exited with code 7"))).toBe(true);
+    const allCombinedOutput = stripAnsi([
+      ...allResult.logs,
+      ...allResult.errors,
+      ...allResult.stdoutWrites,
+      ...allResult.stderrWrites,
+    ].join("\n"));
+    expect(allCombinedOutput.includes("shared-failure-stdout")).toBe(true);
+    expect(allCombinedOutput.includes("shared-failure-stderr")).toBe(true);
+    expect(fs.readFileSync(runAllPath, "utf-8")).toBe(
+      "- [ ] cli: node inline-cli-shared-failure.cjs\n- [ ] cli: echo should-not-run\n",
+    );
+    expect(allResult.logs.some((line) => line.includes("should-not-run"))).toBe(false);
+  });
+
   it("run shows stderr-only inline CLI failure details on stderr", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
