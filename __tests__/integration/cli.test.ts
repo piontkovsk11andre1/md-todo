@@ -5275,6 +5275,40 @@ describe.sequential("CLI integration", () => {
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
     expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
+
+    const staleLinkSandbox = makeTempWorkspace();
+    const staleLinkInvocationDir = path.join(staleLinkSandbox, "stale-linked-invocation");
+    const staleLinkTargetFile = path.join(staleLinkSandbox, "stale-workspace.txt");
+    fs.mkdirSync(path.join(staleLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(staleLinkTargetFile, "stale", "utf-8");
+    fs.writeFileSync(
+      path.join(staleLinkInvocationDir, ".rundown", "workspace.link"),
+      path.relative(staleLinkInvocationDir, staleLinkTargetFile).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(staleLinkInvocationDir, "roadmap.md"), "- [ ] Capture workspace context\n", "utf-8");
+
+    const staleLinkResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], staleLinkInvocationDir);
+
+    const staleLinkOutput = [
+      ...staleLinkResult.logs,
+      ...staleLinkResult.errors,
+      ...staleLinkResult.stdoutWrites,
+      ...staleLinkResult.stderrWrites,
+    ].join("\n");
+    expect(staleLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(staleLinkOutput, "invocationDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(staleLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("run --config-dir uses templates from the specified directory", async () => {
@@ -10114,6 +10148,47 @@ describe.sequential("CLI integration", () => {
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
     expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
+
+    const staleLinkSandbox = makeTempWorkspace();
+    const staleLinkInvocationDir = path.join(staleLinkSandbox, "stale-linked-invocation");
+    const staleLinkTargetFile = path.join(staleLinkSandbox, "stale-workspace.txt");
+    fs.mkdirSync(path.join(staleLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(staleLinkTargetFile, "stale", "utf-8");
+    fs.writeFileSync(
+      path.join(staleLinkInvocationDir, ".rundown", "workspace.link"),
+      path.relative(staleLinkInvocationDir, staleLinkTargetFile).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(staleLinkInvocationDir, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.writeFileSync(path.join(staleLinkInvocationDir, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(staleLinkInvocationDir, ".rundown", "plan.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const staleLinkResult = await runCli([
+      "plan",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], staleLinkInvocationDir);
+
+    const staleLinkOutput = [
+      ...staleLinkResult.logs,
+      ...staleLinkResult.errors,
+      ...staleLinkResult.stdoutWrites,
+      ...staleLinkResult.stderrWrites,
+    ].join("\n");
+    expect(staleLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(staleLinkOutput, "invocationDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(staleLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("plan hides planner stderr by default", async () => {
@@ -11374,6 +11449,47 @@ describe.sequential("CLI integration", () => {
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceDir")).toBe(path.resolve(brokenLinkInvocationDir));
     expect(readWorkspaceContextValue(brokenLinkOutput, "workspaceLinkPath")).toBe("");
     expect(readWorkspaceContextValue(brokenLinkOutput, "isLinkedWorkspace")).toBe("false");
+
+    const staleLinkSandbox = makeTempWorkspace();
+    const staleLinkInvocationDir = path.join(staleLinkSandbox, "stale-linked-invocation");
+    const staleLinkTargetFile = path.join(staleLinkSandbox, "stale-workspace.txt");
+    fs.mkdirSync(path.join(staleLinkInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(staleLinkTargetFile, "stale", "utf-8");
+    fs.writeFileSync(
+      path.join(staleLinkInvocationDir, ".rundown", "workspace.link"),
+      path.relative(staleLinkInvocationDir, staleLinkTargetFile).replace(/\\/g, "/"),
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(staleLinkInvocationDir, "roadmap.md"), "# Roadmap\n\nCapture context.\n", "utf-8");
+    fs.writeFileSync(path.join(staleLinkInvocationDir, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(path.join(staleLinkInvocationDir, ".rundown", "research.md"), [
+      "invocationDir={{invocationDir}}",
+      "workspaceDir={{workspaceDir}}",
+      "workspaceLinkPath={{workspaceLinkPath}}",
+      "isLinkedWorkspace={{isLinkedWorkspace}}",
+      "",
+    ].join("\n"), "utf-8");
+
+    const staleLinkResult = await runCli([
+      "research",
+      "roadmap.md",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], staleLinkInvocationDir);
+
+    const staleLinkOutput = [
+      ...staleLinkResult.logs,
+      ...staleLinkResult.errors,
+      ...staleLinkResult.stdoutWrites,
+      ...staleLinkResult.stderrWrites,
+    ].join("\n");
+    expect(staleLinkResult.code).toBe(0);
+    expect(readWorkspaceContextValue(staleLinkOutput, "invocationDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceDir")).toBe(path.resolve(staleLinkInvocationDir));
+    expect(readWorkspaceContextValue(staleLinkOutput, "workspaceLinkPath")).toBe("");
+    expect(readWorkspaceContextValue(staleLinkOutput, "isLinkedWorkspace")).toBe("false");
   });
 
   it("research updates markdown and persists artifacts", async () => {

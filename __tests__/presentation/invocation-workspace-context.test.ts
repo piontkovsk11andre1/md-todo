@@ -57,4 +57,28 @@ describe("resolveInvocationWorkspaceContext", () => {
       isLinkedWorkspace: false,
     });
   });
+
+  it("falls back to invocation dir when workspace.link points to a stale file target", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-invocation-workspace-"));
+    tempDirs.push(root);
+
+    const invocationDir = path.join(root, "linked");
+    const staleWorkspaceFile = path.join(root, "stale-workspace.txt");
+    fs.mkdirSync(path.join(invocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(staleWorkspaceFile, "stale", "utf-8");
+    fs.writeFileSync(
+      path.join(invocationDir, ".rundown", "workspace.link"),
+      path.relative(invocationDir, staleWorkspaceFile).replace(/\\/g, "/"),
+      "utf-8",
+    );
+
+    const context = resolveInvocationWorkspaceContext(invocationDir);
+
+    expect(context).toEqual({
+      invocationDir: path.resolve(invocationDir),
+      workspaceDir: path.resolve(invocationDir),
+      workspaceLinkPath: "",
+      isLinkedWorkspace: false,
+    });
+  });
 });
