@@ -214,6 +214,32 @@ describe("builtin-tools/get getHandler", () => {
     );
   });
 
+  it("deduplicates extracted values while preserving first discovery order", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: '{"results":["This","That","This","Another","That"]}',
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
+    expect(writtenSource).toBe(
+      "- [ ] get: All current names of this and that\n"
+      + "  - get-result: This\n"
+      + "  - get-result: That\n"
+      + "  - get-result: Another\n",
+    );
+  });
+
   it("writes extracted get-result lines before task is marked checked", async () => {
     const source = "- [ ] get: All current names of this and that\n  - note: keep context\n";
     const { context, writeText } = createContext({

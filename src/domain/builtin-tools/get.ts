@@ -220,6 +220,19 @@ function extractResults(raw: string): string[] {
   return parseTextResults(raw);
 }
 
+function applyDuplicateAndOrderingPolicy(results: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const result of results) {
+    if (seen.has(result)) {
+      continue;
+    }
+    seen.add(result);
+    normalized.push(result);
+  }
+  return normalized;
+}
+
 function collectImmediateChildren(lines: string[], parentLineIndex: number, childIndentLength: number, parentIndentLength: number): ImmediateChildLine[] {
   const immediateChildren: ImmediateChildLine[] = [];
   const fencePattern = /^\s*(`{3,}|~{3,})/;
@@ -381,7 +394,7 @@ export const getHandler: ToolHandlerFn = async (context) => {
     };
   }
 
-  const extractedResults = extractResults(runResult.stdout);
+  const extractedResults = applyDuplicateAndOrderingPolicy(extractResults(runResult.stdout));
   if (extractedResults.length === 0) {
     if (emptyResultPolicyResolution.policy === "fail") {
       context.emit({
