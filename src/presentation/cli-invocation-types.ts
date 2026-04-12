@@ -44,6 +44,7 @@ export interface CliInvocationLogState {
  * Normalized shared options for worker-backed CLI command invocations.
  */
 export interface WorkerCommandInvocationOptions {
+  cwd?: string;
   mode: ProcessRunMode;
   workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;

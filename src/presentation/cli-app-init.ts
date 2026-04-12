@@ -1,11 +1,9 @@
 import { createApp } from "../create-app.js";
 import type { ConfigDirResult } from "../domain/ports/index.js";
-import { resolveWorkspaceLink } from "../domain/workspace-link.js";
 import { createConfigDirAdapter } from "../infrastructure/adapters/config-dir-adapter.js";
-import { createNodeFileSystem } from "../infrastructure/adapters/fs-file-system.js";
-import { createNodePathOperationsAdapter } from "../infrastructure/adapters/node-path-operations-adapter.js";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveInvocationWorkspaceContext } from "./invocation-workspace-context.js";
 import {
   createCliInvocationLogState,
 } from "./cli-invocation-log.js";
@@ -95,31 +93,16 @@ export function resolveConfigDirForInvocation(
   }
 
   const configDirAdapter = createConfigDirAdapter();
-  const invocationDir = path.resolve(cwd);
-  const linkedWorkspaceRoot = resolveLinkedWorkspaceRoot(invocationDir);
+  const workspaceContext = resolveInvocationWorkspaceContext(cwd);
 
-  if (linkedWorkspaceRoot) {
-    const linkedConfigDir = configDirAdapter.resolve(linkedWorkspaceRoot);
+  if (workspaceContext.isLinkedWorkspace) {
+    const linkedConfigDir = configDirAdapter.resolve(workspaceContext.workspaceDir);
     if (linkedConfigDir) {
       return linkedConfigDir;
     }
   }
 
-  return configDirAdapter.resolve(invocationDir);
-}
-
-function resolveLinkedWorkspaceRoot(cwd: string): string | undefined {
-  const workspaceLinkResolution = resolveWorkspaceLink({
-    currentDir: cwd,
-    fileSystem: createNodeFileSystem(),
-    pathOperations: createNodePathOperationsAdapter(),
-  });
-
-  if (workspaceLinkResolution.status !== "resolved") {
-    return undefined;
-  }
-
-  return workspaceLinkResolution.workspaceRoot;
+  return configDirAdapter.resolve(workspaceContext.invocationDir);
 }
 
 /**
