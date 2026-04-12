@@ -9144,6 +9144,93 @@ describe.sequential("CLI integration", () => {
     expect(lifecycle.filter((line) => line === "Do that|Beta").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("run keeps for-current on loop-item verification failure and resumes deterministically on the same item", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const workerScriptPath = path.join(workspace, "for-loop-verify-failure-resume-worker.cjs");
+    const lifecycleLogPath = path.join(workspace, "for-loop-verify-failure-resume.log");
+    const verifyFailureMarkerPath = path.join(workspace, "for-loop-beta-verify-failure.marker");
+
+    fs.writeFileSync(roadmapPath, [
+      "- [ ] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Beta",
+      "  - [x] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"), "utf-8");
+
+    fs.writeFileSync(
+      workerScriptPath,
+      [
+        "const fs = require('node:fs');",
+        "const promptPath = process.argv[process.argv.length - 1];",
+        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+        `const sourcePath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+        `const lifecycleLogPath = ${JSON.stringify(lifecycleLogPath.replace(/\\/g, "/"))};`,
+        `const verifyFailureMarkerPath = ${JSON.stringify(verifyFailureMarkerPath.replace(/\\/g, "/"))};`,
+        "const source = fs.readFileSync(sourcePath, 'utf-8');",
+        "const currentMatch = source.match(/for-current\\s*:\\s*(.+)/i);",
+        "const current = currentMatch ? currentMatch[1].trim() : 'none';",
+        "const isVerifyPhase = prompt.includes('Verify whether the selected task is complete.');",
+        "if (selectedTask === 'Do this' || selectedTask === 'Do that') {",
+        "  const phase = isVerifyPhase ? 'verify' : 'execute';",
+        "  fs.appendFileSync(lifecycleLogPath, `${phase}|${selectedTask}|${current}\\n`, 'utf-8');",
+        "}",
+        "if (isVerifyPhase && selectedTask === 'Do that' && current === 'Beta' && !fs.existsSync(verifyFailureMarkerPath)) {",
+        "  fs.writeFileSync(verifyFailureMarkerPath, '1', 'utf-8');",
+        "  console.log('NOT_OK: beta still failing verification');",
+        "  process.exit(0);",
+        "}",
+        "if (isVerifyPhase) {",
+        "  console.log('OK');",
+        "}",
+        "process.exit(0);",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const firstResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-repair",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(firstResult.code).toBe(2);
+    const sourceAfterFailure = fs.readFileSync(roadmapPath, "utf-8");
+    expect(sourceAfterFailure).toContain("- [ ] for: Alpha, Beta");
+    expect(sourceAfterFailure).toContain("  - for-current: Beta");
+    expect(sourceAfterFailure).not.toContain("for-current: Alpha");
+    expect(sourceAfterFailure).toContain("  - [x] Do that");
+    expect(sourceAfterFailure).toContain("beta still failing verification");
+
+    const retryResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-repair",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(retryResult.code).toBe(0);
+    const finalSource = fs.readFileSync(roadmapPath, "utf-8");
+    expect(finalSource).toContain("- [x] for: Alpha, Beta");
+    expect(finalSource).not.toContain("for-current:");
+
+    const lifecycle = fs.readFileSync(lifecycleLogPath, "utf-8").split("\n").filter(Boolean);
+    expect(lifecycle).toContain("execute|Do that|Beta");
+    expect(lifecycle).toContain("verify|Do that|Beta");
+    expect(lifecycle.some((line) => line.includes("|Alpha"))).toBe(false);
+  });
+
   it("run trusts manual for-item metadata and preserves stale for-current during single-pass execution", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
