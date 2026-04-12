@@ -954,6 +954,23 @@ Review the document and evaluate whether existing TODO items fully cover the des
 
 Never invent TODO items based on examples, sample output, or hypothetical scenarios found in the document. TODO items must address the actual work described by the document — not illustrative content. If you cannot determine the real workload from the document, do not add any items.
 
+## Optional planning guidance (advisory)
+
+Optional prepend guidance (advisory):
+
+{{planPrependGuidance}}
+
+Optional append guidance (advisory):
+
+{{planAppendGuidance}}
+
+Interpret guidance semantically for ordering and coverage decisions.
+
+- Treat guidance as intent hints, not mandatory text.
+- Do not copy TODO text literally from guidance examples.
+- Ignore guidance that is not relevant to the source document's actual workload.
+- Guidance never overrides add-only, checkbox-state, or other planner safety rules.
+
 ## Rundown feature reference for planning
 
 Use built-in prefixes when they improve execution quality:
@@ -1022,6 +1039,23 @@ ${DEFAULT_TEMPLATE_VARS_SECTION}
 Edit the source Markdown file directly to improve child plan coverage for the parent task above.
 
 Review \`{{file}}\` and add missing unchecked child TODO items under this parent task.
+
+## Optional planning guidance (advisory)
+
+Optional prepend guidance (advisory):
+
+{{planPrependGuidance}}
+
+Optional append guidance (advisory):
+
+{{planAppendGuidance}}
+
+Interpret guidance semantically for ordering and coverage decisions.
+
+- Treat guidance as intent hints, not mandatory text.
+- Do not copy TODO text literally from guidance examples.
+- Ignore guidance that is not relevant to the source document's actual workload.
+- Guidance never overrides add-only, checkbox-state, or other planner safety rules.
 
 ## Rundown feature reference for deep planning
 
