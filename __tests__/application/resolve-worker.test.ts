@@ -486,6 +486,24 @@ describe("resolve-worker", () => {
     });
   });
 
+  it("resolves commands.migrate-slug override for migration slug generation", () => {
+    const resolved = resolveWorkerPatternForInvocation({
+      commandName: "migrate-slug",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--model", "gpt-5.3-codex"],
+        },
+        commands: {
+          "migrate-slug": ["opencode", "run", "--model", "gpt-5.3-mini"],
+        },
+      },
+      mode: "wait",
+    });
+
+    expect(resolved.workerCommand).toEqual(["opencode", "run", "--model", "gpt-5.3-mini"]);
+    expect(resolved.workerPattern.command).toEqual(["opencode", "run", "--model", "gpt-5.3-mini"]);
+  });
+
   it("selects first eligible configured fallback when primary is cooling down", () => {
     const nowIso = "2026-04-12T09:32:38.339Z";
     const command = resolveWorkerForInvocation({

@@ -235,6 +235,15 @@ export function createMigrateTask(
       emit,
       mode: "wait",
     });
+    const resolvedSlugWorker = resolveWorkerPatternForInvocation({
+      commandName: "migrate-slug",
+      workerConfig: loadedWorkerConfig,
+      emit,
+      mode: "wait",
+    });
+    const slugWorkerPattern = resolvedSlugWorker.workerCommand.length > 0
+      ? resolvedSlugWorker.workerPattern
+      : resolvedWorker.workerPattern;
 
     if (resolvedWorker.workerCommand.length === 0) {
       emit({
@@ -254,7 +263,7 @@ export function createMigrateTask(
         dependencies,
         migrationsDir,
         workspaceRoot,
-        workerPattern: resolvedWorker.workerPattern,
+        slugWorkerPattern,
         artifactContext: undefined,
         showAgentOutput: Boolean(options.showAgentOutput),
       });
@@ -330,6 +339,7 @@ export function createMigrateTask(
           projectRoot,
           workspaceRoot,
           workerPattern: resolvedWorker.workerPattern,
+          slugWorkerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
           showAgentOutput: Boolean(options.showAgentOutput),
@@ -479,11 +489,11 @@ async function reconcilePendingMigrationPredictions(input: {
   dependencies: MigrateTaskDependencies;
   migrationsDir: string;
   workspaceRoot: string;
-  workerPattern: ParsedWorkerPattern;
+  slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]> | undefined;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, migrationsDir, workspaceRoot, workerPattern, artifactContext, showAgentOutput } = input;
+  const { dependencies, migrationsDir, workspaceRoot, slugWorkerPattern, artifactContext, showAgentOutput } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir);
   const baseline = loadPredictionBaseline(dependencies.fileSystem, migrationsDir);
@@ -515,7 +525,7 @@ async function reconcilePendingMigrationPredictions(input: {
       current: predictionInputs,
       invokeWorker: async (prompt: string) => {
         const workerResult = await dependencies.workerExecutor.runWorker({
-          workerPattern,
+          workerPattern: slugWorkerPattern,
           prompt,
           mode: "wait",
           cwd: workspaceRoot,
@@ -944,11 +954,22 @@ async function generateNextMigration(input: {
   projectRoot: string;
   workspaceRoot: string;
   workerPattern: ParsedWorkerPattern;
+  slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, state, projectRoot, workspaceRoot, workerPattern, artifactContext, confirm, showAgentOutput } = input;
+  const {
+    dependencies,
+    state,
+    projectRoot,
+    workspaceRoot,
+    workerPattern,
+    slugWorkerPattern,
+    artifactContext,
+    confirm,
+    showAgentOutput,
+  } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const template = readTemplate(
     dependencies.templateLoader,
@@ -960,7 +981,7 @@ async function generateNextMigration(input: {
   const prompt = renderTemplate(template, vars);
 
   const result = await dependencies.workerExecutor.runWorker({
-    workerPattern,
+    workerPattern: slugWorkerPattern,
     prompt,
     mode: "wait",
     cwd: workspaceRoot,

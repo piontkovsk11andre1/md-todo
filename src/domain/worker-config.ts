@@ -55,6 +55,7 @@ export const WORKER_CONFIG_COMMAND_NAMES = [
   "help",
   "run",
   "migrate",
+  "migrate-slug",
   "undo",
   "test",
   "plan",

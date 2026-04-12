@@ -298,6 +298,7 @@ describe("createWorkerConfigAdapter", () => {
       expect(message).toContain("Allowed:");
       expect(message).toContain("help");
       expect(message).toContain("run");
+      expect(message).toContain("migrate-slug");
       expect(message).toContain("plan");
       expect(message).toContain("tools.{toolName}");
     }
