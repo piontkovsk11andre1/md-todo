@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildWorkspaceContextTemplateVars,
+  mergeTemplateVarsWithWorkspaceContext,
   resolveRuntimeWorkspaceContext,
 } from "../../src/application/runtime-workspace-context.js";
 import { createNodePathOperationsAdapter } from "../../src/infrastructure/adapters/node-path-operations-adapter.js";
@@ -77,6 +78,70 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceLinkPath: "",
       isLinkedWorkspace: false,
     })).toEqual({
+      invocationDir: "/workspace/invocation",
+      workspaceDir: "/workspace/invocation",
+      workspaceLinkPath: "",
+      isLinkedWorkspace: "false",
+    });
+  });
+});
+
+describe("mergeTemplateVarsWithWorkspaceContext", () => {
+  it("does not allow file or CLI vars to override workspace context keys", () => {
+    const merged = mergeTemplateVarsWithWorkspaceContext(
+      {
+        invocationDir: "/fake/file/invocation",
+        workspaceDir: "/fake/file/workspace",
+        workspaceLinkPath: "/fake/file/workspace.link",
+        isLinkedWorkspace: "false",
+        source: "file",
+      },
+      {
+        invocationDir: "/fake/cli/invocation",
+        workspaceDir: "/fake/cli/workspace",
+        workspaceLinkPath: "/fake/cli/workspace.link",
+        isLinkedWorkspace: "false",
+        source: "cli",
+      },
+      {
+        invocationDir: "/real/invocation",
+        workspaceDir: "/real/workspace",
+        workspaceLinkPath: "/real/.rundown/workspace.link",
+        isLinkedWorkspace: "true",
+      },
+    );
+
+    expect(merged).toEqual({
+      invocationDir: "/real/invocation",
+      workspaceDir: "/real/workspace",
+      workspaceLinkPath: "/real/.rundown/workspace.link",
+      isLinkedWorkspace: "true",
+      source: "cli",
+    });
+  });
+
+  it("keeps file and CLI precedence for non-protected template vars", () => {
+    const merged = mergeTemplateVarsWithWorkspaceContext(
+      {
+        mode: "file",
+        shared: "file",
+      },
+      {
+        shared: "cli",
+        cliOnly: "yes",
+      },
+      {
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/invocation",
+        workspaceLinkPath: "",
+        isLinkedWorkspace: "false",
+      },
+    );
+
+    expect(merged).toEqual({
+      mode: "file",
+      shared: "cli",
+      cliOnly: "yes",
       invocationDir: "/workspace/invocation",
       workspaceDir: "/workspace/invocation",
       workspaceLinkPath: "",
