@@ -142,6 +142,7 @@ export async function completeTaskIteration(params: {
     current: string;
     remainingItems: number;
   };
+  forLoopCompleted?: boolean;
   forLoopItems?: string[];
   failOnCompleteHookError?: boolean;
   persistFailureAnnotation?: boolean;
@@ -204,6 +205,7 @@ export async function completeTaskIteration(params: {
     skipRemainingSiblingsReason,
     toolExpansionInsertedChildCount,
     forLoopAdvanced,
+    forLoopCompleted,
     forLoopItems,
     failOnCompleteHookError,
     persistFailureAnnotation = true,
@@ -442,22 +444,7 @@ export async function completeTaskIteration(params: {
       return { continueLoop: true, groupEnded: false };
     }
 
-    const completionTransition = advanceForLoopUsingFileSystem(task, dependencies.fileSystem);
-    if (completionTransition.advanced && completionTransition.current) {
-      if (completedLoopItem) {
-        emit({ kind: "info", message: "Loop item completed: " + completedLoopItem + "." });
-      }
-      emit({
-        kind: "info",
-        message: "Loop advanced to item: " + completionTransition.current
-          + " (" + completionTransition.remainingItems + " remaining).",
-      });
-      state.tasksCompleted++;
-      resetArtifacts();
-      return { continueLoop: true, groupEnded: false };
-    }
-
-    if (completionTransition.completed) {
+    if (forLoopCompleted) {
       if (completedLoopItem) {
         emit({ kind: "info", message: "Loop item completed: " + completedLoopItem + "." });
       }
@@ -467,6 +454,33 @@ export async function completeTaskIteration(params: {
           + pluralize(loopItemCount, "item", "items")
           + "; marking parent task complete.",
       });
+    } else {
+      const completionTransition = advanceForLoopUsingFileSystem(task, dependencies.fileSystem);
+      if (completionTransition.advanced && completionTransition.current) {
+        if (completedLoopItem) {
+          emit({ kind: "info", message: "Loop item completed: " + completedLoopItem + "." });
+        }
+        emit({
+          kind: "info",
+          message: "Loop advanced to item: " + completionTransition.current
+            + " (" + completionTransition.remainingItems + " remaining).",
+        });
+        state.tasksCompleted++;
+        resetArtifacts();
+        return { continueLoop: true, groupEnded: false };
+      }
+
+      if (completionTransition.completed) {
+        if (completedLoopItem) {
+          emit({ kind: "info", message: "Loop item completed: " + completedLoopItem + "." });
+        }
+        emit({
+          kind: "info",
+          message: "Loop completed after " + loopItemCount + " "
+            + pluralize(loopItemCount, "item", "items")
+            + "; marking parent task complete.",
+        });
+      }
     }
   }
 

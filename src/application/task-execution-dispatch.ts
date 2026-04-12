@@ -57,6 +57,7 @@ export type TaskExecutionDispatchResult =
       current: string;
       remainingItems: number;
     };
+    forLoopCompleted?: boolean;
     forLoopItems?: string[];
   }
   | {
@@ -346,6 +347,11 @@ export async function dispatchTaskExecution(params: {
               current: forLoopAdvanceResult.current,
               remainingItems: forLoopAdvanceResult.remainingItems,
             },
+          }
+          : {}),
+        ...(forLoopAdvanceResult?.completed
+          ? {
+            forLoopCompleted: true,
           }
           : {}),
         ...(prefixChain?.handler?.tool.name === "for" && chainResult.forLoopItems

@@ -2720,6 +2720,119 @@ describe("task-execution-dispatch", () => {
     ].join("\n"));
   });
 
+  it("signals loop completion after final item and clears for-current metadata", async () => {
+    const task = createTask(path.join(cwd, "tasks.md"), "for: This, That", {
+      subItems: [
+        { text: "for-item: This", line: 2, depth: 1 },
+        { text: "for-item: That", line: 3, depth: 1 },
+        { text: "for-current: That", line: 4, depth: 1 },
+      ],
+      children: [
+        createTask(path.join(cwd, "tasks.md"), "Do this", {
+          index: 1,
+          line: 5,
+          depth: 1,
+          checked: true,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [task.file]: [
+        "- [ ] for: This, That",
+        "  - for-item: This",
+        "  - for-item: That",
+        "  - for-current: That",
+        "  - [x] Do this",
+      ].join("\n"),
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    const result = await dispatchTaskExecution({
+      dependencies,
+      emit: (event) => events.push(event),
+      files: [task.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createSession(),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: true,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "execute-and-verify",
+      prefixChain: {
+        modifiers: [],
+        handler: {
+          tool: {
+            name: "for",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+            handler: async () => ({
+              skipExecution: true,
+              shouldVerify: false,
+              forLoopItems: ["This", "That"],
+            }),
+          },
+          payload: "This, That",
+        },
+        remainingText: "This, That",
+      },
+      task,
+      prompt: "unused",
+      expandedContextBefore: "",
+      artifactContext: createArtifactContext(),
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      trace: false,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(result).toEqual({
+      kind: "ready-for-completion",
+      shouldVerify: false,
+      cliExecutionOptionsForVerification: undefined,
+      verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+      verificationFailureRunReason: "Verification failed after all repair attempts.",
+      skipRemainingSiblingsReason: undefined,
+      toolExpansionInsertedChildCount: undefined,
+      forLoopCompleted: true,
+      forLoopItems: ["This", "That"],
+    });
+
+    expect(fileSystem.readText(task.file)).toBe([
+      "- [ ] for: This, That",
+      "  - for-item: This",
+      "  - for-item: That",
+      "  - [x] Do this",
+    ].join("\n"));
+  });
+
   it("keeps default worker stdout/stderr hidden when show-agent-output is disabled while preserving lifecycle status", async () => {
     const task = createTask(path.join(cwd, "tasks.md"), "Ship release");
     const fileSystem = createInMemoryFileSystem({
@@ -5220,6 +5333,110 @@ describe("complete-task-iteration", () => {
       "  - for-item: Beta",
       "  - [x] Do this",
       "  - [x] Do that",
+      "",
+    ].join("\n"));
+  });
+
+  it("completes loop parent deterministically when dispatch already finalized for-current", async () => {
+    const loopTask = createTask(path.join(cwd, "tasks.md"), "for: Alpha, Beta", {
+      subItems: [
+        { text: "for-item: Alpha", line: 2, depth: 1 },
+        { text: "for-item: Beta", line: 3, depth: 1 },
+        { text: "for-current: Beta", line: 4, depth: 1 },
+      ],
+      children: [
+        createTask(path.join(cwd, "tasks.md"), "Do this", {
+          index: 1,
+          line: 4,
+          depth: 1,
+          checked: true,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [loopTask.file]: [
+        "- [ ] for: Alpha, Beta",
+        "  - for-item: Alpha",
+        "  - for-item: Beta",
+        "  - [x] Do this",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: loopTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const state = {
+      traceWriter: dependencies.traceWriter,
+      deferredCommitContext: null,
+      tasksCompleted: 0,
+      runCompleted: false,
+    };
+    const finishRun = vi.fn(async () => 0);
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state,
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: loopTask,
+      sourceText: fileSystem.readText(loopTask.file),
+      expandedSource: fileSystem.readText(loopTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      forLoopCompleted: true,
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, groupEnded: true });
+    expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, undefined);
+    expect(fileSystem.readText(loopTask.file)).toBe([
+      "- [x] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - [x] Do this",
       "",
     ].join("\n"));
   });

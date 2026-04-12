@@ -446,9 +446,14 @@ export function syncForLoopMetadataItemsUsingFileSystem(
       return;
     }
 
+    const existingCurrent = getForCurrentValue(latestLoopTask.subItems);
+    const nextCurrent = existingCurrent !== undefined && normalizedItems.includes(existingCurrent)
+      ? existingCurrent
+      : undefined;
+
     const eol = source.includes("\r\n") ? "\r\n" : "\n";
     const lines = source.split(/\r?\n/);
-    rewriteForLoopMetadataLines(lines, latestLoopTask, { forItems: normalizedItems });
+    rewriteForLoopMetadataLines(lines, latestLoopTask, { forItems: normalizedItems, nextCurrent });
     const updatedSource = lines.join(eol);
     if (updatedSource !== source) {
       fileSystem.writeText(loopTask.file, updatedSource);
