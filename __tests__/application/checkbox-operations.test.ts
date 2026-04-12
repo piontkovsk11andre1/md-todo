@@ -789,6 +789,30 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("removes nested stale descendants under stale parents while preserving unrelated siblings", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] Parent",
+        "  - note: keep this note",
+        "  - fix: generated annotation",
+        "    - [ ] Generated stale child task",
+        "      - skipped: generated child annotation",
+        "    - note: nested stale note",
+        "  - [ ] Keep this actionable child",
+        "    - note: keep nested user note",
+      ].join("\n"),
+    });
+
+    resetFileCheckboxes("todo.md", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] Parent",
+      "  - note: keep this note",
+      "  - [ ] Keep this actionable child",
+      "    - note: keep nested user note",
+    ].join("\n"));
+  });
+
   it("marks a single remaining sibling as checked and inserts skipped annotation", () => {
     const fileSystem = createFileSystem({
       "todo.md": [

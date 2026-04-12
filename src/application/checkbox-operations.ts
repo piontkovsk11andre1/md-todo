@@ -85,19 +85,6 @@ function isTraceStatisticsLineForTask(line: string, parentIndentLength: number):
   return false;
 }
 
-function isRuntimeStaleLineForTask(line: string, parentIndentLength: number): boolean {
-  const lineIndentLength = getLeadingWhitespaceLength(line);
-  if (lineIndentLength === parentIndentLength + 2) {
-    return isListItemWithLabel(line, RUNTIME_STALE_CHILD_LABEL_PATTERN);
-  }
-
-  if (lineIndentLength === parentIndentLength + 4) {
-    return isListItemWithLabel(line, TRACE_STATISTICS_GRANDCHILD_LABEL_PATTERN);
-  }
-
-  return false;
-}
-
 function stripTrailingTraceStatisticsLines(
   lines: string[],
   parentLineIndex: number,
@@ -132,38 +119,51 @@ function stripTrailingTraceStatisticsLines(
   return removeStartIndex;
 }
 
-function stripTrailingRuntimeStaleLines(
+function stripRuntimeStaleDescendantBlocks(
   lines: string[],
   parentLineIndex: number,
   descendantEndIndexExclusive: number,
 ): number {
   const parentLine = lines[parentLineIndex] ?? "";
   const parentIndentLength = getLeadingWhitespaceLength(parentLine);
-  let removeStartIndex = descendantEndIndexExclusive;
+  const staleChildIndentLength = parentIndentLength + 2;
+  let adjustedEndIndexExclusive = descendantEndIndexExclusive;
+  let index = parentLineIndex + 1;
 
-  for (let index = descendantEndIndexExclusive - 1; index > parentLineIndex; index -= 1) {
+  while (index < adjustedEndIndexExclusive) {
     const line = lines[index] ?? "";
     if (line.trim().length === 0) {
-      if (removeStartIndex < descendantEndIndexExclusive) {
-        removeStartIndex = index;
+      index += 1;
+      continue;
+    }
+
+    if (getLeadingWhitespaceLength(line) !== staleChildIndentLength
+      || !isListItemWithLabel(line, RUNTIME_STALE_CHILD_LABEL_PATTERN)) {
+      index += 1;
+      continue;
+    }
+
+    let removeEndIndexExclusive = index + 1;
+    while (removeEndIndexExclusive < adjustedEndIndexExclusive) {
+      const candidate = lines[removeEndIndexExclusive] ?? "";
+      if (candidate.trim().length === 0) {
+        removeEndIndexExclusive += 1;
         continue;
       }
 
-      break;
+      if (getLeadingWhitespaceLength(candidate) <= staleChildIndentLength) {
+        break;
+      }
+
+      removeEndIndexExclusive += 1;
     }
 
-    if (!isRuntimeStaleLineForTask(line, parentIndentLength)) {
-      break;
-    }
-
-    removeStartIndex = index;
+    const deleteCount = removeEndIndexExclusive - index;
+    lines.splice(index, deleteCount);
+    adjustedEndIndexExclusive -= deleteCount;
   }
 
-  if (removeStartIndex < descendantEndIndexExclusive) {
-    lines.splice(removeStartIndex, descendantEndIndexExclusive - removeStartIndex);
-  }
-
-  return removeStartIndex;
+  return adjustedEndIndexExclusive;
 }
 
 function hasTraceStatisticsInDescendants(
@@ -219,7 +219,7 @@ function stripRuntimeStaleAnnotationsFromSource(source: string, file: string): s
       descendantEndIndexExclusive = index + 1;
     }
 
-    stripTrailingRuntimeStaleLines(lines, parentLineIndex, descendantEndIndexExclusive);
+    stripRuntimeStaleDescendantBlocks(lines, parentLineIndex, descendantEndIndexExclusive);
   }
 
   return lines.join(eol);
