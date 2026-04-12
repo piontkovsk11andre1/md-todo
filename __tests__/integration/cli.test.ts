@@ -4817,6 +4817,57 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("prompt-file-failure")).toBe(true);
   });
 
+  it("run preserves source cli command ordering and non-fatal failure semantics in staged prompt files", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+
+    fs.writeFileSync(
+      roadmapPath,
+      [
+        "```cli",
+        "node -e \"process.stdout.write('prompt-order-first\\n')\"",
+        "node -e \"process.stderr.write('prompt-order-fail\\n');process.exit(9)\"",
+        "node -e \"process.stdout.write('prompt-order-third\\n')\"",
+        "```",
+        "",
+        "- [ ] Validate prompt file cli ordering and failure handling",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--show-agent-output",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];process.stdout.write(fs.readFileSync(p,'utf-8'));",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes('`cli` fenced command failed in source markdown (exit 9)')).toBe(true);
+    expect(combinedOutput.includes("prompt-order-first")).toBe(true);
+    expect(combinedOutput.includes("prompt-order-fail")).toBe(true);
+    expect(combinedOutput.includes("prompt-order-third")).toBe(true);
+
+    const firstIndex = combinedOutput.indexOf("prompt-order-first");
+    const failedIndex = combinedOutput.indexOf("prompt-order-fail");
+    const thirdIndex = combinedOutput.indexOf("prompt-order-third");
+    expect(firstIndex).toBeGreaterThan(-1);
+    expect(failedIndex).toBeGreaterThan(firstIndex);
+    expect(thirdIndex).toBeGreaterThan(failedIndex);
+  });
+
   it("run --keep-artifacts writes cli fenced block stdout/stderr files", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
