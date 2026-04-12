@@ -163,6 +163,57 @@ describe("help-task", () => {
     expect(prompt).not.toContain("```cli");
   });
 
+  it("keeps expanded --help --everything output readable in worker prompt", async () => {
+    const cwd = "/workspace";
+    const { dependencies, workerExecutor, cliBlockExecutor } = createDependencies({ cwd });
+    vi.mocked(dependencies.workerConfigPort.load).mockReturnValue({
+      workers: {
+        tui: ["opencode", "run", "--tui"],
+      },
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "help.md"))) {
+        return [
+          "intro",
+          "```cli",
+          "rundown --help --everything",
+          "```",
+          "outro",
+        ].join("\n");
+      }
+      return null;
+    });
+    vi.mocked(cliBlockExecutor.execute).mockResolvedValue({
+      exitCode: 0,
+      stdout: [
+        "Usage: rundown [options] [command]",
+        "",
+        "Commands:",
+        "  help [command]  display help for command",
+        "  run <source>    Execute unchecked TODO tasks",
+        "",
+        "Options:",
+        "  --print-prompt  Print rendered prompts and exit",
+        "  --cache-cli-blocks Cache `cli` fenced block command output",
+      ].join("\n"),
+      stderr: "",
+    });
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({ workerCommand: [] }));
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    const prompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0].prompt ?? "";
+    expect(prompt).toContain("<command>rundown --help --everything</command>");
+    expect(prompt).toContain("Usage: rundown [options] [command]");
+    expect(prompt).toContain("Commands:\n  help [command]  display help for command");
+    expect(prompt).toContain("Options:\n  --print-prompt  Print rendered prompts and exit");
+    expect(prompt).toContain("--cache-cli-blocks Cache `cli` fenced block command output");
+    expect(prompt).toContain("intro");
+    expect(prompt).toContain("outro");
+    expect(prompt).not.toContain("```cli");
+  });
+
   it("returns no-work when no interactive help worker is configured", async () => {
     const cwd = "/workspace";
     const { dependencies, artifactStore, workerExecutor, events } = createDependencies({ cwd });
