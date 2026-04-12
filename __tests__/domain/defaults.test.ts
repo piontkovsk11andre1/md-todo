@@ -31,9 +31,18 @@ describe("default prompt templates", () => {
       taskIndex: 0,
       taskLine: 1,
       source: "- [ ] Ship release",
+      invocationDir: "/repo/invoke",
+      workspaceDir: "/repo/workspace",
+      workspaceLinkPath: "/repo/invoke/.rundown/workspace.link",
+      isLinkedWorkspace: "true",
       userVariables: "branch=main\nticket=ENG-42",
     });
 
+    expect(result).toContain("## Workspace context");
+    expect(result).toContain("- Invocation directory: `/repo/invoke`");
+    expect(result).toContain("- Workspace directory: `/repo/workspace`");
+    expect(result).toContain("- Workspace link path: `/repo/invoke/.rundown/workspace.link`");
+    expect(result).toContain("- Linked workspace: `true`");
     expect(result).toContain("## Variables\n\nbranch=main\nticket=ENG-42");
   });
 
@@ -45,9 +54,17 @@ describe("default prompt templates", () => {
       taskIndex: 0,
       taskLine: 1,
       source: "- [ ] Ship release",
+      invocationDir: "/repo/workspace",
+      workspaceDir: "/repo/workspace",
+      workspaceLinkPath: "",
+      isLinkedWorkspace: "false",
       userVariables: "(none)",
     });
 
+    expect(result).toContain("- Invocation directory: `/repo/workspace`");
+    expect(result).toContain("- Workspace directory: `/repo/workspace`");
+    expect(result).toContain("- Workspace link path: ``");
+    expect(result).toContain("- Linked workspace: `false`");
     expect(result).toContain("## Variables\n\n(none)");
   });
 

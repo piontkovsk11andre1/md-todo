@@ -86,10 +86,16 @@ These values are available in templates as placeholders such as `{{branch}}` or 
 For tool-expansion tasks (`<tool-name>: <payload>` with a matching template in `.rundown/tools/`),
 `{{payload}}` is also available and contains the task text after the first `:`.
 
-### Variables section in built-in templates
+### Workspace and variables sections in built-in templates
 
-Built-in worker-facing templates include a `## Variables` section that renders
-`{{userVariables}}`.
+Built-in worker-facing templates include:
+
+- A `## Workspace context` section with first-class runtime fields:
+  - `{{invocationDir}}`
+  - `{{workspaceDir}}`
+  - `{{workspaceLinkPath}}`
+  - `{{isLinkedWorkspace}}`
+- A `## Variables` section that renders `{{userVariables}}`.
 
 `{{userVariables}}` is a formatted dump of all extra template variables (merged from
 `--vars-file` and `--var`, with `--var` winning on conflicts).

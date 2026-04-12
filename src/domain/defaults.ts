@@ -47,6 +47,13 @@ Memory map:
 // Shared user-provided template variables block for worker-facing prompts.
 export const DEFAULT_TEMPLATE_VARS_SECTION = `\
 
+## Workspace context
+
+- Invocation directory: \`{{invocationDir}}\`
+- Workspace directory: \`{{workspaceDir}}\`
+- Workspace link path: \`{{workspaceLinkPath}}\`
+- Linked workspace: \`{{isLinkedWorkspace}}\`
+
 ## Variables
 
 {{userVariables}}
@@ -813,6 +820,7 @@ export const DEFAULT_CONFIG_CONTENT = `{}
 export const DEFAULT_PLAN_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Phase
 
@@ -877,6 +885,7 @@ Rules:
 export const DEFAULT_DEEP_PLAN_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Parent task context
 
@@ -944,6 +953,7 @@ Rules:
 export const DEFAULT_RESEARCH_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
 ${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
 
 ## Full document
 
