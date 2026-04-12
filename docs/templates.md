@@ -97,6 +97,33 @@ Built-in worker-facing templates include:
   - `{{isLinkedWorkspace}}`
 - A `## Variables` section that renders `{{userVariables}}`.
 
+These workspace fields are available in worker-facing prompt paths (`run`, `discuss`,
+`plan`, `research`, and `reverify` flows, including execute/verify/repair/resolve
+phase prompts when those phases are active).
+
+### Workspace context variable contract
+
+All workspace-context fields are runtime-injected as absolute normalized paths/values:
+
+| Variable | Meaning |
+| --- | --- |
+| `{{invocationDir}}` | Absolute directory where the CLI command was invoked. |
+| `{{workspaceDir}}` | Absolute effective workspace directory used for execution/source resolution. |
+| `{{workspaceLinkPath}}` | Absolute path to `.rundown/workspace.link` when linked workspace mode is active; otherwise empty. |
+| `{{isLinkedWorkspace}}` | String boolean: `"true"` when linked mode is active, otherwise `"false"`. |
+
+Fallback semantics are deterministic:
+
+- Non-linked mode: `invocationDir === workspaceDir`, `workspaceLinkPath` is empty,
+  and `isLinkedWorkspace` is `"false"`.
+- Linked mode: `workspaceDir` resolves to the linked target and may differ from
+  `invocationDir`; `workspaceLinkPath` is populated; `isLinkedWorkspace` is `"true"`.
+- Stale/broken link targets: values fall back to non-linked semantics so prompts do not
+  claim a linked workspace when resolution is invalid.
+
+Workspace-context keys are authoritative runtime fields and cannot be overridden by
+user-provided `--var` or `--vars-file` values.
+
 `{{userVariables}}` is a formatted dump of all extra template variables (merged from
 `--vars-file` and `--var`, with `--var` winning on conflicts).
 
