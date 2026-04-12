@@ -551,10 +551,40 @@ describeIfSaveMigrateAvailable("migrate save integration", () => {
     expect(fs.readFileSync(path.join(workspace, "docs", "rev.4", "notes", "api.md"), "utf-8")).toBe("API details\n");
   });
 
-  it("fails with a clear message when docs/current is missing", async () => {
+  it("bootstraps docs/current from legacy Design.md when missing", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
     fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(workspace, "Design.md"), "# Legacy design\n\nBootstrapped content.\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "save",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, "docs", "current", "Design.md"), "utf-8")).toBe("# Legacy design\n\nBootstrapped content.\n");
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.1", "Design.md"))).toBe(true);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
+  });
+
+  it("fails clearly when docs/current and legacy Design.md are both missing", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
 
     const result = await runCli([
       "migrate",
@@ -675,6 +705,57 @@ describeIfRevisionPreviewActionsAvailable("migrate revision diff/preview integra
     expect(combinedOutput).toMatch(/docs[\\/]current/);
     expect(combinedOutput).toContain("Changes:");
     expect(combinedOutput).toContain("- modified: Design.md");
+  });
+
+  it("migrate diff bootstraps docs/current from legacy Design.md when needed", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "old\n", "utf-8");
+    fs.rmSync(path.join(workspace, "docs", "current"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(workspace, "Design.md"), "new\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "diff",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, "docs", "current", "Design.md"), "utf-8")).toBe("new\n");
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
+    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+  });
+
+  it("migrate preview fails clearly when docs/current and legacy Design.md are both missing", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
+
+    const result = await runCli([
+      "migrate",
+      "preview",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design working directory is missing:");
+    expect(combinedOutput).toContain("docs/current");
   });
 });
 

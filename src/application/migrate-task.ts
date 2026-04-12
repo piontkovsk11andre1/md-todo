@@ -148,7 +148,24 @@ export function createMigrateTask(
     const projectRoot = path.dirname(migrationsDir);
     const configDir = path.join(projectRoot, ".rundown");
     if (action === "save") {
-      const saveResult = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot);
+      const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
+        dependencies.fileSystem,
+        projectRoot,
+        emit,
+      );
+      if (!workspaceReady.ok) {
+        emit({ kind: "error", message: workspaceReady.message });
+        return EXIT_CODE_FAILURE;
+      }
+
+      let saveResult;
+      try {
+        saveResult = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot);
+      } catch (error) {
+        emit({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+        return EXIT_CODE_FAILURE;
+      }
+
       if (saveResult.kind === "unchanged") {
         emit({
           kind: "info",
@@ -177,6 +194,16 @@ export function createMigrateTask(
     }
 
     if (action === "diff" || action === "preview") {
+      const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
+        dependencies.fileSystem,
+        projectRoot,
+        emit,
+      );
+      if (!workspaceReady.ok) {
+        emit({ kind: "error", message: workspaceReady.message });
+        return EXIT_CODE_FAILURE;
+      }
+
       emitDesignRevisionDiffPreview({
         fileSystem: dependencies.fileSystem,
         projectRoot,
@@ -627,6 +654,41 @@ function toProjectRelativePath(projectRoot: string, absolutePath: string): strin
   return path.relative(projectRoot, absolutePath).replace(/\\/g, "/");
 }
 
+function ensureManagedDesignWorkspaceForRevisionCommands(
+  fileSystem: FileSystem,
+  projectRoot: string,
+  emit: ApplicationOutputPort["emit"],
+): { ok: true } | { ok: false; message: string } {
+  const docsCurrentDir = path.join(projectRoot, "docs", "current");
+  if (isDirectory(fileSystem, docsCurrentDir)) {
+    return { ok: true };
+  }
+
+  const legacyDesignPath = path.join(projectRoot, "Design.md");
+  if (isFile(fileSystem, legacyDesignPath)) {
+    fileSystem.mkdir(docsCurrentDir, { recursive: true });
+    const bootstrappedDesignPath = path.join(docsCurrentDir, "Design.md");
+    if (!isFile(fileSystem, bootstrappedDesignPath)) {
+      fileSystem.writeText(bootstrappedDesignPath, fileSystem.readText(legacyDesignPath));
+    }
+
+    emit({
+      kind: "info",
+      message:
+        "Bootstrapped docs/current/ from legacy Design.md to initialize revision workflow.",
+    });
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    message:
+      "Design working directory is missing: "
+      + docsCurrentDir
+      + ". Create docs/current/ (or run `rundown start ...`) before using revision commands.",
+  };
+}
+
 function resolveWorkspaceRootFromCurrentDir(fileSystem: FileSystem, currentDir: string): string {
   const resolution = resolveWorkspaceLink({
     currentDir,
@@ -637,6 +699,16 @@ function resolveWorkspaceRootFromCurrentDir(fileSystem: FileSystem, currentDir: 
   return resolution.status === "resolved"
     ? resolution.workspaceRoot
     : path.resolve(currentDir);
+}
+
+function isDirectory(fileSystem: FileSystem, absolutePath: string): boolean {
+  const stat = fileSystem.stat(absolutePath);
+  return stat?.isDirectory === true;
+}
+
+function isFile(fileSystem: FileSystem, absolutePath: string): boolean {
+  const stat = fileSystem.stat(absolutePath);
+  return stat?.isFile === true;
 }
 
 function getPredictionBaselinePath(migrationsDir: string): string {
