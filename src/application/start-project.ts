@@ -38,11 +38,12 @@ export function createStartProject(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function startProject(options: StartProjectOptions = {}): Promise<number> {
+    const invocationDirectory = dependencies.workingDirectory.cwd();
     const description = normalizeDescription(options.description);
     const dirOption = options.dir?.trim();
     const targetDirectory = dirOption
       ? dependencies.pathOperations.resolve(dirOption)
-      : dependencies.workingDirectory.cwd();
+      : invocationDirectory;
 
     if (!dependencies.fileSystem.exists(targetDirectory)) {
       dependencies.fileSystem.mkdir(targetDirectory, { recursive: true });
@@ -53,6 +54,7 @@ export function createStartProject(
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
     const migrationsDir = dependencies.pathOperations.join(targetDirectory, "migrations");
     const specsDir = dependencies.pathOperations.join(targetDirectory, "specs");
+    const workspaceLinkPath = dependencies.pathOperations.join(targetDirectory, ".rundown", "workspace.link");
     const initialMigrationPath = dependencies.pathOperations.join(
       migrationsDir,
       "0001-initialize.md",
@@ -73,6 +75,13 @@ export function createStartProject(
     if (initCode !== EXIT_CODE_SUCCESS) {
       return initCode;
     }
+
+    writeFileIfMissing(
+      dependencies.fileSystem,
+      workspaceLinkPath,
+      buildWorkspaceLinkTarget(dependencies.pathOperations, targetDirectory, invocationDirectory),
+      emit,
+    );
 
     writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
     writeFileIfMissing(dependencies.fileSystem, agentsPath, DEFAULT_AGENTS_TEMPLATE, emit);
@@ -160,6 +169,18 @@ function buildInitialMigrationMarkdown(description: string): string {
     "- [ ] Capture first validation checkpoints",
     "",
   ].join("\n");
+}
+
+function buildWorkspaceLinkTarget(
+  pathOperations: PathOperationsPort,
+  targetDirectory: string,
+  workspaceRoot: string,
+): string {
+  const relativeTarget = pathOperations.relative(targetDirectory, workspaceRoot);
+  const normalizedTarget = relativeTarget.length > 0
+    ? relativeTarget
+    : ".";
+  return normalizedTarget.replace(/\\/g, "/");
 }
 
 function writeFileIfMissing(

@@ -79,6 +79,49 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations", "0001-initialize.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
+    expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
+  });
+
+  it("writes workspace.link as current directory for in-place start", async () => {
+    const workspace = makeTempWorkspace();
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const workerScript = [
+      "const fs=require('node:fs');",
+      "const promptPath=process.argv[process.argv.length-1];",
+      "const prompt=fs.readFileSync(promptPath,'utf-8');",
+      "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+      "  const sourceMatch=prompt.match(/## Source file\\s+`([^`]+)`/m);",
+      "  const sourcePath=sourceMatch?sourceMatch[1]:'';",
+      "  if(sourcePath&&fs.existsSync(sourcePath)){",
+      "    console.log(fs.readFileSync(sourcePath,'utf-8'));",
+      "  }else{",
+      "    console.log('');",
+      "  }",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Edit the source Markdown file directly to improve plan coverage.')){",
+      "  process.exit(0);",
+      "}",
+      "console.log('ok');",
+      "process.exit(0);",
+    ].join("\n");
+
+    const result = await runCli([
+      "start",
+      "In place project",
+      "--",
+      "node",
+      "-e",
+      workerScript,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
   });
 });
 
