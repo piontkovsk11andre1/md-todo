@@ -5238,14 +5238,10 @@ describe.sequential("CLI integration", () => {
     const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
     const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
     const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
-    expect(linkedInvocationValue.length > 0).toBe(true);
-    expect(linkedWorkspaceValue.length > 0).toBe(true);
-    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
-    expect(linkedInvocationValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).toBe(path.resolve(linkedInvocationDir));
+    expect(linkedWorkspaceValue).toBe(path.resolve(sourceWorkspace));
+    expect(linkedWorkspaceLinkValue).toBe(path.resolve(workspaceLinkPath));
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
-    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
 
     const brokenLinkSandbox = makeTempWorkspace();
@@ -10162,14 +10158,10 @@ describe.sequential("CLI integration", () => {
     const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
     const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
     const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
-    expect(linkedInvocationValue.length > 0).toBe(true);
-    expect(linkedWorkspaceValue.length > 0).toBe(true);
-    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
-    expect(linkedInvocationValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).toBe(path.resolve(linkedInvocationDir));
+    expect(linkedWorkspaceValue).toBe(path.resolve(sourceWorkspace));
+    expect(linkedWorkspaceLinkValue).toBe(path.resolve(workspaceLinkPath));
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
-    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
 
     const brokenLinkSandbox = makeTempWorkspace();
@@ -11463,14 +11455,10 @@ describe.sequential("CLI integration", () => {
     const linkedInvocationValue = readWorkspaceContextValue(linkedOutput, "invocationDir");
     const linkedWorkspaceValue = readWorkspaceContextValue(linkedOutput, "workspaceDir");
     const linkedWorkspaceLinkValue = readWorkspaceContextValue(linkedOutput, "workspaceLinkPath");
-    expect(linkedInvocationValue.length > 0).toBe(true);
-    expect(linkedWorkspaceValue.length > 0).toBe(true);
-    expect(linkedWorkspaceLinkValue.length > 0).toBe(true);
-    expect(linkedInvocationValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceValue.includes("{{")).toBe(false);
-    expect(linkedWorkspaceLinkValue.includes("{{")).toBe(false);
+    expect(linkedInvocationValue).toBe(path.resolve(linkedInvocationDir));
+    expect(linkedWorkspaceValue).toBe(path.resolve(sourceWorkspace));
+    expect(linkedWorkspaceLinkValue).toBe(path.resolve(workspaceLinkPath));
     expect(linkedInvocationValue).not.toBe(linkedWorkspaceValue);
-    expect(linkedWorkspaceLinkValue.endsWith(path.join(".rundown", "workspace.link"))).toBe(true);
     expect(readWorkspaceContextValue(linkedOutput, "isLinkedWorkspace")).toBe("true");
 
     const brokenLinkSandbox = makeTempWorkspace();
