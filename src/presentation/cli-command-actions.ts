@@ -73,6 +73,23 @@ function emitCliInfo(app: CliApp, message: string): void {
   app.emitOutput?.({ kind: "info", message });
 }
 
+function resolveWorkerWorkspaceRuntimeOptions(): {
+  cwd: string;
+  invocationDir: string;
+  workspaceDir: string;
+  workspaceLinkPath: string;
+  isLinkedWorkspace: boolean;
+} {
+  const workspaceContext = resolveInvocationWorkspaceContext();
+  return {
+    cwd: workspaceContext.workspaceDir,
+    invocationDir: workspaceContext.invocationDir,
+    workspaceDir: workspaceContext.workspaceDir,
+    workspaceLinkPath: workspaceContext.workspaceLinkPath,
+    isLinkedWorkspace: workspaceContext.isLinkedWorkspace,
+  };
+}
+
 function isInteractiveTerminal(): boolean {
   return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }
@@ -245,7 +262,7 @@ export function createRunCommandAction({
   runnerModes,
 }: RunActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
   return async (source: string, opts: CliOpts) => {
-    const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+    const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     // Resolve all execution-mode options before building the run request payload.
     const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
     const sortMode = parseSortMode(opts.sort as string | undefined);
@@ -290,7 +307,7 @@ export function createRunCommandAction({
     // Pass a normalized set of options to the domain application layer.
     return getApp().runTask({
       source,
-      cwd: commandCwd,
+      ...workerWorkspaceRuntimeOptions,
       mode,
       workerPattern,
       sortMode,
@@ -368,7 +385,7 @@ export function createLoopCommandAction({
 }: LoopActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
   return async (source: string, opts: CliOpts) => {
     const app = getApp();
-    const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+    const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
     const sortMode = parseSortMode(opts.sort as string | undefined);
     const verify = resolveVerifyFlag(opts);
@@ -419,7 +436,7 @@ export function createLoopCommandAction({
         try {
           iterationExitCode = normalizeLoopIterationExitCode(await app.runTask({
             source,
-            cwd: commandCwd,
+            ...workerWorkspaceRuntimeOptions,
             mode,
             workerPattern: sharedRuntimeOptions.workerPattern,
             sortMode,
@@ -791,7 +808,7 @@ export function createPlanCommandAction({
   plannerModes,
 }: PlanActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
   return (markdownFiles: string[], opts: CliOpts) => {
-    const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+    const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     // Resolve planning input and execution controls from CLI options.
     const markdownFile = resolvePlanMarkdownFile(markdownFiles);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
@@ -814,7 +831,7 @@ export function createPlanCommandAction({
     // Trigger planning in the app layer with a normalized payload.
     return getApp().planTask({
       source: markdownFile,
-      cwd: commandCwd,
+      ...workerWorkspaceRuntimeOptions,
       scanCount,
       maxItems,
       deep,
@@ -847,7 +864,7 @@ export function createResearchCommandAction({
   researchModes,
 }: ResearchActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
   return (markdownFiles: string[], opts: CliOpts) => {
-    const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+    const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const markdownFile = resolveResearchMarkdownFile(markdownFiles);
     const mode = parseRunnerMode(opts.mode as string | undefined, researchModes);
     const dryRun = opts.dryRun as boolean;
@@ -865,7 +882,7 @@ export function createResearchCommandAction({
     const verbose = resolveVerboseOption(opts);
     const request: ResearchCommandInvocationOptions = {
       source: markdownFile,
-      cwd: commandCwd,
+      ...workerWorkspaceRuntimeOptions,
       mode,
       workerPattern,
       showAgentOutput,
@@ -1146,14 +1163,14 @@ async function runExplorePhases({
   maxItems,
   verbose,
 }: RunExplorePhasesOptions): Promise<number> {
-  const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+  const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
   const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
 
   emitCliInfo(app, "Explore phase 1/2: research");
 
   const researchCode = normalizeMakePhaseExitCode(await app.researchTask({
     source: targetMarkdownFile,
-    cwd: commandCwd,
+    ...workerWorkspaceRuntimeOptions,
     mode,
     workerPattern: sharedWorkerPattern,
     showAgentOutput: sharedRuntimeOptions.showAgentOutput,
@@ -1179,7 +1196,7 @@ async function runExplorePhases({
 
   return normalizeMakePhaseExitCode(await app.planTask({
     source: targetMarkdownFile,
-    cwd: commandCwd,
+    ...workerWorkspaceRuntimeOptions,
     scanCount,
     maxItems,
     deep,
@@ -1289,7 +1306,7 @@ async function runMakeBootstrapPhases({
   maxItems,
   verbose,
 }: RunMakeBootstrapPhasesOptions): Promise<number> {
-  const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+  const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
   const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
 
   createSeedMarkdownFile(targetMarkdownFile, seedText);
@@ -1298,7 +1315,7 @@ async function runMakeBootstrapPhases({
 
   const researchCode = normalizeMakePhaseExitCode(await app.researchTask({
     source: targetMarkdownFile,
-    cwd: commandCwd,
+    ...workerWorkspaceRuntimeOptions,
     mode,
     workerPattern: sharedWorkerPattern,
     showAgentOutput: sharedRuntimeOptions.showAgentOutput,
@@ -1324,7 +1341,7 @@ async function runMakeBootstrapPhases({
 
   return normalizeMakePhaseExitCode(await app.planTask({
     source: targetMarkdownFile,
-    cwd: commandCwd,
+    ...workerWorkspaceRuntimeOptions,
     scanCount,
     maxItems,
     mode,
@@ -1356,7 +1373,7 @@ export function createDoCommandAction({
 }: DoActionDependencies): (seedText: string, markdownFile: string, opts: CliOpts) => CliActionResult {
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
     const app = getApp();
-    const commandCwd = resolveInvocationWorkspaceContext().workspaceDir;
+    const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
     const {
       mode,
@@ -1421,7 +1438,7 @@ export function createDoCommandAction({
 
     return app.runTask({
       source: targetMarkdownFile,
-      cwd: commandCwd,
+      ...workerWorkspaceRuntimeOptions,
       mode,
       workerPattern: sharedWorkerPattern,
       sortMode: runSortMode,

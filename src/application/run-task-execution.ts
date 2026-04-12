@@ -35,6 +35,10 @@ import { extractForceModifier } from "../domain/prefix-chain.js";
 import { applyTraceStatisticsDefaults } from "../domain/worker-config.js";
 import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
+import {
+  buildWorkspaceContextTemplateVars,
+  resolveRuntimeWorkspaceContext,
+} from "./runtime-workspace-context.js";
 import { isParallelGroupTaskText } from "../domain/parallel-group.js";
 import {
   getAutomationWorkerCommand,
@@ -121,6 +125,10 @@ export interface RunTaskDependencies {
 export interface RunTaskOptions {
   source: string;
   cwd?: string;
+  invocationDir?: string;
+  workspaceDir?: string;
+  workspaceLinkPath?: string;
+  isLinkedWorkspace?: boolean;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
   sortMode: SortMode;
@@ -215,9 +223,24 @@ export function createRunTaskExecution(
       cacheCliBlocks,
       verbose,
       cwd: overriddenCwd,
+      invocationDir,
+      workspaceDir,
+      workspaceLinkPath,
+      isLinkedWorkspace,
       taskTemplateOverride,
     } = options;
     const executionCwd = overriddenCwd ?? dependencies.workingDirectory.cwd();
+    const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd,
+        invocationDir,
+        workspaceDir,
+        workspaceLinkPath,
+        isLinkedWorkspace,
+      },
+      dependencies.pathOperations,
+    );
+    const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(runtimeWorkspaceContext);
 
     let cliBlockExecutor = cacheCliBlocks
       ? createCachedCommandExecutor(defaultCliBlockExecutor)
@@ -309,6 +332,7 @@ export function createRunTaskExecution(
     const extraTemplateVars: ExtraTemplateVars = {
       ...fileTemplateVars,
       ...cliTemplateVars,
+      ...workspaceContextTemplateVars,
     };
     const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
     const templateVarsWithUserVariables: ExtraTemplateVars = {

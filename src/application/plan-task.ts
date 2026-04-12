@@ -31,6 +31,10 @@ import {
 } from "./cli-block-handlers.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import {
+  buildWorkspaceContextTemplateVars,
+  resolveRuntimeWorkspaceContext,
+} from "./runtime-workspace-context.js";
+import {
   countTraceLines,
   formatNoItemsFoundIn,
   formatSuccessFailureSummary,
@@ -149,6 +153,10 @@ export interface PlanTaskDependencies {
 export interface PlanTaskOptions {
   source: string;
   cwd?: string;
+  invocationDir?: string;
+  workspaceDir?: string;
+  workspaceLinkPath?: string;
+  isLinkedWorkspace?: boolean;
   scanCount?: number;
   maxItems?: number;
   deep?: number;
@@ -198,8 +206,23 @@ export function createPlanTask(
       ignoreCliBlock,
       cliBlockTimeoutMs,
       verbose = false,
+      invocationDir,
+      workspaceDir,
+      workspaceLinkPath,
+      isLinkedWorkspace,
     } = options;
     const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
+    const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd,
+        invocationDir,
+        workspaceDir,
+        workspaceLinkPath,
+        isLinkedWorkspace,
+      },
+      dependencies.pathOperations,
+    );
+    const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(runtimeWorkspaceContext);
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
       ? undefined
       : { timeoutMs: cliBlockTimeoutMs };
@@ -255,6 +278,7 @@ export function createPlanTask(
       const extraTemplateVars: ExtraTemplateVars = {
         ...fileTemplateVars,
         ...cliTemplateVars,
+        ...workspaceContextTemplateVars,
       };
       const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
       const templateVarsWithUserVariables: ExtraTemplateVars = {

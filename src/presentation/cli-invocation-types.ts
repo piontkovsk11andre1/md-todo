@@ -45,6 +45,10 @@ export interface CliInvocationLogState {
  */
 export interface WorkerCommandInvocationOptions {
   cwd?: string;
+  invocationDir?: string;
+  workspaceDir?: string;
+  workspaceLinkPath?: string;
+  isLinkedWorkspace?: boolean;
   mode: ProcessRunMode;
   workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;

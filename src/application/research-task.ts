@@ -22,6 +22,10 @@ import { captureCheckboxState } from "./checkbox-operations.js";
 import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
+import {
+  buildWorkspaceContextTemplateVars,
+  resolveRuntimeWorkspaceContext,
+} from "./runtime-workspace-context.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import { formatSuccessFailureSummary, pluralize } from "./run-task-utils.js";
 import type {
@@ -78,6 +82,10 @@ export interface ResearchTaskDependencies {
 export interface ResearchTaskOptions {
   source: string;
   cwd?: string;
+  invocationDir?: string;
+  workspaceDir?: string;
+  workspaceLinkPath?: string;
+  isLinkedWorkspace?: boolean;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;
@@ -121,8 +129,23 @@ export function createResearchTask(
       keepArtifacts,
       forceUnlock,
       verbose = false,
+      invocationDir,
+      workspaceDir,
+      workspaceLinkPath,
+      isLinkedWorkspace,
     } = options;
     const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
+    const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd,
+        invocationDir,
+        workspaceDir,
+        workspaceLinkPath,
+        isLinkedWorkspace,
+      },
+      dependencies.pathOperations,
+    );
+    const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(runtimeWorkspaceContext);
     let researchSuccessCount = 0;
     let researchFailureCount = 0;
     let researchGroupStarted = false;
@@ -200,6 +223,7 @@ export function createResearchTask(
         const extraTemplateVars: ExtraTemplateVars = {
           ...fileTemplateVars,
           ...cliTemplateVars,
+          ...workspaceContextTemplateVars,
         };
         const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
         const templateVarsWithUserVariables: ExtraTemplateVars = {
@@ -403,6 +427,7 @@ export function createResearchTask(
         const extraTemplateVars: ExtraTemplateVars = {
           ...fileTemplateVars,
           ...cliTemplateVars,
+          ...workspaceContextTemplateVars,
         };
         const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
         const templateVarsWithUserVariables: ExtraTemplateVars = {
