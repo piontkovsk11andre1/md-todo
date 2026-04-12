@@ -101,6 +101,60 @@ describe("extractForceModifier", () => {
 });
 
 describe("parsePrefixChain", () => {
+  it("keeps existing built-in prefixes parsing unchanged after registering get", () => {
+    const resolverWithQuestion: ToolResolverPort = {
+      resolve: (toolName) => {
+        const normalized = toolName.trim().toLowerCase();
+        if (normalized === "question") {
+          return {
+            name: "question",
+            kind: "handler",
+            frontmatter: { skipExecution: true, shouldVerify: false },
+          };
+        }
+
+        return resolveBuiltinTool(normalized);
+      },
+      listKnownToolNames: () => [...listBuiltinToolNames(), "question"],
+    };
+
+    expect(parsePrefixChain("verify: run smoke tests", resolverWithQuestion)).toMatchObject({
+      modifiers: [],
+      handler: {
+        tool: { name: "verify", kind: "handler" },
+        payload: "run smoke tests",
+      },
+      remainingText: "run smoke tests",
+    });
+
+    expect(parsePrefixChain("include: ./child.md", resolverWithQuestion)).toMatchObject({
+      modifiers: [],
+      handler: {
+        tool: { name: "include", kind: "handler" },
+        payload: "./child.md",
+      },
+      remainingText: "./child.md",
+    });
+
+    expect(parsePrefixChain("parallel: setup environments", resolverWithQuestion)).toMatchObject({
+      modifiers: [],
+      handler: {
+        tool: { name: "parallel", kind: "handler" },
+        payload: "setup environments",
+      },
+      remainingText: "setup environments",
+    });
+
+    expect(parsePrefixChain("question: Which module should we improve?", resolverWithQuestion)).toMatchObject({
+      modifiers: [],
+      handler: {
+        tool: { name: "question", kind: "handler" },
+        payload: "Which module should we improve?",
+      },
+      remainingText: "Which module should we improve?",
+    });
+  });
+
   it("identifies registered force prefix as a modifier", () => {
     const chain = parsePrefixChain("force: verify: tests pass", builtinToolResolver);
 

@@ -45,6 +45,25 @@ describe("builtin tools registry", () => {
     });
   });
 
+  it("keeps verify/include/parallel registry contracts unchanged after adding get", () => {
+    expect(resolveBuiltinTool("verify")?.frontmatter).toEqual({
+      skipExecution: true,
+      shouldVerify: true,
+    });
+
+    expect(resolveBuiltinTool("include")?.frontmatter).toEqual({
+      skipExecution: true,
+      autoComplete: true,
+      shouldVerify: false,
+    });
+
+    expect(resolveBuiltinTool("parallel")?.frontmatter).toEqual({
+      skipExecution: true,
+      autoComplete: true,
+      shouldVerify: false,
+    });
+  });
+
   it("maps concurrent/par as parallel aliases", () => {
     const parallel = resolveBuiltinTool("parallel");
     const aliasNames = ["concurrent", "par"];
