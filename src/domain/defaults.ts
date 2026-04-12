@@ -459,6 +459,24 @@ You are planning the next migration step for a prediction-driven project.
 
 - Current migration number: {{position}}
 
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
+
+### Diff source references
+
+{{designRevisionDiffSources}}
+
 ## Design
 
 {{design}}
@@ -516,6 +534,20 @@ You are updating migration context incrementally.
 
 - Current migration number: {{position}}
 
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
+
 ## Design
 
 {{design}}
@@ -558,6 +590,20 @@ You are producing a migration snapshot of project state.
 
 - Current migration number: {{position}}
 
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
+
 ## Design
 
 {{design}}
@@ -598,6 +644,20 @@ You are generating a backlog from migration progress.
 ## Position
 
 - Current migration number: {{position}}
+
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
 
 ## Design
 
@@ -640,6 +700,20 @@ You are reviewing migration progress against intended design.
 
 - Current migration number: {{position}}
 
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
+
 ## Design
 
 {{design}}
@@ -678,6 +752,20 @@ You are evaluating user experience implications of migration progress.
 ## Position
 
 - Current migration number: {{position}}
+
+## Design revisions
+
+- Comparison available: {{designRevisionDiffHasComparison}}
+- Previous revision: {{designRevisionFromRevision}}
+- Target: {{designRevisionToTarget}}
+- Summary: {{designRevisionDiffSummary}}
+- Added files: {{designRevisionDiffAddedCount}}
+- Modified files: {{designRevisionDiffModifiedCount}}
+- Removed files: {{designRevisionDiffRemovedCount}}
+
+### Changed files
+
+{{designRevisionDiffFiles}}
 
 ## Design
 

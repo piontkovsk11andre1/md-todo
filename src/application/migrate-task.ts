@@ -42,7 +42,11 @@ import {
   type PredictionTrackedFileKind,
 } from "../domain/prediction-reconciliation.js";
 import { resolveWorkspaceLink } from "../domain/workspace-link.js";
-import { resolveDesignContext, saveDesignRevisionSnapshot } from "./design-context.js";
+import {
+  prepareDesignRevisionDiffContext,
+  resolveDesignContext,
+  saveDesignRevisionSnapshot,
+} from "./design-context.js";
 
 type MigrateAction =
   | "up"
@@ -996,6 +1000,13 @@ function buildTemplateVars(
   const latestSnapshot = getLatestSatellitePath(state, "snapshot");
 
   const design = resolveDesignContext(fileSystem, projectRoot).design;
+  const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, { target: "current" });
+  const previousRevisionId = revisionDiff.fromRevision?.name ?? "";
+  const currentRevisionId = revisionDiff.toTarget.name;
+  const revisionDiffFiles = revisionDiff.changes.map((change) => {
+    return "- " + change.kind + ": " + change.relativePath;
+  }).join("\n");
+  const revisionDiffSourceRefs = revisionDiff.sourceReferences.map((sourcePath) => "- " + sourcePath).join("\n");
 
   const historyLines = state.migrations.map((migration) => {
     const fileName = path.basename(migration.filePath);
@@ -1015,6 +1026,15 @@ function buildTemplateVars(
     latestBacklog: latestBacklog ? fileSystem.readText(latestBacklog.filePath) : "",
     latestSnapshot: latestSnapshot ? fileSystem.readText(latestSnapshot) : "",
     migrationHistory: historyLines.join("\n"),
+    designRevisionDiffSummary: revisionDiff.summary,
+    designRevisionDiffHasComparison: revisionDiff.hasComparison ? "true" : "false",
+    designRevisionFromRevision: previousRevisionId,
+    designRevisionToTarget: currentRevisionId,
+    designRevisionDiffAddedCount: revisionDiff.addedCount,
+    designRevisionDiffModifiedCount: revisionDiff.modifiedCount,
+    designRevisionDiffRemovedCount: revisionDiff.removedCount,
+    designRevisionDiffFiles: revisionDiffFiles,
+    designRevisionDiffSources: revisionDiffSourceRefs,
     position: state.currentPosition,
   };
 }

@@ -20,6 +20,31 @@ export interface SavedDesignRevision {
   copiedFileCount: number;
 }
 
+export type DesignRevisionDiffChangeKind = "added" | "removed" | "modified";
+
+export interface DesignRevisionDiffFileChange {
+  relativePath: string;
+  kind: DesignRevisionDiffChangeKind;
+  fromPath: string;
+  toPath: string;
+}
+
+export interface DesignRevisionDiffContext {
+  fromRevision: DesignRevisionDirectory | null;
+  toTarget: {
+    kind: "current" | "revision";
+    name: string;
+    absolutePath: string;
+  };
+  hasComparison: boolean;
+  summary: string;
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  changes: DesignRevisionDiffFileChange[];
+  sourceReferences: string[];
+}
+
 export type SaveDesignRevisionSnapshotResult =
   | {
     kind: "saved";
@@ -168,6 +193,65 @@ export function saveDesignRevisionSnapshot(
   };
 }
 
+export function prepareDesignRevisionDiffContext(
+  fileSystem: FileSystem,
+  projectRoot: string,
+  options?: {
+    target?: "current" | string | number;
+  },
+): DesignRevisionDiffContext {
+  const docsDir = path.join(projectRoot, "docs");
+  const docsCurrentDir = path.join(docsDir, "current");
+  const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
+
+  const target = resolveDesignDiffTarget(fileSystem, docsCurrentDir, revisions, options?.target);
+  const sourceReferences = [target.absolutePath];
+
+  if (!isDirectory(fileSystem, target.absolutePath)) {
+    return {
+      fromRevision: null,
+      toTarget: target,
+      hasComparison: false,
+      summary: "Design diff unavailable: target directory does not exist for " + target.name + ".",
+      addedCount: 0,
+      removedCount: 0,
+      modifiedCount: 0,
+      changes: [],
+      sourceReferences,
+    };
+  }
+
+  const previousRevision = findPreviousRevisionForTarget(revisions, target);
+  if (!previousRevision) {
+    return {
+      fromRevision: null,
+      toTarget: target,
+      hasComparison: false,
+      summary: "No previous design revision found; cannot compute a revision diff yet.",
+      addedCount: 0,
+      removedCount: 0,
+      modifiedCount: 0,
+      changes: [],
+      sourceReferences,
+    };
+  }
+  sourceReferences.unshift(previousRevision.absolutePath);
+
+  const diff = computeDirectoryFileDiff(fileSystem, previousRevision.absolutePath, target.absolutePath);
+
+  return {
+    fromRevision: previousRevision,
+    toTarget: target,
+    hasComparison: true,
+    summary: formatDesignDiffSummary(previousRevision.name, target.name, diff),
+    addedCount: diff.addedCount,
+    removedCount: diff.removedCount,
+    modifiedCount: diff.modifiedCount,
+    changes: diff.changes,
+    sourceReferences,
+  };
+}
+
 function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): string[] {
   if (!isDirectory(fileSystem, directoryPath)) {
     return [];
@@ -197,6 +281,232 @@ function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): stri
   }
 
   return collected.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+}
+
+function resolveDesignDiffTarget(
+  fileSystem: FileSystem,
+  docsCurrentDir: string,
+  revisions: DesignRevisionDirectory[],
+  target: "current" | string | number | undefined,
+): {
+  kind: "current" | "revision";
+  name: string;
+  absolutePath: string;
+  revisionIndex?: number;
+} {
+  if (target === undefined || target === "current") {
+    return {
+      kind: "current",
+      name: "current",
+      absolutePath: docsCurrentDir,
+    };
+  }
+
+  const byNumericTarget = typeof target === "number"
+    ? revisions.find((revision) => revision.index === target)
+    : null;
+  if (byNumericTarget) {
+    return {
+      kind: "revision",
+      name: byNumericTarget.name,
+      absolutePath: byNumericTarget.absolutePath,
+      revisionIndex: byNumericTarget.index,
+    };
+  }
+
+  if (typeof target === "string") {
+    const trimmedTarget = target.trim();
+    for (const revision of revisions) {
+      if (revision.name.toLowerCase() !== trimmedTarget.toLowerCase()) {
+        continue;
+      }
+
+      return {
+        kind: "revision",
+        name: revision.name,
+        absolutePath: revision.absolutePath,
+        revisionIndex: revision.index,
+      };
+    }
+
+    const parsedTarget = parseDesignRevisionDirectoryName(trimmedTarget);
+    if (parsedTarget) {
+      const matchedByIndex = revisions.find((revision) => revision.index === parsedTarget.index);
+      if (matchedByIndex) {
+        return {
+          kind: "revision",
+          name: matchedByIndex.name,
+          absolutePath: matchedByIndex.absolutePath,
+          revisionIndex: matchedByIndex.index,
+        };
+      }
+    }
+
+    return {
+      kind: "revision",
+      name: trimmedTarget,
+      absolutePath: path.join(path.dirname(docsCurrentDir), trimmedTarget),
+      revisionIndex: parsedTarget?.index,
+    };
+  }
+
+  return {
+    kind: "current",
+    name: "current",
+    absolutePath: docsCurrentDir,
+  };
+}
+
+function findPreviousRevisionForTarget(
+  revisions: DesignRevisionDirectory[],
+  target: {
+    kind: "current" | "revision";
+    revisionIndex?: number;
+  },
+): DesignRevisionDirectory | null {
+  if (target.kind === "current") {
+    return revisions.length > 0 ? revisions[revisions.length - 1] ?? null : null;
+  }
+
+  if (target.revisionIndex === undefined) {
+    return null;
+  }
+
+  for (let index = revisions.length - 1; index >= 0; index -= 1) {
+    const revision = revisions[index];
+    if (!revision) {
+      continue;
+    }
+
+    if (revision.index < target.revisionIndex) {
+      return revision;
+    }
+  }
+
+  return null;
+}
+
+function computeDirectoryFileDiff(
+  fileSystem: FileSystem,
+  fromRoot: string,
+  toRoot: string,
+): {
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  changes: DesignRevisionDiffFileChange[];
+} {
+  const fromFiles = collectDirectoryFileMap(fileSystem, fromRoot);
+  const toFiles = collectDirectoryFileMap(fileSystem, toRoot);
+  const allRelativePaths = new Set<string>([...fromFiles.keys(), ...toFiles.keys()]);
+  const orderedPaths = [...allRelativePaths].sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+
+  const changes: DesignRevisionDiffFileChange[] = [];
+  let addedCount = 0;
+  let removedCount = 0;
+  let modifiedCount = 0;
+
+  for (const relativePath of orderedPaths) {
+    const fromEntry = fromFiles.get(relativePath);
+    const toEntry = toFiles.get(relativePath);
+
+    if (!fromEntry && toEntry) {
+      addedCount += 1;
+      changes.push({
+        relativePath,
+        kind: "added",
+        fromPath: fromRoot,
+        toPath: toEntry.absolutePath,
+      });
+      continue;
+    }
+
+    if (fromEntry && !toEntry) {
+      removedCount += 1;
+      changes.push({
+        relativePath,
+        kind: "removed",
+        fromPath: fromEntry.absolutePath,
+        toPath: toRoot,
+      });
+      continue;
+    }
+
+    if (fromEntry && toEntry && fromEntry.content !== toEntry.content) {
+      modifiedCount += 1;
+      changes.push({
+        relativePath,
+        kind: "modified",
+        fromPath: fromEntry.absolutePath,
+        toPath: toEntry.absolutePath,
+      });
+    }
+  }
+
+  return {
+    addedCount,
+    removedCount,
+    modifiedCount,
+    changes,
+  };
+}
+
+function collectDirectoryFileMap(
+  fileSystem: FileSystem,
+  rootDirectory: string,
+): Map<string, { absolutePath: string; content: string }> {
+  const collected = new Map<string, { absolutePath: string; content: string }>();
+  const queue: string[] = [rootDirectory];
+
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    if (!currentDir) {
+      continue;
+    }
+
+    const entries = fileSystem.readdir(currentDir)
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      const relativePath = path.relative(rootDirectory, absolutePath).replace(/\\/g, "/");
+
+      if (entry.isDirectory) {
+        queue.push(absolutePath);
+        continue;
+      }
+
+      if (!entry.isFile) {
+        continue;
+      }
+
+      collected.set(relativePath, {
+        absolutePath,
+        content: fileSystem.readText(absolutePath),
+      });
+    }
+  }
+
+  return collected;
+}
+
+function formatDesignDiffSummary(
+  fromRevisionName: string,
+  targetName: string,
+  diff: { addedCount: number; removedCount: number; modifiedCount: number },
+): string {
+  const totalChanges = diff.addedCount + diff.removedCount + diff.modifiedCount;
+  if (totalChanges === 0) {
+    return "No design file changes between " + fromRevisionName + " and " + targetName + ".";
+  }
+
+  return [
+    "Compared " + fromRevisionName + " -> " + targetName + ":",
+    String(diff.addedCount) + " added",
+    String(diff.modifiedCount) + " modified",
+    String(diff.removedCount) + " removed",
+  ].join(" ");
 }
 
 function formatDesignWorkspaceContext(fileSystem: FileSystem, docsCurrentDir: string, filePaths: string[]): string {
