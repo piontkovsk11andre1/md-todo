@@ -161,6 +161,46 @@ describeIfMigrateAvailable("migrate-task integration", () => {
 });
 
 describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration", () => {
+  it("resolves migrate paths and worker runtime against linked workspace roots", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(sandbox, "source-workspace");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldPredictionProjectWithSatelliteTemplates(sourceWorkspace);
+
+    const linkedConfigDir = path.join(linkedInvocationDir, ".rundown");
+    fs.mkdirSync(linkedConfigDir, { recursive: true });
+    const relativeWorkspaceTarget = path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/");
+    fs.writeFileSync(path.join(linkedConfigDir, "workspace.link"), relativeWorkspaceTarget, "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "snapshot",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const path=require('node:path');",
+        "fs.writeFileSync(path.join(process.cwd(),'.workspace-cwd-marker'),'ok','utf-8');",
+        "console.log('# Snapshot');",
+        "console.log('');",
+        "console.log('linked-workspace-resolution-ok');",
+        "process.exit(0);",
+      ].join("\n"),
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(sourceWorkspace, "migrations", "0001--snapshot.md"))).toBe(true);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", "0001--snapshot.md"))).toBe(false);
+    expect(fs.existsSync(path.join(sourceWorkspace, ".workspace-cwd-marker"))).toBe(true);
+    expect(fs.existsSync(path.join(linkedInvocationDir, ".workspace-cwd-marker"))).toBe(false);
+  });
+
   for (const action of SATELLITE_ACTIONS) {
     it(`rerunning migrate ${action} overwrites the same satellite file`, async () => {
       const workspace = makeTempWorkspace();

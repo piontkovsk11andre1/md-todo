@@ -41,6 +41,7 @@ import {
   type PredictionTrackedFile,
   type PredictionTrackedFileKind,
 } from "../domain/prediction-reconciliation.js";
+import { resolveWorkspaceLink } from "../domain/workspace-link.js";
 
 type MigrateAction =
   | "up"
@@ -125,8 +126,9 @@ export function createMigrateTask(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function migrateTask(options: MigrateTaskOptions): Promise<number> {
-    const cwd = process.cwd();
-    const migrationsDir = path.resolve(cwd, options.dir ?? "migrations");
+    const invocationDir = process.cwd();
+    const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
+    const migrationsDir = path.resolve(workspaceRoot, options.dir ?? "migrations");
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       emit({ kind: "error", message: "Migrations directory does not exist: " + migrationsDir });
@@ -164,6 +166,7 @@ export function createMigrateTask(
       await reconcilePendingMigrationPredictions({
         dependencies,
         migrationsDir,
+        workspaceRoot,
         workerPattern: resolvedWorker.workerPattern,
         artifactContext: undefined,
         showAgentOutput: Boolean(options.showAgentOutput),
@@ -221,7 +224,7 @@ export function createMigrateTask(
     const state = readMigrationState(dependencies.fileSystem, migrationsDir);
 
     const artifactContext = dependencies.artifactStore.createContext({
-      cwd,
+      cwd: workspaceRoot,
       configDir,
       commandName: "migrate",
       workerCommand: resolvedWorker.workerCommand,
@@ -236,6 +239,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -246,6 +250,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           templateFile: "migrate-snapshot.md",
           defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
           satelliteType: "snapshot",
@@ -259,6 +264,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           templateFile: "migrate-backlog.md",
           defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
           satelliteType: "backlog",
@@ -272,6 +278,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           templateFile: "migrate-context.md",
           defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
           satelliteType: "context",
@@ -285,6 +292,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           templateFile: "migrate-review.md",
           defaultTemplate: DEFAULT_MIGRATE_REVIEW_TEMPLATE,
           satelliteType: "review",
@@ -298,6 +306,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           templateFile: "migrate-ux.md",
           defaultTemplate: DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
           satelliteType: "user-experience",
@@ -311,6 +320,7 @@ export function createMigrateTask(
           dependencies,
           state,
           projectRoot,
+          workspaceRoot,
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -346,11 +356,12 @@ function persistPredictionBaselineSnapshot(fileSystem: FileSystem, migrationsDir
 async function reconcilePendingMigrationPredictions(input: {
   dependencies: MigrateTaskDependencies;
   migrationsDir: string;
+  workspaceRoot: string;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]> | undefined;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, migrationsDir, workerPattern, artifactContext, showAgentOutput } = input;
+  const { dependencies, migrationsDir, workspaceRoot, workerPattern, artifactContext, showAgentOutput } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir);
   const baseline = loadPredictionBaseline(dependencies.fileSystem, migrationsDir);
@@ -385,7 +396,7 @@ async function reconcilePendingMigrationPredictions(input: {
           workerPattern,
           prompt,
           mode: "wait",
-          cwd: process.cwd(),
+          cwd: workspaceRoot,
           artifactContext,
           artifactPhase: "worker",
           artifactPhaseLabel: "migrate-up-reconciliation",
@@ -535,6 +546,18 @@ function toProjectRelativePath(projectRoot: string, absolutePath: string): strin
   return path.relative(projectRoot, absolutePath).replace(/\\/g, "/");
 }
 
+function resolveWorkspaceRootFromCurrentDir(fileSystem: FileSystem, currentDir: string): string {
+  const resolution = resolveWorkspaceLink({
+    currentDir,
+    fileSystem,
+    pathOperations: path,
+  });
+
+  return resolution.status === "resolved"
+    ? resolution.workspaceRoot
+    : path.resolve(currentDir);
+}
+
 function getPredictionBaselinePath(migrationsDir: string): string {
   return path.join(migrationsDir, ".rundown", "prediction-baseline.json");
 }
@@ -570,12 +593,22 @@ async function runUserSession(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  workspaceRoot: string;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, state, projectRoot, workerPattern, artifactContext, confirm, showAgentOutput } = input;
+  const {
+    dependencies,
+    state,
+    projectRoot,
+    workspaceRoot,
+    workerPattern,
+    artifactContext,
+    confirm,
+    showAgentOutput,
+  } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const latestMigration = state.migrations[state.migrations.length - 1];
   if (!latestMigration) {
@@ -588,7 +621,7 @@ async function runUserSession(input: {
     prompt: buildUserSessionDiscussPrompt(latestMigration.filePath, migrationSource),
     mode: "tui",
     captureOutput: true,
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-user-session-discuss",
@@ -606,7 +639,7 @@ async function runUserSession(input: {
       discussionStderr: discussionResult.stderr,
     }),
     mode: "wait",
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-user-session-summary",
@@ -639,6 +672,7 @@ async function runUserSession(input: {
     dependencies,
     state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
     projectRoot,
+    workspaceRoot,
     templateFile: "migrate-backlog.md",
     defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
     satelliteType: "backlog",
@@ -725,12 +759,13 @@ async function generateNextMigration(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  workspaceRoot: string;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, state, projectRoot, workerPattern, artifactContext, confirm, showAgentOutput } = input;
+  const { dependencies, state, projectRoot, workspaceRoot, workerPattern, artifactContext, confirm, showAgentOutput } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const template = readTemplate(
     dependencies.templateLoader,
@@ -745,7 +780,7 @@ async function generateNextMigration(input: {
     workerPattern,
     prompt,
     mode: "wait",
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-next",
@@ -798,6 +833,7 @@ async function generateNextMigration(input: {
     dependencies,
     state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
     projectRoot,
+    workspaceRoot,
     templateFile: "migrate-context.md",
     defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
     satelliteType: "context",
@@ -833,6 +869,7 @@ async function generateSatellite(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  workspaceRoot: string;
   templateFile: string;
   defaultTemplate: string;
   satelliteType: SatelliteType;
@@ -845,6 +882,7 @@ async function generateSatellite(input: {
     dependencies,
     state,
     projectRoot,
+    workspaceRoot,
     templateFile,
     defaultTemplate,
     satelliteType,
@@ -868,7 +906,7 @@ async function generateSatellite(input: {
     workerPattern,
     prompt,
     mode: "wait",
-    cwd: process.cwd(),
+    cwd: workspaceRoot,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-" + satelliteType,
