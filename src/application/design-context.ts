@@ -6,6 +6,12 @@ export interface DesignContextResolution {
   sourcePaths: string[];
 }
 
+export interface DesignRevisionDirectory {
+  index: number;
+  name: string;
+  absolutePath: string;
+}
+
 export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string): DesignContextResolution {
   const docsCurrentDir = path.join(projectRoot, "docs", "current");
   const docsCurrentFiles = collectDesignFiles(fileSystem, docsCurrentDir);
@@ -29,6 +35,65 @@ export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string
     design: fileSystem.readText(legacyDesignPath),
     sourcePaths: [legacyDesignPath],
   };
+}
+
+export function discoverDesignRevisionDirectories(
+  fileSystem: FileSystem,
+  projectRoot: string,
+): DesignRevisionDirectory[] {
+  const docsDir = path.join(projectRoot, "docs");
+  if (!isDirectory(fileSystem, docsDir)) {
+    return [];
+  }
+
+  const revisions: DesignRevisionDirectory[] = [];
+  const entries = fileSystem.readdir(docsDir)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+
+  for (const entry of entries) {
+    if (!entry.isDirectory) {
+      continue;
+    }
+
+    const parsed = parseDesignRevisionDirectoryName(entry.name);
+    if (!parsed) {
+      continue;
+    }
+
+    revisions.push({
+      index: parsed.index,
+      name: entry.name,
+      absolutePath: path.join(docsDir, entry.name),
+    });
+  }
+
+  return revisions.sort((left, right) => {
+    if (left.index !== right.index) {
+      return left.index - right.index;
+    }
+
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+}
+
+export function parseDesignRevisionDirectoryName(name: string): { index: number } | null {
+  const match = /^rev\.(\d+)$/i.exec(name.trim());
+  if (!match) {
+    return null;
+  }
+
+  const indexText = match[1];
+  if (!indexText) {
+    return null;
+  }
+
+  const parsedIndex = Number.parseInt(indexText, 10);
+  if (!Number.isSafeInteger(parsedIndex) || parsedIndex < 1) {
+    return null;
+  }
+
+  return { index: parsedIndex };
 }
 
 function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): string[] {
