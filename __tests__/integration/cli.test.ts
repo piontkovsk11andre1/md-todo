@@ -30,6 +30,20 @@ function makeTempWorkspace(): string {
 
 const ANSI_ESCAPE_PATTERN = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g;
 
+const GLOBAL_OUTPUT_LOG_EXPECTED_KEYS = [
+  "argv",
+  "command",
+  "cwd",
+  "kind",
+  "level",
+  "message",
+  "pid",
+  "session_id",
+  "stream",
+  "ts",
+  "version",
+];
+
 function stripAnsi(value: string): string {
   return value.replace(ANSI_ESCAPE_PATTERN, "");
 }
@@ -10248,6 +10262,12 @@ describe.sequential("CLI integration", () => {
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
     expect(compactHelpOutput).toContain("Find the next unchecked TODO and execute it");
+
+    expectGlobalOutputLogInvocationEntries(workspace, {
+      command: "rundown",
+      argv: [],
+      cwd: workspace,
+    });
   });
 
   it("root invocation launches live help session in interactive terminals when a help worker is configured", async () => {
@@ -10445,6 +10465,12 @@ describe.sequential("CLI integration", () => {
     expect(spawnMock).not.toHaveBeenCalled();
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
+
+    expectGlobalOutputLogInvocationEntries(workspace, {
+      command: "rundown",
+      argv: ["--help"],
+      cwd: workspace,
+    });
   });
 
   it("invalid command keeps Commander root-argument error semantics", async () => {
@@ -13200,6 +13226,63 @@ function readGlobalOutputLogEntries(workspace: string): Array<{
       stream: typeof entry.stream === "string" ? entry.stream : "",
       message: typeof entry.message === "string" ? entry.message : "",
     }));
+}
+
+function readRawGlobalOutputLogEntries(workspace: string): Record<string, unknown>[] {
+  const outputLogPath = path.join(workspace, ".rundown", "logs", "output.jsonl");
+  if (!fs.existsSync(outputLogPath)) {
+    return [];
+  }
+
+  return fs.readFileSync(outputLogPath, "utf-8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function expectGlobalOutputLogInvocationEntries(
+  workspace: string,
+  expected: {
+    command: string;
+    argv: string[];
+    cwd: string;
+  },
+): void {
+  const entries = readRawGlobalOutputLogEntries(workspace);
+  expect(entries.length).toBeGreaterThan(0);
+
+  const sessionIds = new Set<string>();
+  const pids = new Set<number>();
+
+  for (const entry of entries) {
+    expect(Object.keys(entry).sort()).toEqual(GLOBAL_OUTPUT_LOG_EXPECTED_KEYS);
+
+    expect(typeof entry.ts).toBe("string");
+    expect(Number.isNaN(Date.parse(String(entry.ts)))).toBe(false);
+    expect(["info", "warn", "error"]).toContain(entry.level);
+    expect(["stdout", "stderr"]).toContain(entry.stream);
+    expect(typeof entry.kind).toBe("string");
+    expect(typeof entry.message).toBe("string");
+
+    expect(entry.command).toBe(expected.command);
+    expect(entry.argv).toEqual(expected.argv);
+    expect(entry.cwd).toBe(expected.cwd);
+
+    expect(typeof entry.pid).toBe("number");
+    expect(Number.isInteger(entry.pid)).toBe(true);
+    pids.add(entry.pid as number);
+
+    expect(typeof entry.version).toBe("string");
+    expect(String(entry.version).length).toBeGreaterThan(0);
+
+    expect(typeof entry.session_id).toBe("string");
+    expect(String(entry.session_id).length).toBeGreaterThan(0);
+    sessionIds.add(entry.session_id as string);
+  }
+
+  expect(pids.size).toBe(1);
+  expect([...pids][0]).toBe(process.pid);
+  expect(sessionIds.size).toBe(1);
 }
 
 function expectCommandGroupEventsToBePaired(
