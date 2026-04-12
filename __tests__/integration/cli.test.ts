@@ -3622,6 +3622,27 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("Task checked: cli: node -e"))).toBe(true);
   });
 
+  it("run --all keeps inline CLI success output hidden by default", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(
+      path.join(workspace, "roadmap.md"),
+      "- [ ] cli: node -e \"console.log('inline all stdout'); console.error('inline all stderr')\"\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--all",
+      "--no-verify",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.logs).not.toContain("inline all stdout\n");
+    expect(result.stderrWrites).not.toContain("inline all stderr\n");
+    expect(result.logs.some((line) => line.includes("Task checked: cli: node -e"))).toBe(true);
+  });
+
   it("run inserts total_time and execution_time trace statistics for inline CLI tasks", async () => {
     const workspace = makeTempWorkspace();
     const configDir = path.join(workspace, ".rundown");
