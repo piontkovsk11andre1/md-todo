@@ -99,12 +99,30 @@ function extractLeadingTool(
   text: string,
   toolResolver: ToolResolverPort,
 ): { tool: ToolDefinition; rest: string } | undefined {
-  const colonIndex = text.indexOf(":");
-  if (colonIndex <= 0) {
+  const profileEqualsMatch = text.match(/^profile\s*=\s*(.*)$/is);
+  if (profileEqualsMatch) {
+    const tool = toolResolver.resolve("profile");
+    if (!tool) {
+      return undefined;
+    }
+
+    return {
+      tool,
+      rest: (profileEqualsMatch[1] ?? "").trim(),
+    };
+  }
+
+  const legacyProfileMatch = text.match(/^profile\s*:\s*(.*)$/is);
+  if (legacyProfileMatch) {
+    throw new Error("Invalid profile syntax: use profile=<name> (not profile: <name>).",);
+  }
+
+  const delimiterIndex = text.indexOf(":");
+  if (delimiterIndex <= 0) {
     return undefined;
   }
 
-  const candidate = text.slice(0, colonIndex).trim();
+  const candidate = text.slice(0, delimiterIndex).trim();
   if (candidate.length === 0) {
     return undefined;
   }
@@ -116,7 +134,7 @@ function extractLeadingTool(
 
   return {
     tool,
-    rest: text.slice(colonIndex + 1).trim(),
+    rest: text.slice(delimiterIndex + 1).trim(),
   };
 }
 
@@ -150,9 +168,18 @@ function splitAtToolBoundaries(
       const ch = remaining[i];
       if ((ch === "," || ch === ";") && remaining[i + 1] === " ") {
         const after = remaining.slice(i + 2).trimStart();
-        const colonIdx = after.indexOf(":");
-        if (colonIdx > 0) {
-          const candidate = after.slice(0, colonIdx).trim();
+        const profileEqualsBoundary = after.match(/^profile\s*=/i);
+        if (profileEqualsBoundary) {
+          if (knownToolNames.has("profile")) {
+            bestSplitIndex = i;
+            break;
+          }
+          continue;
+        }
+
+        const delimiterIndex = after.indexOf(":");
+        if (delimiterIndex > 0) {
+          const candidate = after.slice(0, delimiterIndex).trim();
           if (candidate.length > 0 && knownToolNames.has(candidate.toLowerCase())) {
             bestSplitIndex = i;
             break;

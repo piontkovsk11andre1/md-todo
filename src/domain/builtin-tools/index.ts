@@ -7,6 +7,13 @@ import { forceHandler } from "./force.js";
 import { parallelHandler } from "./parallel.js";
 import { forLoopHandler } from "./for-loop.js";
 
+const getHandler: ToolDefinition["handler"] = async () => ({
+  // Keep normal worker execution enabled; `get:` currently acts as a
+  // lightweight extraction intent marker in prefix parsing/registration.
+  skipExecution: false,
+  shouldVerify: false,
+});
+
 /**
  * Static registry of built-in tool definitions.
  *
@@ -39,6 +46,15 @@ const BUILTIN_TOOLS: Record<string, ToolDefinition> = {
     kind: "handler",
     handler: includeHandler,
     frontmatter: { skipExecution: true, autoComplete: true, shouldVerify: false },
+  },
+  // Alias decision: register only the canonical `get` prefix for now.
+  // Short aliases (e.g. `g`) are intentionally avoided to reduce collisions
+  // with project-level tool names and keep extraction tasks explicit.
+  get: {
+    name: "get",
+    kind: "handler",
+    handler: getHandler,
+    frontmatter: { skipExecution: false, shouldVerify: false },
   },
   parallel: {
     name: "parallel",

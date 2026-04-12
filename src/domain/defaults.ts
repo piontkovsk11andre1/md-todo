@@ -382,8 +382,8 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 - **\`fast: <task>\`** — Skip verification for this task (raw: is an alias).
 - **\`end: <condition>\`** — Stop processing siblings when condition is true (return:, skip:, quit:, break:).
 - **\`include: <file.md>\`** — Include and execute tasks from another file.
-- **\`profile: <name>\`** — Select a named worker profile for this task.
-- Prefixes compose: \`profile: fast, verify: tests pass\`
+- **\`profile=<name>\`** — Select a named worker profile for this task.
+- Prefixes compose: \`profile=fast, verify: tests pass\`
 
 ### Configuration (\`.rundown/config.json\`)
 
@@ -391,8 +391,8 @@ Layered worker resolution (lowest to highest priority):
 1. \`defaults\` in config
 2. \`commands.<command>\` in config
 3. Markdown frontmatter \`profile: <name>\`
-4. Parent directive \`- profile: <name>\`
-5. Task prefix \`profile: <name>\`
+4. Parent directive \`- profile=<name>\`
+5. Task prefix \`profile=<name>\`
 6. CLI \`--worker\` or \`-- <command>\`
 
 ### Templates (\`.rundown/*.md\`)
@@ -978,7 +978,7 @@ Use built-in prefixes when they improve execution quality:
 
 - \`verify:\` skips execution and runs only the verification phase. Use it for tasks that assert existing state without doing any work (e.g. "verify: all tests pass", "verify: config file exists"). Do NOT use \`verify:\` for tasks that require creating, writing, or changing anything — those need execution.
 - \`fast:\` executes the task but skips the verification phase entirely. Use it for small, mechanical changes where per-task verification is wasteful (e.g. renaming a variable, adding an import). Group several such steps under a \`fast:\` directive parent when they make more sense verified together at the end.
-- \`profile: <name>\` to choose a worker profile for specific tasks.
+- \`profile=<name>\` to choose a worker profile for specific tasks.
 - \`memory:\` for tasks that should capture reusable context.
 - \`include: <path>\` to delegate subtasks to another Markdown file.
 
@@ -995,14 +995,14 @@ You can apply prefixes in either form:
 
 Prefix composition is supported with \`, \` or \`; \` separators when combining known prefixes, for example:
 
-- \`- [ ] profile: fast, verify: release checks pass\`
-- \`- [ ] profile: complex; memory: record migration constraints\`
+- \`- [ ] profile=fast, verify: release checks pass\`
+- \`- [ ] profile=complex; memory: record migration constraints\`
 
 Heuristics:
 
 - Use \`verify:\` only when the task checks existing state without doing work. If the task creates, writes, or modifies anything, it is NOT a verify task.
 - Use \`fast:\` when the task is a small mechanical edit that does not warrant its own verification pass.
-- Use \`profile:\` when task complexity or cost/speed trade-offs suggest a non-default worker.
+- Use \`profile=\` when task complexity or cost/speed trade-offs suggest a non-default worker.
 - Use directive parents when multiple adjacent tasks share the same prefix.
 - Prefer plain \`- [ ]\` items when no special behavior is needed.
 

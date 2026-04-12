@@ -93,10 +93,10 @@ interface ResolvedWorkerInvocation {
 }
 
 /**
- * Builds the warning shown when `profile:` appears in unsupported sub-item context.
+ * Builds the warning shown when `profile=` appears in unsupported sub-item context.
  */
 function buildIgnoredProfileSubItemWarning(profileName: string): string {
-  return `"profile: ${profileName}" as a task sub-item is not supported — use it as a parent list item or in file frontmatter.`;
+  return `"profile=${profileName}" as a task sub-item is not supported — use it as a parent list item or in file frontmatter.`;
 }
 
 /**
@@ -191,17 +191,17 @@ function buildWorkerCandidates(
 function describeConfigResolutionSource(input: ResolveWorkerForInvocationInput, frontmatterProfile: string | undefined): string | undefined {
   const modifierProfile = normalizeProfileName(input.modifierProfile);
   if (modifierProfile) {
-    return `profile "${modifierProfile}" via prefix modifier`;
+    return `profile=${modifierProfile} via prefix modifier`;
   }
 
   const directiveProfile = normalizeProfileName(input.task?.directiveProfile);
   if (directiveProfile) {
-    return `profile "${directiveProfile}" via directive`;
+    return `profile=${directiveProfile} via directive`;
   }
 
   const normalizedFrontmatterProfile = normalizeProfileName(frontmatterProfile);
   if (normalizedFrontmatterProfile) {
-    return `profile "${normalizedFrontmatterProfile}" via frontmatter`;
+    return `profile=${normalizedFrontmatterProfile} via frontmatter`;
   }
 
   if (hasWorkerCommandValues(input.workerConfig?.commands?.[input.commandName])) {
