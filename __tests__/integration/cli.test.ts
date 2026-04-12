@@ -8988,72 +8988,76 @@ describe.sequential("CLI integration", () => {
     ].join("\n"));
   });
 
-  it("run progresses each-loop lifecycle across pre-bake, per-item execution, reset, and parent completion", async () => {
-    const workspace = makeTempWorkspace();
-    const roadmapPath = path.join(workspace, "roadmap.md");
-    const workerScriptPath = path.join(workspace, "for-loop-lifecycle-worker.cjs");
-    const lifecycleLogPath = path.join(workspace, "for-loop-lifecycle.log");
+  it.each(["for", "each", "foreach"])(
+    "run keeps %s alias lifecycle and metadata format equivalent",
+    async (alias) => {
+      const workspace = makeTempWorkspace();
+      const roadmapPath = path.join(workspace, "roadmap.md");
+      const workerScriptPath = path.join(workspace, `${alias}-loop-lifecycle-worker.cjs`);
+      const lifecycleLogPath = path.join(workspace, `${alias}-loop-lifecycle.log`);
 
-    fs.writeFileSync(
-      roadmapPath,
-      [
-        "- [ ] each: Alpha, Beta",
-        "  - [ ] Do once",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
+      fs.writeFileSync(
+        roadmapPath,
+        [
+          `- [ ] ${alias}: Alpha, Beta`,
+          "  - [ ] Do once",
+          "",
+        ].join("\n"),
+        "utf-8",
+      );
 
-    fs.writeFileSync(
-      workerScriptPath,
-      [
-        "const fs = require('node:fs');",
-        "const promptPath = process.argv[process.argv.length - 1];",
-        "const prompt = fs.readFileSync(promptPath, 'utf-8');",
-        "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
-        "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
-        `const sourcePath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
-        `const lifecycleLogPath = ${JSON.stringify(lifecycleLogPath.replace(/\\/g, "/"))};`,
-        "const source = fs.readFileSync(sourcePath, 'utf-8');",
-        "const currentMatch = source.match(/for-current\\s*:\\s*(.+)/i);",
-        "const current = currentMatch ? currentMatch[1].trim() : 'none';",
-        "if (selectedTask === 'Do once') {",
-        "  fs.appendFileSync(lifecycleLogPath, `${selectedTask}|${current}\\n`, 'utf-8');",
-        "}",
-        "process.exit(0);",
-        "",
-      ].join("\n"),
-      "utf-8",
-    );
+      fs.writeFileSync(
+        workerScriptPath,
+        [
+          "const fs = require('node:fs');",
+          "const promptPath = process.argv[process.argv.length - 1];",
+          "const prompt = fs.readFileSync(promptPath, 'utf-8');",
+          "const selectedTaskMatch = prompt.match(/## Selected task\\n\\n(.+)/);",
+          "const selectedTask = selectedTaskMatch ? selectedTaskMatch[1].trim() : '';",
+          `const sourcePath = ${JSON.stringify(roadmapPath.replace(/\\/g, "/"))};`,
+          `const lifecycleLogPath = ${JSON.stringify(lifecycleLogPath.replace(/\\/g, "/"))};`,
+          "const source = fs.readFileSync(sourcePath, 'utf-8');",
+          "const currentMatch = source.match(/for-current\\s*:\\s*(.+)/i);",
+          "const current = currentMatch ? currentMatch[1].trim() : 'none';",
+          "if (selectedTask === 'Do once') {",
+          "  fs.appendFileSync(lifecycleLogPath, `${selectedTask}|${current}\\n`, 'utf-8');",
+          "}",
+          "process.exit(0);",
+          "",
+        ].join("\n"),
+        "utf-8",
+      );
 
-    const runOnce = async (): Promise<number> => {
-      const result = await runCli([
-        "run",
-        "roadmap.md",
-        "--no-verify",
-        "--worker",
-        "node",
-        workerScriptPath.replace(/\\/g, "/"),
-      ], workspace);
-      return result.code;
-    };
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const result = await runCli([
+          "run",
+          "roadmap.md",
+          "--no-verify",
+          "--worker",
+          "node",
+          workerScriptPath.replace(/\\/g, "/"),
+        ], workspace);
+        expect(result.code).toBe(0);
 
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      expect(await runOnce()).toBe(0);
-      const source = fs.readFileSync(roadmapPath, "utf-8");
-      if (source.includes("- [x] each: Alpha, Beta")) {
-        break;
+        const source = fs.readFileSync(roadmapPath, "utf-8");
+        if (source.includes(`- [x] ${alias}: Alpha, Beta`)) {
+          break;
+        }
       }
-    }
-    const lifecycle = fs.readFileSync(lifecycleLogPath, "utf-8").split("\n").filter(Boolean);
-    expect(lifecycle.some((line) => line === "Do once|Alpha")).toBe(true);
-    expect(lifecycle.length).toBeGreaterThanOrEqual(1);
 
-    const finalSource = fs.readFileSync(roadmapPath, "utf-8");
-    expect(finalSource.includes("- [x] each: Alpha, Beta")).toBe(true);
-    expect(finalSource.includes("for-item: Alpha")).toBe(true);
-    expect(finalSource.includes("for-item: Beta")).toBe(true);
-  });
+      const lifecycle = fs.readFileSync(lifecycleLogPath, "utf-8").split("\n").filter(Boolean);
+      expect(lifecycle).toContain("Do once|Alpha");
+      expect(lifecycle.length).toBeGreaterThanOrEqual(1);
+
+      const finalSource = fs.readFileSync(roadmapPath, "utf-8");
+      expect(finalSource.includes(`- [x] ${alias}: Alpha, Beta`)).toBe(true);
+      expect(finalSource).toContain("  - for-item: Alpha");
+      expect(finalSource).toContain("  - for-item: Beta");
+      expect(finalSource).toContain("  - for-current: Alpha");
+      expect(finalSource).not.toContain("each-item:");
+      expect(finalSource).not.toContain("foreach-item:");
+    },
+  );
 
   it("run resumes interrupted for-loop from persisted for-current and retries only the current-item child", async () => {
     const workspace = makeTempWorkspace();
