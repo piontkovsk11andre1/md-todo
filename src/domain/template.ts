@@ -28,6 +28,12 @@ export interface TemplateVars {
   /** Full source file content. */
   source: string;
 
+  /** Optional advisory guidance for tasks that belong near plan start. */
+  planPrependGuidance?: string;
+
+  /** Optional advisory guidance for tasks that belong near plan end. */
+  planAppendGuidance?: string;
+
   /** Target analysis directory for research/query style workflows. */
   dir?: string;
 
