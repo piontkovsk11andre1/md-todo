@@ -82,6 +82,23 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "migrations", "0001-initialize.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
     expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
+
+    const defaultConfig = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        directories?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
+      };
+    };
+    expect(defaultConfig.workspace?.directories).toEqual({
+      design: "design",
+      specs: "specs",
+      migrations: "migrations",
+    });
   });
 
   it("writes workspace.link as current directory for in-place start", async () => {
@@ -191,6 +208,48 @@ describeIfStartAvailable("start-project integration", () => {
     const stderr = [...result.errors, ...result.stderrWrites].join("\n");
     expect(stderr).toContain("Invalid workspace directory overrides");
     expect(stderr).toContain("overlap");
+  });
+
+  it("persists custom workspace directory mapping in .rundown/config.json", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "custom-layout");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Custom directory layout",
+      "--dir",
+      "custom-layout",
+      "--design-dir",
+      "docs/design",
+      "--specs-dir",
+      "quality/specs",
+      "--migrations-dir",
+      "changesets",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        directories?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
+      };
+    };
+
+    expect(config.workspace?.directories).toEqual({
+      design: "docs/design",
+      specs: "quality/specs",
+      migrations: "changesets",
+    });
   });
 });
 

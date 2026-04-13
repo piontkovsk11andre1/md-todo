@@ -26,6 +26,17 @@ interface ValidatedWorkspaceDirectories {
   migrationsDir: string;
 }
 
+interface RundownConfigDocument {
+  workspace?: {
+    directories?: {
+      design: string;
+      specs: string;
+      migrations: string;
+    };
+  };
+  [key: string]: unknown;
+}
+
 export interface StartProjectDependencies {
   fileSystem: FileSystem;
   gitClient: GitClient;
@@ -83,6 +94,8 @@ export function createStartProject(
     );
     const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
+    const rundownConfigDir = dependencies.pathOperations.join(targetDirectory, ".rundown");
+    const rundownConfigPath = dependencies.pathOperations.join(rundownConfigDir, "config.json");
     const migrationsDir = dependencies.pathOperations.join(
       targetDirectory,
       workspaceDirectories.migrationsDir,
@@ -102,7 +115,7 @@ export function createStartProject(
     const initProject = createInitProject({
       fileSystem: dependencies.fileSystem,
       configDir: {
-        configDir: dependencies.pathOperations.join(targetDirectory, ".rundown"),
+        configDir: rundownConfigDir,
         isExplicit: true,
       },
       pathOperations: dependencies.pathOperations,
@@ -111,6 +124,21 @@ export function createStartProject(
     const initCode = await initProject();
     if (initCode !== EXIT_CODE_SUCCESS) {
       return initCode;
+    }
+
+    try {
+      persistWorkspaceDirectoryMapping({
+        fileSystem: dependencies.fileSystem,
+        configPath: rundownConfigPath,
+        directories: workspaceDirectories,
+      });
+      emit({ kind: "success", message: "Persisted workspace directories in " + rundownConfigPath });
+    } catch (error) {
+      emit({
+        kind: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return EXIT_CODE_FAILURE;
     }
 
     writeFileIfMissing(
@@ -380,4 +408,48 @@ function validateWorkspaceDirectoryConflicts(
 
 function isAncestorOrDescendantPath(left: string, right: string): boolean {
   return left.startsWith(right + "/") || right.startsWith(left + "/");
+}
+
+function persistWorkspaceDirectoryMapping(input: {
+  fileSystem: FileSystem;
+  configPath: string;
+  directories: ValidatedWorkspaceDirectories;
+}): void {
+  const { fileSystem, configPath, directories } = input;
+  const existingSource = fileSystem.exists(configPath)
+    ? fileSystem.readText(configPath)
+    : "{}\n";
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(existingSource);
+  } catch (error) {
+    throw new Error(
+      `Failed to persist workspace directories: cannot parse ${configPath} as JSON (${String(error)}).`,
+    );
+  }
+
+  if (!isPlainObject(parsed)) {
+    throw new Error(
+      `Failed to persist workspace directories: expected ${configPath} to contain a top-level JSON object.`,
+    );
+  }
+
+  const config: RundownConfigDocument = {
+    ...parsed,
+    workspace: {
+      ...(isPlainObject(parsed.workspace) ? parsed.workspace : {}),
+      directories: {
+        design: directories.designDir,
+        specs: directories.specsDir,
+        migrations: directories.migrationsDir,
+      },
+    },
+  };
+
+  fileSystem.writeText(configPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
