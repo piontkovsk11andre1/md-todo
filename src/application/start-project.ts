@@ -20,6 +20,12 @@ export interface StartProjectOptions {
   migrationsDir?: string;
 }
 
+interface ValidatedWorkspaceDirectories {
+  designDir: string;
+  specsDir: string;
+  migrationsDir: string;
+}
+
 export interface StartProjectDependencies {
   fileSystem: FileSystem;
   gitClient: GitClient;
@@ -53,11 +59,38 @@ export function createStartProject(
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
     }
 
-    const designCurrentDir = dependencies.pathOperations.join(targetDirectory, "design", "current");
+    let workspaceDirectories: ValidatedWorkspaceDirectories;
+    try {
+      workspaceDirectories = resolveAndValidateWorkspaceDirectories({
+        targetDirectory,
+        designDirOption: options.designDir,
+        specsDirOption: options.specsDir,
+        migrationsDirOption: options.migrationsDir,
+        pathOperations: dependencies.pathOperations,
+      });
+    } catch (error) {
+      emit({
+        kind: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return EXIT_CODE_FAILURE;
+    }
+
+    const designCurrentDir = dependencies.pathOperations.join(
+      targetDirectory,
+      workspaceDirectories.designDir,
+      "current",
+    );
     const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
-    const migrationsDir = dependencies.pathOperations.join(targetDirectory, "migrations");
-    const specsDir = dependencies.pathOperations.join(targetDirectory, "specs");
+    const migrationsDir = dependencies.pathOperations.join(
+      targetDirectory,
+      workspaceDirectories.migrationsDir,
+    );
+    const specsDir = dependencies.pathOperations.join(
+      targetDirectory,
+      workspaceDirectories.specsDir,
+    );
     const workspaceLinkPath = dependencies.pathOperations.join(targetDirectory, ".rundown", "workspace.link");
     const initialMigrationPath = dependencies.pathOperations.join(
       migrationsDir,
@@ -230,4 +263,121 @@ async function runExploreSteps(
   }
 
   return EXIT_CODE_SUCCESS;
+}
+
+function resolveAndValidateWorkspaceDirectories(input: {
+  targetDirectory: string;
+  designDirOption: string | undefined;
+  specsDirOption: string | undefined;
+  migrationsDirOption: string | undefined;
+  pathOperations: PathOperationsPort;
+}): ValidatedWorkspaceDirectories {
+  const { targetDirectory, designDirOption, specsDirOption, migrationsDirOption, pathOperations } = input;
+  const defaults = {
+    designDir: "design",
+    specsDir: "specs",
+    migrationsDir: "migrations",
+  };
+
+  const designDir = normalizeWorkspaceDirectoryOverride(
+    targetDirectory,
+    designDirOption ?? defaults.designDir,
+    "--design-dir",
+    pathOperations,
+  );
+  const specsDir = normalizeWorkspaceDirectoryOverride(
+    targetDirectory,
+    specsDirOption ?? defaults.specsDir,
+    "--specs-dir",
+    pathOperations,
+  );
+  const migrationsDir = normalizeWorkspaceDirectoryOverride(
+    targetDirectory,
+    migrationsDirOption ?? defaults.migrationsDir,
+    "--migrations-dir",
+    pathOperations,
+  );
+
+  const buckets: Array<{ optionName: string; relativeDir: string }> = [
+    { optionName: "--design-dir", relativeDir: designDir },
+    { optionName: "--specs-dir", relativeDir: specsDir },
+    { optionName: "--migrations-dir", relativeDir: migrationsDir },
+  ];
+
+  validateWorkspaceDirectoryConflicts(buckets);
+
+  return {
+    designDir,
+    specsDir,
+    migrationsDir,
+  };
+}
+
+function normalizeWorkspaceDirectoryOverride(
+  targetDirectory: string,
+  rawValue: string,
+  optionName: string,
+  pathOperations: PathOperationsPort,
+): string {
+  const trimmedValue = rawValue.trim();
+  if (trimmedValue.length === 0) {
+    throw new Error(`Invalid ${optionName} value: path cannot be empty.`);
+  }
+
+  if (pathOperations.isAbsolute(trimmedValue)) {
+    throw new Error(
+      `Invalid ${optionName} value: "${trimmedValue}". Use a path relative to the project root, not an absolute path.`,
+    );
+  }
+
+  const resolvedPath = pathOperations.resolve(targetDirectory, trimmedValue);
+  const relativeFromProjectRoot = pathOperations
+    .relative(targetDirectory, resolvedPath)
+    .replace(/\\/g, "/");
+
+  if (relativeFromProjectRoot.length === 0 || relativeFromProjectRoot === ".") {
+    throw new Error(`Invalid ${optionName} value: "${trimmedValue}" resolves to the project root.`);
+  }
+
+  if (relativeFromProjectRoot === ".." || relativeFromProjectRoot.startsWith("../")) {
+    throw new Error(
+      `Invalid ${optionName} value: "${trimmedValue}" escapes the project root. Use a subdirectory path.`,
+    );
+  }
+
+  return relativeFromProjectRoot;
+}
+
+function validateWorkspaceDirectoryConflicts(
+  directories: Array<{ optionName: string; relativeDir: string }>,
+): void {
+  for (let index = 0; index < directories.length; index += 1) {
+    const current = directories[index];
+    if (!current) {
+      continue;
+    }
+
+    for (let otherIndex = index + 1; otherIndex < directories.length; otherIndex += 1) {
+      const other = directories[otherIndex];
+      if (!other) {
+        continue;
+      }
+
+      if (current.relativeDir === other.relativeDir) {
+        throw new Error(
+          `Invalid workspace directory overrides: ${current.optionName} and ${other.optionName} both resolve to "${current.relativeDir}". Use distinct directories.`,
+        );
+      }
+
+      if (isAncestorOrDescendantPath(current.relativeDir, other.relativeDir)) {
+        throw new Error(
+          `Invalid workspace directory overrides: ${current.optionName} ("${current.relativeDir}") and ${other.optionName} ("${other.relativeDir}") overlap. Use separate non-nested directories.`,
+        );
+      }
+    }
+  }
+}
+
+function isAncestorOrDescendantPath(left: string, right: string): boolean {
+  return left.startsWith(right + "/") || right.startsWith(left + "/");
 }

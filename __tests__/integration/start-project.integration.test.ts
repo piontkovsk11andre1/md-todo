@@ -124,6 +124,74 @@ describeIfStartAvailable("start-project integration", () => {
     expect(result.code).toBe(0);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
   });
+
+  it("fails when --design-dir is absolute", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Absolute design dir",
+      "--design-dir",
+      path.join(workspace, "outside-design"),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --design-dir value");
+    expect(stderr).toContain("relative to the project root");
+  });
+
+  it("fails when override escapes project root", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Traversal design dir",
+      "--design-dir",
+      "../outside",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --design-dir value");
+    expect(stderr).toContain("escapes the project root");
+  });
+
+  it("fails when workspace directories resolve to duplicate targets", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Duplicate dirs",
+      "--design-dir",
+      "work",
+      "--specs-dir",
+      "work",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid workspace directory overrides");
+    expect(stderr).toContain("both resolve to \"work\"");
+  });
+
+  it("fails when workspace directories overlap via nested paths", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Nested dirs",
+      "--design-dir",
+      "workspace/design",
+      "--specs-dir",
+      "workspace",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid workspace directory overrides");
+    expect(stderr).toContain("overlap");
+  });
 });
 
 function makeTempWorkspace(): string {
