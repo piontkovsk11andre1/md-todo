@@ -37,26 +37,12 @@ const describeIfSatelliteMigrateAvailable = hasMigrateCommand
   ? describe
   : describe.skip;
 const hasMigrateUserSessionAction = cliSource.includes("user-session");
-const hasMigrateSaveAction = /\bsave\b/.test(migrateActionHelpText);
-const hasMigrateDiffAction = /\bdiff\b/.test(migrateActionHelpText);
-const hasMigratePreviewAction = /\bpreview\b/.test(migrateActionHelpText);
 const hasMigrateConfirmOption = cliSource.includes("--confirm");
 const hasDocsDiffCommand = cliSource.includes('.command("docs")') && cliSource.includes('.command("diff")');
 const describeIfUserSessionMigrateAvailable = hasMigrateCommand
   && hasMigrateTaskUseCase
   && hasMigrateUserSessionAction
   && hasMigrateConfirmOption
-  ? describe
-  : describe.skip;
-const describeIfSaveMigrateAvailable = hasMigrateCommand
-  && hasMigrateTaskUseCase
-  && hasMigrateSaveAction
-  ? describe
-  : describe.skip;
-const describeIfRevisionPreviewActionsAvailable = hasMigrateCommand
-  && hasMigrateTaskUseCase
-  && hasMigrateDiffAction
-  && hasMigratePreviewAction
   ? describe
   : describe.skip;
 const describeIfDocsDiffAvailable = hasDocsTaskUseCase && hasDocsDiffCommand ? describe : describe.skip;
@@ -825,290 +811,33 @@ describeIfUserSessionMigrateAvailable("migrate user-session integration", () => 
   });
 });
 
-describeIfSaveMigrateAvailable("migrate save integration", () => {
-  it("snapshots docs/current into the next monotonic docs/rev.N directory", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.mkdirSync(path.join(workspace, "docs", "current", "notes"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.3"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "notes", "api.md"), "API details\n", "utf-8");
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    expect(fs.readFileSync(path.join(workspace, "docs", "rev.4", "Design.md"), "utf-8")).toBe("# Current design\n");
-    expect(fs.readFileSync(path.join(workspace, "docs", "rev.4", "notes", "api.md"), "utf-8")).toBe("API details\n");
-    const metadata = JSON.parse(fs.readFileSync(path.join(workspace, "docs", "rev.4.meta.json"), "utf-8")) as {
-      revision: string;
-      index: number;
-      createdAt: string;
-      label?: string;
-    };
-    expect(metadata.revision).toBe("rev.4");
-    expect(metadata.index).toBe(4);
-    expect(metadata.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(metadata.label).toBeUndefined();
+describeIfMigrateAvailable("migrate revision-action removals", () => {
+  it("does not advertise removed revision actions in migrate help text", () => {
+    expect(migrateActionHelpText).toContain("Migration action:");
+    expect(migrateActionHelpText).not.toMatch(/\bsave\b/);
+    expect(migrateActionHelpText).not.toMatch(/\bdiff\b/);
+    expect(migrateActionHelpText).not.toMatch(/\bpreview\b/);
   });
 
-  it("stores optional revision labels in sidecar metadata for migrate save", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--label",
-      "stable",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    const metadata = JSON.parse(fs.readFileSync(path.join(workspace, "docs", "rev.1.meta.json"), "utf-8")) as {
-      revision: string;
-      index: number;
-      createdAt: string;
-      label?: string;
-    };
-    expect(metadata.revision).toBe("rev.1");
-    expect(metadata.index).toBe(1);
-    expect(metadata.label).toBe("stable");
-
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Saved design revision rev.1");
-    expect(combinedOutput).toContain("[label: stable]");
-  });
-
-  it("bootstraps docs/current from legacy Design.md when missing", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
-    fs.writeFileSync(path.join(workspace, "Design.md"), "# Legacy design\n\nBootstrapped content.\n", "utf-8");
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    expect(fs.readFileSync(path.join(workspace, "docs", "current", "Design.md"), "utf-8")).toBe("# Legacy design\n\nBootstrapped content.\n");
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.1", "Design.md"))).toBe(true);
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
-  });
-
-  it("keeps revision-save valid for an empty docs/current draft", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
-    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.1"))).toBe(true);
-    expect(fs.readdirSync(path.join(workspace, "docs", "rev.1"))).toStrictEqual([]);
-
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Saved design revision rev.1");
-    expect(combinedOutput).toContain("Saved empty design revision from docs/current/");
-  });
-
-  it("fails clearly when docs/current and legacy Design.md are both missing", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
-    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Design working directory is missing:");
-    expect(combinedOutput).toContain("docs/current");
-  });
-
-  it("reports a no-op when docs/current is unchanged from latest revision", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.mkdirSync(path.join(workspace, "docs", "current", "notes"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.2", "notes"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "notes", "api.md"), "API details\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "rev.2", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "rev.2", "notes", "api.md"), "API details\n", "utf-8");
-
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.3"))).toBe(false);
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("No design changes detected in docs/current/");
-    expect(combinedOutput).toContain("rev.2");
-  });
-
-  it("ignores malformed revision directories and still uses monotonic numbering", async () => {
+  it("rejects removed revision actions via migrate routing", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
 
-    fs.mkdirSync(path.join(workspace, "docs", "current", "nested"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.3"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.8"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.bad"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.7-draft"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.-1"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "revision.11"), { recursive: true });
+    const saveResult = await runCli(["migrate", "save", "--dir", "migrations"], workspace);
+    const diffResult = await runCli(["migrate", "diff", "--dir", "migrations"], workspace);
+    const previewResult = await runCli(["migrate", "preview", "--dir", "migrations"], workspace);
 
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "nested", "notes.md"), "Design notes\n", "utf-8");
+    expect(saveResult.code).toBe(1);
+    expect(diffResult.code).toBe(1);
+    expect(previewResult.code).toBe(1);
 
-    const result = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
+    const saveOutput = stripAnsi([...saveResult.logs, ...saveResult.errors, ...saveResult.stdoutWrites, ...saveResult.stderrWrites].join("\n"));
+    const diffOutput = stripAnsi([...diffResult.logs, ...diffResult.errors, ...diffResult.stdoutWrites, ...diffResult.stderrWrites].join("\n"));
+    const previewOutput = stripAnsi([...previewResult.logs, ...previewResult.errors, ...previewResult.stdoutWrites, ...previewResult.stderrWrites].join("\n"));
 
-    expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.9", "Design.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.9", "nested", "notes.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.4"))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.7-draft", "Design.md"))).toBe(false);
-  });
-
-  it("keeps repeated no-change saves deterministic without creating extra revisions", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-
-    fs.mkdirSync(path.join(workspace, "docs", "current", "notes"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.2", "notes"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "notes", "api.md"), "API details\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "rev.2", "Design.md"), "# Current design\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "rev.2", "notes", "api.md"), "API details\n", "utf-8");
-
-    const firstSave = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-    const secondSave = await runCli([
-      "migrate",
-      "save",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0);",
-    ], workspace);
-
-    expect(firstSave.code).toBe(0);
-    expect(secondSave.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "docs", "rev.3"))).toBe(false);
-
-    const firstOutput = stripAnsi([
-      ...firstSave.logs,
-      ...firstSave.errors,
-      ...firstSave.stdoutWrites,
-      ...firstSave.stderrWrites,
-    ].join("\n"));
-    const secondOutput = stripAnsi([
-      ...secondSave.logs,
-      ...secondSave.errors,
-      ...secondSave.stdoutWrites,
-      ...secondSave.stderrWrites,
-    ].join("\n"));
-
-    expect(firstOutput).toContain("No design changes detected in docs/current/");
-    expect(secondOutput).toContain("No design changes detected in docs/current/");
-    expect(firstOutput).toContain("rev.2");
-    expect(secondOutput).toContain("rev.2");
+    expect(saveOutput).toContain("Invalid migrate action: save");
+    expect(diffOutput).toContain("Invalid migrate action: diff");
+    expect(previewOutput).toContain("Invalid migrate action: preview");
   });
 });
 

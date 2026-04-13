@@ -483,6 +483,20 @@ describe("createMigrateCommandAction", () => {
     });
     expect(request?.slugWorkerPattern).toBeUndefined();
   });
+
+  it("rejects removed migrate revision actions without compatibility aliases", () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action("save", undefined, {})).toThrow("Invalid migrate action: save");
+    expect(() => action("diff", undefined, {})).toThrow("Invalid migrate action: diff");
+    expect(() => action("preview", undefined, {})).toThrow("Invalid migrate action: preview");
+    expect(migrateTask).not.toHaveBeenCalled();
+  });
 });
 
 describe("createDocsPublishCommandAction", () => {
