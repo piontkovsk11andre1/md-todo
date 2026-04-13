@@ -31,7 +31,10 @@ import { createReverifyTask, type ReverifyTaskOptions } from "./application/reve
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
 import { createMigrateTask, type MigrateTaskOptions } from "./application/migrate-task.js";
-import { createDocsTask, type DocsTaskOptions } from "./application/docs-task.js";
+import {
+  createDocsRevisionTask,
+  type DocsRevisionTaskOptions,
+} from "./application/docs-revision-task.js";
 import { createTestSpecs, type TestSpecsOptions } from "./application/test-specs.js";
 import {
   createStartProject,
@@ -125,7 +128,7 @@ export type App = {
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   undoTask: (options: UndoTaskOptions) => Promise<number>;
   migrateTask: (options: MigrateTaskOptions) => Promise<number>;
-  docsTask: (options: DocsTaskOptions) => Promise<number>;
+  docsTask: (options: DocsRevisionTaskOptions) => Promise<number>;
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
@@ -523,7 +526,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       runTask: runTaskUseCase(ports),
       undoTask: undoTaskUseCase(ports),
     }),
-    docsTask: (ports) => createDocsTask({
+    docsTask: (ports) => createDocsRevisionTask({
       fileSystem: ports.fileSystem,
       output: ports.output,
     }),
