@@ -1,5 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  resolveGlobalConfigPath,
+  type GlobalConfigPathResolution,
+} from "./global-config-path-adapter.js";
 import type { WorkerConfigPort } from "../../domain/ports/worker-config-port.js";
 import {
   DEFAULT_TRACE_STATISTICS_FIELDS,
@@ -19,6 +23,10 @@ import {
 } from "../../domain/worker-config.js";
 
 const WORKER_CONFIG_FILE_NAME = "config.json";
+
+interface CreateWorkerConfigAdapterOptions {
+  readonly resolveGlobalConfigPath?: () => Pick<GlobalConfigPathResolution, "discoveredPath">;
+}
 
 /**
  * Determines whether a value is a non-null, non-array object.
@@ -127,13 +135,6 @@ function validateCommandProfiles(value: unknown, keyPath: string): WorkerCommand
  * Validates optional inline trace statistics configuration.
  */
 function validateTraceStatisticsConfig(value: unknown, keyPath: string): TraceStatisticsConfig {
-  if (value === undefined) {
-    return {
-      enabled: false,
-      fields: [...DEFAULT_TRACE_STATISTICS_FIELDS],
-    };
-  }
-
   if (!isPlainObject(value)) {
     throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
   }
@@ -302,16 +303,266 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
     workers: workers === undefined ? undefined : validateWorkers(workers, "workers"),
     commands: commands === undefined ? undefined : validateCommandProfiles(commands, "commands"),
     profiles: profiles === undefined ? undefined : validateProfileMap(profiles, "profiles"),
-    traceStatistics: validateTraceStatisticsConfig(value.traceStatistics, "traceStatistics"),
+    traceStatistics: value.traceStatistics === undefined
+      ? undefined
+      : validateTraceStatisticsConfig(value.traceStatistics, "traceStatistics"),
     healthPolicy: validateHealthPolicy(value.healthPolicy, "healthPolicy"),
   };
+}
+
+function cloneWorkerCommand(value: WorkerCommand | undefined): WorkerCommand | undefined {
+  return value ? [...value] : undefined;
+}
+
+function cloneWorkerCommands(value: WorkerCommand[] | undefined): WorkerCommand[] | undefined {
+  return value?.map((entry) => [...entry]);
+}
+
+function cloneWorkers(value: WorkersConfig | undefined): WorkersConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const cloned: WorkersConfig = {};
+  if (value.default) {
+    cloned.default = cloneWorkerCommand(value.default);
+  }
+  if (value.tui) {
+    cloned.tui = cloneWorkerCommand(value.tui);
+  }
+  if (value.fallbacks) {
+    cloned.fallbacks = cloneWorkerCommands(value.fallbacks);
+  }
+  return cloned;
+}
+
+function cloneCommandProfiles(
+  value: WorkerCommandProfiles | Record<string, WorkerCommand> | undefined,
+): Record<string, WorkerCommand> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const cloned: Record<string, WorkerCommand> = {};
+  for (const [key, command] of Object.entries(value)) {
+    if (!command) {
+      continue;
+    }
+    cloned[key] = [...command];
+  }
+  return cloned;
+}
+
+function cloneWorkerCommandProfiles(value: WorkerCommandProfiles | undefined): WorkerCommandProfiles | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const cloned: WorkerCommandProfiles = {};
+  for (const [key, command] of Object.entries(value)) {
+    if (!command) {
+      continue;
+    }
+    cloned[key as WorkerConfigCommandName] = [...command];
+  }
+  return cloned;
+}
+
+function cloneTraceStatistics(value: TraceStatisticsConfig | undefined): TraceStatisticsConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    enabled: value.enabled,
+    fields: [...value.fields],
+  };
+}
+
+function cloneHealthPolicy(value: WorkerHealthPolicyConfig | undefined): WorkerHealthPolicyConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    cooldownSecondsByFailureClass: value.cooldownSecondsByFailureClass
+      ? { ...value.cooldownSecondsByFailureClass }
+      : undefined,
+    maxFailoverAttemptsPerTask: value.maxFailoverAttemptsPerTask,
+    maxFailoverAttemptsPerRun: value.maxFailoverAttemptsPerRun,
+    fallbackStrategy: value.fallbackStrategy,
+    unavailableReevaluation: value.unavailableReevaluation
+      ? { ...value.unavailableReevaluation }
+      : undefined,
+  };
+}
+
+function mergeWorkers(base: WorkersConfig | undefined, override: WorkersConfig | undefined): WorkersConfig | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged: WorkersConfig = {
+    default: override?.default !== undefined ? cloneWorkerCommand(override.default) : cloneWorkerCommand(base?.default),
+    tui: override?.tui !== undefined ? cloneWorkerCommand(override.tui) : cloneWorkerCommand(base?.tui),
+    fallbacks: override?.fallbacks !== undefined ? cloneWorkerCommands(override.fallbacks) : cloneWorkerCommands(base?.fallbacks),
+  };
+
+  if (!merged.default && !merged.tui && !merged.fallbacks) {
+    return undefined;
+  }
+
+  return merged;
+}
+
+function mergeProfileMaps(
+  base: Record<string, WorkerCommand> | undefined,
+  override: Record<string, WorkerCommand> | undefined,
+): Record<string, WorkerCommand> | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  return {
+    ...(cloneCommandProfiles(base) ?? {}),
+    ...(cloneCommandProfiles(override) ?? {}),
+  };
+}
+
+function mergeCommandProfiles(
+  base: WorkerCommandProfiles | undefined,
+  override: WorkerCommandProfiles | undefined,
+): WorkerCommandProfiles | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged: WorkerCommandProfiles = {};
+  for (const [key, command] of Object.entries(base ?? {})) {
+    if (!command) {
+      continue;
+    }
+    merged[key as WorkerConfigCommandName] = [...command];
+  }
+  for (const [key, command] of Object.entries(override ?? {})) {
+    if (!command) {
+      continue;
+    }
+    merged[key as WorkerConfigCommandName] = [...command];
+  }
+  return merged;
+}
+
+function mergeHealthPolicy(
+  base: WorkerHealthPolicyConfig | undefined,
+  override: WorkerHealthPolicyConfig | undefined,
+): WorkerHealthPolicyConfig | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const mergedCooldowns = {
+    ...(base?.cooldownSecondsByFailureClass ?? {}),
+    ...(override?.cooldownSecondsByFailureClass ?? {}),
+  };
+  const mergedUnavailableReevaluation = {
+    ...(base?.unavailableReevaluation ?? {}),
+    ...(override?.unavailableReevaluation ?? {}),
+  };
+
+  return {
+    cooldownSecondsByFailureClass: Object.keys(mergedCooldowns).length > 0
+      ? mergedCooldowns
+      : undefined,
+    maxFailoverAttemptsPerTask: override?.maxFailoverAttemptsPerTask ?? base?.maxFailoverAttemptsPerTask,
+    maxFailoverAttemptsPerRun: override?.maxFailoverAttemptsPerRun ?? base?.maxFailoverAttemptsPerRun,
+    fallbackStrategy: override?.fallbackStrategy ?? base?.fallbackStrategy,
+    unavailableReevaluation: Object.keys(mergedUnavailableReevaluation).length > 0
+      ? mergedUnavailableReevaluation
+      : undefined,
+  };
+}
+
+function mergeWorkerConfig(
+  base: WorkerConfig | undefined,
+  override: WorkerConfig | undefined,
+): WorkerConfig | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const mergedHealthPolicy = mergeHealthPolicy(base?.healthPolicy, override?.healthPolicy);
+
+  return {
+    workers: mergeWorkers(base?.workers, override?.workers),
+    commands: mergeCommandProfiles(base?.commands, override?.commands),
+    profiles: mergeProfileMaps(base?.profiles, override?.profiles),
+    traceStatistics: override?.traceStatistics !== undefined
+      ? cloneTraceStatistics(override.traceStatistics)
+      : cloneTraceStatistics(base?.traceStatistics),
+    healthPolicy: mergedHealthPolicy,
+  };
+}
+
+function applyBuiltInDefaults(config: WorkerConfig | undefined): WorkerConfig | undefined {
+  if (!config) {
+    return undefined;
+  }
+
+  return {
+    workers: cloneWorkers(config.workers),
+    commands: cloneWorkerCommandProfiles(config.commands),
+    profiles: cloneCommandProfiles(config.profiles),
+    traceStatistics: config.traceStatistics
+      ? cloneTraceStatistics(config.traceStatistics)
+      : {
+        enabled: false,
+        fields: [...DEFAULT_TRACE_STATISTICS_FIELDS],
+      },
+    healthPolicy: cloneHealthPolicy(config.healthPolicy),
+  };
+}
+
+function loadConfigFile(configPath: string, scope: "global" | "local", optional: boolean): WorkerConfig | undefined {
+  let parsed: unknown;
+  try {
+    const source = fs.readFileSync(configPath, "utf-8");
+    parsed = JSON.parse(source);
+  } catch (error) {
+    if (optional && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+
+    if (error instanceof SyntaxError) {
+      if (scope === "local") {
+        throw new Error(`Failed to parse worker config at \"${configPath}\": invalid JSON (${error.message}).`);
+      }
+      throw new Error(`Failed to parse global worker config at \"${configPath}\": invalid JSON (${error.message}).`);
+    }
+
+    if (scope === "local") {
+      throw new Error(`Failed to read worker config at \"${configPath}\": ${String(error)}.`);
+    }
+    throw new Error(`Failed to read global worker config at \"${configPath}\": ${String(error)}.`);
+  }
+
+  try {
+    return validateWorkerConfig(parsed);
+  } catch (error) {
+    if (scope === "local") {
+      throw new Error(`Invalid worker config at \"${configPath}\": ${(error as Error).message}`);
+    }
+    throw new Error(`Invalid global worker config at \"${configPath}\": ${(error as Error).message}`);
+  }
 }
 
 /**
  * Creates the worker configuration adapter that loads and validates config
  * values from `<configDir>/config.json`.
  */
-export function createWorkerConfigAdapter(): WorkerConfigPort {
+export function createWorkerConfigAdapter(options: CreateWorkerConfigAdapterOptions = {}): WorkerConfigPort {
+  const resolveGlobalPath = options.resolveGlobalConfigPath ?? resolveGlobalConfigPath;
+
   return {
     /**
      * Loads worker configuration from disk.
@@ -320,32 +571,12 @@ export function createWorkerConfigAdapter(): WorkerConfigPort {
      */
     load(configDir) {
       const configPath = path.join(configDir, WORKER_CONFIG_FILE_NAME);
-
-      let parsed: unknown;
-      try {
-        const source = fs.readFileSync(configPath, "utf-8");
-        parsed = JSON.parse(source);
-      } catch (error) {
-        // Missing config is allowed and treated as an optional file.
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return undefined;
-        }
-
-        // Surface malformed JSON with a targeted parse error.
-        if (error instanceof SyntaxError) {
-          throw new Error(`Failed to parse worker config at \"${configPath}\": invalid JSON (${error.message}).`);
-        }
-
-        // Preserve any unexpected I/O failure details.
-        throw new Error(`Failed to read worker config at \"${configPath}\": ${String(error)}.`);
-      }
-
-      try {
-        return validateWorkerConfig(parsed);
-      } catch (error) {
-        // Prefix validation failures with the source path for traceability.
-        throw new Error(`Invalid worker config at \"${configPath}\": ${(error as Error).message}`);
-      }
+      const localConfig = loadConfigFile(configPath, "local", true);
+      const globalConfigPath = resolveGlobalPath().discoveredPath;
+      const globalConfig = globalConfigPath
+        ? loadConfigFile(globalConfigPath, "global", false)
+        : undefined;
+      return applyBuiltInDefaults(mergeWorkerConfig(globalConfig, localConfig));
     },
   };
 }

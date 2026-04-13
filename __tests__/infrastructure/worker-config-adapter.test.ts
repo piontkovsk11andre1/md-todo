@@ -29,6 +29,18 @@ function writeConfig(configDir: string, source: string): string {
   return configPath;
 }
 
+function makeTempFilePath(fileName: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-worker-config-global-"));
+  tempDirs.push(dir);
+  return path.join(dir, fileName);
+}
+
+function writeGlobalConfig(source: string): string {
+  const configPath = makeTempFilePath("global-config.json");
+  fs.writeFileSync(configPath, source, "utf-8");
+  return configPath;
+}
+
 describe("createWorkerConfigAdapter", () => {
   it("loads a valid config", () => {
     const configDir = makeTempConfigDir();
@@ -67,6 +79,106 @@ describe("createWorkerConfigAdapter", () => {
     const adapter = createWorkerConfigAdapter();
 
     expect(adapter.load(configDir)).toBeUndefined();
+  });
+
+  it("loads global config when local config is missing", () => {
+    const configDir = makeTempConfigDir();
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        workers: {
+          default: ["opencode", "run", "--model", "global"],
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: {
+        default: ["opencode", "run", "--model", "global"],
+      },
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+    });
+  });
+
+  it("merges global defaults with local overrides", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workers: {
+          tui: ["opencode", "run", "--model", "local-tui"],
+        },
+        commands: {
+          plan: ["opencode", "run", "--model", "local-plan"],
+        },
+        profiles: {
+          fast: ["opencode", "run", "--model", "local-fast"],
+        },
+      }),
+    );
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        workers: {
+          default: ["opencode", "run", "--model", "global-default"],
+        },
+        commands: {
+          plan: ["opencode", "run", "--model", "global-plan"],
+          research: ["opencode", "run", "--model", "global-research"],
+        },
+        profiles: {
+          fast: ["opencode", "run", "--model", "global-fast"],
+          deep: ["opencode", "run", "--model", "global-deep"],
+        },
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 3,
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: {
+        default: ["opencode", "run", "--model", "global-default"],
+        tui: ["opencode", "run", "--model", "local-tui"],
+      },
+      commands: {
+        plan: ["opencode", "run", "--model", "local-plan"],
+        research: ["opencode", "run", "--model", "global-research"],
+      },
+      profiles: {
+        fast: ["opencode", "run", "--model", "local-fast"],
+        deep: ["opencode", "run", "--model", "global-deep"],
+      },
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      healthPolicy: {
+        maxFailoverAttemptsPerTask: 3,
+      },
+    });
+  });
+
+  it("throws with clear message when global config JSON is malformed", () => {
+    const configDir = makeTempConfigDir();
+    const globalConfigPath = writeGlobalConfig("{not valid json");
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Failed to parse global worker config at \"${globalConfigPath}\": invalid JSON`,
+    );
   });
 
   it("throws when config.json contains malformed JSON", () => {
