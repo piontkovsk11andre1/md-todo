@@ -399,7 +399,7 @@ What happens:
 Use `rundown docs` when you want to manage design-document revisions directly.
 
 ```bash
-# Publish docs/current into the next immutable docs/rev.N snapshot
+# Publish design/current into the next immutable design/rev.N snapshot
 rundown docs publish --dir ./migrations
 
 # Add optional label metadata to the published revision
@@ -417,10 +417,11 @@ rundown docs diff --dir ./migrations --from rev.3 --to current
 
 What happens:
 
-1. `docs publish` snapshots `docs/current/` into `docs/rev.N/` with monotonic revision numbering.
-2. If there is no byte-level change from the latest revision, publish is a no-op.
-3. `docs diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
-4. Diff output is deterministic and suitable for both human review and migration context.
+1. `docs publish` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
+2. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable as compatibility fallback sources.
+3. If there is no byte-level change from the latest revision, publish is a no-op.
+4. `docs diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
+5. Diff output is deterministic and suitable for both human review and migration context.
 
 ## 21. Generate migrations after docs revision work
 
