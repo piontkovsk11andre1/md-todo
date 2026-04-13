@@ -139,7 +139,28 @@ describeIfStartAvailable("start-project integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "specs"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "0001-initialize.md"))).toBe(true);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(workspace, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        directories?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
+      };
+    };
+    expect(config.workspace?.directories).toEqual({
+      design: "design",
+      specs: "specs",
+      migrations: "migrations",
+    });
   });
 
   it("fails when --design-dir is absolute", async () => {
@@ -232,6 +253,10 @@ describeIfStartAvailable("start-project integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(projectDir, "docs", "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "quality", "specs"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "changesets"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "changesets", "0001-initialize.md"))).toBe(true);
 
     const config = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
