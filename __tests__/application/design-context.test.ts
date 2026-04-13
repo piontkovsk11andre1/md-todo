@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  discoverDesignRevisionDirectories,
   prepareDesignRevisionDiffContext,
+  resolveDesignContext,
+  resolveDesignContextSourceReferences,
   saveDesignRevisionSnapshot,
 } from "../../src/application/design-context.ts";
 import type {
@@ -190,5 +193,78 @@ describe("design-context revision metadata and immutability", () => {
       metadataPath: expect.stringMatching(/(?:\\|\/)repo(?:\\|\/)docs(?:\\|\/)rev\.4\.meta\.json$/),
     });
     expect(diff.summary).toBe("Compared rev.2 -> rev.4: 0 added 1 modified 0 removed");
+  });
+});
+
+describe("design-context canonical workspace resolution", () => {
+  it("prefers design/current/Target.md over legacy docs/current/Design.md", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/docs": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/current": [{ name: "Design.md", isDirectory: false, isFile: true }],
+        "/repo/docs/rev.1": [{ name: "Design.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/current/Target.md": "canonical\n",
+        "/repo/design/rev.2/Target.md": "snapshot\n",
+        "/repo/docs/current/Design.md": "legacy\n",
+        "/repo/docs/rev.1/Design.md": "legacy snapshot\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/current": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.1": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const resolvedContext = resolveDesignContext(fileSystem, "/repo");
+    expect(resolvedContext.sourcePaths.map(normalizePath)).toEqual(["/repo/design/current/Target.md"]);
+    expect(resolvedContext.design).toBe("canonical");
+
+    const sourceReferences = resolveDesignContextSourceReferences(fileSystem, "/repo");
+    expect({
+      sourceReferences: sourceReferences.sourceReferences.map(normalizePath),
+      hasManagedDocs: sourceReferences.hasManagedDocs,
+    }).toEqual({
+      sourceReferences: ["/repo/design/current", "/repo/design/rev.2"],
+      hasManagedDocs: true,
+    });
+
+    const revisions = discoverDesignRevisionDirectories(fileSystem, "/repo");
+    expect(revisions.map((entry) => normalizePath(entry.absolutePath))).toEqual(["/repo/design/rev.2"]);
+  });
+
+  it("falls back to legacy docs/current/Design.md when canonical workspace is absent", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "current", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/current": [{ name: "Design.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/docs/current/Design.md": "legacy only\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/current": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const resolvedContext = resolveDesignContext(fileSystem, "/repo");
+    expect(resolvedContext.sourcePaths.map(normalizePath)).toEqual(["/repo/docs/current/Design.md"]);
+    expect(resolvedContext.design).toBe("legacy only");
   });
 });

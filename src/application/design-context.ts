@@ -84,40 +84,67 @@ interface DesignRevisionMetadataRecord {
 const REVISION_DIRECTORY_PATTERN = /^rev\.(\d+)$/i;
 const REVISION_METADATA_FILE_SUFFIX = ".meta.json";
 
-export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string): DesignContextResolution {
-  const docsCurrentDir = path.join(projectRoot, "docs", "current");
-  const hasManagedCurrentDraft = isDirectory(fileSystem, docsCurrentDir);
-  const docsCurrentFiles = collectDesignFiles(fileSystem, docsCurrentDir);
+const CANONICAL_WORKSPACE_DIR = "design";
+const LEGACY_WORKSPACE_DIR = "docs";
+const CANONICAL_PRIMARY_FILE = "Target.md";
+const LEGACY_PRIMARY_FILE = "Design.md";
 
-  if (docsCurrentFiles.length > 0) {
+export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string): DesignContextResolution {
+  const managedCurrentCandidates = getManagedCurrentWorkspaceCandidates(projectRoot);
+
+  for (const candidate of managedCurrentCandidates) {
+    const hasManagedCurrentDraft = isDirectory(fileSystem, candidate.currentDir);
+    const managedCurrentFiles = collectDesignFiles(fileSystem, candidate.currentDir);
+    if (managedCurrentFiles.length > 0) {
+      return {
+        design: formatDesignWorkspaceContext(
+          fileSystem,
+          candidate.currentDir,
+          managedCurrentFiles,
+          candidate.primaryFileName,
+        ),
+        sourcePaths: managedCurrentFiles,
+        isLowContext: false,
+        lowContextGuidance: "",
+      };
+    }
+
+    if (hasManagedCurrentDraft) {
+      return {
+        design: "",
+        sourcePaths: [candidate.currentDir],
+        isLowContext: true,
+        lowContextGuidance:
+          "Design draft is empty: "
+          + candidate.relativeCurrentDir
+          + "/ has no files. Add "
+          + candidate.relativeCurrentDir
+          + "/"
+          + candidate.primaryFileName
+          + " (and supporting docs) for richer migrate/test context.",
+      };
+    }
+  }
+
+  const canonicalRootPath = path.join(projectRoot, CANONICAL_PRIMARY_FILE);
+  if (isFile(fileSystem, canonicalRootPath)) {
     return {
-      design: formatDesignWorkspaceContext(fileSystem, docsCurrentDir, docsCurrentFiles),
-      sourcePaths: docsCurrentFiles,
+      design: fileSystem.readText(canonicalRootPath),
+      sourcePaths: [canonicalRootPath],
       isLowContext: false,
       lowContextGuidance: "",
     };
   }
 
-  if (hasManagedCurrentDraft) {
-    return {
-      design: "",
-      sourcePaths: [docsCurrentDir],
-      isLowContext: true,
-      lowContextGuidance:
-        "Design draft is empty: docs/current/ has no files. "
-        + "Add docs/current/Design.md (and supporting docs) for richer migrate/test context.",
-    };
-  }
-
-  const legacyDesignPath = path.join(projectRoot, "Design.md");
+  const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
   if (!isFile(fileSystem, legacyDesignPath)) {
     return {
       design: "",
       sourcePaths: [],
       isLowContext: true,
       lowContextGuidance:
-        "No design context found. Add docs/current/Design.md (preferred) "
-        + "or root Design.md (legacy fallback) for richer migrate/test context.",
+        "No design context found. Add design/current/Target.md (preferred), "
+        + "or fall back to docs/current/Design.md and root Design.md for legacy projects.",
     };
   }
 
@@ -133,12 +160,12 @@ export function resolveDesignContextSourceReferences(
   fileSystem: FileSystem,
   projectRoot: string,
 ): DesignContextSourceReferencesResolution {
-  const docsCurrentDir = path.join(projectRoot, "docs", "current");
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
   const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
   const sourceReferences: string[] = [];
 
-  if (isDirectory(fileSystem, docsCurrentDir)) {
-    sourceReferences.push(docsCurrentDir);
+  if (isDirectory(fileSystem, workspace.currentDir)) {
+    sourceReferences.push(workspace.currentDir);
   }
 
   for (const revision of revisions) {
@@ -152,7 +179,15 @@ export function resolveDesignContextSourceReferences(
     };
   }
 
-  const legacyDesignPath = path.join(projectRoot, "Design.md");
+  const canonicalRootPath = path.join(projectRoot, CANONICAL_PRIMARY_FILE);
+  if (isFile(fileSystem, canonicalRootPath)) {
+    return {
+      sourceReferences: [canonicalRootPath],
+      hasManagedDocs: false,
+    };
+  }
+
+  const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
   if (!isFile(fileSystem, legacyDesignPath)) {
     return {
       sourceReferences: [],
@@ -170,13 +205,13 @@ export function discoverDesignRevisionDirectories(
   fileSystem: FileSystem,
   projectRoot: string,
 ): DesignRevisionDirectory[] {
-  const docsDir = path.join(projectRoot, "docs");
-  if (!isDirectory(fileSystem, docsDir)) {
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
+  if (!isDirectory(fileSystem, workspace.rootDir)) {
     return [];
   }
 
   const revisions: DesignRevisionDirectory[] = [];
-  const entries = fileSystem.readdir(docsDir)
+  const entries = fileSystem.readdir(workspace.rootDir)
     .slice()
     .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
 
@@ -193,9 +228,9 @@ export function discoverDesignRevisionDirectories(
     revisions.push({
       index: parsed.index,
       name: entry.name,
-      absolutePath: path.join(docsDir, entry.name),
-      metadata: readDesignRevisionMetadata(fileSystem, docsDir, entry.name, parsed.index),
-      metadataPath: getDesignRevisionMetadataPath(docsDir, entry.name),
+      absolutePath: path.join(workspace.rootDir, entry.name),
+      metadata: readDesignRevisionMetadata(fileSystem, workspace.rootDir, entry.name, parsed.index),
+      metadataPath: getDesignRevisionMetadataPath(workspace.rootDir, entry.name),
     });
   }
 
@@ -235,14 +270,15 @@ export function saveDesignRevisionSnapshot(
     now?: Date;
   },
 ): SaveDesignRevisionSnapshotResult {
-  const docsDir = path.join(projectRoot, "docs");
-  const docsCurrentDir = path.join(docsDir, "current");
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
 
-  if (!isDirectory(fileSystem, docsCurrentDir)) {
+  if (!isDirectory(fileSystem, workspace.currentDir)) {
     throw new Error(
       "Design working directory is missing: "
-      + docsCurrentDir
-      + ". Create docs/current/ first (or run `rundown start ...`).",
+      + workspace.currentDir
+      + ". Create "
+      + workspace.relativeCurrentDir
+      + "/ first (or run `rundown start ...`).",
     );
   }
 
@@ -255,25 +291,27 @@ export function saveDesignRevisionSnapshot(
   }
 
   const latestRevision = revisions.length > 0 ? revisions[revisions.length - 1] : null;
-  if (latestRevision && directoryTreesAreEqual(fileSystem, docsCurrentDir, latestRevision.absolutePath)) {
+  if (latestRevision && directoryTreesAreEqual(fileSystem, workspace.currentDir, latestRevision.absolutePath)) {
     return {
       kind: "unchanged",
-      sourcePath: docsCurrentDir,
+      sourcePath: workspace.currentDir,
       latestRevision,
     };
   }
 
   const revisionName = `rev.${nextIndex}`;
-  const revisionDir = path.join(docsDir, revisionName);
+  const revisionDir = path.join(workspace.rootDir, revisionName);
   if (fileSystem.exists(revisionDir)) {
     throw new Error(
       "Cannot save design revision: target snapshot already exists and revisions are immutable ("
       + revisionDir
-      + "). Resolve the conflicting docs/rev.* entry before retrying.",
+      + "). Resolve the conflicting "
+      + workspace.relativeRootDir
+      + "/rev.* entry before retrying.",
     );
   }
 
-  const metadataPath = getDesignRevisionMetadataPath(docsDir, revisionName);
+  const metadataPath = getDesignRevisionMetadataPath(workspace.rootDir, revisionName);
   if (fileSystem.exists(metadataPath)) {
     throw new Error(
       "Cannot save design revision: metadata sidecar already exists for immutable snapshot "
@@ -285,20 +323,20 @@ export function saveDesignRevisionSnapshot(
   }
 
   fileSystem.mkdir(revisionDir, { recursive: true });
-  const copiedFileCount = copyDirectoryContents(fileSystem, docsCurrentDir, revisionDir);
+  const copiedFileCount = copyDirectoryContents(fileSystem, workspace.currentDir, revisionDir);
   const metadata = createDesignRevisionMetadata(revisionName, nextIndex, options);
   fileSystem.writeText(metadataPath, JSON.stringify(metadata, null, 2) + "\n");
 
   return {
     kind: "saved",
     revision: {
-      index: nextIndex,
-      name: revisionName,
-      absolutePath: revisionDir,
-      sourcePath: docsCurrentDir,
-      copiedFileCount,
-      metadata: toTemplateRevisionMetadata(metadata),
-      metadataPath,
+        index: nextIndex,
+        name: revisionName,
+        absolutePath: revisionDir,
+        sourcePath: workspace.currentDir,
+        copiedFileCount,
+        metadata: toTemplateRevisionMetadata(metadata),
+        metadataPath,
     },
   };
 }
@@ -310,11 +348,10 @@ export function prepareDesignRevisionDiffContext(
     target?: "current" | string | number;
   },
 ): DesignRevisionDiffContext {
-  const docsDir = path.join(projectRoot, "docs");
-  const docsCurrentDir = path.join(docsDir, "current");
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
   const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
 
-  const target = resolveDesignDiffTarget(fileSystem, docsCurrentDir, revisions, options?.target);
+  const target = resolveDesignDiffTarget(fileSystem, workspace, revisions, options?.target);
   const sourceReferences = [target.absolutePath];
 
   if (!isDirectory(fileSystem, target.absolutePath)) {
@@ -395,7 +432,10 @@ function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): stri
 
 function resolveDesignDiffTarget(
   fileSystem: FileSystem,
-  docsCurrentDir: string,
+  workspace: {
+    rootDir: string;
+    currentDir: string;
+  },
   revisions: DesignRevisionDirectory[],
   target: "current" | string | number | undefined,
 ): {
@@ -407,16 +447,15 @@ function resolveDesignDiffTarget(
   revisionIndex?: number;
 } {
   if (target === undefined || target === "current") {
-    const docsDir = path.dirname(docsCurrentDir);
     return {
       kind: "current",
       name: "current",
-      absolutePath: docsCurrentDir,
+      absolutePath: workspace.currentDir,
       metadata: {
         createdAt: "",
         label: "",
       },
-      metadataPath: getDesignRevisionMetadataPath(docsDir, "current"),
+      metadataPath: getDesignRevisionMetadataPath(workspace.rootDir, "current"),
     };
   }
 
@@ -466,30 +505,28 @@ function resolveDesignDiffTarget(
       }
     }
 
-    const docsDir = path.dirname(docsCurrentDir);
     return {
       kind: "revision",
       name: trimmedTarget,
-      absolutePath: path.join(docsDir, trimmedTarget),
+      absolutePath: path.join(workspace.rootDir, trimmedTarget),
       metadata: {
         createdAt: "",
         label: "",
       },
-      metadataPath: getDesignRevisionMetadataPath(docsDir, trimmedTarget),
+      metadataPath: getDesignRevisionMetadataPath(workspace.rootDir, trimmedTarget),
       revisionIndex: parsedTarget?.index,
     };
   }
 
-  const docsDir = path.dirname(docsCurrentDir);
   return {
     kind: "current",
     name: "current",
-    absolutePath: docsCurrentDir,
+    absolutePath: workspace.currentDir,
     metadata: {
       createdAt: "",
       label: "",
     },
-    metadataPath: getDesignRevisionMetadataPath(docsDir, "current"),
+    metadataPath: getDesignRevisionMetadataPath(workspace.rootDir, "current"),
   };
 }
 
@@ -742,8 +779,13 @@ function formatDesignDiffSummary(
   ].join(" ");
 }
 
-function formatDesignWorkspaceContext(fileSystem: FileSystem, docsCurrentDir: string, filePaths: string[]): string {
-  const primaryDesignPath = findPrimaryDesignPath(filePaths);
+function formatDesignWorkspaceContext(
+  fileSystem: FileSystem,
+  docsCurrentDir: string,
+  filePaths: string[],
+  primaryFileName: string,
+): string {
+  const primaryDesignPath = findPrimaryDesignPath(filePaths, primaryFileName);
   const orderedPaths = primaryDesignPath
     ? [primaryDesignPath, ...filePaths.filter((candidate) => candidate !== primaryDesignPath)]
     : filePaths;
@@ -882,9 +924,15 @@ function collectDirectoryTreeEntries(
   return collected.sort((left, right) => left.relativePath.localeCompare(right.relativePath, undefined, { sensitivity: "base" }));
 }
 
-function findPrimaryDesignPath(filePaths: string[]): string | null {
+function findPrimaryDesignPath(filePaths: string[], primaryFileName: string): string | null {
   for (const filePath of filePaths) {
-    if (path.basename(filePath).toLowerCase() === "design.md") {
+    if (path.basename(filePath).toLowerCase() === primaryFileName.toLowerCase()) {
+      return filePath;
+    }
+  }
+
+  for (const filePath of filePaths) {
+    if (path.basename(filePath).toLowerCase() === LEGACY_PRIMARY_FILE.toLowerCase()) {
       return filePath;
     }
   }
@@ -900,4 +948,57 @@ function isDirectory(fileSystem: FileSystem, absolutePath: string): boolean {
 function isFile(fileSystem: FileSystem, absolutePath: string): boolean {
   const stat = fileSystem.stat(absolutePath);
   return stat?.isFile === true;
+}
+
+function getManagedCurrentWorkspaceCandidates(projectRoot: string): Array<{
+  currentDir: string;
+  relativeCurrentDir: string;
+  primaryFileName: string;
+}> {
+  return [
+    {
+      currentDir: path.join(projectRoot, CANONICAL_WORKSPACE_DIR, "current"),
+      relativeCurrentDir: CANONICAL_WORKSPACE_DIR + "/current",
+      primaryFileName: CANONICAL_PRIMARY_FILE,
+    },
+    {
+      currentDir: path.join(projectRoot, LEGACY_WORKSPACE_DIR, "current"),
+      relativeCurrentDir: LEGACY_WORKSPACE_DIR + "/current",
+      primaryFileName: LEGACY_PRIMARY_FILE,
+    },
+  ];
+}
+
+function resolveDesignWorkspaceForRevisions(fileSystem: FileSystem, projectRoot: string): {
+  rootDir: string;
+  currentDir: string;
+  relativeRootDir: string;
+  relativeCurrentDir: string;
+} {
+  const canonicalRootDir = path.join(projectRoot, CANONICAL_WORKSPACE_DIR);
+  if (isDirectory(fileSystem, canonicalRootDir)) {
+    return {
+      rootDir: canonicalRootDir,
+      currentDir: path.join(canonicalRootDir, "current"),
+      relativeRootDir: CANONICAL_WORKSPACE_DIR,
+      relativeCurrentDir: CANONICAL_WORKSPACE_DIR + "/current",
+    };
+  }
+
+  const legacyRootDir = path.join(projectRoot, LEGACY_WORKSPACE_DIR);
+  if (isDirectory(fileSystem, legacyRootDir)) {
+    return {
+      rootDir: legacyRootDir,
+      currentDir: path.join(legacyRootDir, "current"),
+      relativeRootDir: LEGACY_WORKSPACE_DIR,
+      relativeCurrentDir: LEGACY_WORKSPACE_DIR + "/current",
+    };
+  }
+
+  return {
+    rootDir: canonicalRootDir,
+    currentDir: path.join(canonicalRootDir, "current"),
+    relativeRootDir: CANONICAL_WORKSPACE_DIR,
+    relativeCurrentDir: CANONICAL_WORKSPACE_DIR + "/current",
+  };
 }
