@@ -50,8 +50,8 @@ export function createStartProject(
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
     }
 
-    const docsCurrentDir = dependencies.pathOperations.join(targetDirectory, "docs", "current");
-    const designPath = dependencies.pathOperations.join(docsCurrentDir, "Design.md");
+    const designCurrentDir = dependencies.pathOperations.join(targetDirectory, "design", "current");
+    const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
     const migrationsDir = dependencies.pathOperations.join(targetDirectory, "migrations");
     const specsDir = dependencies.pathOperations.join(targetDirectory, "specs");
@@ -84,9 +84,9 @@ export function createStartProject(
       emit,
     );
 
-    if (!dependencies.fileSystem.exists(docsCurrentDir)) {
-      dependencies.fileSystem.mkdir(docsCurrentDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + docsCurrentDir + "/" });
+    if (!dependencies.fileSystem.exists(designCurrentDir)) {
+      dependencies.fileSystem.mkdir(designCurrentDir, { recursive: true });
+      emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
     }
 
     writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);

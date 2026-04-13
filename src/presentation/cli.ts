@@ -286,8 +286,8 @@ program
 
 program
   .command("start")
-  .description("Scaffold a new prediction project with a docs/current/ design workspace.")
-  .argument("<description>", "Seed description for docs/current/Design.md")
+  .description("Scaffold a new prediction project with a design/current/ design workspace.")
+  .argument("<description>", "Seed description for design/current/Target.md")
   .option("--dir <path>", "Target project directory (default: current working directory)")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
@@ -311,7 +311,7 @@ program
     [
       "",
       "Design docs workflow:",
-      "  - Active draft edits live in docs/current/ (default primary file: docs/current/Design.md)",
+      "  - Active draft edits live in design/current/ (default primary file: design/current/Target.md)",
       "  - Historical snapshots are stored under docs/rev.N/ as immutable revisions",
       "  - Legacy root Design.md remains supported as a compatibility fallback",
     ].join("\n"),
