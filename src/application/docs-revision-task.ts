@@ -7,11 +7,14 @@ import {
   prepareDesignRevisionDiffContext,
   saveDesignRevisionSnapshot,
 } from "./design-context.js";
+import {
+  resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePath,
+} from "./prediction-workspace-paths.js";
 
 type DocsRevisionAction = "publish" | "diff";
 type DocsRevisionDiffTarget = "current" | "preview";
 
-const CANONICAL_WORKSPACE_DIR = "design";
 const LEGACY_WORKSPACE_DIR = "docs";
 const CANONICAL_PRIMARY_FILE = "Target.md";
 const LEGACY_PRIMARY_FILE = "Design.md";
@@ -41,7 +44,17 @@ export function createDocsRevisionTask(
 
     const invocationDir = process.cwd();
     const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
-    const migrationsDir = path.resolve(workspaceRoot, options.dir ?? "migrations");
+    const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
+    const migrationsDir = resolvePredictionWorkspacePath({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      bucket: "migrations",
+      overrideDir: options.dir,
+      directories: workspaceDirectories,
+    });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       emit({ kind: "error", message: "Migrations directory does not exist: " + migrationsDir });
@@ -52,6 +65,7 @@ export function createDocsRevisionTask(
     const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
       dependencies.fileSystem,
       projectRoot,
+      workspaceDirectories.design,
       emit,
     );
     if (!workspaceReady.ok) {
@@ -170,9 +184,10 @@ function emitDesignRevisionDiffPreview(input: {
 function ensureManagedDesignWorkspaceForRevisionCommands(
   fileSystem: FileSystem,
   projectRoot: string,
+  designWorkspaceDir: string,
   emit: ApplicationOutputPort["emit"],
 ): { ok: true } | { ok: false; message: string } {
-  const canonicalCurrentDir = path.join(projectRoot, CANONICAL_WORKSPACE_DIR, "current");
+  const canonicalCurrentDir = path.join(projectRoot, designWorkspaceDir, "current");
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     return { ok: true };
   }
@@ -182,13 +197,13 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
     return { ok: true };
   }
 
-  const canonicalRootDir = path.join(projectRoot, CANONICAL_WORKSPACE_DIR);
+  const canonicalRootDir = path.join(projectRoot, designWorkspaceDir);
   const legacyRootDir = path.join(projectRoot, LEGACY_WORKSPACE_DIR);
   const bootstrapTarget = isDirectory(fileSystem, canonicalRootDir)
     ? {
       currentDir: canonicalCurrentDir,
       primaryFile: CANONICAL_PRIMARY_FILE,
-      label: CANONICAL_WORKSPACE_DIR + "/current/" + CANONICAL_PRIMARY_FILE,
+      label: designWorkspaceDir + "/current/" + CANONICAL_PRIMARY_FILE,
     }
     : isDirectory(fileSystem, legacyRootDir)
       ? {
@@ -199,7 +214,7 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
       : {
         currentDir: canonicalCurrentDir,
         primaryFile: CANONICAL_PRIMARY_FILE,
-        label: CANONICAL_WORKSPACE_DIR + "/current/" + CANONICAL_PRIMARY_FILE,
+        label: designWorkspaceDir + "/current/" + CANONICAL_PRIMARY_FILE,
       };
 
   const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
@@ -215,7 +230,7 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
       message:
         bootstrapTarget.currentDir === legacyCurrentDir
           ? "Bootstrapped docs/current/ from legacy Design.md to initialize revision workflow."
-          : "Bootstrapped design/current/Target.md from legacy Design.md to initialize revision workflow.",
+          : "Bootstrapped " + designWorkspaceDir + "/current/Target.md from legacy Design.md to initialize revision workflow.",
     });
     return { ok: true };
   }
@@ -225,7 +240,9 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
     message:
       "Design working directory is missing: "
       + canonicalCurrentDir
-      + ". Create design/current/Target.md (preferred), or use legacy docs/current/Design.md, before using revision commands.",
+      + ". Create "
+      + designWorkspaceDir
+      + "/current/Target.md (preferred), or use legacy docs/current/Design.md, before using revision commands.",
   };
 }
 

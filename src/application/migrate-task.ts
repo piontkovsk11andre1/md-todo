@@ -47,6 +47,10 @@ import {
   resolveDesignContext,
   resolveDesignContextSourceReferences,
 } from "./design-context.js";
+import {
+  resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePath,
+} from "./prediction-workspace-paths.js";
 
 type MigrateAction =
   | "up"
@@ -134,7 +138,17 @@ export function createMigrateTask(
   return async function migrateTask(options: MigrateTaskOptions): Promise<number> {
     const invocationDir = process.cwd();
     const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
-    const migrationsDir = path.resolve(workspaceRoot, options.dir ?? "migrations");
+    const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
+    const migrationsDir = resolvePredictionWorkspacePath({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      bucket: "migrations",
+      overrideDir: options.dir,
+      directories: workspaceDirectories,
+    });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       emit({ kind: "error", message: "Migrations directory does not exist: " + migrationsDir });

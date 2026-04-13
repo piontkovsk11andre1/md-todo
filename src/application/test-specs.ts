@@ -18,6 +18,10 @@ import type {
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { resolveDesignContext, resolveDesignContextSourceReferences } from "./design-context.js";
+import {
+  resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePath,
+} from "./prediction-workspace-paths.js";
 
 interface TestRunResult {
   ok: boolean;
@@ -58,7 +62,17 @@ export function createTestSpecs(
 
   return async function testSpecs(options: TestSpecsOptions): Promise<number> {
     const cwd = process.cwd();
-    const specsDir = path.resolve(cwd, options.dir ?? "specs");
+    const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: cwd,
+    });
+    const specsDir = resolvePredictionWorkspacePath({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: cwd,
+      bucket: "specs",
+      overrideDir: options.dir,
+      directories: workspaceDirectories,
+    });
 
     if (options.action === "new") {
       const assertion = (options.prompt ?? "").trim();
@@ -253,7 +267,16 @@ function stripBackticks(value: string): string {
 }
 
 function buildTestContext(fileSystem: FileSystem, projectRoot: string): TestContext {
-  const migrationsDir = path.join(projectRoot, "migrations");
+  const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+    fileSystem,
+    workspaceRoot: projectRoot,
+  });
+  const migrationsDir = resolvePredictionWorkspacePath({
+    fileSystem,
+    workspaceRoot: projectRoot,
+    bucket: "migrations",
+    directories: workspaceDirectories,
+  });
 
   const state = readMigrationState(fileSystem, migrationsDir);
   const latestSnapshot = getLatestSatellitePath(state, "snapshot");

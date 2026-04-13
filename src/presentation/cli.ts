@@ -332,7 +332,7 @@ const migrateCommand = program
     "Migration action: up | down [n] | snapshot | backlog | context | review | user-experience | user-session",
   )
   .argument("[count]", "Optional number of runs to undo for down")
-  .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--confirm", "Show generated content and confirm before writing files", false)
   .option("--run <id|latest>", "Choose artifact run id or 'latest' for down", "latest")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -363,7 +363,7 @@ const docsCommand = program
 docsCommand
   .command("publish")
   .description("Publish design/current/ into the next immutable design/rev.N/ snapshot.")
-  .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--label <text>", "Optional label to store in revision metadata")
   .allowUnknownOption(false)
   .action(withCliAction(createDocsPublishCommandAction({
@@ -374,7 +374,7 @@ docsCommand
   .command("diff")
   .description("Show revision diff summary for design/current/ against the latest revision.")
   .argument("[target]", "Diff target shorthand: current (default) | preview")
-  .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--from <rev|current>", "Explicit source revision selector (use with --to)")
   .option("--to <rev|current>", "Explicit destination revision selector (use with --from)")
   .allowUnknownOption(false)
@@ -397,7 +397,7 @@ program
   .description("Verify predicted-state specs and create new spec assertions.")
   .argument("[action]", "Test action: new")
   .argument("[prompt]", "Assertion text for `test new`")
-  .option("--dir <path>", "Specs directory (default: ./specs)", "./specs")
+  .option("--dir <path>", "Specs directory (default: configured workspace, fallback: ./specs)")
   .option("--run", "Immediately verify the created spec after `test new`", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")

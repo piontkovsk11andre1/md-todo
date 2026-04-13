@@ -24,6 +24,45 @@ const hasTestSpecsUseCase = fs.existsSync(TEST_SPECS_FILE_PATH);
 const describeIfTestSpecsAvailable = hasTestCommand && hasTestSpecsUseCase ? describe : describe.skip;
 
 describeIfTestSpecsAvailable("test-specs integration", () => {
+  it("rundown test uses configured workspace specs directory when --dir is omitted", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design-docs",
+            specs: "quality-specs",
+            migrations: "changesets",
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(workspace, ".rundown", "test-verify.md"), "{{assertion}}", "utf-8");
+
+    fs.mkdirSync(path.join(workspace, "quality-specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "quality-specs", "configured-dir.md"), "configured assertion", "utf-8");
+
+    const result = await runCli([
+      "test",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK');process.exit(0);",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS configured-dir.md");
+  });
+
   it("rundown test reports pass/fail summary and returns failure when any spec fails", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictedState(workspace);

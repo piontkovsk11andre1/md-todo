@@ -48,6 +48,43 @@ const describeIfUserSessionMigrateAvailable = hasMigrateCommand
 const describeIfDocsDiffAvailable = hasDocsTaskUseCase && hasDocsDiffCommand ? describe : describe.skip;
 
 describeIfMigrateAvailable("migrate-task integration", () => {
+  it("uses configured workspace migrations directory when --dir is omitted", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "migrate.md"), "{{design}}", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design-docs",
+            specs: "quality-specs",
+            migrations: "changesets",
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    fs.mkdirSync(path.join(workspace, "changesets"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", "0001--context.md"), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--",
+      "node",
+      "-e",
+      buildTemplateVarsAssertionWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "changesets", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(false);
+  });
+
   it("generates migrations from canonical design context and exposes design revision sources", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
@@ -889,6 +926,38 @@ describeIfMigrateAvailable("migrate revision-action removals", () => {
 });
 
 describeIfDocsDiffAvailable("docs diff integration", () => {
+  it("uses configured workspace migrations directory for docs commands when --dir is omitted", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design-docs",
+            specs: "quality-specs",
+            migrations: "changesets",
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    fs.mkdirSync(path.join(workspace, "changesets"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "design-docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design-docs", "current", "Target.md"), "# Design\n\nconfigured docs\n", "utf-8");
+
+    const result = await runCli([
+      "docs",
+      "publish",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design-docs", "rev.1", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "rev.1", "Target.md"))).toBe(false);
+  });
+
   it("resolves docs publish paths against linked workspace roots", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspace = path.join(sandbox, "source-workspace");
