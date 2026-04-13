@@ -61,7 +61,7 @@ export function createDocsRevisionTask(
       return EXIT_CODE_FAILURE;
     }
 
-    const projectRoot = path.dirname(migrationsDir);
+    const projectRoot = workspaceRoot;
     const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
       dependencies.fileSystem,
       projectRoot,

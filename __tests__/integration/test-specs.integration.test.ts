@@ -24,6 +24,63 @@ const hasTestSpecsUseCase = fs.existsSync(TEST_SPECS_FILE_PATH);
 const describeIfTestSpecsAvailable = hasTestCommand && hasTestSpecsUseCase ? describe : describe.skip;
 
 describeIfTestSpecsAvailable("test-specs integration", () => {
+  it("rundown test resolves linked workspace and configured specs directory", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(sandbox, "source-workspace");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+
+    fs.mkdirSync(path.join(sourceWorkspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(sourceWorkspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design-docs",
+            specs: "quality/specs",
+            migrations: "changesets",
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "test-verify.md"), "{{assertion}}", "utf-8");
+
+    fs.mkdirSync(path.join(sourceWorkspace, "changesets"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001--context.md"), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001--snapshot.md"), "# Snapshot\n", "utf-8");
+
+    fs.mkdirSync(path.join(sourceWorkspace, "quality", "specs"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspace, "quality", "specs", "linked.md"), "linked assertion", "utf-8");
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "test",
+      "--",
+      "node",
+      "-e",
+      "console.log('OK');process.exit(0);",
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS linked.md");
+  });
+
   it("rundown test uses configured workspace specs directory when --dir is omitted", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });

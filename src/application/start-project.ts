@@ -4,6 +4,7 @@ import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
 } from "../domain/exit-codes.js";
+import { DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES } from "./prediction-workspace-paths.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
   FileSystem,
@@ -302,9 +303,9 @@ function resolveAndValidateWorkspaceDirectories(input: {
 }): ValidatedWorkspaceDirectories {
   const { targetDirectory, designDirOption, specsDirOption, migrationsDirOption, pathOperations } = input;
   const defaults = {
-    designDir: "design",
-    specsDir: "specs",
-    migrationsDir: "migrations",
+    designDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.design,
+    specsDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.specs,
+    migrationsDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.migrations,
   };
 
   const designDir = normalizeWorkspaceDirectoryOverride(

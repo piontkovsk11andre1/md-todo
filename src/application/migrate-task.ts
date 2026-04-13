@@ -156,7 +156,7 @@ export function createMigrateTask(
     }
 
     const action = options.action;
-    const projectRoot = path.dirname(migrationsDir);
+    const projectRoot = workspaceRoot;
     const configDir = path.join(projectRoot, ".rundown");
     const loadedWorkerConfig = dependencies.fileSystem.exists(configDir)
       ? dependencies.workerConfigPort.load(configDir)
@@ -232,7 +232,7 @@ export function createMigrateTask(
         verbose: false,
       });
 
-      persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir);
+      persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
       return runExitCode;
     }
 
@@ -379,8 +379,8 @@ export function createMigrateTask(
   };
 }
 
-function persistPredictionBaselineSnapshot(fileSystem: FileSystem, migrationsDir: string): void {
-  const predictionInputs = readPredictionInputs(fileSystem, migrationsDir);
+function persistPredictionBaselineSnapshot(fileSystem: FileSystem, migrationsDir: string, projectRoot: string): void {
+  const predictionInputs = readPredictionInputs(fileSystem, migrationsDir, projectRoot);
   const baseline = createPredictionBaseline(predictionInputs);
   savePredictionBaseline(fileSystem, migrationsDir, baseline);
 }
@@ -395,7 +395,7 @@ async function reconcilePendingMigrationPredictions(input: {
 }): Promise<void> {
   const { dependencies, migrationsDir, workspaceRoot, slugWorkerPattern, artifactContext, showAgentOutput } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
-  const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir);
+  const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir, workspaceRoot);
   const baseline = loadPredictionBaseline(dependencies.fileSystem, migrationsDir);
 
   if (!baseline) {
@@ -465,11 +465,11 @@ async function reconcilePendingMigrationPredictions(input: {
     });
     applyPendingPredictionPatch(
       dependencies.fileSystem,
-      path.dirname(migrationsDir),
+      workspaceRoot,
       reconciled.patch.removeRelativePaths,
       reconciled.patch.writeFiles,
     );
-    persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir);
+    persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
   } catch (error) {
     emit({
       kind: "warn",
@@ -504,14 +504,12 @@ function applyPendingPredictionPatch(
   }
 }
 
-function readPredictionInputs(fileSystem: FileSystem, migrationsDir: string): PredictionInputs {
+function readPredictionInputs(fileSystem: FileSystem, migrationsDir: string, projectRoot: string): PredictionInputs {
   const migrationFiles = fileSystem.readdir(migrationsDir)
     .filter((entry) => entry.isFile)
     .map((entry) => path.join(migrationsDir, entry.name))
     .filter((filePath) => parseMigrationFilename(path.basename(filePath)) !== null);
   const state = parseMigrationDirectory(migrationFiles, migrationsDir);
-  const projectRoot = path.dirname(migrationsDir);
-
   const migrations = state.migrations.map((migration) => {
     const source = fileSystem.readText(migration.filePath);
     const tasks = parseTasks(source, migration.filePath);

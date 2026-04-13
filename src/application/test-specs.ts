@@ -18,6 +18,7 @@ import type {
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { resolveDesignContext, resolveDesignContextSourceReferences } from "./design-context.js";
+import { resolveWorkspaceLink } from "../domain/workspace-link.js";
 import {
   resolvePredictionWorkspaceDirectories,
   resolvePredictionWorkspacePath,
@@ -61,14 +62,15 @@ export function createTestSpecs(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function testSpecs(options: TestSpecsOptions): Promise<number> {
-    const cwd = process.cwd();
+    const invocationDir = process.cwd();
+    const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
     const workspaceDirectories = resolvePredictionWorkspaceDirectories({
       fileSystem: dependencies.fileSystem,
-      workspaceRoot: cwd,
+      workspaceRoot,
     });
     const specsDir = resolvePredictionWorkspacePath({
       fileSystem: dependencies.fileSystem,
-      workspaceRoot: cwd,
+      workspaceRoot,
       bucket: "specs",
       overrideDir: options.dir,
       directories: workspaceDirectories,
@@ -96,7 +98,7 @@ export function createTestSpecs(
       }
 
       return runSpecFiles([createdSpecPath], {
-        cwd,
+        cwd: workspaceRoot,
         workerPattern: options.workerPattern,
         showAgentOutput: options.showAgentOutput,
       });
@@ -122,7 +124,7 @@ export function createTestSpecs(
     }
 
     return runSpecFiles(specFiles, {
-      cwd,
+      cwd: workspaceRoot,
       workerPattern: options.workerPattern,
       showAgentOutput: options.showAgentOutput,
     });
@@ -202,6 +204,18 @@ export function createTestSpecs(
 
     return failed > 0 ? EXIT_CODE_FAILURE : EXIT_CODE_SUCCESS;
   }
+}
+
+function resolveWorkspaceRootFromCurrentDir(fileSystem: FileSystem, currentDir: string): string {
+  const resolution = resolveWorkspaceLink({
+    currentDir,
+    fileSystem,
+    pathOperations: path,
+  });
+
+  return resolution.status === "resolved"
+    ? resolution.workspaceRoot
+    : path.resolve(currentDir);
 }
 
 function slugifySpecName(value: string): string {
