@@ -414,6 +414,12 @@ Planned scope model:
 - `--scope local` (default for writes): repository config at `<config-dir>/config.json`.
 - `--scope global`: user-level defaults shared across rundown workspaces.
 
+Planned global config path conventions:
+
+- Linux: `$XDG_CONFIG_HOME/rundown/config.json` (fallback `~/.config/rundown/config.json`)
+- macOS: `~/Library/Application Support/rundown/config.json` (discovery also checks XDG and `~/.config`)
+- Windows: `%APPDATA%\rundown\config.json` (discovery also checks `%LOCALAPPDATA%`, `%USERPROFILE%\AppData\Roaming`, then `~/.config`)
+
 Examples:
 
 ```bash

@@ -929,6 +929,18 @@ Scope model:
 - `global`: user-level defaults file (cross-workspace baseline).
 - `effective`: merged read view (`built-in defaults -> global -> local -> CLI overrides`).
 
+Global path conventions:
+
+- Linux: `$XDG_CONFIG_HOME/rundown/config.json` (fallback: `~/.config/rundown/config.json`)
+- macOS: `~/Library/Application Support/rundown/config.json` (discovery also checks `$XDG_CONFIG_HOME/rundown/config.json` then `~/.config/rundown/config.json`)
+- Windows: `%APPDATA%\rundown\config.json` (discovery also checks `%LOCALAPPDATA%\rundown\config.json`, `%USERPROFILE%\AppData\Roaming\rundown\config.json`, then `~/.config/rundown/config.json`)
+
+Discovery behavior:
+
+- `config path --scope global` prints the canonical path for the current platform.
+- Global/effective reads use deterministic ordered discovery and load the first existing file.
+- If no global file exists, global scope is treated as empty.
+
 Scope defaults:
 
 - read operations (`get`, `list`): `effective`

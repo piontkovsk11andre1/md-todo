@@ -200,6 +200,26 @@ Planned scope selection:
 - `--scope local`: `<config-dir>/config.json`.
 - `--scope global`: user-level defaults shared across rundown workspaces.
 
+Planned global config path strategy (canonical write target + discovery fallbacks):
+
+- Linux:
+  - canonical: `$XDG_CONFIG_HOME/rundown/config.json`
+  - fallback when `XDG_CONFIG_HOME` is unset: `~/.config/rundown/config.json`
+- macOS:
+  - canonical: `~/Library/Application Support/rundown/config.json`
+  - discovery fallback order: `$XDG_CONFIG_HOME/rundown/config.json` -> `~/.config/rundown/config.json`
+- Windows:
+  - canonical: `%APPDATA%\rundown\config.json`
+  - discovery fallback order: `%LOCALAPPDATA%\rundown\config.json` -> `%USERPROFILE%\AppData\Roaming\rundown\config.json` -> `~/.config/rundown/config.json`
+
+Discovery rules:
+
+- `config path --scope global` reports the canonical path for the current platform.
+- Read operations for global/effective scope probe canonical first, then fallbacks in deterministic order.
+- The first existing file in that ordered list is loaded.
+- If no global file exists, global scope is treated as empty (backward compatible behavior).
+- Invalid global config fails fast with a path-specific parse/validation error; local config is not modified.
+
 Planned defaults and constraints:
 
 - Read commands (`get`, `list`) default to `effective`.
