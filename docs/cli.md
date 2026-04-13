@@ -1,4 +1,4 @@
-# CLI
+﻿# CLI
 
 ## Global option
 
@@ -13,10 +13,10 @@ Examples:
 ```bash
 # Monorepo: run from a package, but keep shared rundown config at repo root
 cd packages/api
-rundown --config-dir ../../.rundown run TODO.md -- opencode run
+rundown --config-dir ../../.rundown run TODO.md
 
 # CI: use a workspace-mounted config outside the repo checkout
-rundown --config-dir /workspace/rundown-config run docs/todos.md --worker "opencode run --file $file $bootstrap"
+rundown --config-dir /workspace/rundown-config run docs/todos.md
 ```
 
 ## Help mode (no args)
@@ -188,24 +188,24 @@ Agent stdout/stderr is hidden by default. Use `--show-agent-output` to display w
 Examples:
 
 ```bash
-rundown run roadmap.md -- opencode run
-rundown run docs/ -- opencode run
-rundown run "notes/**/*.md" -- opencode run
-rundown run roadmap.md --all -- opencode run
-rundown run roadmap.md --redo -- opencode run
-rundown run roadmap.md --reset-after -- opencode run
-rundown run roadmap.md --clean -- opencode run
-rundown all roadmap.md -- opencode run
-rundown run tasks.md --show-agent-output --worker "opencode run --file $file $bootstrap"
+rundown run roadmap.md
+rundown run docs/
+rundown run "notes/**/*.md"
+rundown run roadmap.md --all
+rundown run roadmap.md --redo
+rundown run roadmap.md --reset-after
+rundown run roadmap.md --clean
+rundown all roadmap.md
+rundown run tasks.md --show-agent-output
 ```
 
 PowerShell-safe form:
 
 ```powershell
-rundown run docs/ --worker "opencode run --file $file $bootstrap"
-rundown run docs/ --all --worker "opencode run --file $file $bootstrap"
-rundown all docs/ --worker "opencode run --file $file $bootstrap"
-rundown run docs/ --show-agent-output --worker "opencode run --file $file $bootstrap"
+rundown run docs/
+rundown run docs/ --all
+rundown all docs/
+rundown run docs/ --show-agent-output
 ```
 
 Agent output notes (`run --show-agent-output`):
@@ -259,13 +259,13 @@ Examples:
 
 ```bash
 # Continuous processing with 10-second cooldown
-rundown loop roadmap.md --cooldown 10 -- opencode run
+rundown loop roadmap.md --cooldown 10
 
 # Exactly 3 iterations with 5-second cooldown
-rundown loop docs/ --cooldown 5 --iterations 3 -- opencode run
+rundown loop docs/ --cooldown 5 --iterations 3
 
 # Keep looping even if an iteration fails
-rundown loop "tasks/**/*.md" --cooldown 30 --continue-on-error --worker "opencode run --file $file $bootstrap"
+rundown loop "tasks/**/*.md" --cooldown 30 --continue-on-error
 ```
 
 ### `rundown discuss <source>`
@@ -306,11 +306,11 @@ Options:
 Examples:
 
 ```bash
-rundown discuss roadmap.md -- opencode
-rundown discuss docs/ --worker "opencode"
-rundown discuss tasks.md --mode wait --worker "opencode run --file $file $bootstrap"
-rundown discuss roadmap.md --print-prompt --worker "opencode run --file $file $bootstrap"
-rundown discuss roadmap.md --dry-run --worker "opencode --prompt=$bootstrap"
+rundown discuss roadmap.md
+rundown discuss docs/
+rundown discuss tasks.md --mode wait
+rundown discuss roadmap.md --print-prompt
+rundown discuss roadmap.md --dry-run
 ```
 
 ### `rundown reverify`
@@ -347,16 +347,16 @@ Note: `--print-prompt` is only supported for single-run reverify. Combining it w
 Examples:
 
 ```bash
-rundown reverify -- opencode run
-rundown reverify --all -- opencode run
-rundown reverify --last 3 -- opencode run
-rundown reverify --last 3 --oldest-first -- opencode run
-rundown reverify --run latest -- opencode run
-rundown reverify --run run-20260319T222645632Z-04e84d73 --repair-attempts 2 -- opencode run
-rundown reverify --run latest --no-repair --worker "opencode run --file $file $bootstrap"
-rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair -- opencode run
-rundown reverify --print-prompt --worker "opencode run --file $file $bootstrap"
-rundown reverify --dry-run --worker "claude -p $bootstrap"
+rundown reverify
+rundown reverify --all
+rundown reverify --last 3
+rundown reverify --last 3 --oldest-first
+rundown reverify --run latest
+rundown reverify --run run-20260319T222645632Z-04e84d73 --repair-attempts 2
+rundown reverify --run latest --no-repair
+rundown reverify --run run-20260319T222645632Z-04e84d73 --no-repair
+rundown reverify --print-prompt
+rundown reverify --dry-run
 ```
 
 ### `rundown revert`
@@ -413,12 +413,12 @@ Operational notes:
 Examples:
 
 ```bash
-rundown revert -- opencode run
-rundown revert --run latest -- opencode run
-rundown revert --run run-20260319T222645632Z-04e84d73 -- opencode run
-rundown revert --last 3 --method revert -- opencode run
-rundown revert --all --dry-run --worker "opencode run --file $file $bootstrap"
-rundown revert --last 2 --method reset -- opencode run
+rundown revert
+rundown revert --run latest
+rundown revert --run run-20260319T222645632Z-04e84d73
+rundown revert --last 3 --method revert
+rundown revert --all --dry-run
+rundown revert --last 2 --method reset
 ```
 
 ### `rundown undo`
@@ -479,8 +479,8 @@ Run document-level TODO synthesis on a single Markdown document using the planne
 For thin specs, run `research` first so `plan` has richer context:
 
 ```bash
-rundown research docs/spec.md -- opencode run
-rundown plan docs/spec.md --scan-count 3 -- opencode run
+rundown research docs/spec.md
+rundown plan docs/spec.md --scan-count 3
 ```
 
 `plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
@@ -548,25 +548,25 @@ Examples:
 
 ```bash
 # Basic plan run
-rundown plan roadmap.md --scan-count 3 -- opencode run
+rundown plan roadmap.md --scan-count 3
 
 # No TODOs yet: bootstrap actionable TODOs, then converge
-rundown plan docs/spec.md --scan-count 3 -- opencode run
+rundown plan docs/spec.md --scan-count 3
 
 # Existing TODOs: append missing implementation items only
-rundown plan docs/migration.md --scan-count 2 -- opencode run
+rundown plan docs/migration.md --scan-count 2
 
 # Add one nested layer of child TODOs after top-level scans
-rundown plan docs/spec.md --scan-count 3 --deep 1 -- opencode run
+rundown plan docs/spec.md --scan-count 3 --deep 1
 
 # Add two nested layers (children, then grandchildren)
-rundown plan docs/spec.md --scan-count 3 --deep 2 -- opencode run
+rundown plan docs/spec.md --scan-count 3 --deep 2
 
 # PowerShell-safe worker form
-rundown plan docs/spec.md --scan-count 2 --worker "opencode run --file $file $bootstrap"
+rundown plan docs/spec.md --scan-count 2
 
 # PowerShell-safe deep planning
-rundown plan docs/spec.md --scan-count 2 --deep 2 --worker "claude -p $bootstrap"
+rundown plan docs/spec.md --scan-count 2 --deep 2
 ```
 
 ### `rundown explore <markdown-file>`
@@ -588,7 +588,7 @@ rundown explore <markdown-file> [options] --worker <pattern>
 Usage example:
 
 ```bash
-rundown explore docs/spec.md -- opencode run
+rundown explore docs/spec.md
 ```
 
 Execution is sequential and fail-fast:
@@ -635,13 +635,13 @@ Examples:
 
 ```bash
 # One-step enrichment for an existing document: research -> plan
-rundown explore docs/spec.md -- opencode run
+rundown explore docs/spec.md
 
 # Include nested TODO generation in the plan phase
-rundown explore docs/spec.md --scan-count 3 --deep 1 -- opencode run
+rundown explore docs/spec.md --scan-count 3 --deep 1
 
 # PowerShell-safe worker form
-rundown explore docs/spec.md --worker "opencode run --file $file $bootstrap"
+rundown explore docs/spec.md
 ```
 
 ### `rundown make <seed-text> <markdown-file>`
@@ -703,13 +703,13 @@ Examples:
 
 ```bash
 # One-step authoring bootstrap: create -> research -> plan
-rundown make "please do something" "8. Do something.md" -- opencode run
+rundown make "please do something" "8. Do something.md"
 
 # Use .markdown extension
-rundown make "Draft migration plan" "docs/migration.markdown" --worker "opencode run --file $file $bootstrap"
+rundown make "Draft migration plan" "docs/migration.markdown"
 
 # Preview prompts without running workers
-rundown make "Release prep" "docs/release-prep.md" --print-prompt --worker "opencode --prompt=$bootstrap"
+rundown make "Release prep" "docs/release-prep.md" --print-prompt
 ```
 
 ### `rundown unlock <source>`
@@ -759,7 +759,7 @@ rundown list roadmap.md --all
 Example hierarchical output:
 
 ```text
-TODO.md:1 [#0] Release prep (blocked — has unchecked subtasks)
+TODO.md:1 [#0] Release prep (blocked â€” has unchecked subtasks)
   TODO.md:2 - Confirm target branch
   TODO.md:3 [#1] Rewrite README opening
     TODO.md:4 [#2] Capture before/after screenshots
@@ -1063,18 +1063,18 @@ With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and e
 
 ### Verification and repair
 
-- `--no-verify` — skip verification
-- `--only-verify` — verify without executing first
+- `--no-verify` â€” skip verification
+- `--only-verify` â€” verify without executing first
 - verify-only task text auto-skips execute phase (for example `verify: ...`, `confirm: ...`, `check: ...`)
 - fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`), even when global `--verify` is enabled
-- `--force-execute` — override verify-only auto-skip and run execute phase anyway
-- `force: <task>` — wrap a task in an outer retry loop that reruns the full iteration on retryable failure
-- `force: <attempts>, <task>` — same as above with per-task retry limit override
-- `--force-attempts <n>` — default outer retry attempts for `force:` tasks when count is omitted
+- `--force-execute` â€” override verify-only auto-skip and run execute phase anyway
+- `force: <task>` â€” wrap a task in an outer retry loop that reruns the full iteration on retryable failure
+- `force: <attempts>, <task>` â€” same as above with per-task retry limit override
+- `--force-attempts <n>` â€” default outer retry attempts for `force:` tasks when count is omitted
 - `--force-execute` and `force:` are independent: `--force-execute` decides whether verify-only text still runs execution, while `force:` decides whether a failed iteration is retried
 - `force:` is a no-op in `--mode detached`: detached task dispatch returns immediate success (`continueLoop: false`, `exitCode: 0`), so outer retries never trigger
-- `--repair-attempts <n>` — retry repair up to `n` times
-- `--no-repair` — disable repair explicitly
+- `--repair-attempts <n>` â€” retry repair up to `n` times
+- `--no-repair` â€” disable repair explicitly
 
 When verification fails, rundown surfaces the failure reason in user-visible output at each stage:
 
@@ -1086,16 +1086,16 @@ If the worker does not provide details, rundown prints fallback reasons (for exa
 
 ### Execution mode
 
-- `--mode wait` — start the worker and wait
-- `--mode tui` — start an interactive terminal session and continue after exit
-- `--mode detached` — start the worker without waiting
+- `--mode wait` â€” start the worker and wait
+- `--mode tui` â€” start an interactive terminal session and continue after exit
+- `--mode detached` â€” start the worker without waiting
 
 ### Worker patterns and prompt delivery
 
 Rundown always writes the rendered task prompt to a runtime file and supports worker pattern placeholders:
 
-- `$file` — replaced with the prompt file path on disk
-- `$bootstrap` — replaced with a short instruction telling the worker to read the prompt file
+- `$file` â€” replaced with the prompt file path on disk
+- `$bootstrap` â€” replaced with a short instruction telling the worker to read the prompt file
 
 If neither `$file` nor `$bootstrap` appears in the worker pattern, rundown appends `$file` as the final argument (backward-compatible default).
 
@@ -1105,13 +1105,13 @@ Examples:
 
 ```bash
 # Attach prompt file and provide a bootstrap message for the worker
-rundown run roadmap.md --worker "opencode run --file $file $bootstrap"
+rundown run roadmap.md
 
 # Worker receives bootstrap text as its prompt flag
-rundown run roadmap.md --worker "claude -p $bootstrap"
+rundown run roadmap.md
 
 # No placeholder used -> rundown appends $file automatically
-rundown run roadmap.md --worker "my-agent"
+rundown run roadmap.md
 ```
 
 ### `rundown research <markdown-file>`
@@ -1165,19 +1165,19 @@ Examples:
 
 ```bash
 # Enrich a thin spec before planning
-rundown research docs/spec.md -- opencode run
+rundown research docs/spec.md
 
 # Inspect research prompt only
-rundown research docs/spec.md --print-prompt --worker "opencode run --file $file $bootstrap"
+rundown research docs/spec.md --print-prompt
 
 # Dry-run with explicit vars
-rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42 --worker "claude -p $bootstrap"
+rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42
 ```
 
 ### Command-output block expansion
 
-- `--ignore-cli-block` — skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
-- `--cli-block-timeout <ms>` — per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
+- `--ignore-cli-block` â€” skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
+- `--cli-block-timeout <ms>` â€” per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
 
 These options apply to `run`, `discuss`, `plan`, `explore`, `make`, `reverify`, and `research`.
 
@@ -1192,9 +1192,9 @@ During fenced `cli` block execution, variables loaded from `--var` and `--vars-f
 
 ### Variables
 
-- `--var key=value` — inject a template variable
-- `--vars-file path/to/file.json` — load template variables from JSON
-- `--vars-file` — load `<config-dir>/vars.json`
+- `--var key=value` â€” inject a template variable
+- `--vars-file path/to/file.json` â€” load template variables from JSON
+- `--vars-file` â€” load `<config-dir>/vars.json`
 
 Direct `--var` entries override values loaded from `--vars-file`.
 
@@ -1206,16 +1206,16 @@ Variable environment export behavior:
 
 ### Artifacts
 
-- `--keep-artifacts` — keep the run folder under `<config-dir>/runs/`
+- `--keep-artifacts` â€” keep the run folder under `<config-dir>/runs/`
 
 ### Planning
 
-- `--scan-count <n>` — set max clean-session plan scans for `plan` (positive integer)
-- `--deep <n>` — add nested child-generation passes after top-level scans (non-negative integer)
+- `--scan-count <n>` â€” set max clean-session plan scans for `plan` (positive integer)
+- `--deep <n>` â€” add nested child-generation passes after top-level scans (non-negative integer)
 
 ### Listing
 
-- `--all` — include checked and unchecked tasks in `list` output
+- `--all` â€” include checked and unchecked tasks in `list` output
 
 ### Git and hooks
 
@@ -1247,13 +1247,13 @@ When `--commit` and `--reset-after` are combined, rundown applies post-run reset
 Examples:
 
 ```bash
-rundown run docs/todos/phase-3.md --commit -- opencode run
-rundown run docs/todos/phase-3.md --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}" -- opencode run
-rundown run docs/todos/phase-3.md --all --commit --commit-mode file-done -- opencode run
-rundown run docs/todos/phase-3.md --on-complete "git push" -- opencode run
-rundown run docs/todos/phase-3.md --commit --on-complete "npm run release:notes" -- opencode run
-rundown run docs/todos/phase-3.md --on-fail "node scripts/notify-failure.js" -- opencode run
-rundown run docs/todos/phase-3.md --all --commit --on-fail "node scripts/alert.js" -- opencode run
+rundown run docs/todos/phase-3.md --commit
+rundown run docs/todos/phase-3.md --commit --commit-message "rundown: complete \"{{task}}\" in {{file}}"
+rundown run docs/todos/phase-3.md --all --commit --commit-mode file-done
+rundown run docs/todos/phase-3.md --on-complete "git push"
+rundown run docs/todos/phase-3.md --commit --on-complete "npm run release:notes"
+rundown run docs/todos/phase-3.md --on-fail "node scripts/notify-failure.js"
+rundown run docs/todos/phase-3.md --all --commit --on-fail "node scripts/alert.js"
 ```
 
 `--commit` stages and commits current worktree changes (excluding transient `.rundown/runs` artifacts), with a structured message tied to the completed task context:
@@ -1286,8 +1286,8 @@ For `run`, source-file locks remain held for the full task lifecycle, including 
 
 `--all` (or `all <source>`) processes tasks sequentially. After each successful task, the next unchecked task is selected and run. The loop stops when:
 
-- All tasks are complete — exits `0`.
-- A task fails execution or verification — exits `1` or `2`.
+- All tasks are complete â€” exits `0`.
+- A task fails execution or verification â€” exits `1` or `2`.
 
 `--on-complete` fires after each successful task. `--on-fail` fires once on the task that caused the loop to stop.
 
@@ -1301,7 +1301,7 @@ For `run`, source-file locks remain held for the full task lifecycle, including 
 Example:
 
 ```bash
-rundown run roadmap.md --all --commit --commit-mode file-done --on-fail "node scripts/alert.js" -- opencode run
+rundown run roadmap.md --all --commit --commit-mode file-done --on-fail "node scripts/alert.js"
 ```
 
 ### Checkbox reset flags
@@ -1319,19 +1319,19 @@ Examples:
 
 ```bash
 # Re-run from the top of every checked task in the resolved source set
-rundown run docs/todos.md --redo --worker "opencode run --file $file $bootstrap"
+rundown run docs/todos.md --redo
 
 # Run tasks, then always leave files unchecked
-rundown run "docs/**/*.md" --all --reset-after --worker "opencode run --file $file $bootstrap"
+rundown run "docs/**/*.md" --all --reset-after
 
 # Canonical reusable runbook flow: clean before and after
-rundown run runbook.md --clean --worker "opencode run --file $file $bootstrap"
+rundown run runbook.md --clean
 ```
 
 ### Inspection and dry runs
 
-- `--dry-run` — select the task and render the prompt, then print what command would run and exit without executing, verifying, repairing, or editing Markdown files.
-- `--print-prompt` — print the fully rendered prompt and exit without executing the worker.
+- `--dry-run` â€” select the task and render the prompt, then print what command would run and exit without executing, verifying, repairing, or editing Markdown files.
+- `--print-prompt` â€” print the fully rendered prompt and exit without executing the worker.
 
 Behavior notes:
 
@@ -1354,19 +1354,19 @@ Behavior notes:
 Examples:
 
 ```bash
-rundown run roadmap.md --dry-run -- opencode run
-rundown run roadmap.md --print-prompt -- opencode run
-rundown run roadmap.md --only-verify --dry-run -- opencode run
-rundown run roadmap.md --only-verify --print-prompt -- opencode run
-rundown plan roadmap.md --dry-run -- opencode run
-rundown plan roadmap.md --print-prompt -- opencode run
+rundown run roadmap.md --dry-run
+rundown run roadmap.md --print-prompt
+rundown run roadmap.md --only-verify --dry-run
+rundown run roadmap.md --only-verify --print-prompt
+rundown plan roadmap.md --dry-run
+rundown plan roadmap.md --print-prompt
 ```
 
 ## Inline CLI tasks
 
 If the selected task begins with `cli:`, `rundown` executes it directly instead of sending it to the external worker.
 
-The command runs from the directory containing the Markdown file, not the current working directory. This makes inline CLI tasks portable — they behave the same regardless of where `rundown` is invoked from.
+The command runs from the directory containing the Markdown file, not the current working directory. This makes inline CLI tasks portable â€” they behave the same regardless of where `rundown` is invoked from.
 
 Inline `cli:` commands also receive template variables in their process environment as `RUNDOWN_VAR_<UPPERCASE_KEY>` (from both `--var` and `--vars-file`).
 
@@ -1409,7 +1409,7 @@ Examples:
 ```md
 - [ ] rundown: docs/child.md
 - [ ] rundown: docs/child.md --no-verify --repair-attempts 0
-- [ ] rundown: docs/child.md --worker "opencode --prompt=$bootstrap"
+- [ ] rundown: docs/child.md
 ```
 
 Forwarded flags:
@@ -1435,7 +1435,7 @@ Prefer `--worker` because it avoids argument splitting issues around `--`.
 Example:
 
 ```powershell
-rundown run docs/ --worker "opencode run --file $file $bootstrap"
+rundown run docs/
 ```
 
 ### Large prompts on Windows
@@ -1443,7 +1443,7 @@ rundown run docs/ --worker "opencode run --file $file $bootstrap"
 Use a `$file` worker pattern for robust prompt delivery:
 
 ```powershell
-rundown run docs/ --worker "opencode run --file $file $bootstrap"
+rundown run docs/
 ```
 
 ## Practical default for OpenCode
@@ -1457,16 +1457,16 @@ A clean setup is:
 Examples:
 
 ```bash
-rundown run roadmap.md -- opencode run
-rundown run roadmap.md --mode tui -- opencode
+rundown run roadmap.md
+rundown run roadmap.md --mode tui
 ```
 
 ## Exit codes
 
-- `0` — command completed successfully
-- `1` — execution error
-- `2` — validation failed (stderr includes the surfaced verification failure reason)
-- `3` — no actionable target
+- `0` â€” command completed successfully
+- `1` â€” execution error
+- `2` â€” validation failed (stderr includes the surfaced verification failure reason)
+- `3` â€” no actionable target
 
 `rundown unlock` follows the same contract:
 
