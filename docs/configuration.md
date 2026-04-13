@@ -182,6 +182,43 @@ Notes:
 - Referencing an unknown profile name is an error.
 - If no worker is resolved from CLI or config, worker-required commands fail with guidance to configure `.rundown/config.json`.
 
+## Config command surface (planned)
+
+`rundown config` is the planned CLI surface for inspect/update operations without manual JSON edits.
+
+Planned subcommands:
+
+- `rundown config get <key>`
+- `rundown config list`
+- `rundown config set <key> <value>`
+- `rundown config unset <key>`
+- `rundown config path`
+
+Planned scope selection:
+
+- `--scope effective` (default for reads): merged, read-only view.
+- `--scope local`: `<config-dir>/config.json`.
+- `--scope global`: user-level defaults shared across rundown workspaces.
+
+Planned defaults and constraints:
+
+- Read commands (`get`, `list`) default to `effective`.
+- Write commands (`set`, `unset`) default to `local`.
+- `effective` rejects writes (`set`/`unset`).
+- `--show-source` on effective reads includes value attribution where practical.
+
+Planned examples:
+
+```bash
+rundown config get defaults.worker
+rundown config get defaults.worker --scope local
+rundown config set defaults.worker '["opencode","run"]' --type json --scope local
+rundown config set defaults.workerArgs '["--model","gpt-5.3-codex"]' --type json --scope global
+rundown config unset commands.plan.worker --scope local
+rundown config list --scope effective --show-source --json
+rundown config path --scope global
+```
+
 ## Worker and workerArgs merging
 
 `worker` and `workerArgs` are merged across layers.

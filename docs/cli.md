@@ -919,6 +919,85 @@ Example:
 rundown init
 ```
 
+### `rundown config` (planned command surface)
+
+Manage rundown configuration without editing JSON files manually.
+
+Scope model:
+
+- `local`: project config file at `<config-dir>/config.json`.
+- `global`: user-level defaults file (cross-workspace baseline).
+- `effective`: merged read view (`built-in defaults -> global -> local -> CLI overrides`).
+
+Scope defaults:
+
+- read operations (`get`, `list`): `effective`
+- write operations (`set`, `unset`): `local`
+
+`effective` is read-only.
+
+Synopsis:
+
+```bash
+rundown config get <key> [options]
+rundown config list [options]
+rundown config set <key> <value> [options]
+rundown config unset <key> [options]
+rundown config path [options]
+```
+
+Subcommands:
+
+| Subcommand | Description |
+|---|---|
+| `get <key>` | Read one config value by dotted path (for example `defaults.worker`). |
+| `list` | Print all keys/values for a scope. |
+| `set <key> <value>` | Set a value at key path in writable scope (`local` or `global`). |
+| `unset <key>` | Remove a key from writable scope (`local` or `global`). |
+| `path` | Print resolved config file path for a scope. |
+
+Common options:
+
+| Option | Description | Applies to |
+|---|---|---|
+| `--scope <effective|local|global>` | Select config scope. | all subcommands |
+| `--json` | Emit JSON output (stable machine format). | `get`, `list` |
+| `--show-source` | Include source attribution for `effective` reads (`built-in`, `global`, `local`, `flag`). | `get`, `list` |
+| `--type <auto|string|number|boolean|json>` | Parse mode for `<value>`. | `set` |
+
+Behavior notes:
+
+- `set`/`unset` fail fast when `--scope effective` is requested.
+- `set --type auto` parses JSON literals (`true`, `42`, `{"k":1}`, `[...]`) and falls back to string.
+- `set --type json` requires `<value>` to be valid JSON.
+- `get` exits non-zero when key is missing in selected scope.
+- `list --scope effective --show-source` includes per-key attribution where practical.
+
+Examples:
+
+```bash
+# Read merged value (global + local + defaults)
+rundown config get defaults.worker
+
+# Inspect local-only override
+rundown config get defaults.worker --scope local
+
+# Set project-local default worker
+rundown config set defaults.worker '["opencode","run"]' --type json --scope local
+
+# Set user-level global default model args
+rundown config set defaults.workerArgs '["--model","gpt-5.3-codex"]' --type json --scope global
+
+# Remove a local command override so global/default can apply
+rundown config unset commands.plan.worker --scope local
+
+# List merged config with attribution
+rundown config list --scope effective --show-source --json
+
+# Show where global config is stored on this machine
+rundown config path --scope global
+```
+
 ## Worker command forms
 
 `rundown` separates the source to scan from the worker command that performs the task.

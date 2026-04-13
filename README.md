@@ -396,6 +396,36 @@ Useful capabilities that stay out of the way until you need them:
 - trigger hooks on success or failure
 - inspect or clean execution records with `rundown artifacts`
 
+## Planned `config` command surface
+
+Rundown is adding a first-class config command so you can inspect/update config without hand-editing JSON.
+
+Planned subcommands:
+
+- `rundown config get <key>`
+- `rundown config list`
+- `rundown config set <key> <value>`
+- `rundown config unset <key>`
+- `rundown config path`
+
+Planned scope model:
+
+- `--scope effective` (default for reads): merged view (`built-in -> global -> local -> CLI`), read-only.
+- `--scope local` (default for writes): repository config at `<config-dir>/config.json`.
+- `--scope global`: user-level defaults shared across rundown workspaces.
+
+Examples:
+
+```bash
+rundown config get defaults.worker
+rundown config get defaults.worker --scope local
+rundown config set defaults.worker '["opencode","run"]' --type json --scope local
+rundown config set defaults.workerArgs '["--model","gpt-5.3-codex"]' --type json --scope global
+rundown config unset commands.plan.worker --scope local
+rundown config list --scope effective --show-source --json
+rundown config path --scope global
+```
+
 ## A Better Default For AI Work
 
 There is a lot of power in modern models.
