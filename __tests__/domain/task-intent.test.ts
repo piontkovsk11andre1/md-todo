@@ -242,18 +242,18 @@ describe("classifyTaskIntent", () => {
     expect(decision.reason).toBe("default");
   });
 
-  it("classifies end: prefix as tool-expansion via built-in tool resolver", () => {
-    const decision = classifyTaskIntent("end: no more output to process", builtinToolResolver);
+  it("classifies optional: prefix as tool-expansion via built-in tool resolver", () => {
+    const decision = classifyTaskIntent("optional: no more output to process", builtinToolResolver);
     expect(decision.intent).toBe("tool-expansion");
-    expect(decision.toolName).toBe("end");
+    expect(decision.toolName).toBe("optional");
     expect(decision.toolPayload).toBe("no more output to process");
     expect(decision.normalizedTaskText).toBe("no more output to process");
     expect(decision.hasEmptyPayload).toBe(false);
   });
 
-  it("classifies end control-flow prefixes through generic tool resolution", () => {
+  it("classifies optional/skip control-flow prefixes and legacy aliases through generic tool resolution", () => {
     const toolResolver: ToolResolverPort = {
-      resolve: (toolName) => ["end", "return", "skip", "quit", "break"].includes(toolName)
+      resolve: (toolName) => ["optional", "skip", "end", "return", "quit", "break"].includes(toolName)
         ? {
           name: toolName,
           kind: "handler",
@@ -261,21 +261,25 @@ describe("classifyTaskIntent", () => {
           template: "{{payload}}",
         }
         : undefined,
-      listKnownToolNames: () => ["end", "return", "skip", "quit", "break"],
+      listKnownToolNames: () => ["optional", "skip", "end", "return", "quit", "break"],
     };
 
-    const canonicalEnd = classifyTaskIntent("end: no more output to process", toolResolver);
-    expect(canonicalEnd.intent).toBe("tool-expansion");
-    expect(canonicalEnd.toolName).toBe("end");
-    expect(canonicalEnd.toolPayload).toBe("no more output to process");
+    const canonicalOptional = classifyTaskIntent("optional: no more output to process", toolResolver);
+    expect(canonicalOptional.intent).toBe("tool-expansion");
+    expect(canonicalOptional.toolName).toBe("optional");
+    expect(canonicalOptional.toolPayload).toBe("no more output to process");
+
+    const preferredAliasSkip = classifyTaskIntent("skip: branch already satisfied", toolResolver);
+    expect(preferredAliasSkip.intent).toBe("tool-expansion");
+    expect(preferredAliasSkip.toolName).toBe("skip");
 
     const aliasReturn = classifyTaskIntent("return: stop sibling execution", toolResolver);
     expect(aliasReturn.intent).toBe("tool-expansion");
     expect(aliasReturn.toolName).toBe("return");
 
-    const aliasSkip = classifyTaskIntent("skip: branch already satisfied", toolResolver);
-    expect(aliasSkip.intent).toBe("tool-expansion");
-    expect(aliasSkip.toolName).toBe("skip");
+    const aliasEnd = classifyTaskIntent("end: no more output to process", toolResolver);
+    expect(aliasEnd.intent).toBe("tool-expansion");
+    expect(aliasEnd.toolName).toBe("end");
 
     const aliasQuit = classifyTaskIntent("quit: condition reached", toolResolver);
     expect(aliasQuit.intent).toBe("tool-expansion");
