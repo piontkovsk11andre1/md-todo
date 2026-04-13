@@ -1048,6 +1048,60 @@ export function createMigrateCommandAction({
 }
 
 /**
+ * Creates the `docs publish` command action handler.
+ *
+ * The returned action reuses the revision snapshot flow currently implemented by
+ * the migrate use case and forwards docs-specific options.
+ */
+export function createDocsPublishCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+}: WorkerActionDependencies): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    return resolveMigrateCommandHandler(getApp())({
+      action: "save",
+      dir: normalizeOptionalString(opts.dir),
+      label: normalizeOptionalString(opts.label),
+      confirm: false,
+      workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
+      keepArtifacts: false,
+      showAgentOutput: false,
+    });
+  };
+}
+
+/**
+ * Creates the `docs diff` command action handler.
+ *
+ * The returned action maps docs diff selectors and shorthand target form to the
+ * current revision diff behavior while preserving deterministic defaults.
+ */
+export function createDocsDiffCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+}: WorkerActionDependencies): (target: string | undefined, opts: CliOpts) => CliActionResult {
+  return (target: string | undefined, opts: CliOpts) => {
+    const from = normalizeOptionalString(opts.from);
+    const to = normalizeOptionalString(opts.to);
+    const normalizedTarget = normalizeOptionalString(target);
+
+    if (from !== undefined || to !== undefined) {
+      throw new Error("`docs diff` selector flags are not available in this build yet. Use `rundown docs diff` or `rundown docs diff preview`.");
+    }
+
+    const migrateAction = resolveDocsDiffMigrateAction(normalizedTarget);
+    return resolveMigrateCommandHandler(getApp())({
+      action: migrateAction,
+      dir: normalizeOptionalString(opts.dir),
+      confirm: false,
+      workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
+      keepArtifacts: false,
+      showAgentOutput: false,
+    });
+  };
+}
+
+/**
  * Creates the `test` command action handler.
  *
  * The returned action validates `test` action routing and forwards the request
@@ -1802,4 +1856,16 @@ function isMigrateAction(value: string): value is MigrateAction {
 
 function isTestAction(value: string): value is TestAction {
   return value === "new";
+}
+
+function resolveDocsDiffMigrateAction(target: string | undefined): "diff" | "preview" {
+  if (target === undefined || target === "current") {
+    return "diff";
+  }
+
+  if (target === "preview") {
+    return "preview";
+  }
+
+  throw new Error("Invalid docs diff target: " + target + ". Allowed: current, preview.");
 }

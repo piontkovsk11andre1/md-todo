@@ -101,15 +101,12 @@ Actions:
 - omitted: generate next migration
 - `up`: execute migration tasks (`run-all` style)
 - `down [n]`: alias of `rundown undo [--last n]`
-- `save`: snapshot `docs/current/` into the next `docs/rev.N/` directory
 - `snapshot`: generate `NNNN--snapshot.md`
 - `backlog`: generate `NNNN--backlog.md`
 - `context`: (re)generate `NNNN--context.md`
 - `review`: generate `NNNN--review.md`
 - `user-experience`: generate `NNNN--user-experience.md`
 - `user-session`: interactive migration discussion session
-
-`save` no-change behavior: when `docs/current/` is byte-for-byte unchanged from the latest revision directory, no new `docs/rev.N/` directory is created and the command reports a no-op.
 
 Options:
 
@@ -118,6 +115,54 @@ Options:
 | `--dir <path>` | Migration directory to operate on. | `./migrations` |
 | `--confirm` | Print generated content and ask before each write. Non-TTY uses default yes. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
+
+### `rundown docs`
+
+Manage design-doc revision lifecycle separately from migration execution.
+
+Use `docs` commands for revision snapshots and revision diffs; use `migrate` commands for migration proposal generation, execution, and satellites.
+
+#### `rundown docs publish`
+
+Publish `docs/current/` into the next immutable `docs/rev.N/` snapshot.
+
+No-change behavior is preserved: when `docs/current/` is byte-for-byte unchanged from the latest revision directory, no new `docs/rev.N/` directory is created and the command reports a no-op.
+
+Synopsis:
+
+```bash
+rundown docs publish [options]
+```
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--dir <path>` | Migration directory to operate on (used to resolve project root). | `./migrations` |
+| `--label <text>` | Optional label stored in revision sidecar metadata. | unset |
+
+#### `rundown docs diff [target]`
+
+Show revision diff context between the latest immutable revision and `docs/current/`.
+
+Current shorthand targets:
+
+- omitted / `current`: diff summary output
+- `preview`: diff summary + source reference listing
+
+Synopsis:
+
+```bash
+rundown docs diff [target] [options]
+```
+
+Options:
+
+| Option | Description | Default |
+|---|---|---|
+| `--dir <path>` | Migration directory to operate on (used to resolve project root). | `./migrations` |
+| `--from <rev|current>` | Reserved for explicit selector form. Not yet active in this build. | unset |
+| `--to <rev|current>` | Reserved for explicit selector form. Not yet active in this build. | unset |
 
 Migration file naming:
 

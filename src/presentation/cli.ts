@@ -35,6 +35,8 @@ import {
   createLoopCommandAction,
   createDiscussCommandAction,
   createDoCommandAction,
+  createDocsDiffCommandAction,
+  createDocsPublishCommandAction,
   createExploreCommandAction,
   createHelpCommandAction,
   createInitCommandAction,
@@ -347,6 +349,47 @@ migrateCommand.addHelpText(
     "  - Migration generation includes revision diff context from previous revision vs current draft",
   ].join("\n"),
 );
+
+const docsCommand = program
+  .command("docs")
+  .description("Manage design-doc revision lifecycle (publish and diff).")
+  .configureHelp({ showGlobalOptions: true });
+
+docsCommand
+  .command("publish")
+  .description("Publish docs/current/ into the next immutable docs/rev.N/ snapshot.")
+  .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")
+  .option("--label <text>", "Optional label to store in revision metadata")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDocsPublishCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+  })));
+
+docsCommand
+  .command("diff")
+  .description("Show revision diff summary for docs/current/ against the latest revision.")
+  .argument("[target]", "Diff target shorthand: current (default) | preview")
+  .option("--dir <path>", "Migrations directory (default: ./migrations)", "./migrations")
+  .option("--from <rev|current>", "Explicit source revision selector (reserved)")
+  .option("--to <rev|current>", "Explicit destination revision selector (reserved)")
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDocsDiffCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+  })))
+  .addHelpText(
+    "after",
+    [
+      "",
+      "Examples:",
+      "  - rundown docs diff",
+      "  - rundown docs diff preview",
+      "  - rundown docs publish --label \"Initial baseline\"",
+    ].join("\n"),
+  );
 
 program
   .command("test")
