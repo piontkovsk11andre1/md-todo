@@ -289,6 +289,9 @@ program
   .description("Scaffold a new prediction project with a design/current/Target.md workspace.")
   .argument("<description>", "Seed description for design/current/Target.md")
   .option("--dir <path>", "Target project directory (default: current working directory)")
+  .option("--design-dir <path>", "Design workspace directory (default: design)", "design")
+  .option("--specs-dir <path>", "Specs workspace directory (default: specs)", "specs")
+  .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)", "migrations")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
@@ -314,6 +317,10 @@ program
       "  - Active draft edits live in design/current/ (default primary file: design/current/Target.md)",
       "  - Historical snapshots are stored under design/rev.N/ as immutable revisions",
       "  - Legacy docs/current/Design.md and root Design.md remain supported as compatibility fallbacks",
+      "",
+      "Examples:",
+      "  - rundown start \"Ship auth flow\" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
+      "  - rundown start \"Ship auth flow\" --dir ./predict-auth --design-dir docs --specs-dir checks --migrations-dir changes -- opencode run",
     ].join("\n"),
   );
 

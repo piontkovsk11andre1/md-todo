@@ -1000,6 +1000,9 @@ export function createStartCommandAction({
     return getApp().startProject({
       description,
       dir: normalizeOptionalString(opts.dir),
+      designDir: normalizeOptionalString(opts.designDir),
+      specsDir: normalizeOptionalString(opts.specsDir),
+      migrationsDir: normalizeOptionalString(opts.migrationsDir),
     });
   };
 }

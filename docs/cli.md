@@ -70,8 +70,8 @@ Compatibility note: legacy `docs/current/Design.md` and root `Design.md` are sti
 Synopsis:
 
 ```bash
-rundown start "<description>" [--dir <path>] -- <command>
-rundown start "<description>" [--dir <path>] --worker <pattern>
+rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] -- <command>
+rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
 ```
 
 Options:
@@ -79,7 +79,17 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--dir <path>` | Target directory for scaffold output. | current working directory |
+| `--design-dir <path>` | Design workspace directory name/path for start scaffold. | `design` |
+| `--specs-dir <path>` | Specs workspace directory name/path for start scaffold. | `specs` |
+| `--migrations-dir <path>` | Migrations workspace directory name/path for start scaffold. | `migrations` |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
+
+Examples:
+
+```bash
+rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
+rundown start "Ship auth flow" --dir ./predict-auth --design-dir docs --specs-dir checks --migrations-dir changes -- opencode run
+```
 
 ### `rundown migrate [action]`
 

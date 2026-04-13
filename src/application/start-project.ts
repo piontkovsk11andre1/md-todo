@@ -15,6 +15,9 @@ import type {
 export interface StartProjectOptions {
   description?: string;
   dir?: string;
+  designDir?: string;
+  specsDir?: string;
+  migrationsDir?: string;
 }
 
 export interface StartProjectDependencies {

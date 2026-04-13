@@ -142,7 +142,7 @@ rundown plan roadmap.md --scan-count 3 -- opencode run
 rundown reverify -- opencode run
 rundown revert --dry-run --worker "opencode run --file $file"
 rundown revert --method reset --force --run latest
-rundown start "Ship a migration-driven auth flow" --dir ./predict-auth -- opencode run
+rundown start "Ship a migration-driven auth flow" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
 rundown migrate --dir ./predict-auth/migrations -- opencode run
 rundown migrate snapshot --dir ./predict-auth/migrations -- opencode run
 rundown test --dir ./predict-auth/specs -- opencode run

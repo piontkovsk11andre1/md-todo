@@ -15,6 +15,7 @@ import {
   createQueryCommandAction,
   createReverifyCommandAction,
   createRunCommandAction,
+  createStartCommandAction,
   createWorkerHealthCommandAction,
 } from "../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../src/presentation/cli-app-init.js";
@@ -598,5 +599,32 @@ describe("createDocsDiffCommandAction", () => {
       from: "rev.1",
       to: "rev.2",
     })).toThrow("Unsupported docs diff selector combination");
+  });
+});
+
+describe("createStartCommandAction", () => {
+  it("forwards directory override options to startProject", async () => {
+    const startProject = vi.fn(async () => 0);
+    const app = { startProject } as unknown as CliApp;
+    const action = createStartCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action("Ship auth flow", {
+      dir: "./predict-auth",
+      designDir: "design-docs",
+      specsDir: "assertions",
+      migrationsDir: "changes",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(startProject).toHaveBeenCalledTimes(1);
+    expect(startProject).toHaveBeenCalledWith({
+      description: "Ship auth flow",
+      dir: "./predict-auth",
+      designDir: "design-docs",
+      specsDir: "assertions",
+      migrationsDir: "changes",
+    });
   });
 });
