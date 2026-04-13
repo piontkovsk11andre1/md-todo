@@ -144,16 +144,16 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     expect(combinedOutput).toContain("Missing assertion text for `test new`.");
   });
 
-  it("rundown test resolves design from docs/current and ignores revision archives without root Design.md", async () => {
+  it("rundown test resolves design from design/current and ignores revision archives without root Design.md", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictedState(workspace, { template: "{{design}}" });
     fs.rmSync(path.join(workspace, "Design.md"), { force: true });
-    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n\nPrimary current design.\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "a-notes.md"), "Current notes A.\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "current", "z-notes.md"), "Current notes Z.\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "# Revision design\n\nArchived revision content.\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Current design\n\nPrimary current design.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "current", "a-notes.md"), "Current notes A.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "current", "z-notes.md"), "Current notes Z.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "rev.1", "Target.md"), "# Revision design\n\nArchived revision content.\n", "utf-8");
     fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "specs", "design-source.md"), "assert design source", "utf-8");
 
@@ -174,7 +174,7 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
         "const zIndex=prompt.indexOf('### z-notes.md');",
         "const ordered=aIndex>=0&&zIndex>=0&&aIndex<zIndex;",
         "if(hasCurrent&&!hasRevision&&ordered){console.log('OK');process.exit(0);}",
-        "console.log('NOT_OK: expected docs/current context in deterministic order without revision archive content');process.exit(0);",
+        "console.log('NOT_OK: expected design/current context in deterministic order without revision archive content');process.exit(0);",
       ].join(""),
     ], workspace);
 
@@ -208,9 +208,9 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
         "const p=process.argv[process.argv.length-1];",
         "const prompt=fs.readFileSync(p,'utf-8');",
         "const hasLegacy=prompt.includes('Legacy fallback design source.');",
-        "const hasManaged=prompt.includes('### docs/current/Design.md')||prompt.includes('docs/current');",
+        "const hasManaged=prompt.includes('### design/current/Target.md')||prompt.includes('design/current');",
         "if(hasLegacy&&!hasManaged){console.log('OK');process.exit(0);}",
-        "console.log('NOT_OK: expected root Design.md fallback without managed docs context');process.exit(0);",
+        "console.log('NOT_OK: expected root Design.md fallback without managed design context');process.exit(0);",
       ].join(""),
     ], workspace);
 
@@ -224,11 +224,11 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     expect(combinedOutput).toContain("PASS legacy-design-source.md");
   });
 
-  it("rundown test warns clearly when docs/current exists but draft is empty", async () => {
+  it("rundown test warns clearly when design/current exists but draft is empty", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictedState(workspace, { template: "{{assertion}}" });
     fs.rmSync(path.join(workspace, "Design.md"), { force: true });
-    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
     fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "specs", "empty-draft.md"), "assert empty draft guidance", "utf-8");
 
@@ -249,8 +249,50 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Design draft is empty: docs/current/ has no files.");
+    expect(combinedOutput).toContain("Design draft is empty: design/current/ has no files.");
     expect(combinedOutput).toContain("PASS empty-draft.md");
+  });
+
+  it("rundown test template receives canonical design source references and managed flag", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictedState(workspace, {
+      template: "HAS_MANAGED={{designContextHasManagedDocs}}\nSOURCES={{designContextSourceReferences}}\nSOURCES_JSON={{designContextSourceReferencesJson}}",
+    });
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Current design\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "rev.1", "Target.md"), "# Snapshot\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "specs", "design-sources.md"), "assert design source refs", "utf-8");
+
+    const result = await runCli([
+      "test",
+      "--dir",
+      "specs",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "const hasManaged=prompt.includes('HAS_MANAGED=true');",
+        "const hasCurrent=/design[\\\\/]current/.test(prompt);",
+        "const hasRevision=/design[\\\\/]rev\\.1/.test(prompt);",
+        "if(hasManaged&&hasCurrent&&hasRevision){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected canonical design source references in test prompt');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS design-sources.md");
   });
 });
 

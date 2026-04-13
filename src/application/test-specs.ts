@@ -17,7 +17,7 @@ import type {
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
-import { resolveDesignContext } from "./design-context.js";
+import { resolveDesignContext, resolveDesignContextSourceReferences } from "./design-context.js";
 
 interface TestRunResult {
   ok: boolean;
@@ -26,6 +26,9 @@ interface TestRunResult {
 
 interface TestContext {
   design: string;
+  designContextSourceReferences: string;
+  designContextSourceReferencesJson: string;
+  designContextHasManagedDocs: string;
   latestContext: string;
   latestSnapshot: string;
   migrationHistory: string;
@@ -142,6 +145,9 @@ export function createTestSpecs(
         source: assertion,
         assertion,
         design: testContext.design,
+        designContextSourceReferences: testContext.designContextSourceReferences,
+        designContextSourceReferencesJson: testContext.designContextSourceReferencesJson,
+        designContextHasManagedDocs: testContext.designContextHasManagedDocs,
         latestContext: testContext.latestContext,
         latestSnapshot: testContext.latestSnapshot,
         migrationHistory: testContext.migrationHistory,
@@ -252,9 +258,16 @@ function buildTestContext(fileSystem: FileSystem, projectRoot: string): TestCont
   const state = readMigrationState(fileSystem, migrationsDir);
   const latestSnapshot = getLatestSatellitePath(state, "snapshot");
   const designContext = resolveDesignContext(fileSystem, projectRoot);
+  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot);
+  const designContextSourceReferences = designContextSources.sourceReferences
+    .map((sourcePath) => "- " + sourcePath)
+    .join("\n");
 
   return {
     design: designContext.design,
+    designContextSourceReferences,
+    designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
+    designContextHasManagedDocs: designContextSources.hasManagedDocs ? "true" : "false",
     latestContext: state.latestContext ? fileSystem.readText(state.latestContext.filePath) : "",
     latestSnapshot: latestSnapshot ? fileSystem.readText(latestSnapshot) : "",
     migrationHistory: state.migrations.map((migration) => "- " + path.basename(migration.filePath)).join("\n"),

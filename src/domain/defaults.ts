@@ -1119,6 +1119,16 @@ ${DEFAULT_TEMPLATE_VARS_SECTION}
 
 {{source}}
 
+## Design context
+
+{{design}}
+
+### Design context sources
+
+- Managed docs layout detected: {{designContextHasManagedDocs}}
+
+{{designContextSourceReferences}}
+
 ## Phase
 
 Research and enrich the source document with implementation context.
@@ -1136,9 +1146,9 @@ Guidelines:
 - Add relevant technical context: existing code patterns, module boundaries,
   API surfaces, and conventions discovered via CLI blocks or project knowledge.
 - Treat managed design docs as first-class context when present:
-  - \`docs/current/**\`
-  - \`docs/rev.*/**\`
-  Do not assume all authoritative design context lives in one root \`Design.md\`.
+  - \`design/current/**\`
+  - \`design/rev.*/**\`
+  Fall back to legacy \`docs/current/**\`, \`docs/rev.*/**\`, and root \`Design.md\` only when canonical design paths are unavailable.
 - Surface design constraints, edge cases, and compatibility considerations.
 - Propose document structure: add section headings, acceptance criteria
   outlines, scope/out-of-scope boundaries, and integration notes.

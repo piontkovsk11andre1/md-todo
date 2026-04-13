@@ -48,6 +48,53 @@ const describeIfUserSessionMigrateAvailable = hasMigrateCommand
 const describeIfDocsDiffAvailable = hasDocsTaskUseCase && hasDocsDiffCommand ? describe : describe.skip;
 
 describeIfMigrateAvailable("migrate-task integration", () => {
+  it("generates migrations from canonical design context and exposes design revision sources", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Current design\n\nManaged canonical design source.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "current", "api.md"), "Canonical API details.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "rev.1", "Target.md"), "# Revision\n\nCanonical revision text.\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "migrate.md"),
+      [
+        "DESIGN={{design}}",
+        "HAS_MANAGED={{designContextHasManagedDocs}}",
+        "SOURCES={{designContextSourceReferences}}",
+        "DIFF={{revisionDiffSummary}}",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildTemplateVarsAssertionWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".template-vars-prompt.txt"), "utf-8");
+    expect(capturedPrompt).toContain("Managed canonical design source.");
+    expect(capturedPrompt).toContain("Canonical API details.");
+    expect(capturedPrompt).not.toContain("Canonical revision text.");
+    expect(capturedPrompt).toContain("HAS_MANAGED=true");
+    expect(capturedPrompt).toContain("SOURCES=- ");
+    expect(capturedPrompt).toMatch(/design[\\/]current/);
+    expect(capturedPrompt).toMatch(/design[\\/]rev\.1/);
+    expect(capturedPrompt).toContain("DIFF=Compared rev.1 -> current:");
+    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+  });
+
   it("generates migrations from managed docs context without requiring root Design.md", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });

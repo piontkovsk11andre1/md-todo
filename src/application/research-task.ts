@@ -27,6 +27,7 @@ import {
   mergeTemplateVarsWithWorkspaceContext,
   resolveRuntimeWorkspaceContext,
 } from "./runtime-workspace-context.js";
+import { resolveDesignContext, resolveDesignContextSourceReferences } from "./design-context.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import { formatSuccessFailureSummary, pluralize } from "./run-task-utils.js";
 import type {
@@ -147,6 +148,12 @@ export function createResearchTask(
       dependencies.pathOperations,
     );
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(runtimeWorkspaceContext);
+    const projectRoot = runtimeWorkspaceContext.workspaceDir;
+    const designContext = resolveDesignContext(dependencies.fileSystem, projectRoot);
+    const designContextSources = resolveDesignContextSourceReferences(dependencies.fileSystem, projectRoot);
+    const designContextSourceReferences = designContextSources.sourceReferences
+      .map((sourcePath) => "- " + sourcePath)
+      .join("\n");
     let researchSuccessCount = 0;
     let researchFailureCount = 0;
     let researchGroupStarted = false;
@@ -249,6 +256,10 @@ export function createResearchTask(
           taskIndex: 0,
           taskLine: 1,
           source: sourceDocument,
+          design: designContext.design,
+          designContextSourceReferences,
+          designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
+          designContextHasManagedDocs: designContextSources.hasManagedDocs ? "true" : "false",
         };
         const renderedPrompt = renderTemplate(templates.research, vars);
         const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
@@ -453,6 +464,10 @@ export function createResearchTask(
           taskIndex: 0,
           taskLine: 1,
           source: sourceDocument,
+          design: designContext.design,
+          designContextSourceReferences,
+          designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
+          designContextHasManagedDocs: designContextSources.hasManagedDocs ? "true" : "false",
         };
         const renderedPrompt = renderTemplate(templates.research, vars);
         const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
