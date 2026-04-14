@@ -296,7 +296,7 @@ For this repository's own work tracking, treat \`migrations/\` as the canonical 
 - Do not manually toggle checkboxes in migration files as a completion shortcut; completion should follow successful rundown execute/verify flow.
 - Keep migration edits scoped to the selected task. Avoid rewriting unrelated checklist items, renumbering files, or reformatting migration history unless explicitly requested.
 - Treat \`migrations/.rundown/\` memory files and run metadata as managed artifacts: read them when relevant, but do not invent replacement structures.
-- Distinguish repository migration-task files from prediction-mode migration naming (\`0007-...\` and \`0007--snapshot.md\`) used by \`rundown start\`/\`rundown migrate\` project scaffolds.
+- Distinguish repository migration-task files from prediction-mode migration naming (for example \`7. Add Feature.md\` and \`7.1 Snapshot.md\`) used by \`rundown start\`/\`rundown migrate\` project scaffolds.
 
 ## Repository docs
 
@@ -568,7 +568,7 @@ Return exactly this format:
    - Risks: <main tradeoff>
 
 Rules:
-- Names must be kebab-case and suitable for \`NNNN-name.md\`.
+- Names must be kebab-case; rundown will format the final migration filename automatically.
 - Keep each alternative independent and actionable.
 - Rank by expected value for the project right now.
 `;

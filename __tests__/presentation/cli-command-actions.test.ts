@@ -610,7 +610,31 @@ describe("createMigrateCommandAction", () => {
 });
 
 describe("createDesignReleaseCommandAction", () => {
-  it("routes design release to docsTask release action", async () => {
+  it("routes design release to designTask release action", async () => {
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
+    const action = createDesignReleaseCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(designTask).toHaveBeenCalledTimes(1);
+    expect(designTask).toHaveBeenCalledWith({
+      action: "release",
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+    });
+  });
+
+  it("falls back to docsTask release action when designTask is unavailable", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
     const action = createDesignReleaseCommandAction({
@@ -621,7 +645,6 @@ describe("createDesignReleaseCommandAction", () => {
       dir: "migrations",
       workspace: "../workspace-source",
       label: "Initial baseline",
-      worker: "opencode run --model gpt-5.3-codex",
     });
 
     expect(exitCode).toBe(0);
@@ -636,10 +659,10 @@ describe("createDesignReleaseCommandAction", () => {
 });
 
 describe("createDocsReleaseCommandAction", () => {
-  it("routes docs release to docsTask release action with deprecation warning", async () => {
-    const docsTask = vi.fn(async () => 0);
+  it("routes docs release to designTask release action with deprecation warning", async () => {
+    const designTask = vi.fn(async () => 0);
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const app = { docsTask, emitOutput } as unknown as CliApp;
+    const app = { designTask, emitOutput } as unknown as CliApp;
     const action = createDocsReleaseCommandAction({
       getApp: () => app,
     });
@@ -656,8 +679,8 @@ describe("createDocsReleaseCommandAction", () => {
       kind: "warn",
       message: "`rundown docs release` is deprecated; use `rundown design release`.",
     }));
-    expect(docsTask).toHaveBeenCalledTimes(1);
-    expect(docsTask).toHaveBeenCalledWith({
+    expect(designTask).toHaveBeenCalledTimes(1);
+    expect(designTask).toHaveBeenCalledWith({
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
@@ -667,10 +690,10 @@ describe("createDocsReleaseCommandAction", () => {
 });
 
 describe("createDocsPublishCommandAction", () => {
-  it("routes docs publish to docsTask release action for compatibility", async () => {
-    const docsTask = vi.fn(async () => 0);
+  it("routes docs publish to designTask release action for compatibility", async () => {
+    const designTask = vi.fn(async () => 0);
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const app = { docsTask, emitOutput } as unknown as CliApp;
+    const app = { designTask, emitOutput } as unknown as CliApp;
     const action = createDocsPublishCommandAction({
       getApp: () => app,
     });
@@ -683,12 +706,12 @@ describe("createDocsPublishCommandAction", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(docsTask).toHaveBeenCalledTimes(1);
+    expect(designTask).toHaveBeenCalledTimes(1);
     expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
       kind: "warn",
       message: "`rundown docs publish` is deprecated; use `rundown design release`.",
     }));
-    expect(docsTask).toHaveBeenCalledWith({
+    expect(designTask).toHaveBeenCalledWith({
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
@@ -706,8 +729,8 @@ describe("createDocsSaveCommandAction", () => {
 
 describe("createDesignDiffCommandAction", () => {
   it("routes shorthand defaults and preview target to design diff action", async () => {
-    const docsTask = vi.fn(async () => 0);
-    const app = { docsTask } as unknown as CliApp;
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
     const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
@@ -723,13 +746,13 @@ describe("createDesignDiffCommandAction", () => {
 
     expect(defaultExitCode).toBe(0);
     expect(previewExitCode).toBe(0);
-    expect(docsTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
+    expect(designTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
       action: "diff",
       target: "current",
       dir: "migrations",
       workspace: "../workspace-source",
     }));
-    expect(docsTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    expect(designTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
       action: "diff",
       target: "preview",
       dir: "migrations",
@@ -738,8 +761,8 @@ describe("createDesignDiffCommandAction", () => {
   });
 
   it("accepts explicit --from/--to selectors with deterministic current target", async () => {
-    const docsTask = vi.fn(async () => 0);
-    const app = { docsTask } as unknown as CliApp;
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
     const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
@@ -751,7 +774,7 @@ describe("createDesignDiffCommandAction", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(docsTask).toHaveBeenCalledWith(expect.objectContaining({
+    expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
       action: "diff",
       target: "current",
       dir: "migrations",
@@ -759,8 +782,8 @@ describe("createDesignDiffCommandAction", () => {
   });
 
   it("rejects invalid selector combinations and values", async () => {
-    const docsTask = vi.fn(async () => 0);
-    const app = { docsTask } as unknown as CliApp;
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
     const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
@@ -787,10 +810,10 @@ describe("createDesignDiffCommandAction", () => {
 });
 
 describe("createDocsDiffCommandAction", () => {
-  it("routes docs diff to docsTask diff action with deprecation warning", async () => {
-    const docsTask = vi.fn(async () => 0);
+  it("routes docs diff to designTask diff action with deprecation warning", async () => {
+    const designTask = vi.fn(async () => 0);
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const app = { docsTask, emitOutput } as unknown as CliApp;
+    const app = { designTask, emitOutput } as unknown as CliApp;
     const action = createDocsDiffCommandAction({
       getApp: () => app,
     });
@@ -805,7 +828,7 @@ describe("createDocsDiffCommandAction", () => {
       kind: "warn",
       message: "`rundown docs diff` is deprecated; use `rundown design diff`.",
     }));
-    expect(docsTask).toHaveBeenCalledWith(expect.objectContaining({
+    expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
       action: "diff",
       target: "preview",
       dir: "migrations",

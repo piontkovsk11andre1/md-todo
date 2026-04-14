@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { formatMigrationFilename, formatSatelliteFilename } from "./migration-parser.js";
 
 export type PredictionTrackedFileKind =
   | "migration"
@@ -398,11 +399,12 @@ export function reconcilePendingPredictedItemsAtomically(input: {
     const stableMigrationName = getStablePendingMigrationName(currentMigrations, migrationNumber, item.migrationName);
     const migrationPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber, "migration") ?? defaultPrefix;
     const snapshotPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber, "snapshot") ?? defaultPrefix;
-    const migrationPath = joinPrefixAndFileName(
-      migrationPrefix,
-      `${String(migrationNumber).padStart(4, "0")}-${stableMigrationName}.md`,
-    );
-    const snapshotPath = joinPrefixAndFileName(snapshotPrefix, `${String(migrationNumber).padStart(4, "0")}--snapshot.md`);
+    const existingMigrationPath = getExistingPathForMigrationAndKind(currentFiles, migrationNumber, "migration");
+    const existingSnapshotPath = getExistingPathForMigrationAndKind(currentFiles, migrationNumber, "snapshot");
+    const migrationPath = existingMigrationPath
+      ?? joinPrefixAndFileName(migrationPrefix, formatMigrationFilename(migrationNumber, stableMigrationName));
+    const snapshotPath = existingSnapshotPath
+      ?? joinPrefixAndFileName(snapshotPrefix, formatSatelliteFilename(migrationNumber, "snapshot"));
 
     writeFiles.push({
       relativePath: migrationPath,
@@ -750,6 +752,18 @@ function getPreferredPrefixForMigration(
     .sort((left, right) => left.localeCompare(right));
   const first = candidates[0];
   return first ? getPathPrefix(first) : null;
+}
+
+function getExistingPathForMigrationAndKind(
+  files: readonly PredictionTrackedFile[],
+  migrationNumber: number,
+  kind: "migration" | "snapshot",
+): string | null {
+  const candidates = files
+    .filter((file) => file.migrationNumber === migrationNumber && file.kind === kind)
+    .map((file) => normalizeRelativePath(file.relativePath))
+    .sort((left, right) => left.localeCompare(right));
+  return candidates[0] ?? null;
 }
 
 function getPathPrefix(relativePath: string): string {

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPredictionBaseline, type PredictionInputs } from "../../src/domain/prediction-reconciliation.js";
+import { formatMigrationFilename, formatSatelliteFilename } from "../../src/domain/migration-parser.js";
 
 const tempDirs: string[] = [];
 
@@ -67,9 +68,9 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     );
 
     fs.mkdirSync(path.join(workspace, "changesets"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "changesets", "0001--context.md"), "# Context\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "changesets", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", formatSatelliteFilename(1, "backlog")), "# Backlog\n", "utf-8");
     fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
 
     const result = await runCli([
@@ -81,8 +82,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect([0, 3]).toContain(result.code);
-    expect(fs.existsSync(path.join(workspace, "changesets", "0002-template-vars-checked.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "changesets", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(false);
   });
 
   it("generates migrations from canonical design context and exposes design revision sources", async () => {
@@ -94,9 +95,9 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Current design\n\nManaged canonical design source.\n", "utf-8");
     fs.writeFileSync(path.join(workspace, "design", "current", "api.md"), "Canonical API details.\n", "utf-8");
     fs.writeFileSync(path.join(workspace, "design", "rev.1", "Target.md"), "# Revision\n\nCanonical revision text.\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "backlog")), "# Backlog\n", "utf-8");
     fs.writeFileSync(
       path.join(workspace, ".rundown", "migrate.md"),
       [
@@ -141,7 +142,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toMatch(/design[\\/]current/);
     expect(capturedPrompt).toMatch(/design[\\/]rev\.1/);
     expect(capturedPrompt).toContain("DIFF=Compared rev.1 -> current:");
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
   });
 
   it("generates migrations from managed docs context without requiring root Design.md", async () => {
@@ -153,9 +154,9 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Current design\n\nManaged docs design source.\n", "utf-8");
     fs.writeFileSync(path.join(workspace, "docs", "current", "api.md"), "Current API details.\n", "utf-8");
     fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "# Revision\n\nLegacy revision text.\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "backlog")), "# Backlog\n", "utf-8");
     fs.writeFileSync(
       path.join(workspace, ".rundown", "migrate.md"),
       [
@@ -189,7 +190,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toMatch(/docs[\\/]current/);
     expect(capturedPrompt).toMatch(/docs[\\/]rev\.1/);
     expect(capturedPrompt).toContain("DIFF=Compared rev.1 -> current:");
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
   });
 
   it("exposes revision-aware migrate template aliases without breaking legacy fields", async () => {
@@ -263,7 +264,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toContain("PREVIOUS_METADATA_PATH=");
     expect(capturedPrompt).toMatch(/PREVIOUS_METADATA_PATH=.*docs[\\/]rev\.1\.meta\.json/);
     expect(capturedPrompt).toContain("LEGACY_SUMMARY=Compared rev.1 -> current: 0 added 1 modified 0 removed");
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
   });
 
   it("includes deterministic revision-aware diff preview inputs", async () => {
@@ -333,7 +334,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       normalizePathForAssertion(path.join(workspace, "docs", "rev.1")),
     ]);
 
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
   });
 
   it("falls back to root Design.md when managed docs directories are absent", async () => {
@@ -369,7 +370,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toContain("SOURCES=- ");
     expect(capturedPrompt).toMatch(/Design\.md/);
     expect(capturedPrompt).not.toMatch(/docs[\\/]current/);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
   });
 
   it("renders previous revision as nothing when current has no predecessor revision", async () => {
@@ -426,7 +427,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "template-vars-checked")))).toBe(true);
 
     const combinedOutput = stripAnsi([
       ...result.logs,
@@ -474,8 +475,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace));
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-first-ranked-proposal.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-second-ranked-proposal.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "first-ranked-proposal")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "second-ranked-proposal")))).toBe(false);
   });
 
   it("uses commands.migrate-slug for migration naming while keeping commands.migrate for execution", async () => {
@@ -501,9 +502,9 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-dedicated-slug-worker.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-from-migrate-execution-worker.md"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0002--context.md"), "utf-8")).toContain("from-migrate-execution-worker");
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "dedicated-slug-worker")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "from-migrate-execution-worker")))).toBe(false);
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "context")), "utf-8")).toContain("from-migrate-execution-worker");
   });
 
   it("falls back to migrate worker for slug generation when commands.migrate-slug is not configured", async () => {
@@ -526,7 +527,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-from-migrate-execution-worker.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "from-migrate-execution-worker")))).toBe(true);
   });
 
   it("keeps dedicated slug generation deterministic across repeated migrate runs", async () => {
@@ -558,11 +559,11 @@ describeIfMigrateAvailable("migrate-task integration", () => {
 
     expect(firstRun.code).toBe(0);
     expect(secondRun.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-stable-dedicated-slug.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-stable-dedicated-slug.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-from-migrate-execution-worker.md"))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-from-migrate-execution-worker.md"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0003--context.md"), "utf-8")).toContain("from-migrate-execution-worker");
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "stable-dedicated-slug")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "stable-dedicated-slug")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "from-migrate-execution-worker")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "from-migrate-execution-worker")))).toBe(false);
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatSatelliteFilename(3, "context")), "utf-8")).toContain("from-migrate-execution-worker");
   });
 
   it("uses commands.migrate-slug during migrate up prediction reconciliation", async () => {
@@ -577,31 +578,31 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ],
       files: [
         {
-          relativePath: "migrations/0001-initialize.md",
+          relativePath: `migrations/${formatMigrationFilename(1, "initialize")}`,
           migrationNumber: 1,
           kind: "migration",
           content: "# 0001 initialize\n\n- [x] bootstrap\n",
         },
         {
-          relativePath: "migrations/0002-feature-a.md",
+          relativePath: `migrations/${formatMigrationFilename(2, "feature-a")}`,
           migrationNumber: 2,
           kind: "migration",
           content: "# 0002 feature-a\n\n- [ ] implement feature a\n",
         },
         {
-          relativePath: "migrations/0002--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(2, "snapshot")}`,
           migrationNumber: 2,
           kind: "snapshot",
           content: "# Snapshot 0002 old\n",
         },
         {
-          relativePath: "migrations/0003-feature-b.md",
+          relativePath: `migrations/${formatMigrationFilename(3, "feature-b")}`,
           migrationNumber: 3,
           kind: "migration",
           content: "# 0003 feature-b\n\n- [ ] implement feature b\n",
         },
         {
-          relativePath: "migrations/0003--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(3, "snapshot")}`,
           migrationNumber: 3,
           kind: "snapshot",
           content: "# Snapshot 0003 old\n",
@@ -610,7 +611,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     });
 
     fs.writeFileSync(
-      path.join(workspace, "migrations", "0001-initialize.md"),
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
       "# 0001 initialize\n\n- [x] bootstrap\n- [x] hotfix added mid-run\n",
       "utf-8",
     );
@@ -636,12 +637,12 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-feature-a.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-feature-b.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-slug-worker-reconciled-a.md"))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-slug-worker-reconciled-b.md"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0002-feature-a.md"), "utf-8")).toContain("slug-worker-reconciled-a");
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0003-feature-b.md"), "utf-8")).toContain("slug-worker-reconciled-b");
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "slug-worker-reconciled-a")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "slug-worker-reconciled-b")))).toBe(false);
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "utf-8")).toContain("slug-worker-reconciled-a");
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "utf-8")).toContain("slug-worker-reconciled-b");
   });
 
   it("falls back to migrate worker for migrate up reconciliation when migrate-slug is not configured", async () => {
@@ -656,31 +657,31 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ],
       files: [
         {
-          relativePath: "migrations/0001-initialize.md",
+          relativePath: `migrations/${formatMigrationFilename(1, "initialize")}`,
           migrationNumber: 1,
           kind: "migration",
           content: "# 0001 initialize\n\n- [x] bootstrap\n",
         },
         {
-          relativePath: "migrations/0002-feature-a.md",
+          relativePath: `migrations/${formatMigrationFilename(2, "feature-a")}`,
           migrationNumber: 2,
           kind: "migration",
           content: "# 0002 feature-a\n\n- [ ] implement feature a\n",
         },
         {
-          relativePath: "migrations/0002--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(2, "snapshot")}`,
           migrationNumber: 2,
           kind: "snapshot",
           content: "# Snapshot 0002 old\n",
         },
         {
-          relativePath: "migrations/0003-feature-b.md",
+          relativePath: `migrations/${formatMigrationFilename(3, "feature-b")}`,
           migrationNumber: 3,
           kind: "migration",
           content: "# 0003 feature-b\n\n- [ ] implement feature b\n",
         },
         {
-          relativePath: "migrations/0003--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(3, "snapshot")}`,
           migrationNumber: 3,
           kind: "snapshot",
           content: "# Snapshot 0003 old\n",
@@ -689,7 +690,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     });
 
     fs.writeFileSync(
-      path.join(workspace, "migrations", "0001-initialize.md"),
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
       "# 0001 initialize\n\n- [x] bootstrap\n- [x] hotfix added mid-run\n",
       "utf-8",
     );
@@ -712,12 +713,12 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-feature-a.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-feature-b.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-feature-a-reconciled.md"))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-feature-b-reconciled.md"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0002-feature-a.md"), "utf-8")).toContain("feature-a-reconciled");
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0003-feature-b.md"), "utf-8")).toContain("feature-b-reconciled");
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a-reconciled")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b-reconciled")))).toBe(false);
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "utf-8")).toContain("feature-a-reconciled");
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "utf-8")).toContain("feature-b-reconciled");
   });
 
   it("reconciles pending predictions before migrate up after a manual mid-run TODO change", async () => {
@@ -732,31 +733,31 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ],
       files: [
         {
-          relativePath: "migrations/0001-initialize.md",
+          relativePath: `migrations/${formatMigrationFilename(1, "initialize")}`,
           migrationNumber: 1,
           kind: "migration",
           content: "# 0001 initialize\n\n- [x] bootstrap\n",
         },
         {
-          relativePath: "migrations/0002-feature-a.md",
+          relativePath: `migrations/${formatMigrationFilename(2, "feature-a")}`,
           migrationNumber: 2,
           kind: "migration",
           content: "# 0002 feature-a\n\n- [ ] implement feature a\n",
         },
         {
-          relativePath: "migrations/0002--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(2, "snapshot")}`,
           migrationNumber: 2,
           kind: "snapshot",
           content: "# Snapshot 0002 old\n",
         },
         {
-          relativePath: "migrations/0003-feature-b.md",
+          relativePath: `migrations/${formatMigrationFilename(3, "feature-b")}`,
           migrationNumber: 3,
           kind: "migration",
           content: "# 0003 feature-b\n\n- [ ] implement feature b\n",
         },
         {
-          relativePath: "migrations/0003--snapshot.md",
+          relativePath: `migrations/${formatSatelliteFilename(3, "snapshot")}`,
           migrationNumber: 3,
           kind: "snapshot",
           content: "# Snapshot 0003 old\n",
@@ -765,7 +766,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     });
 
     fs.writeFileSync(
-      path.join(workspace, "migrations", "0001-initialize.md"),
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
       "# 0001 initialize\n\n- [x] bootstrap\n- [x] hotfix added mid-run\n",
       "utf-8",
     );
@@ -783,13 +784,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
 
     expect(result.code).toBe(0);
 
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-feature-a.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-feature-b.md"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0002-feature-a-reconciled.md"))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0003-feature-b-reconciled.md"))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0002-feature-a.md"), "utf-8")).toContain("feature-a-reconciled");
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0003-feature-b.md"), "utf-8")).toContain("feature-b-reconciled");
-    expect(fs.readFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "utf-8")).toContain("hotfix added mid-run");
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a-reconciled")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b-reconciled")))).toBe(false);
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "utf-8")).toContain("feature-a-reconciled");
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "utf-8")).toContain("feature-b-reconciled");
+    expect(fs.readFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "utf-8")).toContain("hotfix added mid-run");
 
     const markerPath = path.join(workspace, ".migrate-up-reconcile.seq");
     expect(fs.existsSync(markerPath)).toBe(true);
@@ -833,8 +834,8 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
     ], linkedInvocationDir);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(sourceWorkspace, "migrations", "0001--snapshot.md"))).toBe(true);
-    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", "0001--snapshot.md"))).toBe(false);
+    expect(fs.existsSync(path.join(sourceWorkspace, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(true);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(false);
     expect(fs.existsSync(path.join(sourceWorkspace, ".workspace-cwd-marker"))).toBe(true);
     expect(fs.existsSync(path.join(linkedInvocationDir, ".workspace-cwd-marker"))).toBe(false);
   });
@@ -865,7 +866,7 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
     );
 
     fs.mkdirSync(path.join(sourceWorkspace, "changesets"), { recursive: true });
-    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
 
     fs.mkdirSync(path.join(intermediateWorkspace, ".rundown"), { recursive: true });
     fs.writeFileSync(
@@ -896,10 +897,10 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
     ], linkedInvocationDir);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(sourceWorkspace, "changesets", "0001--snapshot.md"))).toBe(true);
-    expect(fs.existsSync(path.join(sourceWorkspace, "migrations", "0001--snapshot.md"))).toBe(false);
-    expect(fs.existsSync(path.join(intermediateWorkspace, "changesets", "0001--snapshot.md"))).toBe(false);
-    expect(fs.existsSync(path.join(linkedInvocationDir, "changesets", "0001--snapshot.md"))).toBe(false);
+    expect(fs.existsSync(path.join(sourceWorkspace, "changesets", formatSatelliteFilename(1, "snapshot")))).toBe(true);
+    expect(fs.existsSync(path.join(sourceWorkspace, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(false);
+    expect(fs.existsSync(path.join(intermediateWorkspace, "changesets", formatSatelliteFilename(1, "snapshot")))).toBe(false);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "changesets", formatSatelliteFilename(1, "snapshot")))).toBe(false);
   });
 
   it("supports multi-record workspace links with explicit --workspace selection", async () => {
@@ -944,9 +945,9 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
     ], linkedInvocationDir);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(sourceWorkspaceA, "migrations", "0001--snapshot.md"))).toBe(true);
-    expect(fs.existsSync(path.join(sourceWorkspaceB, "migrations", "0001--snapshot.md"))).toBe(false);
-    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", "0001--snapshot.md"))).toBe(false);
+    expect(fs.existsSync(path.join(sourceWorkspaceA, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(true);
+    expect(fs.existsSync(path.join(sourceWorkspaceB, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(false);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", formatSatelliteFilename(1, "snapshot")))).toBe(false);
   });
 
   it("fails with candidate guidance when multi-record workspace links are ambiguous", async () => {
@@ -1024,22 +1025,22 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
 
       expect(secondRunResult.code).toBe(0);
 
-      const targetFile = path.join(workspace, "migrations", `0001--${action}.md`);
+      const targetFile = path.join(workspace, "migrations", formatSatelliteFilename(1, action));
       expect(fs.existsSync(targetFile)).toBe(true);
       expect(fs.readFileSync(targetFile, "utf-8")).toContain(`generated-${action}-2`);
 
       const satelliteFiles = fs.readdirSync(path.join(workspace, "migrations"))
-        .filter((entry) => /^\d{4}--.+\.md$/.test(entry))
-        .filter((entry) => entry.endsWith(`--${action}.md`));
+        .filter((entry) => /^\d+\.\d+\s+.+\.md$/.test(entry))
+        .filter((entry) => entry === formatSatelliteFilename(1, action));
 
-      expect(satelliteFiles).toStrictEqual([`0001--${action}.md`]);
+      expect(satelliteFiles).toStrictEqual([formatSatelliteFilename(1, action)]);
     });
   }
 
   it("migrate context removes the previous context satellite before writing the new one", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProjectWithSatelliteTemplates(workspace);
-    fs.writeFileSync(path.join(workspace, "migrations", "0002-next.md"), "# 0002 next\n\n- [ ] step\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "next")), "# 0002 next\n\n- [ ] step\n", "utf-8");
 
     const result = await runCli([
       "migrate",
@@ -1054,8 +1055,8 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
 
     expect(result.code).toBe(0);
 
-    const previousContext = path.join(workspace, "migrations", "0001--context.md");
-    const newContext = path.join(workspace, "migrations", "0002--context.md");
+    const previousContext = path.join(workspace, "migrations", formatSatelliteFilename(1, "context"));
+    const newContext = path.join(workspace, "migrations", formatSatelliteFilename(2, "context"));
     expect(fs.existsSync(previousContext)).toBe(false);
     expect(fs.existsSync(newContext)).toBe(true);
     expect(fs.readFileSync(newContext, "utf-8")).toContain("generated-context-1");
@@ -1081,8 +1082,8 @@ describeIfUserSessionMigrateAvailable("migrate user-session integration", () => 
 
     expect(result.code).toBe(0);
 
-    const migrationPath = path.join(workspace, "migrations", "0001-initialize.md");
-    const backlogPath = path.join(workspace, "migrations", "0001--backlog.md");
+    const migrationPath = path.join(workspace, "migrations", formatMigrationFilename(1, "initialize"));
+    const backlogPath = path.join(workspace, "migrations", formatSatelliteFilename(1, "backlog"));
 
     expect(fs.readFileSync(migrationPath, "utf-8")).toContain("session-summary-2");
     expect(fs.readFileSync(backlogPath, "utf-8")).toContain("session-backlog-3");
@@ -1147,7 +1148,7 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     );
 
     fs.mkdirSync(path.join(workspace, "changesets"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "changesets", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
     fs.mkdirSync(path.join(workspace, "design-docs", "current"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "design-docs", "current", "Target.md"), "# Design\n\nconfigured docs\n", "utf-8");
 
@@ -1564,9 +1565,9 @@ function readJsonLine(prompt: string, key: string): string[] {
 function scaffoldPredictionProject(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
-  fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "backlog")), "# Backlog\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
   fs.writeFileSync(path.join(workspace, ".rundown", "migrate.md"), "{{design}}\n{{latestContext}}\n{{migrationHistory}}\n", "utf-8");
 }
@@ -1584,14 +1585,14 @@ function scaffoldPredictionProjectWithSatelliteTemplates(workspace: string): voi
 function scaffoldPredictionProjectForReconciliation(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nReconciliation test project.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
-  fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n\n- [x] bootstrap\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context 0001\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--backlog.md"), "# Backlog 0001\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--snapshot.md"), "# Snapshot 0001\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0002-feature-a.md"), "# 0002 feature-a\n\n- [ ] implement feature a\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0002--snapshot.md"), "# Snapshot 0002 old\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0003-feature-b.md"), "# 0003 feature-b\n\n- [ ] implement feature b\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0003--snapshot.md"), "# Snapshot 0003 old\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n\n- [x] bootstrap\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context 0001\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "backlog")), "# Backlog 0001\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "snapshot")), "# Snapshot 0001\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "# 0002 feature-a\n\n- [ ] implement feature a\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")), "# Snapshot 0002 old\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "# 0003 feature-b\n\n- [ ] implement feature b\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(3, "snapshot")), "# Snapshot 0003 old\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
 }
 

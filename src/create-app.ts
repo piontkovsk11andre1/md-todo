@@ -32,9 +32,9 @@ import { createRevertTask, type RevertTaskOptions } from "./application/revert-t
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
 import { createMigrateTask, type MigrateTaskOptions } from "./application/migrate-task.js";
 import {
-  createDocsRevisionTask,
-  type DocsRevisionTaskOptions,
-} from "./application/docs-revision-task.js";
+  createDesignTask,
+  type DesignTaskOptions,
+} from "./application/docs-task.js";
 import { createTestSpecs, type TestSpecsOptions } from "./application/test-specs.js";
 import {
   createStartProject,
@@ -146,7 +146,8 @@ export type App = {
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   undoTask: (options: UndoTaskOptions) => Promise<number>;
   migrateTask: (options: MigrateTaskOptions) => Promise<number>;
-  docsTask: (options: DocsRevisionTaskOptions) => Promise<number>;
+  designTask: (options: DesignTaskOptions) => Promise<number>;
+  docsTask: (options: DesignTaskOptions) => Promise<number>;
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
@@ -454,6 +455,11 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     output: ports.output,
   });
 
+  const designTaskUseCase = (ports: AppPorts) => createDesignTask({
+    fileSystem: ports.fileSystem,
+    output: ports.output,
+  });
+
   return {
     helpTask: (ports) => createHelpTask({
       workerExecutor: ports.workerExecutor,
@@ -551,10 +557,8 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       runTask: runTaskUseCase(ports),
       undoTask: undoTaskUseCase(ports),
     }),
-    docsTask: (ports) => createDocsRevisionTask({
-      fileSystem: ports.fileSystem,
-      output: ports.output,
-    }),
+    designTask: (ports) => designTaskUseCase(ports),
+    docsTask: (ports) => designTaskUseCase(ports),
     testSpecs: (ports) => testSpecsUseCase(ports),
     planTask: (ports) => {
       const runPlanTask = planTaskUseCase(ports);
@@ -711,9 +715,19 @@ function createAppFromFactories(
   ports: AppPorts,
   factoryOverrides: Partial<AppUseCaseFactories> = {},
 ): App {
+  const defaultFactories = createDefaultUseCaseFactories();
+  const designTaskFactory = factoryOverrides.designTask
+    ?? factoryOverrides.docsTask
+    ?? defaultFactories.designTask;
+  const docsTaskFactory = factoryOverrides.docsTask
+    ?? factoryOverrides.designTask
+    ?? defaultFactories.docsTask;
+
   const factories: AppUseCaseFactories = {
-    ...createDefaultUseCaseFactories(),
+    ...defaultFactories,
     ...factoryOverrides,
+    designTask: designTaskFactory,
+    docsTask: docsTaskFactory,
   };
 
   const helpTask = factories.helpTask(ports);
@@ -727,6 +741,7 @@ function createAppFromFactories(
   const revertTask = factories.revertTask(ports);
   const undoTask = factories.undoTask(ports);
   const migrateTask = factories.migrateTask(ports);
+  const designTask = factories.designTask(ports);
   const docsTask = factories.docsTask(ports);
   const testSpecs = factories.testSpecs(ports);
   const planTask = factories.planTask(ports);
@@ -768,6 +783,7 @@ function createAppFromFactories(
     revertTask,
     undoTask,
     migrateTask,
+    designTask,
     docsTask,
     testSpecs,
     planTask,

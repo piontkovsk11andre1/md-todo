@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { formatMigrationFilename } from "../../src/domain/migration-parser.js";
 
 const tempDirs: string[] = [];
 
@@ -168,11 +169,11 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, "migrations", "0001-initialize.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize")))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
     expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
 
-    const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
+    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Document initial architecture assumptions");
     expect(initialMigrationSource).toContain("- [ ] Establish baseline project structure");
@@ -249,7 +250,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "migrations"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", "0001-initialize.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")))).toBe(true);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
 
     const config = JSON.parse(
@@ -389,7 +390,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "docs", "design", "current", "Target.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "quality", "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "changesets"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, "changesets", "0001-initialize.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "changesets", formatMigrationFilename(1, "initialize")))).toBe(true);
 
     const config = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
@@ -498,7 +499,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
+    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
     expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from design/current/Target.md");
@@ -552,7 +553,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
+    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
     expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");
@@ -610,7 +611,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "changesets", "0001-initialize.md");
+    const initialMigrationPath = path.join(projectDir, "changesets", formatMigrationFilename(1, "initialize"));
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
     expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");

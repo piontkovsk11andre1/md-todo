@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { formatMigrationFilename, formatSatelliteFilename } from "../../src/domain/migration-parser.js";
 
 const tempDirs: string[] = [];
 
@@ -49,9 +50,9 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     fs.writeFileSync(path.join(sourceWorkspace, ".rundown", "test-verify.md"), "{{assertion}}", "utf-8");
 
     fs.mkdirSync(path.join(sourceWorkspace, "changesets"), { recursive: true });
-    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001--context.md"), "# Context\n", "utf-8");
-    fs.writeFileSync(path.join(sourceWorkspace, "changesets", "0001--snapshot.md"), "# Snapshot\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "changesets", formatSatelliteFilename(1, "snapshot")), "# Snapshot\n", "utf-8");
 
     fs.mkdirSync(path.join(sourceWorkspace, "quality", "specs"), { recursive: true });
     fs.writeFileSync(path.join(sourceWorkspace, "quality", "specs", "linked.md"), "linked assertion", "utf-8");
@@ -396,9 +397,9 @@ function scaffoldPredictedState(workspace: string, options?: { template?: string
   const template = options?.template ?? "{{assertion}}";
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
-  fs.writeFileSync(path.join(workspace, "migrations", "0001-initialize.md"), "# 0001 initialize\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--context.md"), "# Context\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "0001--snapshot.md"), "# Snapshot\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "snapshot")), "# Snapshot\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
   fs.writeFileSync(path.join(workspace, ".rundown", "test-verify.md"), template, "utf-8");
 }

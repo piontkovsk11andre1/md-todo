@@ -11131,6 +11131,19 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("rundown design diff --workspace ../source-workspace");
   });
 
+  it("docs --help marks docs as deprecated design alias", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["docs", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("Deprecated alias for `design` revision commands.");
+    expect(compactHelpOutput).toContain("release");
+    expect(compactHelpOutput).toContain("diff");
+  });
+
   it("explore --help shows variadic argument and plan-phase options", async () => {
     const workspace = makeTempWorkspace();
 

@@ -3,6 +3,24 @@ import type { Migration, MigrationState, Satellite, SatelliteType } from "./migr
 
 const SATELLITE_PATTERN = /^(\d{4})--(.+)\.md$/;
 const MIGRATION_PATTERN = /^(\d{4})-(?!-)(.+)\.md$/;
+const DOTTED_MIGRATION_PATTERN = /^(\d+)\.\s+(.+)\.md$/;
+const DOTTED_SATELLITE_PATTERN = /^(\d+)\.(\d+)\s+(.+)\.md$/;
+
+const DOTTED_SATELLITE_INDEX_BY_TYPE: Record<SatelliteType, number> = {
+  snapshot: 1,
+  backlog: 2,
+  review: 3,
+  context: 4,
+  "user-experience": 5,
+};
+
+const DOTTED_SATELLITE_LABEL_BY_TYPE: Record<SatelliteType, string> = {
+  snapshot: "Snapshot",
+  backlog: "Backlog",
+  review: "Review",
+  context: "Context",
+  "user-experience": "User Experience",
+};
 
 const SATELLITE_TYPES = new Set<SatelliteType>([
   "context",
@@ -19,7 +37,36 @@ export interface ParsedMigrationFilename {
   satelliteType: SatelliteType | null;
 }
 
+export function formatMigrationFilename(number: number, name: string): string {
+  return `${String(number)}. ${toTitleCaseFromName(name)}.md`;
+}
+
+export function formatSatelliteFilename(number: number, type: SatelliteType): string {
+  const satelliteIndex = DOTTED_SATELLITE_INDEX_BY_TYPE[type];
+  const satelliteLabel = DOTTED_SATELLITE_LABEL_BY_TYPE[type];
+  return `${String(number)}.${String(satelliteIndex)} ${satelliteLabel}.md`;
+}
+
 export function parseMigrationFilename(filename: string): ParsedMigrationFilename | null {
+  const dottedSatelliteMatch = filename.match(DOTTED_SATELLITE_PATTERN);
+  if (dottedSatelliteMatch) {
+    const number = Number.parseInt(dottedSatelliteMatch[1]!, 10);
+    const satelliteIndex = Number.parseInt(dottedSatelliteMatch[2]!, 10);
+    const satelliteLabel = dottedSatelliteMatch[3]!;
+    const satelliteTypeFromIndex = getSatelliteTypeFromDottedIndex(satelliteIndex);
+    const satelliteTypeFromLabel = getSatelliteTypeFromLabel(satelliteLabel);
+    const satelliteType = satelliteTypeFromLabel ?? satelliteTypeFromIndex;
+    if (!satelliteType) {
+      return null;
+    }
+    return {
+      number,
+      name: satelliteType,
+      isSatellite: true,
+      satelliteType,
+    };
+  }
+
   const satelliteMatch = filename.match(SATELLITE_PATTERN);
   if (satelliteMatch) {
     const number = Number.parseInt(satelliteMatch[1]!, 10);
@@ -32,6 +79,16 @@ export function parseMigrationFilename(filename: string): ParsedMigrationFilenam
       name: satelliteType,
       isSatellite: true,
       satelliteType: satelliteType as SatelliteType,
+    };
+  }
+
+  const dottedMigrationMatch = filename.match(DOTTED_MIGRATION_PATTERN);
+  if (dottedMigrationMatch) {
+    return {
+      number: Number.parseInt(dottedMigrationMatch[1]!, 10),
+      name: toKebabCase(dottedMigrationMatch[2]!),
+      isSatellite: false,
+      satelliteType: null,
     };
   }
 
@@ -139,4 +196,63 @@ function getLatestSatelliteFromMigrations(migrations: Migration[], type: Satelli
   });
 
   return satellites[satellites.length - 1]!;
+}
+
+function getSatelliteTypeFromDottedIndex(index: number): SatelliteType | null {
+  for (const [type, value] of Object.entries(DOTTED_SATELLITE_INDEX_BY_TYPE)) {
+    if (value === index) {
+      return type as SatelliteType;
+    }
+  }
+
+  return null;
+}
+
+function getSatelliteTypeFromLabel(label: string): SatelliteType | null {
+  const normalized = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (normalized === "snapshot") {
+    return "snapshot";
+  }
+  if (normalized === "backlog") {
+    return "backlog";
+  }
+  if (normalized === "review") {
+    return "review";
+  }
+  if (normalized === "context") {
+    return "context";
+  }
+  if (normalized === "user-experience") {
+    return "user-experience";
+  }
+
+  return null;
+}
+
+function toTitleCaseFromName(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "Migration";
+  }
+
+  const normalized = trimmed
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  return normalized
+    .split(" ")
+    .filter((segment) => segment.length > 0)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function toKebabCase(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[`'".]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+  return normalized.length > 0 ? normalized : "migration";
 }

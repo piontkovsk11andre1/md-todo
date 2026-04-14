@@ -15,6 +15,7 @@ import {
   PREDICTION_WORKSPACE_PLACEMENTS,
   type PredictionWorkspacePlacement,
 } from "./prediction-workspace-paths.js";
+import { formatMigrationFilename } from "../domain/migration-parser.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
   FileSystem,
@@ -141,7 +142,7 @@ export function createStartProject(
     );
     const initialMigrationPath = dependencies.pathOperations.join(
       migrationsDir,
-      "0001-initialize.md",
+      formatMigrationFilename(1, "initialize"),
     );
 
     await initGitRepo(dependencies.gitClient, targetDirectory);

@@ -8,6 +8,8 @@ import {
   DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
 } from "../domain/defaults.js";
 import {
+  formatMigrationFilename,
+  formatSatelliteFilename,
   parseMigrationDirectory,
   parseMigrationFilename,
 } from "../domain/migration-parser.js";
@@ -957,8 +959,8 @@ async function generateNextMigration(input: {
   }
 
   const selected = await selectProposal(dependencies.interactiveInput, proposals);
-  const nextNumber = String(state.currentPosition + 1).padStart(4, "0");
-  const migrationFilename = `${nextNumber}-${toKebabCase(selected.name)}.md`;
+  const nextNumber = state.currentPosition + 1;
+  const migrationFilename = formatMigrationFilename(nextNumber, selected.name);
   const migrationPath = path.join(state.migrationsDir, migrationFilename);
   const migrationContent = createMigrationDocument(nextNumber, selected, result.stdout);
 
@@ -1094,7 +1096,7 @@ async function generateSatellite(input: {
   }
 
   const position = state.currentPosition > 0 ? state.currentPosition : 1;
-  const filename = `${String(position).padStart(4, "0")}--${satelliteType}.md`;
+  const filename = formatSatelliteFilename(position, satelliteType);
   const filePath = path.join(state.migrationsDir, filename);
 
   if (confirm) {
@@ -1248,12 +1250,12 @@ function getLatestSatellitePath(
 }
 
 function createMigrationDocument(
-  number: string,
+  number: number,
   selected: MigrationProposal,
   proposalsOutput: string,
 ): string {
   return [
-    `# ${number} ${selected.name}`,
+    `# ${String(number)} ${toTitleCase(selected.name)}`,
     "",
     selected.label,
     "",
@@ -1264,6 +1266,17 @@ function createMigrationDocument(
     proposalsOutput.trim(),
     "",
   ].join("\n");
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function parseProposals(stdout: string): MigrationProposal[] {

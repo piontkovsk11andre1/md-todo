@@ -394,7 +394,7 @@ What happens:
 7. `optional:` / `skip:` are the preferred control-flow prefixes; legacy `end:` / `return:` / `quit:` / `break:` remain compatibility aliases.
 8. Unknown prefixes are treated as normal task text and do not fail resolution.
 
-## 20. Release docs revisions and diff before migration
+## 20. Release design revisions and diff before migration
 
 Use `rundown design` when you want to manage design-document revisions directly.
 
@@ -427,7 +427,7 @@ What happens:
 5. `design diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
 6. Diff output is deterministic and suitable for both human review and migration context.
 
-## 21. Generate migrations after docs revision work
+## 21. Generate migrations after design revision work
 
 After releasing or reviewing diffs, switch back to `migrate` for migration lifecycle commands.
 

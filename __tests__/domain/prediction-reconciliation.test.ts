@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatMigrationFilename, formatSatelliteFilename } from "../../src/domain/migration-parser.js";
 import {
   reconcilePendingPredictedItemsAtomically,
   createPredictionReconciliationEntryPoint,
@@ -7,6 +8,9 @@ import {
   reResolvePendingPredictionSequence,
   type PredictionInputs,
 } from "../../src/domain/prediction-reconciliation.js";
+
+const pathForMigration = (number: number, name: string): string => `migrations/${formatMigrationFilename(number, name)}`;
+const pathForSatellite = (number: number, type: "context" | "snapshot" | "backlog"): string => `migrations/${formatSatelliteFilename(number, type)}`;
 
 describe("prediction-reconciliation", () => {
   it("returns not stale when no pending predictions exist", () => {
