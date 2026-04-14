@@ -53,6 +53,34 @@ describe("workspace-lifecycle unlink", () => {
     }
   });
 
+  it("includes stale/orphan guidance in ambiguous selection output", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const healthyWorkspace = path.resolve(invocationDir, "../workspace-a");
+    const { unlinkTask, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "alpha", workspacePath: "../workspace-a" },
+            { id: "beta", workspacePath: "../workspace-missing" },
+          ],
+        }),
+      },
+      directories: [healthyWorkspace],
+    });
+
+    const code = await unlinkTask({ all: false, dryRun: false });
+
+    expect(code).toBe(1);
+    const errorEvent = events.find((event) => event.kind === "error");
+    expect(errorEvent?.kind).toBe("error");
+    if (errorEvent?.kind === "error") {
+      expect(errorEvent.message).toContain("stale/orphan workspace record");
+      expect(errorEvent.message).toContain("workspace unlink/remove");
+    }
+  });
+
   it("supports dry-run unlink without mutating workspace.link", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
@@ -112,6 +140,32 @@ describe("workspace-lifecycle unlink", () => {
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceLinkPath, { force: true });
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+  });
+
+  it("cleans stale workspace metadata and warns when selected target is missing", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { unlinkTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "stale", workspacePath: "../workspace-missing", default: true },
+            { id: "active", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+      directories: [path.resolve(invocationDir, "../workspace-b")],
+    });
+
+    const code = await unlinkTask({ workspace: "stale", all: false, dryRun: false });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    const serialized = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
+    expect(serialized).toContain('"id": "active"');
+    expect(serialized).not.toContain('"id": "stale"');
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("stale/orphan workspace record"))).toBe(true);
   });
 });
 
@@ -283,6 +337,32 @@ describe("workspace-lifecycle remove", () => {
     if (errorEvent?.kind === "error") {
       expect(errorEvent.message).toContain("Refusing to delete filesystem root paths");
     }
+  });
+
+  it("warns about stale/orphan records and removes metadata when delete-files is not set", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "stale", workspacePath: "../workspace-missing", default: true },
+            { id: "active", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+      directories: [path.resolve(invocationDir, "../workspace-b")],
+    });
+
+    const code = await removeTask({ workspace: "stale", all: false, deleteFiles: false, dryRun: false, force: false });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    const serialized = vi.mocked(fileSystem.writeText).mock.calls[0]?.[1] ?? "";
+    expect(serialized).toContain('"id": "active"');
+    expect(serialized).not.toContain('"id": "stale"');
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("stale/orphan workspace record"))).toBe(true);
   });
 });
 

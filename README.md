@@ -144,6 +144,11 @@ You can use `rundown` as a harness:
 rundown with opencode
 rundown with claude
 rundown with pi
+
+# Next time in the same dir:
+rundown
+# or
+rd
 ```
 
 Ask the agent to set everything up and start working — it will answer all your questions.

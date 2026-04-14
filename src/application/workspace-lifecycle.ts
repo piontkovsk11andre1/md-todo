@@ -33,6 +33,14 @@ interface WorkspaceLifecycleDependencies {
   interactiveInput?: InteractiveInputPort;
 }
 
+type WorkspaceRecordHealth = "ok" | "target-missing" | "target-not-directory";
+
+interface WorkspaceRecordStatus {
+  record: CanonicalWorkspaceLinkRecord;
+  absolutePath: string;
+  health: WorkspaceRecordHealth;
+}
+
 export function createWorkspaceUnlinkTask(
   dependencies: WorkspaceLifecycleDependencies,
 ): (options: WorkspaceUnlinkOptions) => Promise<number> {
@@ -67,10 +75,18 @@ export function createWorkspaceUnlinkTask(
       return EXIT_CODE_FAILURE;
     }
 
+    const recordStatuses = mapWorkspaceRecordStatuses({
+      invocationDir,
+      records: parsedSchema.schema.records,
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+    });
+
     const selectedRecords = resolveRecordsToOperate({
       invocationDir,
       workspaceLinkPath,
       records: parsedSchema.schema.records,
+      recordStatuses,
       workspaceOption: options.workspace,
       all: options.all,
       commandName: "workspace unlink",
@@ -87,11 +103,23 @@ export function createWorkspaceUnlinkTask(
     emit({ kind: "text", text: `Workspace link file: ${workspaceLinkPath}` });
     emit({ kind: "text", text: "Selected workspace record(s):" });
     for (const record of selectedRecords.records) {
+      const status = recordStatuses.get(record.id);
       emit({
         kind: "text",
-        text: `  - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+        text: `  - ${formatWorkspaceRecordSelectionText(record, status)}`,
       });
     }
+
+    const selectedStaleStatuses = selectedRecords.records
+      .map((record) => recordStatuses.get(record.id))
+      .filter((recordStatus): recordStatus is WorkspaceRecordStatus => {
+        return recordStatus !== undefined && recordStatus.health !== "ok";
+      });
+    emitStaleWorkspaceRecordWarnings({
+      emit,
+      commandName: "workspace unlink",
+      selectedStaleStatuses,
+    });
 
     if (options.dryRun) {
       emit({
@@ -101,9 +129,10 @@ export function createWorkspaceUnlinkTask(
       emit({ kind: "text", text: "Dry-run metadata impact:" });
       emit({ kind: "text", text: "  - Records to unlink:" });
       for (const record of selectedRecords.records) {
+        const status = recordStatuses.get(record.id);
         emit({
           kind: "text",
-          text: `    - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+          text: `    - ${formatWorkspaceRecordSelectionText(record, status)}`,
         });
       }
       emit({
@@ -165,6 +194,7 @@ function resolveRecordsToOperate(input: {
   invocationDir: string;
   workspaceLinkPath: string;
   records: CanonicalWorkspaceLinkRecord[];
+  recordStatuses: Map<string, WorkspaceRecordStatus>;
   workspaceOption?: string;
   all: boolean;
   commandName: string;
@@ -193,6 +223,7 @@ function resolveRecordsToOperate(input: {
           workspaceLinkPath: input.workspaceLinkPath,
           workspaceOption,
           records: input.records,
+          recordStatuses: input.recordStatuses,
         }),
       };
     }
@@ -210,6 +241,7 @@ function resolveRecordsToOperate(input: {
         invocationDir: input.invocationDir,
         workspaceLinkPath: input.workspaceLinkPath,
         records: input.records,
+        recordStatuses: input.recordStatuses,
         commandName: input.commandName,
       }),
     };
@@ -239,14 +271,31 @@ function buildAmbiguousSelectionMessage(input: {
   invocationDir: string;
   workspaceLinkPath: string;
   records: CanonicalWorkspaceLinkRecord[];
+  recordStatuses: Map<string, WorkspaceRecordStatus>;
   commandName: string;
 }): string {
+  const staleCount = input.records.filter((record) => {
+    const status = input.recordStatuses.get(record.id);
+    return status !== undefined && status.health !== "ok";
+  }).length;
+
+  const staleGuidance = staleCount > 0
+    ? [
+      `Detected ${staleCount} stale/orphan workspace record(s) among candidates.`,
+      "Use --workspace <dir|id> (or --all) with workspace unlink/remove to clean stale metadata records safely.",
+    ]
+    : [];
+
   return [
     `${input.commandName} selection is ambiguous for ${input.invocationDir}.`,
     `Multiple workspace records are configured in ${input.workspaceLinkPath}.`,
     "Re-run with --workspace <dir|id> to select a specific record, or use --all to target every record.",
+    ...staleGuidance,
     "Candidates:",
-    ...input.records.map((record) => `- ${record.id}: ${path.resolve(input.invocationDir, record.workspacePath)} (use --workspace ${record.workspacePath})`),
+    ...input.records.map((record) => {
+      const status = input.recordStatuses.get(record.id);
+      return `- ${formatWorkspaceRecordSelectionText(record, status)} (use --workspace ${record.workspacePath})`;
+    }),
   ].join("\n");
 }
 
@@ -255,12 +304,29 @@ function buildMissingSelectorMessage(input: {
   workspaceLinkPath: string;
   workspaceOption: string;
   records: CanonicalWorkspaceLinkRecord[];
+  recordStatuses: Map<string, WorkspaceRecordStatus>;
 }): string {
+  const staleCount = input.records.filter((record) => {
+    const status = input.recordStatuses.get(record.id);
+    return status !== undefined && status.health !== "ok";
+  }).length;
+
+  const staleGuidance = staleCount > 0
+    ? [
+      `Detected ${staleCount} stale/orphan workspace record(s) among candidates.`,
+      "Use --workspace <dir|id> (or --all) with workspace unlink/remove to clean stale metadata records safely.",
+    ]
+    : [];
+
   return [
     `No workspace record matches selector "${input.workspaceOption}" in ${input.workspaceLinkPath}.`,
     "Selection is deterministic: record id is matched first, then workspace path.",
+    ...staleGuidance,
     "Candidates:",
-    ...input.records.map((record) => `- ${record.id}: ${path.resolve(input.invocationDir, record.workspacePath)} (use --workspace ${record.workspacePath})`),
+    ...input.records.map((record) => {
+      const status = input.recordStatuses.get(record.id);
+      return `- ${formatWorkspaceRecordSelectionText(record, status)} (use --workspace ${record.workspacePath})`;
+    }),
   ].join("\n");
 }
 
@@ -306,10 +372,18 @@ export function createWorkspaceRemoveTask(
       return EXIT_CODE_FAILURE;
     }
 
+    const recordStatuses = mapWorkspaceRecordStatuses({
+      invocationDir,
+      records: parsedSchema.schema.records,
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+    });
+
     const selectedRecords = resolveRecordsToOperate({
       invocationDir,
       workspaceLinkPath,
       records: parsedSchema.schema.records,
+      recordStatuses,
       workspaceOption: options.workspace,
       all: options.all,
       commandName: "workspace remove",
@@ -345,11 +419,23 @@ export function createWorkspaceRemoveTask(
     emit({ kind: "text", text: `Workspace link file: ${workspaceLinkPath}` });
     emit({ kind: "text", text: "Selected workspace record(s):" });
     for (const record of selectedRecords.records) {
+      const status = recordStatuses.get(record.id);
       emit({
         kind: "text",
-        text: `  - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+        text: `  - ${formatWorkspaceRecordSelectionText(record, status)}`,
       });
     }
+
+    const selectedStaleStatuses = selectedRecords.records
+      .map((record) => recordStatuses.get(record.id))
+      .filter((recordStatus): recordStatus is WorkspaceRecordStatus => {
+        return recordStatus !== undefined && recordStatus.health !== "ok";
+      });
+    emitStaleWorkspaceRecordWarnings({
+      emit,
+      commandName: "workspace remove",
+      selectedStaleStatuses,
+    });
 
     if (options.deleteFiles) {
       emit({ kind: "text", text: "Selected workspace file/directory cleanup target(s):" });
@@ -366,9 +452,10 @@ export function createWorkspaceRemoveTask(
       emit({ kind: "text", text: "Dry-run impact preview:" });
       emit({ kind: "text", text: "  - Records to remove:" });
       for (const record of selectedRecords.records) {
+        const status = recordStatuses.get(record.id);
         emit({
           kind: "text",
-          text: `    - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+          text: `    - ${formatWorkspaceRecordSelectionText(record, status)}`,
         });
       }
       emit({
@@ -571,4 +658,71 @@ function buildDeletionBoundaryViolationMessage(input: {
     ...input.configuredWorkspaceRoots.map((workspaceRoot) => `- ${workspaceRoot}`),
   ];
   return messageLines.join("\n");
+}
+
+function mapWorkspaceRecordStatuses(input: {
+  invocationDir: string;
+  records: CanonicalWorkspaceLinkRecord[];
+  fileSystem: FileSystem;
+  pathOperations: PathOperationsPort;
+}): Map<string, WorkspaceRecordStatus> {
+  const statuses = new Map<string, WorkspaceRecordStatus>();
+  for (const record of input.records) {
+    const absolutePath = input.pathOperations.resolve(input.invocationDir, record.workspacePath);
+    const targetStats = input.fileSystem.stat(absolutePath);
+    const health: WorkspaceRecordHealth = targetStats === null
+      ? "target-missing"
+      : targetStats.isDirectory
+        ? "ok"
+        : "target-not-directory";
+    statuses.set(record.id, {
+      record,
+      absolutePath,
+      health,
+    });
+  }
+  return statuses;
+}
+
+function formatWorkspaceRecordSelectionText(
+  record: CanonicalWorkspaceLinkRecord,
+  status: WorkspaceRecordStatus | undefined,
+): string {
+  const absolutePath = status?.absolutePath ?? record.workspacePath;
+  if (!status || status.health === "ok") {
+    return `${record.id}: ${absolutePath}`;
+  }
+
+  return `${record.id}: ${absolutePath} (${describeWorkspaceRecordHealth(status.health)})`;
+}
+
+function describeWorkspaceRecordHealth(health: WorkspaceRecordHealth): string {
+  if (health === "target-missing") {
+    return "stale: target missing";
+  }
+  if (health === "target-not-directory") {
+    return "stale: target is not a directory";
+  }
+  return "active";
+}
+
+function emitStaleWorkspaceRecordWarnings(input: {
+  emit: (event: { kind: "warn"; message: string }) => void;
+  commandName: "workspace unlink" | "workspace remove";
+  selectedStaleStatuses: WorkspaceRecordStatus[];
+}): void {
+  if (input.selectedStaleStatuses.length === 0) {
+    return;
+  }
+
+  input.emit({
+    kind: "warn",
+    message: `Detected ${input.selectedStaleStatuses.length} selected stale/orphan workspace record(s). ${input.commandName} will clean metadata records even when workspace targets are missing or invalid.`,
+  });
+  for (const status of input.selectedStaleStatuses) {
+    input.emit({
+      kind: "warn",
+      message: `Stale workspace record: ${status.record.id} -> ${status.absolutePath} (${describeWorkspaceRecordHealth(status.health)})`,
+    });
+  }
 }
