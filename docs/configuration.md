@@ -223,6 +223,7 @@ Common companion overrides:
 
 - `commands.run`: execution defaults when no profile/CLI override is present.
 - `commands.discuss`: interactive defaults (commonly `["opencode"]`).
+- `explore` and `make` are sequential wrappers over `research` then `plan`, so their worker behavior depends on `commands.research`/`commands.plan` (or shared defaults) being compatible across both phases.
 
 Example:
 

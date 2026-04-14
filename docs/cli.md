@@ -764,7 +764,7 @@ rundown plan docs/spec.md --mode wait --scan-count 2 --deep 2 --worker '["openco
 
 Run `research` and then `plan` on the same existing Markdown document.
 
-`explore` is a convenience alias for the common enrichment flow on docs that already exist:
+`explore` is a sequential wrapper for the common enrichment flow on docs that already exist:
 
 1. `rundown research <source>` enriches context and structure,
 2. `rundown plan <source>` synthesizes actionable TODO items.
@@ -828,6 +828,7 @@ Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
 - If neither is provided, `explore` resolves worker input using the same command resolution behavior as `research` and `plan`.
+- Because `explore` runs `research` and `plan` in sequence, the resolved worker configuration must be compatible with both phases.
 
 Examples:
 
@@ -853,7 +854,7 @@ rundown make "<seed-text>" "<markdown-file>" [options] -- <command>
 rundown make "<seed-text>" "<markdown-file>" [options] --worker <pattern>
 ```
 
-`make` is a composition command for the authoring bootstrap flow:
+`make` is a sequential wrapper/composition command for the authoring bootstrap flow:
 
 1. create target Markdown file,
 2. write `seed-text` as the initial file body,
@@ -896,6 +897,7 @@ Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
 - If neither is provided, `make` resolves worker input using the same command resolution behavior as `research` and `plan`.
+- Because `make` runs `research` and `plan` in sequence after file creation, the resolved worker configuration must be compatible with both phases.
 
 Examples:
 
