@@ -300,6 +300,15 @@ Start the worker without waiting.
 
 This mode keeps runtime artifacts on disk, skips immediate verification, and leaves the task unchecked.
 
+## OpenCode worker defaults
+
+When `opencode` is your primary worker, use explicit command defaults by interaction style:
+
+- non-interactive flows (`research`, `plan`, `run`, `reverify`): `["opencode", "run"]`
+- interactive task-shaping flow (`discuss`): `["opencode"]`
+
+This keeps deterministic phases on the non-interactive runner while preserving an interactive TUI session for discussion.
+
 ## Prompt transport
 
 Rendered prompts can be delivered in two ways.
