@@ -66,6 +66,57 @@ describeIfStartAvailable("start-project integration", () => {
     expect(sourceLink.defaultRecordId).toBeUndefined();
   });
 
+  it("preserves existing source link records and writes target metadata for new starts", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "linked-target";
+    const projectDir = path.join(workspace, projectDirName);
+    const existingLinkedDirName = "existing-linked";
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, existingLinkedDirName), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), "{}\n", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        defaultRecordId: "existing",
+        records: [{ id: "existing", workspacePath: existingLinkedDirName, default: true }],
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "start",
+      "Linked target",
+      "--dir",
+      projectDirName,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
+    expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
+
+    const sourceWorkspaceLinkPath = path.join(workspace, ".rundown", "workspace.link");
+    expect(fs.existsSync(sourceWorkspaceLinkPath)).toBe(true);
+    const sourceLink = JSON.parse(fs.readFileSync(sourceWorkspaceLinkPath, "utf-8")) as {
+      schemaVersion: number;
+      records: Array<{ id: string; workspacePath: string; default?: boolean }>;
+      defaultRecordId?: string;
+    };
+
+    expect(sourceLink.schemaVersion).toBe(1);
+    expect(sourceLink.defaultRecordId).toBe("existing");
+    expect(sourceLink.records.map((record) => record.workspacePath)).toEqual([
+      existingLinkedDirName,
+      projectDirName,
+    ]);
+  });
+
   it("does not create nested .git when scaffolding inside an existing repository", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "prediction-project";
