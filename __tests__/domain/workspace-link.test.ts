@@ -5,9 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
 import { createNodePathOperationsAdapter } from "../../src/infrastructure/adapters/node-path-operations-adapter.js";
 import {
+  parseWorkspaceLinkSchema,
   resolveEffectiveWorkspaceRoot,
   resolveWorkspaceLink,
+  serializeWorkspaceLinkSchema,
   WORKSPACE_LINK_RELATIVE_PATH,
+  WORKSPACE_LINK_SCHEMA_VERSION,
 } from "../../src/domain/workspace-link.js";
 
 describe("resolveWorkspaceLink", () => {
@@ -175,5 +178,139 @@ describe("resolveWorkspaceLink", () => {
     });
 
     expect(effectiveRoot).toBe(rootB);
+  });
+
+  it("returns invalid ambiguous when link schema has multiple records with no default", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-workspace-link-"));
+    tempDirs.push(tempDir);
+
+    const invocationDir = path.join(tempDir, "invocation");
+    fs.mkdirSync(path.join(invocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(invocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        records: [
+          { id: "alpha", workspacePath: "../workspace-a" },
+          { id: "beta", workspacePath: "../workspace-b" },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = resolveWorkspaceLink({
+      currentDir: invocationDir,
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      linkPath: path.join(invocationDir, WORKSPACE_LINK_RELATIVE_PATH),
+      relativeTarget: "",
+      reason: "ambiguous",
+    });
+  });
+});
+
+describe("parseWorkspaceLinkSchema", () => {
+  it("supports legacy single-path workspace link content", () => {
+    const parsed = parseWorkspaceLinkSchema(" ../workspace/root\\nested ");
+
+    expect(parsed).toEqual({
+      status: "ok",
+      schema: {
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        sourceFormat: "legacy-single-path",
+        records: [{
+          id: "default",
+          workspacePath: "../workspace/root/nested",
+          isDefault: true,
+        }],
+        defaultRecordId: "default",
+        requiresWorkspaceSelection: false,
+      },
+    });
+  });
+
+  it("supports multi-record schema and derives default from record marker", () => {
+    const parsed = parseWorkspaceLinkSchema(JSON.stringify({
+      schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+      records: [
+        { id: "source", workspacePath: "../workspace/source", default: true },
+        { id: "alt", workspacePath: "../workspace/alt" },
+      ],
+    }));
+
+    expect(parsed).toEqual({
+      status: "ok",
+      schema: {
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        sourceFormat: "multi-record-v1",
+        records: [
+          { id: "source", workspacePath: "../workspace/source", isDefault: true },
+          { id: "alt", workspacePath: "../workspace/alt", isDefault: false },
+        ],
+        defaultRecordId: "source",
+        requiresWorkspaceSelection: false,
+      },
+    });
+  });
+
+  it("requires explicit workspace selection when multiple records have no default", () => {
+    const parsed = parseWorkspaceLinkSchema(JSON.stringify({
+      schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+      records: [
+        { id: "source", workspacePath: "../workspace/source" },
+        { id: "alt", workspacePath: "../workspace/alt" },
+      ],
+    }));
+
+    expect(parsed).toEqual({
+      status: "ok",
+      schema: {
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        sourceFormat: "multi-record-v1",
+        records: [
+          { id: "source", workspacePath: "../workspace/source", isDefault: false },
+          { id: "alt", workspacePath: "../workspace/alt", isDefault: false },
+        ],
+        defaultRecordId: undefined,
+        requiresWorkspaceSelection: true,
+      },
+    });
+  });
+
+  it("rejects conflicting default markers", () => {
+    const parsed = parseWorkspaceLinkSchema(JSON.stringify({
+      schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+      defaultRecordId: "source",
+      records: [
+        { id: "source", workspacePath: "../workspace/source" },
+        { id: "alt", workspacePath: "../workspace/alt", default: true },
+      ],
+    }));
+
+    expect(parsed).toEqual({
+      status: "error",
+      reason: "conflicting-default-markers",
+      message: "workspace.link defaultRecordId conflicts with record.default marker.",
+    });
+  });
+});
+
+describe("serializeWorkspaceLinkSchema", () => {
+  it("serializes canonical multi-record schema with stable defaults", () => {
+    const serialized = serializeWorkspaceLinkSchema({
+      records: [
+        { id: "source", workspacePath: "../workspace/source", isDefault: true },
+        { id: "alt", workspacePath: "../workspace/alt" },
+      ],
+    });
+
+    expect(serialized).toContain(`"schemaVersion": ${WORKSPACE_LINK_SCHEMA_VERSION}`);
+    expect(serialized).toContain("\"id\": \"source\"");
+    expect(serialized).toContain("\"defaultRecordId\": \"source\"");
+    expect(serialized.endsWith("\n")).toBe(true);
   });
 });
