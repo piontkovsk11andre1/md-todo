@@ -53,6 +53,8 @@ This is what `rundown` is for.
 
 ### The workload protocol
 
+> See [docs/overview.md](docs/overview.md) for the full core-model reference.
+
 At the **lowest level**, `rundown` defines a workload protocol:
 
 ```markdown
@@ -94,6 +96,9 @@ Context body.
 ```
 
 …and more.
+
+> See [docs/configuration.md](docs/configuration.md) for profiles, workers, and per-command overrides.
+> See [docs/templates.md](docs/templates.md) for the template system.
 
 ### Recommended project structure
 
@@ -153,6 +158,8 @@ rd
 
 Ask the agent to set everything up and start working — it will answer all your questions.
 
+> See [docs/cli.md](docs/cli.md) for all commands and options.
+
 ---
 
 ## Installation
@@ -160,3 +167,11 @@ Ask the agent to set everything up and start working — it will answer all your
 ```bash
 npm i -g @p10i/rundown
 ```
+
+## Documentation
+
+- [Overview](docs/overview.md) — core model, workflow, and task lifecycle
+- [CLI](docs/cli.md) — commands, flags, and global options
+- [Configuration](docs/configuration.md) — workers, profiles, and layered config
+- [Templates](docs/templates.md) — repository-local Markdown templates
+- [Examples](docs/examples.md) — end-to-end usage scenarios
