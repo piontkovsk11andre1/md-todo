@@ -276,6 +276,7 @@ function buildCommandIndex(): string {
     "- revert: undo completed task runs",
     "- next/list: inspect upcoming tasks",
     "- artifacts/log: inspect saved run metadata",
+    "- workspace unlink/remove: manage workspace link lifecycle and optional cleanup",
     "- memory-view/memory-validate/memory-clean: manage source memory",
     "- init: scaffold .rundown defaults",
     "- unlock: release stale source lockfiles",

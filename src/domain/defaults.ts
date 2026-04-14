@@ -356,6 +356,16 @@ Use \`--deep <n>\` for nested child TODO generation after top-level scans conver
 
 **unlock** — Release a stale per-source lockfile.
 
+**workspace unlink** / **workspace remove** — Manage linked workspace lifecycle metadata with safe cleanup semantics.
+
+- \`rundown workspace unlink [--workspace <dir|id>] [--all] [--dry-run]\`
+  - Metadata-only unlink. Never deletes linked workspace files/directories.
+- \`rundown workspace remove [--workspace <dir|id>] [--all] [--delete-files] [--dry-run] [--force]\`
+  - Removes metadata; deletes linked files/directories only when \`--delete-files\` is set.
+  - Destructive cleanup requires explicit confirmation unless \`--force\` is set.
+- If multiple workspace records exist and no selector is provided, command flow fails safely with candidate guidance.
+- Use \`--dry-run\` first to preview exactly which records/files would be removed.
+
 **init** — Scaffold \`.rundown/\` with default templates, \`vars.json\`, and \`config.json\`.
 
 ### Worker forms
@@ -378,6 +388,9 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 - **Check before release:** \`rundown reverify --no-repair -- opencode run\`
 - **Undo last task:** \`rundown revert --run latest -- opencode run\`
 - **See what's next:** \`rundown next .\`
+- **Unlink one workspace record:** \`rundown workspace unlink --workspace ../predict-auth\`
+- **Preview destructive cleanup:** \`rundown workspace remove --workspace auth-workspace --delete-files --dry-run\`
+- **Delete linked files non-interactively:** \`rundown workspace remove --all --delete-files --force\`
 - **Preview without running:** add \`--dry-run\` or \`--print-prompt\` to any command
 
 ### Task prefixes (in Markdown checkboxes)
