@@ -28,6 +28,32 @@ const hasStartTaskUseCase = fs.existsSync(START_TASK_FILE_PATH);
 const describeIfStartAvailable = hasStartCommand && hasStartTaskUseCase ? describe : describe.skip;
 
 describeIfStartAvailable("start-project integration", () => {
+  it("documents current inverted link-creation behavior from existing workspace", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "linked-target";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), "{}\n", "utf-8");
+
+    const result = await runCli([
+      "start",
+      "Linked target",
+      "--dir",
+      projectDirName,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
+    expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
+    expect(fs.existsSync(path.join(workspace, ".rundown", "workspace.link"))).toBe(false);
+  });
+
   it("does not create nested .git when scaffolding inside an existing repository", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "prediction-project";
