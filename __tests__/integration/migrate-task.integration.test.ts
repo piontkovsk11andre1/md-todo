@@ -865,6 +865,97 @@ describeIfSatelliteMigrateAvailable("migrate satellite regeneration integration"
     expect(fs.existsSync(path.join(linkedInvocationDir, "changesets", "0001--snapshot.md"))).toBe(false);
   });
 
+  it("supports multi-record workspace links with explicit --workspace selection", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
+    const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspaceA, { recursive: true });
+    fs.mkdirSync(sourceWorkspaceB, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldPredictionProjectWithSatelliteTemplates(sourceWorkspaceA);
+    scaffoldPredictionProjectWithSatelliteTemplates(sourceWorkspaceB);
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          { id: "alpha", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceA).replace(/\\/g, "/") },
+          { id: "beta", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceB).replace(/\\/g, "/") },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "snapshot",
+      "--workspace",
+      path.relative(linkedInvocationDir, sourceWorkspaceA),
+      "--",
+      "node",
+      "-e",
+      [
+        "console.log('# Snapshot');",
+        "console.log('');",
+        "console.log('multi-record-selection-ok');",
+        "process.exit(0);",
+      ].join("\n"),
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(sourceWorkspaceA, "migrations", "0001--snapshot.md"))).toBe(true);
+    expect(fs.existsSync(path.join(sourceWorkspaceB, "migrations", "0001--snapshot.md"))).toBe(false);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "migrations", "0001--snapshot.md"))).toBe(false);
+  });
+
+  it("fails with candidate guidance when multi-record workspace links are ambiguous", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
+    const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspaceA, { recursive: true });
+    fs.mkdirSync(sourceWorkspaceB, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldPredictionProjectWithSatelliteTemplates(sourceWorkspaceA);
+    scaffoldPredictionProjectWithSatelliteTemplates(sourceWorkspaceB);
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          { id: "alpha", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceA).replace(/\\/g, "/") },
+          { id: "beta", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceB).replace(/\\/g, "/") },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "snapshot",
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Workspace selection is ambiguous");
+    expect(combinedOutput).toContain("Candidates:");
+    expect(combinedOutput).toContain("alpha:");
+    expect(combinedOutput).toContain("beta:");
+    expect(combinedOutput).toContain("Re-run the command with --workspace <dir>");
+  });
+
   for (const action of SATELLITE_ACTIONS) {
     it(`rerunning migrate ${action} overwrites the same satellite file`, async () => {
       const workspace = makeTempWorkspace();
@@ -1062,6 +1153,102 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(result.code).toBe(0);
     expect(fs.existsSync(path.join(sourceWorkspace, "docs", "rev.1", "Design.md"))).toBe(true);
     expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1", "Design.md"))).toBe(false);
+  });
+
+  it("supports docs publish with explicit --workspace for multi-record workspace links", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
+    const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspaceA, { recursive: true });
+    fs.mkdirSync(sourceWorkspaceB, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldPredictionProject(sourceWorkspaceA);
+    scaffoldPredictionProject(sourceWorkspaceB);
+    fs.mkdirSync(path.join(sourceWorkspaceA, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspaceA, "docs", "current", "Design.md"), "# Design\n\nselected source\n", "utf-8");
+    fs.mkdirSync(path.join(sourceWorkspaceB, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspaceB, "docs", "current", "Design.md"), "# Design\n\nunselected source\n", "utf-8");
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          { id: "alpha", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceA).replace(/\\/g, "/") },
+          { id: "beta", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceB).replace(/\\/g, "/") },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "docs",
+      "publish",
+      "--workspace",
+      path.relative(linkedInvocationDir, sourceWorkspaceA),
+      "--dir",
+      "migrations",
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(sourceWorkspaceA, "docs", "rev.1", "Design.md"))).toBe(true);
+    expect(fs.existsSync(path.join(sourceWorkspaceB, "docs", "rev.1", "Design.md"))).toBe(false);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1", "Design.md"))).toBe(false);
+  });
+
+  it("fails docs diff with actionable ambiguity guidance when --workspace is omitted", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
+    const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(path.join(sourceWorkspaceA, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceB, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceA, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceA, "docs", "current"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceB, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceB, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspaceA, "docs", "rev.1", "Design.md"), "old-a\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspaceA, "docs", "current", "Design.md"), "new-a\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspaceB, "docs", "rev.1", "Design.md"), "old-b\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspaceB, "docs", "current", "Design.md"), "new-b\n", "utf-8");
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          { id: "alpha", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceA).replace(/\\/g, "/") },
+          { id: "beta", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceB).replace(/\\/g, "/") },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "docs",
+      "diff",
+      "preview",
+      "--dir",
+      "migrations",
+    ], linkedInvocationDir);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Workspace selection is ambiguous");
+    expect(combinedOutput).toContain("Candidates:");
+    expect(combinedOutput).toContain("alpha:");
+    expect(combinedOutput).toContain("beta:");
+    expect(combinedOutput).toContain("Re-run the command with --workspace <dir>");
   });
 
   it("resolves docs diff against linked workspace roots", async () => {
