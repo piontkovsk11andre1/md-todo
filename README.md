@@ -53,7 +53,7 @@ This is what `rundown` is for.
 
 ### The workload protocol
 
-At the lowest level, `rundown` defines a workload protocol:
+At the **lowest level**, `rundown` defines a workload protocol:
 
 ```markdown
 Context body.
@@ -97,7 +97,9 @@ Context body.
 
 ### Recommended project structure
 
-At the highest level, `rundown` recommends the following layout (names can be changed):
+At the **highest level**, `rundown` recommends the following layout (names can be changed).
+
+You don't have to use this if you don't want to.
 
 ```text
 design/

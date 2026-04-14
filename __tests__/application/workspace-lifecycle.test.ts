@@ -262,6 +262,28 @@ describe("workspace-lifecycle remove", () => {
     expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
     expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceTarget, { recursive: true, force: true });
   });
+
+  it("blocks destructive cleanup when a selected target resolves to filesystem root", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { removeTask, fileSystem, events, interactiveInput } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../../..\n",
+      },
+      directories: [path.parse(invocationDir).root],
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: true, dryRun: false, force: true });
+
+    expect(code).toBe(1);
+    expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
+    expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
+    const errorEvent = events.find((event) => event.kind === "error");
+    expect(errorEvent?.kind).toBe("error");
+    if (errorEvent?.kind === "error") {
+      expect(errorEvent.message).toContain("Refusing to delete filesystem root paths");
+    }
+  });
 });
 
 function createHarness(

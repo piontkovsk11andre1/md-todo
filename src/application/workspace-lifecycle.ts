@@ -321,8 +321,25 @@ export function createWorkspaceRemoveTask(
 
     const selectedRecordIds = new Set(selectedRecords.records.map((record) => record.id));
     const remainingRecords = parsedSchema.schema.records.filter((record) => !selectedRecordIds.has(record.id));
+    const configuredWorkspaceRoots = parsedSchema.schema.records
+      .map((record) => dependencies.pathOperations.resolve(invocationDir, record.workspacePath));
     const selectedWorkspaceTargets = selectedRecords.records
       .map((record) => dependencies.pathOperations.resolve(invocationDir, record.workspacePath));
+
+    if (options.deleteFiles) {
+      const deletionBoundaryValidation = validateWorkspaceDeletionTargets({
+        pathOperations: dependencies.pathOperations,
+        targets: selectedWorkspaceTargets,
+        configuredWorkspaceRoots,
+      });
+      if (!deletionBoundaryValidation.ok) {
+        emit({
+          kind: "error",
+          message: buildDeletionBoundaryViolationMessage(deletionBoundaryValidation),
+        });
+        return EXIT_CODE_FAILURE;
+      }
+    }
 
     emit({ kind: "text", text: `Invocation directory: ${invocationDir}` });
     emit({ kind: "text", text: `Workspace link file: ${workspaceLinkPath}` });
@@ -477,4 +494,81 @@ export function createWorkspaceRemoveTask(
     });
     return EXIT_CODE_SUCCESS;
   };
+}
+
+function validateWorkspaceDeletionTargets(input: {
+  pathOperations: PathOperationsPort;
+  targets: string[];
+  configuredWorkspaceRoots: string[];
+}):
+  | { ok: true }
+  | {
+    ok: false;
+    blockedTargets: string[];
+    configuredWorkspaceRoots: string[];
+    reason: "outside-roots" | "filesystem-root";
+  } {
+  const uniqueConfiguredRoots = [...new Set(input.configuredWorkspaceRoots
+    .map((workspaceRoot) => input.pathOperations.resolve(workspaceRoot)))];
+  const normalizedTargets = input.targets
+    .map((target) => input.pathOperations.resolve(target));
+
+  const fileSystemRootTargets = normalizedTargets.filter((target) => {
+    const root = path.parse(target).root;
+    return root.length > 0 && target === root;
+  });
+  if (fileSystemRootTargets.length > 0) {
+    return {
+      ok: false,
+      blockedTargets: [...new Set(fileSystemRootTargets)],
+      configuredWorkspaceRoots: uniqueConfiguredRoots,
+      reason: "filesystem-root",
+    };
+  }
+
+  const blockedTargets = normalizedTargets.filter((target) => !isWithinConfiguredWorkspaceRoots({
+    pathOperations: input.pathOperations,
+    target,
+    configuredWorkspaceRoots: uniqueConfiguredRoots,
+  }));
+
+  if (blockedTargets.length > 0) {
+    return {
+      ok: false,
+      blockedTargets: [...new Set(blockedTargets)],
+      configuredWorkspaceRoots: uniqueConfiguredRoots,
+      reason: "outside-roots",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isWithinConfiguredWorkspaceRoots(input: {
+  pathOperations: PathOperationsPort;
+  target: string;
+  configuredWorkspaceRoots: string[];
+}): boolean {
+  return input.configuredWorkspaceRoots.some((workspaceRoot) => {
+    const relative = input.pathOperations.relative(workspaceRoot, input.target);
+    return relative.length === 0
+      || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+  });
+}
+
+function buildDeletionBoundaryViolationMessage(input: {
+  blockedTargets: string[];
+  configuredWorkspaceRoots: string[];
+  reason: "outside-roots" | "filesystem-root";
+}): string {
+  const messageLines = [
+    input.reason === "filesystem-root"
+      ? "Refusing to delete filesystem root paths."
+      : "Refusing to delete workspace targets outside configured/linked workspace roots.",
+    "Blocked target(s):",
+    ...input.blockedTargets.map((target) => `- ${target}`),
+    "Configured/linked workspace root(s):",
+    ...input.configuredWorkspaceRoots.map((workspaceRoot) => `- ${workspaceRoot}`),
+  ];
+  return messageLines.join("\n");
 }
