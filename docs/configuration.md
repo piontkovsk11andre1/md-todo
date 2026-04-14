@@ -28,17 +28,6 @@ When created by `rundown init`, this file starts as an empty JSON object (`{}`).
 
 That means no default worker is configured until you add one. Worker-required commands (`run`, `plan`, `discuss`, `research`, `reverify`) must receive a worker explicitly via `--worker <command...>` or `-- <command>` when config is empty.
 
-## Empty or partial config behavior
-
-`rundown` treats missing config keys as missing configuration, not as permission to guess a different worker.
-
-- Empty local config (`{}`): no local worker defaults are present. Resolution still follows the normal cascade (built-in -> global -> local -> command/profile -> CLI).
-- Partial config: only provided keys participate. Omitted keys stay omitted, so unresolved worker-required commands fail rather than silently switching to an incompatible command-specific worker.
-- Invalid/incompatible worker values (wrong types, malformed arrays, or invalid JSON) fail fast with path-specific actionable errors.
-- When no worker is resolved for a worker-required command, rundown exits non-zero with guidance to set `defaults.worker` or `commands.<name>.worker`, or to pass `--worker <pattern>` / `-- <command>` for that invocation.
-
-This behavior is intentional for deterministic prediction flows: no silent fallback to incompatible worker settings.
-
 Example:
 
 ```json
@@ -206,82 +195,7 @@ Notes:
 
 - CLI worker command always wins.
 - Referencing an unknown profile name is an error.
-- If no worker is resolved from CLI or config, worker-required commands fail with guidance to configure `defaults.worker` or `commands.<name>.worker` in config.
-
-## Command-level worker overrides
-
-Use command overrides as the primary control surface for predictable behavior across prediction flows instead of repeating ad-hoc CLI worker flags.
-
-Recommended commands to set explicitly:
-
-- `commands.plan`: deterministic planning worker (commonly `["opencode", "run"]`).
-- `commands.research`: deterministic research worker for prediction inputs.
-- `commands.verify`: verification-specific worker/model defaults.
-- `commands.memory`: memory-capture worker/model defaults.
-
-Common companion overrides:
-
-- `commands.run`: execution defaults when no profile/CLI override is present.
-- `commands.discuss`: interactive defaults (commonly `["opencode"]`).
-- `explore` and `make` are sequential wrappers over `research` then `plan`, so their worker behavior depends on `commands.research`/`commands.plan` (or shared defaults) being compatible across both phases.
-
-Example:
-
-```json
-{
-  "defaults": {
-    "worker": ["opencode", "run"]
-  },
-  "commands": {
-    "plan": {
-      "workerArgs": ["--model", "opus-4.6"]
-    },
-    "research": {
-      "workerArgs": ["--model", "opus-4.6"]
-    },
-    "verify": {
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    },
-    "memory": {
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    },
-    "discuss": {
-      "worker": ["opencode"]
-    }
-  }
-}
-```
-
-## CLI override behavior
-
-CLI worker flags are highest precedence and override resolved config for that invocation only.
-
-- `--worker <command...>`: explicit and cross-shell-safe form (recommended, especially in PowerShell).
-- `-- <command...>`: separator form with the same precedence and behavior.
-
-Examples:
-
-```bash
-rundown plan --worker opencode run
-rundown research --worker opencode run
-rundown discuss --worker opencode
-rundown run --worker opencode run
-```
-
-## Linked workspace and path-sensitive commands
-
-Config resolution and workspace resolution are separate and both affect prediction flows:
-
-- `--config-dir` (or upward `.rundown/` discovery) selects the config root for config/templates/vars/runs/logs.
-- Linked workspace resolution (from `.rundown/workspace.link`, optionally overridden by `--workspace`) selects `sourcedir` for workspace-bucket paths.
-- `--config-dir` does not replace `--workspace` and does not choose the linked source workspace.
-
-When `--workspace` must be provided:
-
-- If `.rundown/workspace.link` has multiple records and no default, path-sensitive prediction commands cannot pick a unique source root and fail with candidate guidance.
-- In scripted or CI multi-workspace contexts, setting `--workspace <dir>` explicitly is recommended for deterministic `sourcedir` selection.
-
-Commands most sensitive to workspace-root selection include migration/design lifecycle commands (`migrate`, `design release`, `design diff`) and prediction context flows that resolve bucket paths (`research`, `plan`, `run` prompt context, and wrappers such as `explore` and `make`).
+- If no worker is resolved from CLI or config, worker-required commands fail with guidance to configure `.rundown/config.json`.
 
 ## Config command
 

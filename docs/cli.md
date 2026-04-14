@@ -7,9 +7,8 @@
 `--config-dir <path>` is available on every command.
 
 - If provided, rundown uses that directory as the `.rundown` config root and skips upward discovery.
-- If omitted, rundown discovers `.rundown/` by walking upward from the effective start directory (command invocation directory for command-scoped flows, source file directory for source-scoped flows) until it finds one.
+- If omitted, rundown discovers `.rundown/` by walking upward from the command start directory until it finds one.
 - If discovery finds nothing, command-specific fallback behavior applies (for example, `init` creates one locally).
-- Config directory discovery and linked-workspace selection are separate concerns: `--config-dir` controls config/templates/vars/runs/logs roots, while linked workspace resolution controls `sourcedir` for path-sensitive prediction commands.
 
 Examples:
 
@@ -229,8 +228,6 @@ Workspace selection notes (`migrate`, `design release`, `design diff`):
 - By default, path-sensitive commands resolve workspace from `.rundown/workspace.link`.
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
 - Use `--workspace <dir>` to select the effective workspace explicitly (relative to invocation directory).
-- `--workspace` is required for these commands when ambiguity exists (for example, multiple link records with no default, or when invocation context is not the intended source root).
-- `--config-dir` does not pick the linked workspace; it only selects the config root used for discovery and runtime files.
 
 Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
 
@@ -240,12 +237,6 @@ Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `rese
 - Mixed placement is valid (for example, `design` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`).
 - In linked mode, `sourcedir` maps to the resolved linked workspace, while `workdir` stays at the invocation directory.
 - If any two buckets resolve to the same absolute path (including across different roots), command resolution fails with a placement conflict error.
-
-When `--workspace` is required for path-sensitive prediction commands:
-
-- `migrate`, `design release`, and `design diff` fail fast and require `--workspace <dir>` when linked-workspace metadata is ambiguous.
-- For prediction flows that derive context from workspace buckets (`research`, `plan`, `run` prompt context, and wrappers like `explore`/`make`), pass `--workspace <dir>` whenever linked records could resolve to multiple plausible `sourcedir` roots.
-- In CI or scripted multi-workspace environments, prefer always setting `--workspace` to make source-root selection deterministic.
 
 Mixed-placement example:
 
@@ -372,9 +363,6 @@ Examples:
 
 ```bash
 rundown run roadmap.md
-rundown run roadmap.md --mode wait
-rundown run roadmap.md --mode tui
-rundown run roadmap.md --mode detached
 rundown run docs/
 rundown run "notes/**/*.md"
 rundown run roadmap.md --all
@@ -385,13 +373,13 @@ rundown all roadmap.md
 rundown run tasks.md --show-agent-output
 ```
 
-PowerShell-safe worker form:
+PowerShell-safe form:
 
 ```powershell
-rundown run docs/ --worker '["opencode","run"]'
-rundown run docs/ --all --worker '["opencode","run"]'
+rundown run docs/
+rundown run docs/ --all
 rundown all docs/
-rundown run docs/ --show-agent-output --worker '["opencode","run"]'
+rundown run docs/ --show-agent-output
 ```
 
 Agent output notes (`run --show-agent-output`):
@@ -467,9 +455,7 @@ rundown discuss <source> [options] --worker <pattern>
 
 `discuss` uses the same source resolution and task-selection logic as `run`, but opens a discussion-oriented worker session (default `--mode tui`) instead of executing the task implementation flow.
 
-When interactive execution is unavailable (for example CI/non-TTY), run `discuss` with `--mode wait` for deterministic non-interactive behavior.
-
-`--worker` is optional when rundown can resolve a worker for `discuss` from effective config.
+`--worker` is optional when rundown can resolve a worker for `discuss` from `.rundown/config.json`.
 
 During this session, the agent may edit the Markdown source task text to improve scope and clarity (for example rewriting task wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
 
@@ -494,11 +480,8 @@ Options:
 Examples:
 
 ```bash
-# Interactive discuss session
-rundown discuss roadmap.md --mode tui
-
-# Non-interactive discuss session
-rundown discuss docs/ --mode wait
+rundown discuss roadmap.md
+rundown discuss docs/
 rundown discuss tasks.md --mode wait
 rundown discuss roadmap.md --print-prompt
 rundown discuss roadmap.md --dry-run
@@ -514,7 +497,7 @@ By default, `reverify` targets the latest completed task in the current reposito
 
 Use this when you want a deterministic confidence check against an exact historical task context (for example, before a release or push) without advancing task selection.
 
-`--worker` is optional when rundown can resolve a worker for `reverify` from effective config.
+`--worker` is optional when rundown can resolve a worker for `reverify` from `.rundown/config.json`.
 
 Options:
 
@@ -670,8 +653,8 @@ Run document-level TODO synthesis on a single Markdown document using the planne
 For thin specs, run `research` first so `plan` has richer context:
 
 ```bash
-rundown research docs/spec.md --mode wait
-rundown plan docs/spec.md --mode wait --scan-count 3
+rundown research docs/spec.md
+rundown plan docs/spec.md --scan-count 3
 ```
 
 `plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
@@ -707,7 +690,7 @@ Options:
 Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
-- If neither is provided, `plan` resolves the worker from effective config using the standard resolution cascade.
+- If neither is provided, `plan` resolves the worker from `.rundown/config.json` using the standard resolution cascade.
 - For OpenCode workers, continuation/resume session arguments are rejected so each scan runs in a clean session.
 
 Scan loop and convergence semantics:
@@ -739,42 +722,35 @@ Examples:
 
 ```bash
 # Basic plan run
-rundown plan roadmap.md --mode wait --scan-count 3
+rundown plan roadmap.md --scan-count 3
 
 # No TODOs yet: bootstrap actionable TODOs, then converge
-rundown plan docs/spec.md --mode wait --scan-count 3
+rundown plan docs/spec.md --scan-count 3
 
 # Existing TODOs: append missing implementation items only
-rundown plan docs/migration.md --mode wait --scan-count 2
+rundown plan docs/migration.md --scan-count 2
 
 # Add one nested layer of child TODOs after top-level scans
-rundown plan docs/spec.md --mode wait --scan-count 3 --deep 1
+rundown plan docs/spec.md --scan-count 3 --deep 1
 
 # Add two nested layers (children, then grandchildren)
-rundown plan docs/spec.md --mode wait --scan-count 3 --deep 2
+rundown plan docs/spec.md --scan-count 3 --deep 2
 
 # PowerShell-safe worker form
-rundown plan docs/spec.md --mode wait --scan-count 2 --worker '["opencode","run"]'
+rundown plan docs/spec.md --scan-count 2
 
 # PowerShell-safe deep planning
-rundown plan docs/spec.md --mode wait --scan-count 2 --deep 2 --worker '["opencode","run"]'
+rundown plan docs/spec.md --scan-count 2 --deep 2
 ```
 
 ### `rundown explore <markdown-file>`
 
 Run `research` and then `plan` on the same existing Markdown document.
 
-`explore` is a sequential wrapper for the common enrichment flow on docs that already exist:
+`explore` is a convenience alias for the common enrichment flow on docs that already exist:
 
 1. `rundown research <source>` enriches context and structure,
 2. `rundown plan <source>` synthesizes actionable TODO items.
-
-Together with `rundown run <source>`, this forms the standard prediction-to-execution path: `research -> plan -> run`.
-
-Contract note:
-
-- This flow description aligns command intent and examples only.
-- It does not alter verification/repair semantics, per-source lockfile behavior, or runtime artifact retention/cleanup rules.
 
 Synopsis:
 
@@ -828,7 +804,6 @@ Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
 - If neither is provided, `explore` resolves worker input using the same command resolution behavior as `research` and `plan`.
-- Because `explore` runs `research` and `plan` in sequence, the resolved worker configuration must be compatible with both phases.
 
 Examples:
 
@@ -840,7 +815,7 @@ rundown explore docs/spec.md
 rundown explore docs/spec.md --scan-count 3 --deep 1
 
 # PowerShell-safe worker form
-rundown explore docs/spec.md --worker '["opencode","run"]'
+rundown explore docs/spec.md
 ```
 
 ### `rundown make <seed-text> <markdown-file>`
@@ -854,7 +829,7 @@ rundown make "<seed-text>" "<markdown-file>" [options] -- <command>
 rundown make "<seed-text>" "<markdown-file>" [options] --worker <pattern>
 ```
 
-`make` is a sequential wrapper/composition command for the authoring bootstrap flow:
+`make` is a composition command for the authoring bootstrap flow:
 
 1. create target Markdown file,
 2. write `seed-text` as the initial file body,
@@ -897,7 +872,6 @@ Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
 - If neither is provided, `make` resolves worker input using the same command resolution behavior as `research` and `plan`.
-- Because `make` runs `research` and `plan` in sequence after file creation, the resolved worker configuration must be compatible with both phases.
 
 Examples:
 
@@ -1295,31 +1269,14 @@ rundown run <source> --worker <pattern>
 
 If both are provided, `--worker` takes precedence.
 
-`--worker` is optional when rundown can resolve a worker from effective config.
-
-Worker-required commands:
-
-- `run`
-- `research`
-- `plan`
-- `discuss`
-- `reverify`
-
-These commands always require a resolved worker, whether provided by CLI or config.
+`--worker` is optional when rundown can resolve a worker from `.rundown/config.json`.
 
 With a freshly initialized empty config (`{}`), no worker is resolved by default. In that case, provide one explicitly using either `--worker <pattern>` or `-- <command>`.
 
-If `.rundown/config.json` is partial, rundown uses only the keys that are present and preserves normal precedence; omitted worker keys are not auto-filled by command-specific guesses. For worker-required commands, unresolved worker config fails with actionable guidance instead of silently falling back to incompatible worker settings.
-
-When worker resolution is missing for any worker-required command, rundown exits non-zero and prints clear remediation steps: set `defaults.worker` or `commands.<name>.worker`, or pass `--worker <pattern>` / `-- <command>` for that invocation.
-
 Worker resolution cascade (lowest to highest priority):
 
-- Built-in defaults
-- Global config
-- Local `<config-dir>/config.json`
-- `defaults` on effective config
-- `commands.<command>` on effective config (`run`, `plan`, `make`, `discuss`, `research`, `verify`, `memory`, `reverify`, `help`)
+- `defaults` in `.rundown/config.json`
+- `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `make`, `discuss`, `research`, `reverify`, `help`)
 - Markdown frontmatter `profile: <name>`
 - Parent directive item `- profile=<name>` for child checkbox tasks
 - Parent directive item `- cli-args: <args>` for child `cli:` checkbox tasks (appends `<args>` to each child inline CLI command)
@@ -1490,13 +1447,6 @@ If the worker does not provide details, rundown prints fallback reasons (for exa
 - `--mode tui` â€” start an interactive terminal session and continue after exit
 - `--mode detached` â€” start the worker without waiting
 
-CI/non-TTY expectations:
-
-- Commands that prefer interactive mode (`discuss`, and explicit `--mode tui` invocations) should be run with `--mode wait` when no TTY is available.
-- Deterministic prediction flows in CI should use `--mode wait` (`research`, `plan`, and `run` when immediate verification is required).
-- `plan` is already wait-only, so it remains compatible with non-interactive environments by default.
-- Use `detached` only when asynchronous dispatch is intentional and immediate verification is not required.
-
 ### Worker patterns and prompt delivery
 
 Rundown always writes the rendered task prompt to a runtime file and supports worker pattern placeholders:
@@ -1512,13 +1462,13 @@ Examples:
 
 ```bash
 # Attach prompt file and provide a bootstrap message for the worker
-rundown run roadmap.md --worker '["opencode","run","$bootstrap","$file"]'
+rundown run roadmap.md
 
 # Worker receives bootstrap text as its prompt flag
-rundown run roadmap.md --worker '["opencode","run","--prompt","$bootstrap","$file"]'
+rundown run roadmap.md
 
 # No placeholder used -> rundown appends $file automatically
-rundown run roadmap.md --worker '["opencode","run"]'
+rundown run roadmap.md
 ```
 
 ### `rundown research <markdown-file>`
@@ -1565,20 +1515,20 @@ Options:
 Worker resolution:
 
 - `--worker <pattern>` and separator form `-- <command>` are both supported.
-- If neither is provided, `research` resolves the worker from effective config using the standard resolution cascade.
+- If neither is provided, `research` resolves the worker from `.rundown/config.json` using the standard cascade.
 - Custom research prompts can be supplied via `.rundown/research.md`; otherwise the built-in default research template is used.
 
 Examples:
 
 ```bash
 # Enrich a thin spec before planning
-rundown research docs/spec.md --mode wait
+rundown research docs/spec.md
 
 # Inspect research prompt only
-rundown research docs/spec.md --mode wait --print-prompt
+rundown research docs/spec.md --print-prompt
 
 # Dry-run with explicit vars
-rundown research docs/spec.md --mode wait --dry-run --vars-file --var ticket=ENG-42
+rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42
 ```
 
 ### Command-output block expansion
@@ -1839,35 +1789,10 @@ Forwarding behavior:
 
 Prefer `--worker` because it avoids argument splitting issues around `--`.
 
-Examples:
+Example:
 
 ```powershell
-# Recommended PowerShell form: explicit JSON worker pattern
-rundown run docs/ --worker '["opencode","run"]'
-rundown research docs/spec.md --mode wait --worker '["opencode","run"]'
-rundown discuss docs/spec.md --mode tui --worker '["opencode"]'
-
-# Separator form is supported, but more shell-sensitive on Windows
-rundown run docs/ -- opencode run
-rundown discuss docs/spec.md --mode tui -- opencode
-```
-
-### POSIX shells (bash/zsh/fish)
-
-Use either separator form or `--worker`; both are reliable in POSIX shells.
-
-Examples:
-
-```bash
-# Separator form
-rundown run docs/ -- opencode run
-rundown research docs/spec.md --mode wait -- opencode run
-rundown discuss docs/spec.md --mode tui -- opencode
-
-# Explicit worker pattern form
-rundown run docs/ --worker '["opencode","run"]'
-rundown research docs/spec.md --mode wait --worker '["opencode","run"]'
-rundown discuss docs/spec.md --mode tui --worker '["opencode"]'
+rundown run docs/
 ```
 
 ### Large prompts on Windows
@@ -1875,7 +1800,7 @@ rundown discuss docs/spec.md --mode tui --worker '["opencode"]'
 Use a `$file` worker pattern for robust prompt delivery:
 
 ```powershell
-rundown run docs/ --worker '["opencode","run","$file"]'
+rundown run docs/
 ```
 
 ## Practical default for OpenCode
@@ -1889,16 +1814,8 @@ A clean setup is:
 Examples:
 
 ```bash
-rundown run roadmap.md --mode wait -- opencode run
-rundown run roadmap.md --mode tui -- opencode
-rundown run roadmap.md --mode detached -- opencode run
-
-# Deterministic prediction flow commands
-rundown research docs/spec.md --mode wait -- opencode run
-rundown plan docs/spec.md --mode wait --scan-count 3 -- opencode run
-
-# Interactive planning discussion
-rundown discuss docs/spec.md --mode tui -- opencode
+rundown run roadmap.md
+rundown run roadmap.md --mode tui
 ```
 
 ## Exit codes

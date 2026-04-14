@@ -29,12 +29,6 @@ In addition to execute/verify task running, rundown supports a prediction-orient
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test` verifies assertion specs against predicted migration state.
 
-Prediction-to-execution narrative:
-
-- `migrate` and design commands shape planning context.
-- `research -> plan -> run` moves from enriched intent to executable tasks.
-- This narrative is documentation alignment only; it does not change verify/repair behavior, lockfile location/ownership rules, or runtime artifact lifecycle contracts.
-
 Command-boundary rule:
 
 - `rundown design ...` is for design-doc revision lifecycle (`release`, `diff`).
@@ -104,13 +98,6 @@ Resolution order:
 3. At each step, check `<current-dir>/.rundown/`; if it exists, stop immediately and use it (the first match wins).
 4. If not found, move to the parent directory and repeat.
 5. Stop when the filesystem root is reached; if no `.rundown/` was found, discovery returns `undefined`.
-
-Linked-workspace note:
-
-- Config discovery decides where rundown reads/writes config-driven assets (`config.json`, templates, vars, runs, logs).
-- Linked-workspace resolution decides which directory is treated as `sourcedir` for path-sensitive prediction commands.
-- These are independent; `--config-dir` does not choose a linked workspace source root.
-- When linked-workspace metadata is ambiguous (for example multiple records without a default), path-sensitive prediction commands require explicit `--workspace <dir>` selection.
 
 When discovery returns `undefined`, behavior is consumer-specific:
 
@@ -313,37 +300,21 @@ Start the worker without waiting.
 
 This mode keeps runtime artifacts on disk, skips immediate verification, and leaves the task unchecked.
 
-## OpenCode worker defaults
-
-When `opencode` is your primary worker, use explicit command defaults by interaction style:
-
-- non-interactive flows (`research`, `plan`, `run`, `reverify`): `["opencode", "run"]`
-- interactive task-shaping flow (`discuss`): `["opencode"]`
-
-This keeps deterministic phases on the non-interactive runner while preserving an interactive TUI session for discussion.
-
-Worker-required commands are:
-
-- `research`
-- `plan`
-- `discuss`
-- `run`
-- `reverify`
-
-If none of these commands can resolve a worker from CLI/config precedence, rundown fails fast with actionable guidance to configure `defaults.worker` or `commands.<name>.worker`, or provide `--worker <pattern>` / `-- <command>` for that run.
-
 ## Prompt transport
 
-Rundown uses file-based prompt transport for worker execution.
+Rendered prompts can be delivered in two ways.
 
-- rendered prompts are written to runtime files under `.rundown/runs/` and passed to the worker command
-- this is the default and recommended path for `opencode`, including `research -> plan -> run` flows
-- file transport is more reliable for large Markdown context because it avoids shell argument-length and quoting fragility
-- on Windows/PowerShell, this also avoids cross-shell splitting/escaping edge cases that are common with long inline arguments
+### `file`
 
-For worker patterns, `$file` resolves to the staged prompt file path and `$bootstrap` resolves to a short "read this file" instruction.
+Write the rendered prompt to a Markdown file under `.rundown/runs/` and pass that file to the worker.
 
-If a worker pattern does not include `$file`/`$bootstrap`, rundown appends `$file` automatically for backward-compatible prompt delivery.
+This is the default because it is robust, especially on Windows where large prompts and shell quoting are fragile.
+
+### `arg`
+
+Pass the prompt directly as command arguments.
+
+This can be useful for smaller prompts, but it is less reliable for large Markdown context.
 
 ## Runtime artifacts
 

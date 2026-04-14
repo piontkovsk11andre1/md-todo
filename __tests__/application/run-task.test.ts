@@ -324,7 +324,7 @@ describe("run-task orchestration", () => {
 
       expect(events).toContainEqual({
         kind: "info",
-        message: "Task uses fast/raw/quick intent (explicit fast marker); skipping verification.",
+        message: "Task uses fast/raw intent (explicit fast marker); skipping verification.",
       });
       expect(events).toContainEqual({
         kind: "success",
