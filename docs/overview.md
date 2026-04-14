@@ -311,19 +311,16 @@ This keeps deterministic phases on the non-interactive runner while preserving a
 
 ## Prompt transport
 
-Rendered prompts can be delivered in two ways.
+Rundown uses file-based prompt transport for worker execution.
 
-### `file`
+- rendered prompts are written to runtime files under `.rundown/runs/` and passed to the worker command
+- this is the default and recommended path for `opencode`, including `research -> plan -> run` flows
+- file transport is more reliable for large Markdown context because it avoids shell argument-length and quoting fragility
+- on Windows/PowerShell, this also avoids cross-shell splitting/escaping edge cases that are common with long inline arguments
 
-Write the rendered prompt to a Markdown file under `.rundown/runs/` and pass that file to the worker.
+For worker patterns, `$file` resolves to the staged prompt file path and `$bootstrap` resolves to a short "read this file" instruction.
 
-This is the default because it is robust, especially on Windows where large prompts and shell quoting are fragile.
-
-### `arg`
-
-Pass the prompt directly as command arguments.
-
-This can be useful for smaller prompts, but it is less reliable for large Markdown context.
+If a worker pattern does not include `$file`/`$bootstrap`, rundown appends `$file` automatically for backward-compatible prompt delivery.
 
 ## Runtime artifacts
 
