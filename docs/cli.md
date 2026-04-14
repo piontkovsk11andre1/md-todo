@@ -363,6 +363,9 @@ Examples:
 
 ```bash
 rundown run roadmap.md
+rundown run roadmap.md --mode wait
+rundown run roadmap.md --mode tui
+rundown run roadmap.md --mode detached
 rundown run docs/
 rundown run "notes/**/*.md"
 rundown run roadmap.md --all
@@ -480,8 +483,11 @@ Options:
 Examples:
 
 ```bash
-rundown discuss roadmap.md
-rundown discuss docs/
+# Interactive discuss session
+rundown discuss roadmap.md --mode tui
+
+# Non-interactive discuss session
+rundown discuss docs/ --mode wait
 rundown discuss tasks.md --mode wait
 rundown discuss roadmap.md --print-prompt
 rundown discuss roadmap.md --dry-run
@@ -653,8 +659,8 @@ Run document-level TODO synthesis on a single Markdown document using the planne
 For thin specs, run `research` first so `plan` has richer context:
 
 ```bash
-rundown research docs/spec.md
-rundown plan docs/spec.md --scan-count 3
+rundown research docs/spec.md --mode wait
+rundown plan docs/spec.md --mode wait --scan-count 3
 ```
 
 `plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
@@ -722,25 +728,25 @@ Examples:
 
 ```bash
 # Basic plan run
-rundown plan roadmap.md --scan-count 3
+rundown plan roadmap.md --mode wait --scan-count 3
 
 # No TODOs yet: bootstrap actionable TODOs, then converge
-rundown plan docs/spec.md --scan-count 3
+rundown plan docs/spec.md --mode wait --scan-count 3
 
 # Existing TODOs: append missing implementation items only
-rundown plan docs/migration.md --scan-count 2
+rundown plan docs/migration.md --mode wait --scan-count 2
 
 # Add one nested layer of child TODOs after top-level scans
-rundown plan docs/spec.md --scan-count 3 --deep 1
+rundown plan docs/spec.md --mode wait --scan-count 3 --deep 1
 
 # Add two nested layers (children, then grandchildren)
-rundown plan docs/spec.md --scan-count 3 --deep 2
+rundown plan docs/spec.md --mode wait --scan-count 3 --deep 2
 
 # PowerShell-safe worker form
-rundown plan docs/spec.md --scan-count 2
+rundown plan docs/spec.md --mode wait --scan-count 2 --worker '["opencode","run"]'
 
 # PowerShell-safe deep planning
-rundown plan docs/spec.md --scan-count 2 --deep 2
+rundown plan docs/spec.md --mode wait --scan-count 2 --deep 2 --worker '["opencode","run"]'
 ```
 
 ### `rundown explore <markdown-file>`
@@ -1522,13 +1528,13 @@ Examples:
 
 ```bash
 # Enrich a thin spec before planning
-rundown research docs/spec.md
+rundown research docs/spec.md --mode wait
 
 # Inspect research prompt only
-rundown research docs/spec.md --print-prompt
+rundown research docs/spec.md --mode wait --print-prompt
 
 # Dry-run with explicit vars
-rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42
+rundown research docs/spec.md --mode wait --dry-run --vars-file --var ticket=ENG-42
 ```
 
 ### Command-output block expansion
@@ -1814,8 +1820,16 @@ A clean setup is:
 Examples:
 
 ```bash
-rundown run roadmap.md
+rundown run roadmap.md --mode wait
 rundown run roadmap.md --mode tui
+rundown run roadmap.md --mode detached
+
+# Deterministic prediction flow commands
+rundown research docs/spec.md --mode wait
+rundown plan docs/spec.md --mode wait --scan-count 3
+
+# Interactive planning discussion
+rundown discuss docs/spec.md --mode tui
 ```
 
 ## Exit codes
