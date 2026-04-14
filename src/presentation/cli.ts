@@ -48,6 +48,8 @@ import {
   createMemoryViewCommandAction,
   createMemoryCleanCommandAction,
   createMemoryValidateCommandAction,
+  createConfigSetCommandAction,
+  createConfigUnsetCommandAction,
   createWorkerHealthCommandAction,
   createNextCommandAction,
   createPlanCommandAction,
@@ -436,7 +438,7 @@ const configCommand = program
       "",
       "Notes:",
       "  - effective is read-only",
-      "  - this build wires command/help surface; config value operations are introduced in a follow-up migration step",
+      "  - set/unset are available; get/list/path are introduced in a follow-up migration step",
     ].join("\n"),
   );
 
@@ -471,9 +473,7 @@ configCommand
   .option("--scope <local|global>", "Writable config scope", "local")
   .option("--type <auto|string|number|boolean|json>", "Value parsing mode", "auto")
   .allowUnknownOption(false)
-  .action(withCliAction(() => {
-    throw new Error("The `config set` command is not yet available in this build. The CLI surface and help text are wired; value operations are added in a follow-up step.");
-  }));
+  .action(withCliAction(createConfigSetCommandAction({ getApp })));
 
 configCommand
   .command("unset")
@@ -481,9 +481,7 @@ configCommand
   .argument("<key>", "Config key path to remove")
   .option("--scope <local|global>", "Writable config scope", "local")
   .allowUnknownOption(false)
-  .action(withCliAction(() => {
-    throw new Error("The `config unset` command is not yet available in this build. The CLI surface and help text are wired; value operations are added in a follow-up step.");
-  }));
+  .action(withCliAction(createConfigUnsetCommandAction({ getApp })));
 
 configCommand
   .command("path")

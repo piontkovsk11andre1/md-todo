@@ -19,8 +19,12 @@ import {
   type WorkerCommandProfiles,
   type WorkerConfig,
   type WorkerConfigLoadWithSourcesResult,
+  type WorkerConfigMutationResult,
+  type WorkerConfigSetValueInput,
+  type WorkerConfigUnsetValueInput,
   type WorkerConfigValueSource,
   type WorkerConfigValueSourceMap,
+  type WorkerConfigWritableScope,
   type WorkerConfigCommandName,
   type WorkersConfig,
 } from "../../domain/worker-config.js";
@@ -28,7 +32,10 @@ import {
 const WORKER_CONFIG_FILE_NAME = "config.json";
 
 interface CreateWorkerConfigAdapterOptions {
-  readonly resolveGlobalConfigPath?: () => Pick<GlobalConfigPathResolution, "discoveredPath">;
+  readonly resolveGlobalConfigPath?: () => {
+    discoveredPath: string | undefined;
+    canonicalPath?: string | undefined;
+  };
 }
 
 /**
@@ -629,6 +636,239 @@ function collectValueSources(
   return valueSources;
 }
 
+function formatScopeLabel(scope: WorkerConfigWritableScope): string {
+  return scope === "global" ? "global worker config" : "worker config";
+}
+
+function parseKeyPath(keyPath: string): string[] {
+  const trimmed = keyPath.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Invalid config key path: expected a non-empty dotted path.");
+  }
+
+  const segments = trimmed.split(".").map((segment) => segment.trim());
+  if (segments.some((segment) => segment.length === 0)) {
+    throw new Error(`Invalid config key path "${keyPath}": segments cannot be empty.`);
+  }
+
+  for (const segment of segments) {
+    if (segment === "__proto__" || segment === "prototype" || segment === "constructor") {
+      throw new Error(`Invalid config key path "${keyPath}": segment "${segment}" is not allowed.`);
+    }
+  }
+
+  return segments;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readWritableConfigDocument(configPath: string, scope: WorkerConfigWritableScope): Record<string, unknown> {
+  try {
+    const source = fs.readFileSync(configPath, "utf-8");
+    const parsed = JSON.parse(source);
+    if (!isJsonObject(parsed)) {
+      throw new Error(`Failed to parse ${formatScopeLabel(scope)} at "${configPath}": expected top-level JSON object.`);
+    }
+    return parsed;
+  } catch (error) {
+    const errno = error as NodeJS.ErrnoException;
+    if (errno.code === "ENOENT") {
+      return {};
+    }
+
+    if (error instanceof SyntaxError) {
+      throw new Error(`Failed to parse ${formatScopeLabel(scope)} at "${configPath}": invalid JSON (${error.message}).`);
+    }
+
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error(`Failed to read ${formatScopeLabel(scope)} at "${configPath}": ${String(error)}.`);
+  }
+}
+
+function areJsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    if (left.length !== right.length) {
+      return false;
+    }
+    for (let index = 0; index < left.length; index += 1) {
+      if (!areJsonValuesEqual(left[index], right[index])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (isJsonObject(left) && isJsonObject(right)) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+    for (const key of leftKeys) {
+      if (!Object.hasOwn(right, key)) {
+        return false;
+      }
+      if (!areJsonValuesEqual(left[key], right[key])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function setPathValue(root: Record<string, unknown>, pathSegments: readonly string[], value: unknown): boolean {
+  let cursor: Record<string, unknown> = root;
+  for (let index = 0; index < pathSegments.length - 1; index += 1) {
+    const segment = pathSegments[index] as string;
+    const next = cursor[segment];
+
+    if (next === undefined) {
+      const created: Record<string, unknown> = {};
+      cursor[segment] = created;
+      cursor = created;
+      continue;
+    }
+
+    if (!isJsonObject(next)) {
+      throw new Error(
+        `Cannot set config key "${pathSegments.join(".")}": "${pathSegments.slice(0, index + 1).join(".")}" is not an object.`,
+      );
+    }
+
+    cursor = next;
+  }
+
+  const leafKey = pathSegments[pathSegments.length - 1] as string;
+  const current = cursor[leafKey];
+  if (areJsonValuesEqual(current, value)) {
+    return false;
+  }
+
+  cursor[leafKey] = value;
+  return true;
+}
+
+function unsetPathValue(root: Record<string, unknown>, pathSegments: readonly string[]): boolean {
+  const parents: Array<{ holder: Record<string, unknown>; key: string }> = [];
+  let cursor: Record<string, unknown> = root;
+
+  for (let index = 0; index < pathSegments.length - 1; index += 1) {
+    const segment = pathSegments[index] as string;
+    const next = cursor[segment];
+    if (!isJsonObject(next)) {
+      return false;
+    }
+    parents.push({ holder: cursor, key: segment });
+    cursor = next;
+  }
+
+  const leafKey = pathSegments[pathSegments.length - 1] as string;
+  if (!Object.hasOwn(cursor, leafKey)) {
+    return false;
+  }
+
+  delete cursor[leafKey];
+
+  for (let index = parents.length - 1; index >= 0; index -= 1) {
+    const parent = parents[index] as { holder: Record<string, unknown>; key: string };
+    const child = parent.holder[parent.key];
+    if (!isJsonObject(child) || Object.keys(child).length > 0) {
+      break;
+    }
+    delete parent.holder[parent.key];
+  }
+
+  return true;
+}
+
+function writeConfigDocument(configPath: string, scope: WorkerConfigWritableScope, value: Record<string, unknown>): void {
+  const dirPath = path.dirname(configPath);
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+  } catch (error) {
+    throw new Error(`Failed to prepare directory for ${formatScopeLabel(scope)} at "${configPath}": ${String(error)}.`);
+  }
+
+  const serialized = JSON.stringify(value, null, 2) + "\n";
+  const tempPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, serialized, "utf-8");
+
+    try {
+      fs.renameSync(tempPath, configPath);
+      return;
+    } catch (renameError) {
+      const code = (renameError as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EEXIST") {
+        fs.writeFileSync(configPath, serialized, "utf-8");
+        fs.rmSync(tempPath, { force: true });
+        return;
+      }
+      throw renameError;
+    }
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw new Error(`Failed to write ${formatScopeLabel(scope)} at "${configPath}": ${String(error)}.`);
+  }
+}
+
+function resolveWritableConfigPath(
+  scope: WorkerConfigWritableScope,
+  configDir: string,
+  resolveGlobalPath: () => {
+    discoveredPath: string | undefined;
+    canonicalPath?: string | undefined;
+  },
+): string {
+  if (scope === "local") {
+    return path.join(configDir, WORKER_CONFIG_FILE_NAME);
+  }
+
+  const globalResolution = resolveGlobalPath();
+  const writableGlobalPath = globalResolution.discoveredPath ?? globalResolution.canonicalPath;
+  if (!writableGlobalPath) {
+    throw new Error("Unable to resolve global config path for write operations.");
+  }
+
+  return writableGlobalPath;
+}
+
+function applyConfigMutation(
+  configPath: string,
+  scope: WorkerConfigWritableScope,
+  input: WorkerConfigSetValueInput | WorkerConfigUnsetValueInput,
+): WorkerConfigMutationResult {
+  const keySegments = parseKeyPath(input.keyPath);
+  const document = readWritableConfigDocument(configPath, scope);
+  const changed = "value" in input
+    ? setPathValue(document, keySegments, input.value)
+    : unsetPathValue(document, keySegments);
+
+  if (!changed) {
+    return {
+      configPath,
+      changed: false,
+    };
+  }
+
+  writeConfigDocument(configPath, scope, document);
+  return {
+    configPath,
+    changed: true,
+  };
+}
+
 function loadConfigFile(configPath: string, scope: "global" | "local", optional: boolean): WorkerConfig | undefined {
   let parsed: unknown;
   try {
@@ -708,6 +948,14 @@ export function createWorkerConfigAdapter(options: CreateWorkerConfigAdapterOpti
     },
     loadWithSources(configDir): WorkerConfigLoadWithSourcesResult {
       return loadWithSources(configDir);
+    },
+    setValue(configDir, input): WorkerConfigMutationResult {
+      const configPath = resolveWritableConfigPath(input.scope, configDir, resolveGlobalPath);
+      return applyConfigMutation(configPath, input.scope, input);
+    },
+    unsetValue(configDir, input): WorkerConfigMutationResult {
+      const configPath = resolveWritableConfigPath(input.scope, configDir, resolveGlobalPath);
+      return applyConfigMutation(configPath, input.scope, input);
     },
   };
 }

@@ -42,6 +42,198 @@ function writeGlobalConfig(source: string): string {
 }
 
 describe("createWorkerConfigAdapter", () => {
+  it("setValue writes local scoped key updates safely", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workers: {
+          default: ["opencode", "run", "--model", "local-default"],
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+    const result = adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "commands.plan",
+      value: ["opencode", "run", "--model", "local-plan"],
+    });
+
+    expect(result).toEqual({
+      configPath: path.join(configDir, "config.json"),
+      changed: true,
+    });
+    expect(adapter.load(configDir)).toMatchObject({
+      workers: {
+        default: ["opencode", "run", "--model", "local-default"],
+      },
+      commands: {
+        plan: ["opencode", "run", "--model", "local-plan"],
+      },
+    });
+  });
+
+  it("setValue writes global scope to discovered global path", () => {
+    const configDir = makeTempConfigDir();
+    const globalConfigPath = writeGlobalConfig("{}\n");
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    const result = adapter.setValue?.(configDir, {
+      scope: "global",
+      keyPath: "workers.default",
+      value: ["opencode", "run", "--model", "global-default"],
+    });
+
+    expect(result).toEqual({
+      configPath: globalConfigPath,
+      changed: true,
+    });
+    expect(adapter.load(configDir)).toMatchObject({
+      workers: {
+        default: ["opencode", "run", "--model", "global-default"],
+      },
+    });
+  });
+
+  it("setValue creates canonical global config path when nothing is discovered", () => {
+    const configDir = makeTempConfigDir();
+    const canonicalDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-worker-config-canonical-"));
+    tempDirs.push(canonicalDir);
+    const canonicalGlobalPath = path.join(canonicalDir, "rundown", "config.json");
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: undefined, canonicalPath: canonicalGlobalPath }),
+    });
+
+    const result = adapter.setValue?.(configDir, {
+      scope: "global",
+      keyPath: "commands.research",
+      value: ["opencode", "run", "--model", "global-research"],
+    });
+
+    expect(result).toEqual({
+      configPath: canonicalGlobalPath,
+      changed: true,
+    });
+    expect(fs.existsSync(canonicalGlobalPath)).toBe(true);
+  });
+
+  it("unsetValue removes nested local keys and prunes empty objects", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        commands: {
+          plan: ["opencode", "run", "--model", "local-plan"],
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+    const result = adapter.unsetValue?.(configDir, {
+      scope: "local",
+      keyPath: "commands.plan",
+    });
+
+    expect(result).toEqual({
+      configPath,
+      changed: true,
+    });
+    expect(fs.readFileSync(configPath, "utf-8")).toBe("{}\n");
+  });
+
+  it("setValue returns unchanged when existing value matches", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        workers: {
+          default: ["opencode", "run"],
+        },
+      }, null, 2) + "\n",
+    );
+    const before = fs.readFileSync(configPath, "utf-8");
+
+    const adapter = createWorkerConfigAdapter();
+    const result = adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "workers.default",
+      value: ["opencode", "run"],
+    });
+
+    expect(result).toEqual({
+      configPath,
+      changed: false,
+    });
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+  });
+
+  it("unsetValue returns unchanged when key path is absent", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(configDir, "{}\n");
+    const before = fs.readFileSync(configPath, "utf-8");
+
+    const adapter = createWorkerConfigAdapter();
+    const result = adapter.unsetValue?.(configDir, {
+      scope: "local",
+      keyPath: "commands.plan",
+    });
+
+    expect(result).toEqual({
+      configPath,
+      changed: false,
+    });
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+  });
+
+  it("rejects setValue when local config JSON is malformed", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(configDir, "{not valid json");
+
+    const adapter = createWorkerConfigAdapter();
+    expect(() => adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "workers.default",
+      value: ["opencode", "run"],
+    })).toThrow(`Failed to parse worker config at "${configPath}": invalid JSON`);
+
+    expect(fs.readFileSync(configPath, "utf-8")).toBe("{not valid json");
+  });
+
+  it("rejects setValue when key path traverses non-object values", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workers: {
+          default: ["opencode", "run"],
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+    expect(() => adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "workers.default.command",
+      value: ["impossible"],
+    })).toThrow("Cannot set config key \"workers.default.command\": \"workers.default\" is not an object.");
+  });
+
+  it("rejects unsafe key-path segments for setValue", () => {
+    const configDir = makeTempConfigDir();
+
+    const adapter = createWorkerConfigAdapter();
+    expect(() => adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "workers.__proto__",
+      value: ["opencode", "run"],
+    })).toThrow("Invalid config key path \"workers.__proto__\": segment \"__proto__\" is not allowed.");
+  });
+
   it("returns effective config value source attribution", () => {
     const configDir = makeTempConfigDir();
     writeConfig(

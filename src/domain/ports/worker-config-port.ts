@@ -1,5 +1,11 @@
 // Reuse the domain worker-configuration model as the port return type.
-import type { WorkerConfig, WorkerConfigLoadWithSourcesResult } from "../worker-config.js";
+import type {
+  WorkerConfig,
+  WorkerConfigLoadWithSourcesResult,
+  WorkerConfigSetValueInput,
+  WorkerConfigUnsetValueInput,
+  WorkerConfigMutationResult,
+} from "../worker-config.js";
 
 /**
  * Defines the domain contract for loading persisted worker configuration.
@@ -13,4 +19,6 @@ export interface WorkerConfigPort {
    */
   load(configDir: string): WorkerConfig | undefined;
   loadWithSources?(configDir: string): WorkerConfigLoadWithSourcesResult;
+  setValue?(configDir: string, input: WorkerConfigSetValueInput): WorkerConfigMutationResult;
+  unsetValue?(configDir: string, input: WorkerConfigUnsetValueInput): WorkerConfigMutationResult;
 }

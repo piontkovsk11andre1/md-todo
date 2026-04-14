@@ -133,6 +133,24 @@ export interface WorkerConfigLoadWithSourcesResult {
   globalConfigPath: string | undefined;
 }
 
+export type WorkerConfigWritableScope = "local" | "global";
+
+export interface WorkerConfigSetValueInput {
+  scope: WorkerConfigWritableScope;
+  keyPath: string;
+  value: unknown;
+}
+
+export interface WorkerConfigUnsetValueInput {
+  scope: WorkerConfigWritableScope;
+  keyPath: string;
+}
+
+export interface WorkerConfigMutationResult {
+  configPath: string;
+  changed: boolean;
+}
+
 /**
  * Returns worker config with trace-statistics defaults applied only when
  * tracing is enabled and traceStatistics config is not provided.

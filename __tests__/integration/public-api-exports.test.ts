@@ -36,6 +36,8 @@ describe("public API exports", () => {
       nextTask: expect.any(Function),
       initProject: expect.any(Function),
       manageArtifacts: expect.any(Function),
+      configSet: expect.any(Function),
+      configUnset: expect.any(Function),
     });
 
     expectTypeOf<Parameters<typeof app.discussTask>[0]>().toEqualTypeOf<DiscussTaskOptions>();

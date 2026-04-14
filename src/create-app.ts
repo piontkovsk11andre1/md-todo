@@ -45,6 +45,12 @@ import {
   createManageArtifacts,
   type ManageArtifactsOptions,
 } from "./application/manage-artifacts.js";
+import {
+  createConfigSet,
+  createConfigUnset,
+  type ConfigSetOptions,
+  type ConfigUnsetOptions,
+} from "./application/config-mutation.js";
 import type { ApplicationOutputPort } from "./domain/ports/output-port.js";
 import type {
   ArtifactStore,
@@ -140,6 +146,8 @@ export type App = {
   initProject: (options?: InitProjectOptions) => Promise<number>;
   startProject: (options?: StartProjectOptions) => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
+  configSet: (options: ConfigSetOptions) => number;
+  configUnset: (options: ConfigUnsetOptions) => number;
   emitOutput?: (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
   releaseAllLocks?: () => void;
   awaitShutdown?: () => Promise<void>;
@@ -641,6 +649,16 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       output: ports.output,
     }),
+    configSet: (ports) => createConfigSet({
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
+    configUnset: (ports) => createConfigUnset({
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
   };
 }
 
@@ -676,6 +694,8 @@ function createAppFromFactories(
   const initProject = factories.initProject(ports);
   const startProject = factories.startProject(ports);
   const manageArtifacts = factories.manageArtifacts(ports);
+  const configSet = factories.configSet(ports);
+  const configUnset = factories.configUnset(ports);
   const inFlightRunTasks = new Set<Promise<number>>();
 
   const trackInFlightRun = (taskRun: Promise<number>): Promise<number> => {
@@ -710,6 +730,8 @@ function createAppFromFactories(
     initProject,
     startProject,
     manageArtifacts,
+    configSet,
+    configUnset,
     emitOutput: (event) => {
       ports.output.emit(event);
     },

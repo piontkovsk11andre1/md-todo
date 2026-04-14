@@ -242,6 +242,9 @@ interface TestCommandOptions {
 
 type TestCommandHandler = (options: TestCommandOptions) => CliActionResult;
 
+type ConfigMutationScope = "local" | "global";
+type ConfigValueType = "auto" | "string" | "number" | "boolean" | "json";
+
 function resolveWorkerPattern(
   worker: string | string[] | boolean | undefined,
   getWorkerFromSeparator: () => string[] | undefined,
@@ -1761,6 +1764,30 @@ export function createWorkerHealthCommandAction({
   };
 }
 
+export function createConfigSetCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (key: string, value: string, opts: CliOpts) => CliActionResult {
+  return (key: string, value: string, opts: CliOpts) => {
+    return getApp().configSet({
+      scope: parseConfigMutationScope(opts.scope as string | undefined),
+      key,
+      value,
+      valueType: parseConfigValueType(opts.type as string | undefined),
+    });
+  };
+}
+
+export function createConfigUnsetCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (key: string, opts: CliOpts) => CliActionResult {
+  return (key: string, opts: CliOpts) => {
+    return getApp().configUnset({
+      scope: parseConfigMutationScope(opts.scope as string | undefined),
+      key,
+    });
+  };
+}
+
 /**
  * Creates the `intro` command action handler.
  *
@@ -1863,6 +1890,24 @@ function isMigrateAction(value: string): value is MigrateAction {
 
 function isTestAction(value: string): value is TestAction {
   return value === "new";
+}
+
+function parseConfigMutationScope(value: string | undefined): ConfigMutationScope {
+  const resolved = (value ?? "local").trim().toLowerCase();
+  if (resolved === "local" || resolved === "global") {
+    return resolved;
+  }
+
+  throw new Error(`Invalid --scope value: ${value}. Allowed: local, global.`);
+}
+
+function parseConfigValueType(value: string | undefined): ConfigValueType {
+  const resolved = (value ?? "auto").trim().toLowerCase();
+  if (resolved === "auto" || resolved === "string" || resolved === "number" || resolved === "boolean" || resolved === "json") {
+    return resolved;
+  }
+
+  throw new Error(`Invalid --type value: ${value}. Allowed: auto, string, number, boolean, json.`);
 }
 
 function resolveDocsDiffMigrateAction(target: string | undefined): "current" | "preview" {

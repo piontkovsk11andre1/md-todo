@@ -13221,6 +13221,112 @@ describe.sequential("CLI integration", () => {
     expect(hierarchyOutput).toContain(":3 - Nested detail");
   });
 
+  it("config set writes local scoped values safely", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "config",
+      "set",
+      "workers.default",
+      '["opencode","run","--model","local-default"]',
+      "--type",
+      "json",
+      "--scope",
+      "local",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const configPath = path.join(workspace, ".rundown", "config.json");
+    expect(fs.existsSync(configPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(configPath, "utf-8"))).toEqual({
+      workers: {
+        default: ["opencode", "run", "--model", "local-default"],
+      },
+    });
+    expect(result.logs.some((line) => stripAnsi(line).includes("Updated local config: workers.default"))).toBe(true);
+  });
+
+  it("config unset removes local keys and preserves valid JSON", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
+      commands: {
+        plan: ["opencode", "run", "--model", "local-plan"],
+      },
+    }, null, 2) + "\n", "utf-8");
+
+    const result = await runCli([
+      "config",
+      "unset",
+      "commands.plan",
+      "--scope",
+      "local",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, ".rundown", "config.json"), "utf-8")).toBe("{}\n");
+    expect(result.logs.some((line) => stripAnsi(line).includes("Removed local config key: commands.plan"))).toBe(true);
+  });
+
+  it("config set writes global scoped values to user-level config", async () => {
+    const workspace = makeTempWorkspace();
+    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-global-config-"));
+    tempDirs.push(appDataDir);
+    const previousAppData = process.env.APPDATA;
+
+    process.env.APPDATA = appDataDir;
+    try {
+      const result = await runCli([
+        "config",
+        "set",
+        "workers.default",
+        '["opencode","run","--model","global-default"]',
+        "--type",
+        "json",
+        "--scope",
+        "global",
+      ], workspace);
+
+      expect(result.code).toBe(0);
+      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      expect(fs.existsSync(globalConfigPath)).toBe(true);
+      expect(JSON.parse(fs.readFileSync(globalConfigPath, "utf-8"))).toEqual({
+        workers: {
+          default: ["opencode", "run", "--model", "global-default"],
+        },
+      });
+      expect(result.logs.some((line) => stripAnsi(line).includes("Updated global config: workers.default"))).toBe(true);
+    } finally {
+      if (previousAppData === undefined) {
+        delete process.env.APPDATA;
+      } else {
+        process.env.APPDATA = previousAppData;
+      }
+    }
+  });
+
+  it("config set fails safely when local config JSON is malformed", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    const configPath = path.join(workspace, ".rundown", "config.json");
+    fs.writeFileSync(configPath, "{not valid json", "utf-8");
+
+    const result = await runCli([
+      "config",
+      "set",
+      "workers.default",
+      '["opencode","run"]',
+      "--type",
+      "json",
+      "--scope",
+      "local",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(fs.readFileSync(configPath, "utf-8")).toBe("{not valid json");
+    expect(result.errors.some((line) => stripAnsi(line).includes("Failed to parse worker config at"))).toBe(true);
+  });
+
   it("init creates .rundown defaults and exits with 0", async () => {
     const workspace = makeTempWorkspace();
 
