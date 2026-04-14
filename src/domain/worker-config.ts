@@ -104,6 +104,17 @@ export interface TraceStatisticsConfig {
   fields: string[];
 }
 
+export const RUN_COMMIT_MODES = ["per-task", "file-done"] as const;
+
+export type RunCommitMode = typeof RUN_COMMIT_MODES[number];
+
+export interface RunDefaultsConfig {
+  revertable?: boolean;
+  commit?: boolean;
+  commitMessage?: string;
+  commitMode?: RunCommitMode;
+}
+
 /**
  * Worker configuration loaded from user or project settings.
  */
@@ -118,6 +129,8 @@ export interface WorkerConfig {
   traceStatistics?: TraceStatisticsConfig;
   // Optional worker failover and health policy configuration.
   healthPolicy?: WorkerHealthPolicyConfig;
+  // Optional run command defaults.
+  run?: RunDefaultsConfig;
 }
 
 export const WORKER_CONFIG_VALUE_SOURCES = ["built-in", "global", "local", "mixed"] as const;

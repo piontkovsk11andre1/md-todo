@@ -29,6 +29,8 @@ import {
   terminate,
 } from "./cli-argv.js";
 import { normalizeExitCode } from "../domain/exit-codes.js";
+import { ROOT_COMMAND_WELCOME_MESSAGE } from "../domain/defaults.js";
+import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   createArtifactsCommandAction,
   createCallCommandAction,
@@ -36,7 +38,9 @@ import {
   createDiscussCommandAction,
   createDoCommandAction,
   createDocsDiffCommandAction,
+  createDocsReleaseCommandAction,
   createDocsPublishCommandAction,
+  createDocsSaveCommandAction,
   createExploreCommandAction,
   createHelpCommandAction,
   createInitCommandAction,
@@ -100,6 +104,7 @@ interface CliRuntimeState {
   invocationArgv: string[] | undefined;
   app: CliApp | undefined;
   loopSignalExitCode: number | undefined;
+  rootWelcomeEmitted: boolean;
 }
 
 // Shared mutable runtime state for the current CLI process invocation.
@@ -109,6 +114,7 @@ const runtimeState: CliRuntimeState = {
   invocationArgv: undefined,
   app: undefined,
   loopSignalExitCode: undefined,
+  rootWelcomeEmitted: false,
 };
 
 const program = new Command();
@@ -140,6 +146,7 @@ program
     "--config-dir <path>",
     "Explicit path to the .rundown configuration directory (bypasses upward discovery)",
   )
+  .option("--agents", "Print canonical AGENTS.md guidance and exit")
   .action(withCliAction(createHelpCommandAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
@@ -164,6 +171,7 @@ configureRunLikeCommandOptions(runCommand)
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     runnerModes: RUNNER_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 const callCommand = program
@@ -178,6 +186,7 @@ configureRunLikeCommandOptions(callCommand)
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     runnerModes: RUNNER_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 const loopCommand = program
@@ -195,6 +204,7 @@ configureRunLikeCommandOptions(loopCommand)
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     runnerModes: LOOP_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
     setLoopSignalExitCode: (code) => {
       runtimeState.loopSignalExitCode = code;
     },
@@ -375,12 +385,23 @@ migrateCommand.addHelpText(
 
 const docsCommand = program
   .command("docs")
-  .description("Manage design-doc revision lifecycle (publish and diff).")
+  .description("Manage design revision lifecycle (release and diff).")
   .configureHelp({ showGlobalOptions: true });
 
 docsCommand
+  .command("release")
+  .description("Release design/current/ into the next immutable design/rev.N/ snapshot.")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--label <text>", "Optional label to store in revision metadata")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDocsReleaseCommandAction({
+    getApp,
+  })));
+
+docsCommand
   .command("publish")
-  .description("Publish design/current/ into the next immutable design/rev.N/ snapshot.")
+  .description("Deprecated alias for `docs release`; use `rundown docs release`.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--label <text>", "Optional label to store in revision metadata")
@@ -388,6 +409,15 @@ docsCommand
   .action(withCliAction(createDocsPublishCommandAction({
     getApp,
   })));
+
+docsCommand
+  .command("save")
+  .description("Removed alias. Use `rundown docs release`.")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--label <text>", "Ignored for removed command; kept for compatibility with old scripts")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDocsSaveCommandAction()));
 
 docsCommand
   .command("diff")
@@ -409,8 +439,9 @@ docsCommand
       "  - rundown docs diff",
       "  - rundown docs diff preview",
       "  - rundown docs diff --workspace ../source-workspace",
-      "  - rundown docs publish --label \"Initial baseline\"",
-      "  - rundown docs publish --workspace ../source-workspace --label \"Initial baseline\"",
+      "  - rundown docs release --label \"Initial baseline\"",
+      "  - rundown docs release --workspace ../source-workspace --label \"Initial baseline\"",
+      "  - rundown docs publish --label \"Initial baseline\"  # deprecated; prefer docs release",
     ].join("\n"),
   );
 
@@ -734,6 +765,11 @@ program
   .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
   .option("--commit", "Auto-commit checked task file after successful completion", false)
   .option("--commit-message <template>", "Commit message template (supports {{task}} and {{file}})")
+  .option(
+    "--commit-mode <mode>",
+    "Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)",
+    "per-task",
+  )
   .option("--revertable", "Shorthand for --commit --keep-artifacts", false)
   .option("--on-complete <command>", "Run a shell command after successful task completion")
   .option("--on-fail <command>", "Run a shell command when a task fails (execution or verification failure)")
@@ -754,6 +790,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     makeModes: DO_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -945,12 +982,15 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   runtimeState.app = undefined;
   runtimeState.invocationArgv = rewrittenArgv;
   runtimeState.loopSignalExitCode = undefined;
+  runtimeState.rootWelcomeEmitted = false;
   runtimeState.invocationLogState = createCliInvocationLogState(rewrittenArgv, {
     cliVersion,
     createSessionId,
     resolveInvocationCommand,
     resolveConfigDirForInvocation,
   });
+
+  emitRootCommandWelcomeIfNeeded(rundownArgs, runtimeState);
 
   cleanupCallCliCacheArtifactAtStartup(rewrittenArgv);
 
@@ -975,6 +1015,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   runtimeState.workerFromSeparator = workerCommandArgs;
 
   try {
+    validateRootAgentsOptionUsage(rundownArgs);
     // Keep research as a strict single-pass workflow for this iteration.
     validateUnsupportedResearchScanCount(rundownArgs);
     validateUnsupportedMakeMode(rundownArgs);
@@ -987,6 +1028,12 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
     return;
   }
 
+  if (resolveInvocationCommand(rundownArgs) === "rundown" && hasRootAgentsOption(rundownArgs)) {
+    process.stdout.write(getAgentsTemplate());
+    terminate(0);
+    return;
+  }
+
   try {
     // Delegate command dispatch and argument validation to commander.
     await program.parseAsync(rundownArgs, { from: "user" });
@@ -994,6 +1041,25 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
     await awaitLockReleaseShutdown();
     cleanupCallCliCacheArtifactAtTeardown(rewrittenArgv, runtimeState.invocationLogState);
   }
+}
+
+/**
+ * Emits the canonical root-command welcome line once per root CLI invocation.
+ */
+function emitRootCommandWelcomeIfNeeded(
+  argv: string[],
+  state: Pick<CliRuntimeState, "rootWelcomeEmitted">,
+): void {
+  if (
+    state.rootWelcomeEmitted
+    || resolveInvocationCommand(argv) !== "rundown"
+    || hasRootAgentsOption(argv)
+  ) {
+    return;
+  }
+
+  console.log(ROOT_COMMAND_WELCOME_MESSAGE);
+  state.rootWelcomeEmitted = true;
 }
 
 /**
@@ -1297,6 +1363,37 @@ function hasQuietOption(argv: string[]): boolean {
 }
 
 /**
+ * Determines whether root-level AGENTS output mode was requested.
+ */
+function hasRootAgentsOption(argv: string[]): boolean {
+  for (const token of argv) {
+    if (token === "--") {
+      break;
+    }
+
+    if (token === "--agents" || token.startsWith("--agents=")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Rejects --agents usage when combined with subcommands.
+ */
+function validateRootAgentsOptionUsage(argv: string[]): void {
+  if (!hasRootAgentsOption(argv)) {
+    return;
+  }
+
+  const command = resolveInvocationCommand(argv);
+  if (command !== "rundown") {
+    throw new Error(`Unsupported option for \`${command}\`: --agents. Use \`rundown --agents\` at the root command.`);
+  }
+}
+
+/**
  * Determines whether app initialization must happen before commander parsing.
  *
  * The root invocation path may require immediate app access prior to action execution.
@@ -1307,7 +1404,7 @@ function shouldInitializeAppBeforeParse(argv: string[]): boolean {
   }
 
   const command = resolveInvocationCommand(argv);
-  return command === "rundown";
+  return command === "rundown" && !hasRootAgentsOption(argv);
 }
 
 // Auto-parse process arguments unless explicitly disabled for embedding or tests.

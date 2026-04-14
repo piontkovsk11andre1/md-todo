@@ -314,7 +314,7 @@ describe("workspace-lifecycle remove", () => {
   it("supports dry-run remove with delete-files without mutating metadata or files", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
-    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+    const { removeTask, fileSystem, interactiveInput, events } = createHarness(invocationDir, {
       files: {
         [workspaceLinkPath]: "../workspace-a\n",
       },
@@ -326,9 +326,30 @@ describe("workspace-lifecycle remove", () => {
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
+    expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "text" && event.text.includes("Dry-run impact preview"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("workspace.link: remove"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("(directory)"))).toBe(true);
+  });
+
+  it("requires --force when delete-files is requested without interactive confirmation support", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const workspaceTarget = path.resolve(invocationDir, "../workspace-a");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-a\n",
+      },
+      directories: [workspaceTarget],
+      includeInteractiveInput: false,
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: true, dryRun: false, force: false });
+
+    expect(code).toBe(1);
+    expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Re-run with --force"))).toBe(true);
   });
 
   it("supports dry-run remove in metadata-only mode with explicit file impact listing", async () => {
@@ -501,6 +522,26 @@ describe("workspace-lifecycle remove", () => {
     expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceTarget, { recursive: true, force: true });
   });
 
+  it("allows forced delete-files cleanup even without interactive confirmation support", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const workspaceTarget = path.resolve(invocationDir, "../workspace-a");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-a\n",
+      },
+      directories: [workspaceTarget],
+      includeInteractiveInput: false,
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: true, dryRun: false, force: true });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceTarget, { recursive: true, force: true });
+    expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceLinkPath, { force: true });
+    expect(events.some((event) => event.kind === "success" && event.message.includes("removed empty workspace.link"))).toBe(true);
+  });
+
   it("fails with clear missing-path message when rewriting workspace.link fails", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
@@ -583,6 +624,7 @@ function createHarness(
   initialState: {
     files?: Record<string, string>;
     directories?: string[];
+    includeInteractiveInput?: boolean;
   } = {},
 ): {
   unlinkTask: (options: WorkspaceUnlinkOptions) => Promise<number>;
@@ -687,7 +729,7 @@ function createHarness(
       },
     },
     fileSystem,
-    interactiveInput,
+    interactiveInput: initialState.includeInteractiveInput === false ? undefined : interactiveInput,
     pathOperations,
     workingDirectory,
   };

@@ -42,6 +42,160 @@ describe("CLI run option normalization", () => {
     expect(call.ignoreCliBlock).toBe(false);
   });
 
+  it("uses run defaults from config when commit flags are omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-run-defaults-"));
+    const previousCwd = process.cwd();
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: true,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const call = await invokeRunAndCaptureCall([
+        "run",
+        "tasks.md",
+        "--all",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(call.keepArtifacts).toBe(true);
+      expect(call.commitAfterComplete).toBe(true);
+      expect(call.commitMode).toBe("file-done");
+      expect(call.commitMessageTemplate).toBe("cfg: {{task}}");
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("lets CLI flags override commit defaults while preserving unrelated config defaults", async () => {
+    const runTask = vi.fn(async () => 0);
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-run-defaults-override-"));
+    const previousCwd = process.cwd();
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: true,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const call = await invokeRunAndCaptureCall([
+        "run",
+        "tasks.md",
+        "--all",
+        "--commit",
+        "--commit-mode",
+        "per-task",
+        "--commit-message",
+        "cli: {{task}}",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(call.commitAfterComplete).toBe(true);
+      expect(call.commitMode).toBe("per-task");
+      expect(call.commitMessageTemplate).toBe("cli: {{task}}");
+      expect(call.keepArtifacts).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("lets --revertable override config while preserving configured commit message and mode", async () => {
+    const runTask = vi.fn(async () => 0);
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-run-defaults-revertable-override-"));
+    const previousCwd = process.cwd();
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: false,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const call = await invokeRunAndCaptureCall([
+        "run",
+        "tasks.md",
+        "--all",
+        "--revertable",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(call.keepArtifacts).toBe(true);
+      expect(call.commitAfterComplete).toBe(true);
+      expect(call.commitMode).toBe("file-done");
+      expect(call.commitMessageTemplate).toBe("cfg: {{task}}");
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("lets empty --commit-message override configured commit message", async () => {
+    const runTask = vi.fn(async () => 0);
+
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-run-defaults-empty-commit-message-"));
+    const previousCwd = process.cwd();
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          commit: true,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "per-task",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const call = await invokeRunAndCaptureCall([
+        "run",
+        "tasks.md",
+        "--commit",
+        "--commit-message",
+        "",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask);
+
+      expect(call.commitAfterComplete).toBe(true);
+      expect(call.commitMode).toBe("per-task");
+      expect(call.commitMessageTemplate).toBeUndefined();
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes --resolve-repair-attempts override to run task", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -3934,6 +4088,144 @@ describe("CLI plan and utility command normalization", () => {
     const call = await invokeUnlockAndCaptureCall(["unlock", "tasks.md"], unlockTask);
 
     expect(call).toEqual({ source: "tasks.md" });
+  });
+
+  it("do uses run defaults from config when commit flags are omitted", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-run-defaults-"));
+    const previousCwd = process.cwd();
+    const markdownFile = path.join(tempRoot, "8. Do something.md");
+
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: true,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const result = await invokeDoAndCaptureCalls([
+        "do",
+        "please do something",
+        markdownFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask, researchTask, planTask);
+
+      expect(result.exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        keepArtifacts: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+        commitMessageTemplate: "cfg: {{task}}",
+      }));
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("do lets CLI commit flags override config defaults while preserving unrelated defaults", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-run-defaults-override-"));
+    const previousCwd = process.cwd();
+    const markdownFile = path.join(tempRoot, "8. Do something.md");
+
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: true,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const result = await invokeDoAndCaptureCalls([
+        "do",
+        "please do something",
+        markdownFile,
+        "--commit",
+        "--commit-mode",
+        "per-task",
+        "--commit-message",
+        "cli: {{task}}",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask, researchTask, planTask);
+
+      expect(result.exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        keepArtifacts: true,
+        commitAfterComplete: true,
+        commitMode: "per-task",
+        commitMessageTemplate: "cli: {{task}}",
+      }));
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("do lets --revertable override config while preserving configured commit message and mode", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-run-defaults-revertable-override-"));
+    const previousCwd = process.cwd();
+    const markdownFile = path.join(tempRoot, "8. Do something.md");
+
+    try {
+      const configDir = path.join(tempRoot, ".rundown");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+        run: {
+          revertable: false,
+          commit: false,
+          commitMessage: "cfg: {{task}}",
+          commitMode: "file-done",
+        },
+      }, null, 2) + "\n", "utf-8");
+      process.chdir(tempRoot);
+
+      const result = await invokeDoAndCaptureCalls([
+        "do",
+        "please do something",
+        markdownFile,
+        "--revertable",
+        "--worker",
+        "opencode",
+        "run",
+      ], runTask, researchTask, planTask);
+
+      expect(result.exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        keepArtifacts: true,
+        commitAfterComplete: true,
+        commitMode: "file-done",
+        commitMessageTemplate: "cfg: {{task}}",
+      }));
+    } finally {
+      process.chdir(previousCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("passes workspace unlink options to the application layer", async () => {

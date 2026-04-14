@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import { extractForceModifier, parsePrefixChain } from "../../src/domain/prefix-chain.js";
 import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port.js";
+import {
+  PARALLEL_PREFIX_ALIASES,
+  VERIFY_PREFIX_ALIASES,
+} from "../helpers/prefix-aliases.js";
 
 const builtinToolResolver: ToolResolverPort = {
   resolve: (toolName) => resolveBuiltinTool(toolName),
@@ -101,6 +105,30 @@ describe("extractForceModifier", () => {
 });
 
 describe("parsePrefixChain", () => {
+  it("keeps verify alias handlers behaviorally equivalent", () => {
+    const chains = VERIFY_PREFIX_ALIASES.map((alias) => parsePrefixChain(`${alias}: run smoke tests`, builtinToolResolver));
+
+    for (const chain of chains) {
+      expect(chain.modifiers).toEqual([]);
+      expect(chain.handler?.tool.kind).toBe("handler");
+      expect(chain.handler?.tool.frontmatter).toEqual({ skipExecution: true, shouldVerify: true });
+      expect(chain.handler?.payload).toBe("run smoke tests");
+      expect(chain.remainingText).toBe("run smoke tests");
+    }
+  });
+
+  it("keeps parallel alias handlers behaviorally equivalent", () => {
+    const chains = PARALLEL_PREFIX_ALIASES.map((alias) => parsePrefixChain(`${alias}: prepare workers`, builtinToolResolver));
+
+    for (const chain of chains) {
+      expect(chain.modifiers).toEqual([]);
+      expect(chain.handler?.tool.kind).toBe("handler");
+      expect(chain.handler?.tool.frontmatter).toEqual({ skipExecution: true, autoComplete: true, shouldVerify: false });
+      expect(chain.handler?.payload).toBe("prepare workers");
+      expect(chain.remainingText).toBe("prepare workers");
+    }
+  });
+
   it("keeps existing built-in prefixes parsing unchanged after registering get", () => {
     const resolverWithQuestion: ToolResolverPort = {
       resolve: (toolName) => {
@@ -231,6 +259,54 @@ describe("parsePrefixChain", () => {
     expect(chain.remainingText).toBe("services");
   });
 
+  it("parses chained modifiers before a terminal handler", () => {
+    const chain = parsePrefixChain("profile=fast; force: 3, verify: run smoke tests", builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(2);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.modifiers[1]?.tool.name).toBe("force");
+    expect(chain.modifiers[1]?.payload).toBe("3");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("run smoke tests");
+    expect(chain.remainingText).toBe("run smoke tests");
+  });
+
+  it("splits only at boundaries where the next segment is a known prefix", () => {
+    const chain = parsePrefixChain("profile=fast, unknown: value, verify: run smoke tests", builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast, unknown: value");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("run smoke tests");
+    expect(chain.remainingText).toBe("run smoke tests");
+  });
+
+  it("does not split at delimiter boundaries without required trailing space", () => {
+    const chain = parsePrefixChain("profile=fast,verify: run smoke tests", builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast,verify: run smoke tests");
+    expect(chain.handler).toBeUndefined();
+    expect(chain.remainingText).toBe("");
+  });
+
+  it("does not split when prefix-like words appear only in payload text", () => {
+    const chain = parsePrefixChain(
+      "profile=fast, verify: investigate memory usage; parallel execution can be fast",
+      builtinToolResolver,
+    );
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("investigate memory usage; parallel execution can be fast");
+    expect(chain.remainingText).toBe("investigate memory usage; parallel execution can be fast");
+  });
+
   it.each(["for", "each", "foreach"])("keeps verify as terminal handler when %s appears inside verify payload", (alias) => {
     const chain = parsePrefixChain(`profile=fast, verify: ${alias}: services`, builtinToolResolver);
 
@@ -242,8 +318,13 @@ describe("parsePrefixChain", () => {
     expect(chain.remainingText).toBe(`${alias}: services`);
   });
 
-  it("throws for legacy profile: modifier syntax", () => {
-    expect(() => parsePrefixChain("profile: fast, verify: tests pass", builtinToolResolver)).toThrow(
+  it.each([
+    "profile: fast",
+    "profile: fast, verify: tests pass",
+    "profile = release, profile: fast",
+    "ProFiLe : fast; verify: tests pass",
+  ])("rejects legacy-invalid profile: syntax (%s)", (taskText) => {
+    expect(() => parsePrefixChain(taskText, builtinToolResolver)).toThrow(
       "Invalid profile syntax: use profile=<name> (not profile: <name>).",
     );
   });

@@ -656,12 +656,20 @@ function findPreviousRevisionForTarget(
   },
 ): DesignRevisionDirectory | null {
   if (target.kind === "current") {
-    return revisions.length > 0 ? revisions[revisions.length - 1] ?? null : null;
+    return findNearestLowerDiscoveredRevision(revisions, Number.POSITIVE_INFINITY);
   }
 
   if (target.revisionIndex === undefined) {
     return null;
   }
+
+  return findNearestLowerDiscoveredRevision(revisions, target.revisionIndex);
+}
+
+function findNearestLowerDiscoveredRevision(
+  revisions: DesignRevisionDirectory[],
+  targetRevisionIndex: number,
+): DesignRevisionDirectory | null {
 
   for (let index = revisions.length - 1; index >= 0; index -= 1) {
     const revision = revisions[index];
@@ -669,7 +677,7 @@ function findPreviousRevisionForTarget(
       continue;
     }
 
-    if (revision.index < target.revisionIndex) {
+    if (revision.index < targetRevisionIndex) {
       return revision;
     }
   }

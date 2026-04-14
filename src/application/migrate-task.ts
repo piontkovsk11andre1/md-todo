@@ -1048,7 +1048,7 @@ function buildTemplateVars(
   const design = resolveDesignContext(fileSystem, projectRoot).design;
   const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot);
   const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, { target: "current" });
-  const previousRevisionId = revisionDiff.fromRevision?.name ?? "";
+  const previousRevisionId = revisionDiff.fromRevision?.name ?? (revisionDiff.hasComparison ? "nothing" : "");
   const currentRevisionId = revisionDiff.toTarget.name;
   const currentRevisionCreatedAt = revisionDiff.toTarget.metadata.createdAt;
   const currentRevisionLabel = revisionDiff.toTarget.metadata.label;

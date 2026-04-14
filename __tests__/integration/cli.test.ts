@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactStoreStatus } from "../../src/domain/ports/index.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createLockfileFileLock } from "../../src/infrastructure/file-lock.js";
+import { ROOT_COMMAND_WELCOME_MESSAGE } from "../../src/domain/defaults.js";
+import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 const tempDirs: string[] = [];
 
@@ -44,8 +46,25 @@ const GLOBAL_OUTPUT_LOG_EXPECTED_KEYS = [
   "version",
 ];
 
+const CLI_TIMESTAMP_PREFIX_PATTERN = /^\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[^\]]+\]\s/;
+
 function stripAnsi(value: string): string {
-  return value.replace(ANSI_ESCAPE_PATTERN, "");
+  return stripCliTimestampPrefix(value.replace(ANSI_ESCAPE_PATTERN, ""));
+}
+
+function stripCliTimestampPrefix(value: string): string {
+  if (CLI_TIMESTAMP_PREFIX_PATTERN.test(value)) {
+    return value.replace(CLI_TIMESTAMP_PREFIX_PATTERN, "");
+  }
+
+  return value.replace(/^(\[(?:log|error)\]\s)\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[^\]]+\]\s/, "$1");
+}
+
+function expectCanonicalRootWelcome(logs: string[]): void {
+  const canonicalWelcomes = logs.filter((line) => line === ROOT_COMMAND_WELCOME_MESSAGE);
+  expect(canonicalWelcomes).toHaveLength(1);
+  expect(logs[0]).toBe(ROOT_COMMAND_WELCOME_MESSAGE);
+  expect(logs.some((line) => line.startsWith("Welcome to rundown") && line !== ROOT_COMMAND_WELCOME_MESSAGE)).toBe(false);
 }
 
 function expectedInitSuccessLines(displayConfigDir: string): string[] {
@@ -129,12 +148,19 @@ async function runCli(args: string[], cwd: string): Promise<{
   errors: string[];
   stdoutWrites: string[];
   stderrWrites: string[];
+  outputEvents: string[];
 }> {
   const normalizedArgs = normalizeLegacyWorkerPatternArgs(args);
+  const previousArgv = process.argv.slice();
   const previousCwd = process.cwd();
   const previousEnv = process.env.RUNDOWN_DISABLE_AUTO_PARSE;
   const previousTestModeEnv = process.env.RUNDOWN_TEST_MODE;
 
+  process.argv = [
+    previousArgv[0] ?? "node",
+    previousArgv[1] ?? "/repo/node_modules/.bin/rundown",
+    ...normalizedArgs,
+  ];
   process.chdir(cwd);
   process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
   process.env.RUNDOWN_TEST_MODE = "1";
@@ -145,12 +171,17 @@ async function runCli(args: string[], cwd: string): Promise<{
   const errors: string[] = [];
   const stdoutWrites: string[] = [];
   const stderrWrites: string[] = [];
+  const outputEvents: string[] = [];
 
   const logSpy = vi.spyOn(console, "log").mockImplementation((...values: unknown[]) => {
-    logs.push(values.map((value) => String(value)).join(" "));
+    const text = values.map((value) => String(value)).join(" ");
+    logs.push(text);
+    outputEvents.push(`[log] ${text}`);
   });
   const errorSpy = vi.spyOn(console, "error").mockImplementation((...values: unknown[]) => {
-    errors.push(values.map((value) => String(value)).join(" "));
+    const text = values.map((value) => String(value)).join(" ");
+    errors.push(text);
+    outputEvents.push(`[error] ${text}`);
   });
   const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number | string | null) => {
     throw {
@@ -159,11 +190,15 @@ async function runCli(args: string[], cwd: string): Promise<{
     };
   }) as typeof process.exit);
   const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
-    stdoutWrites.push(String(chunk));
+    const text = String(chunk);
+    stdoutWrites.push(text);
+    outputEvents.push(`[stdout] ${text}`);
     return true;
   }) as typeof process.stdout.write);
   const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
-    stderrWrites.push(String(chunk));
+    const text = String(chunk);
+    stderrWrites.push(text);
+    outputEvents.push(`[stderr] ${text}`);
     return true;
   }) as typeof process.stderr.write);
 
@@ -175,7 +210,7 @@ async function runCli(args: string[], cwd: string): Promise<{
       process.env.RUNDOWN_DISABLE_AUTO_PARSE = previousEnv;
     }
     await parseCliArgs(normalizedArgs);
-    return { code: 0, logs, errors, stdoutWrites, stderrWrites };
+    return { code: 0, logs, errors, stdoutWrites, stderrWrites, outputEvents };
   } catch (error) {
     if (
       typeof error === "object"
@@ -189,6 +224,7 @@ async function runCli(args: string[], cwd: string): Promise<{
         errors,
         stdoutWrites,
         stderrWrites,
+        outputEvents,
       };
     }
 
@@ -204,23 +240,25 @@ async function runCli(args: string[], cwd: string): Promise<{
         errors,
         stdoutWrites,
         stderrWrites,
+        outputEvents,
       };
     }
 
     const message = String(error);
     const match = message.match(/CLI exited with code (\d+)/);
     if (match) {
-      return { code: Number(match[1]), logs, errors, stdoutWrites, stderrWrites };
+      return { code: Number(match[1]), logs, errors, stdoutWrites, stderrWrites, outputEvents };
     }
 
     errors.push(message);
-    return { code: 1, logs, errors, stdoutWrites, stderrWrites };
+    return { code: 1, logs, errors, stdoutWrites, stderrWrites, outputEvents };
   } finally {
     logSpy.mockRestore();
     errorSpy.mockRestore();
     exitSpy.mockRestore();
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+    process.argv = previousArgv;
     process.chdir(previousCwd);
 
     if (previousEnv === undefined) {
@@ -234,6 +272,25 @@ async function runCli(args: string[], cwd: string): Promise<{
     } else {
       process.env.RUNDOWN_TEST_MODE = previousTestModeEnv;
     }
+  }
+}
+
+async function runCliFromEntrypoint(
+  entrypoint: string,
+  args: string[],
+  cwd: string,
+): Promise<Awaited<ReturnType<typeof runCli>>> {
+  const previousArgv = process.argv.slice();
+  process.argv = [
+    previousArgv[0] ?? "node",
+    entrypoint,
+    ...normalizeLegacyWorkerPatternArgs(args),
+  ];
+
+  try {
+    return await runCli(args, cwd);
+  } finally {
+    process.argv = previousArgv;
   }
 }
 
@@ -1651,7 +1708,7 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
   });
 
-  it.each(["fast", "raw"])("run executes %s-prefixed tasks without verification when --verify is enabled", async (prefix) => {
+  it.each(["fast", "raw", "quick"])("run executes %s-prefixed tasks without verification when --verify is enabled", async (prefix) => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), `- [ ] ${prefix}: release docs are consistent\n`, "utf-8");
 
@@ -1666,12 +1723,12 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
-    expect(result.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Task uses fast/raw/quick intent"))).toBe(true);
     expect(result.logs.some((line) => line.includes("would run: opencode run"))).toBe(true);
     expect(result.logs.some((line) => line.includes("would run verification"))).toBe(false);
   });
 
-  it.each(["fast", "raw"])("run skips empty %s payload tasks and surfaces warning output", async (prefix) => {
+  it.each(["fast", "raw", "quick"])("run skips empty %s payload tasks and surfaces warning output", async (prefix) => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const workerScriptPath = path.join(workspace, "empty-fast-payload-worker.cjs");
@@ -1706,7 +1763,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(roadmapPath, "utf-8")).toBe(`- [ ] ${prefix}:   \n`);
   });
 
-  it.each(["fast", "raw"])("run mixed %s/normal plans verify only the normal task under --verify", async (prefix) => {
+  it.each(["fast", "raw", "quick"])("run mixed %s/normal plans verify only the normal task under --verify", async (prefix) => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const workerScriptPath = path.join(workspace, "verify-probe-worker.mjs");
@@ -1745,7 +1802,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(fastTaskResult.code).toBe(0);
-    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw/quick intent"))).toBe(true);
     expect(fastTaskResult.logs.some((line) => line.includes(`node ${normalizedWorkerScriptPath} [wait]`))).toBe(true);
     expect(fastTaskResult.logs.some((line) => line.includes("Running tool:"))).toBe(false);
     const phasesAfterFastTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
@@ -1767,7 +1824,7 @@ describe.sequential("CLI integration", () => {
     expect(phasesAfterNormalTask.filter((phase) => phase === "verify")).toHaveLength(1);
   });
 
-  it.each(["fast", "raw"])("run inherits %s directives for child tasks and skips verification under --verify", async (prefix) => {
+  it.each(["fast", "raw", "quick"])("run inherits %s directives for child tasks and skips verification under --verify", async (prefix) => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const workerScriptPath = path.join(workspace, "verify-probe-worker-inherited-fast.mjs");
@@ -1826,7 +1883,7 @@ describe.sequential("CLI integration", () => {
     expect(phasesAfterSecondChild.filter((phase) => phase === "verify")).toHaveLength(0);
   });
 
-  it.each(["fast", "raw"])("run keeps verify/memory prefix behavior unchanged when %s aliases are present", async (prefix) => {
+  it.each(["fast", "raw", "quick"])("run keeps verify/memory prefix behavior unchanged when %s aliases are present", async (prefix) => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const workerScriptPath = path.join(workspace, "verify-memory-regression-worker.cjs");
@@ -1867,7 +1924,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(fastTaskResult.code).toBe(0);
-    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw intent"))).toBe(true);
+    expect(fastTaskResult.logs.some((line) => line.includes("Task uses fast/raw/quick intent"))).toBe(true);
     const phasesAfterFastTask = fs.readFileSync(phaseLogPath, "utf-8").trim().split("\n").filter(Boolean);
     expect(phasesAfterFastTask.filter((phase) => phase === "execute")).toHaveLength(1);
     expect(phasesAfterFastTask.filter((phase) => phase === "verify")).toHaveLength(0);
@@ -10655,6 +10712,21 @@ describe.sequential("CLI integration", () => {
     const result = await withTerminalTty(false, () => runCli([], workspace));
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
+    const normalizedEvents = normalizeOutputEvents(result.outputEvents);
+    const outputOpeningSequence = normalizedEvents.slice(0, 4).map((event) => (
+      event === `[log] ${ROOT_COMMAND_WELCOME_MESSAGE}`
+        ? "[log] <canonical-welcome>"
+        : event
+    ));
+    expect(outputOpeningSequence).toMatchInlineSnapshot(`
+      [
+        "[log] <canonical-welcome>",
+        "[stdout] Usage: rundown [options] [command]",
+        "A Markdown-native task runtime for agentic workflows.",
+        "Options:",
+      ]
+    `);
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
     expect(compactHelpOutput).toContain("Find the next unchecked TODO and execute it");
@@ -10664,6 +10736,79 @@ describe.sequential("CLI integration", () => {
       argv: [],
       cwd: workspace,
     });
+  });
+
+  it("root --agents prints canonical AGENTS template and exits successfully", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await withTerminalTty(true, () => runCli(["--agents"], workspace));
+
+    expect(result.code).toBe(0);
+    expect(result.logs).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
+  });
+
+  it("root --agents takes precedence over --help output", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await withTerminalTty(true, () => runCli(["--help", "--agents"], workspace));
+
+    expect(result.code).toBe(0);
+    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
+    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+  });
+
+  it("keeps rd and rundown --agents output and exit code identical in TTY and non-TTY without live help", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
+      workers: {
+        tui: ["node", "-e", "process.exit(0)"],
+      },
+    }, null, 2), "utf-8");
+
+    const spawnMock = vi.fn().mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { unref: () => void };
+      child.unref = vi.fn();
+      process.nextTick(() => {
+        child.emit("close", 0);
+      });
+      return child;
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const rundownTty = await withTerminalTty(true, () => runCliFromEntrypoint("/repo/node_modules/.bin/rundown", ["--agents"], workspace));
+    const rdTty = await withTerminalTty(true, () => runCliFromEntrypoint("/repo/node_modules/.bin/rd", ["--agents"], workspace));
+    const rundownNoTty = await withTerminalTty(false, () => runCliFromEntrypoint("/repo/node_modules/.bin/rundown", ["--agents"], workspace));
+    const rdNoTty = await withTerminalTty(false, () => runCliFromEntrypoint("/repo/node_modules/.bin/rd", ["--agents"], workspace));
+
+    vi.doUnmock("cross-spawn");
+
+    for (const result of [rundownTty, rdTty, rundownNoTty, rdNoTty]) {
+      expect(result.code).toBe(0);
+      expect(result.logs).toEqual([]);
+      expect(result.errors).toEqual([]);
+      expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
+    }
+
+    expect(rdTty.stdoutWrites.join("")).toBe(rundownTty.stdoutWrites.join(""));
+    expect(rdNoTty.stdoutWrites.join("")).toBe(rundownNoTty.stdoutWrites.join(""));
+    expect(rdTty.code).toBe(rundownTty.code);
+    expect(rdNoTty.code).toBe(rundownNoTty.code);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects --agents when used with subcommands", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await withTerminalTty(true, () => runCli(["run", "roadmap.md", "--agents"], workspace));
+
+    expect(result.code).toBe(1);
+    expect(result.errors.some((line) => line.includes("Unsupported option for `run`: --agents"))).toBe(true);
   });
 
   it("root invocation launches live help session in interactive terminals when a help worker is configured", async () => {
@@ -10693,6 +10838,7 @@ describe.sequential("CLI integration", () => {
     vi.doUnmock("cross-spawn");
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { stdio?: string }];
     expect(cmd).toBe("node");
@@ -10745,6 +10891,7 @@ describe.sequential("CLI integration", () => {
     ], workspace));
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
     expect(fs.existsSync(promptCapturePath)).toBe(true);
     const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
     expect(capturedPrompt).toContain("CONFIG_DIR_OVERRIDE_MARKER");
@@ -10791,6 +10938,7 @@ describe.sequential("CLI integration", () => {
     ], workspace));
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
     expect(fs.existsSync(promptCapturePath)).toBe(true);
     const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
     expect(capturedPrompt).toContain("before-cli-help-output");
@@ -10815,6 +10963,21 @@ describe.sequential("CLI integration", () => {
     vi.doUnmock("cross-spawn");
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
+    const normalizedEvents = normalizeOutputEvents(result.outputEvents);
+    const outputOpeningSequence = normalizedEvents.slice(0, 4).map((event) => (
+      event === `[log] ${ROOT_COMMAND_WELCOME_MESSAGE}`
+        ? "[log] <canonical-welcome>"
+        : event
+    ));
+    expect(outputOpeningSequence).toMatchInlineSnapshot(`
+      [
+        "[log] <canonical-welcome>",
+        "[log] ℹ No interactive help worker is configured. Falling back to static help output.",
+        "[stdout] Usage: rundown [options] [command]",
+        "A Markdown-native task runtime for agentic workflows.",
+      ]
+    `);
     expect(spawnMock).not.toHaveBeenCalled();
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
@@ -10834,6 +10997,7 @@ describe.sequential("CLI integration", () => {
     vi.doUnmock("cross-spawn");
 
     expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
     expect(spawnMock).not.toHaveBeenCalled();
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
@@ -13058,13 +13222,92 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("revertable=yes"))).toBe(true);
   });
 
+  it("log keeps compact history lines unprefixed while timestamping command-level info lines", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-log-prefix-split",
+      status: "completed",
+      extra: {
+        commitSha: "1234567890abcdef1234567890abcdef12345678",
+      },
+    });
+
+    const result = await runCli(["log"], workspace);
+
+    expect(result.code).toBe(0);
+    const compactLine = result.logs.find((line) => line.includes("| command=run |"));
+    expect(compactLine).toBeDefined();
+    expect(CLI_TIMESTAMP_PREFIX_PATTERN.test(compactLine ?? "")).toBe(false);
+
+    const summaryLine = result.logs.find((line) => stripCliTimestampPrefix(stripAnsi(line)) === "ℹ 1 run listed.");
+    expect(summaryLine).toBeDefined();
+    expect(CLI_TIMESTAMP_PREFIX_PATTERN.test(summaryLine ?? "")).toBe(true);
+  });
+
+  it("log --json preserves the stable machine-readable contract", async () => {
+    const workspace = makeTempWorkspace();
+    writeSavedRun(workspace, {
+      runId: "run-20260317T000000000Z-log-json",
+      status: "completed",
+      startedAt: "2026-03-17T00:00:00.000Z",
+      extra: {
+        commitSha: "1234567890abcdef1234567890abcdef12345678",
+      },
+    });
+
+    const result = await runCli(["log", "--json"], workspace);
+
+    expect(result.code).toBe(0);
+    expect(result.errors).toEqual([]);
+
+    const parsed = JSON.parse(result.logs.join("\n")) as Array<Record<string, unknown>>;
+    expect(parsed).toHaveLength(1);
+
+    const entry = parsed[0];
+    expect(entry).toBeDefined();
+    expect(Object.keys(entry ?? {}).sort()).toEqual([
+      "commandName",
+      "commitSha",
+      "completedAt",
+      "relativeTime",
+      "revertable",
+      "runId",
+      "shortCommitSha",
+      "shortRunId",
+      "source",
+      "startedAt",
+      "status",
+      "taskSummary",
+    ]);
+    expect(entry?.["runId"]).toBe("run-20260317T000000000Z-log-json");
+    expect(typeof entry?.["relativeTime"]).toBe("string");
+    expect(entry?.["startedAt"]).toBe("2026-03-17T00:00:00.000Z");
+    expect(entry?.["completedAt"]).toBe("2026-03-17T00:01:00.000Z");
+    expect(entry?.["commitSha"]).toBe("1234567890abcdef1234567890abcdef12345678");
+    expect(entry?.["shortCommitSha"]).toBe("1234567890ab");
+    expect(entry?.["revertable"]).toBe(true);
+    expect(entry?.["timestamp"]).toBeUndefined();
+  });
+
   it("log exits 3 with an informational message when no runs exist", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli(["log"], workspace);
 
     expect(result.code).toBe(3);
-    expect(result.logs.some((line) => line.includes("No matching completed runs found."))).toBe(true);
+    expect(result.logs.some((line) => stripCliTimestampPrefix(line).includes("No matching completed runs found."))).toBe(true);
+  });
+
+  it("next prefixes command-level informational output with UTC ISO timestamps", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "tasks.md"), "- [x] Ship release notes\n", "utf-8");
+
+    const result = await runCli(["next", "tasks.md"], workspace);
+
+    expect(result.code).toBe(3);
+    const infoLine = result.logs.find((line) => stripCliTimestampPrefix(stripAnsi(line)).includes("No unchecked tasks found."));
+    expect(infoLine).toBeDefined();
+    expect(CLI_TIMESTAMP_PREFIX_PATTERN.test(infoLine ?? "")).toBe(true);
   });
 
   it("log exits 1 for invalid --limit values", async () => {
@@ -13717,8 +13960,8 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.map(stripAnsi)).toEqual([
       "⚠ .rundown/execute.md already exists, skipping.",
     ]);
-    expect(result.logs.map(stripAnsi)[0]).toBe("✔ Created .rundown/tools/");
-    expect(result.logs.map(stripAnsi).at(-1)).toBe("✔ Initialized .rundown/ with default templates.");
+    expect(result.logs.map((line) => stripCliTimestampPrefix(stripAnsi(line)))[0]).toBe("✔ Created .rundown/tools/");
+    expect(result.logs.map((line) => stripCliTimestampPrefix(stripAnsi(line))).at(-1)).toBe("✔ Initialized .rundown/ with default templates.");
   });
 
   it("init preserves existing vars.json and config.json by default", async () => {
@@ -13753,7 +13996,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.readFileSync(path.join(configDir, "config.json"), "utf-8")).toBe("{\n  \"custom\": true\n}\n");
     expect(fs.readFileSync(path.join(configDir, "vars.json"), "utf-8")).toBe("{\n  \"name\": \"Ada\"\n}\n");
 
-    const secondLogs = secondResult.logs.map(stripAnsi);
+    const secondLogs = secondResult.logs.map((line) => stripCliTimestampPrefix(stripAnsi(line)));
     const secondErrors = secondResult.errors.map(stripAnsi);
     expect(secondLogs).not.toContain("✔ Created .rundown/config.json");
     expect(secondLogs).not.toContain("✔ Created .rundown/vars.json");
@@ -13813,6 +14056,13 @@ function writeSavedRun(
     status: options.status,
     extra: options.extra,
   }, null, 2), "utf-8");
+}
+
+function normalizeOutputEvents(events: string[]): string[] {
+  return events
+    .flatMap((event) => stripAnsi(event).split(/\r?\n/))
+    .map((event) => event.trim())
+    .filter((event) => event.length > 0);
 }
 
 function setupUndoDirtyWorkspace(

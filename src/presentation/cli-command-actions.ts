@@ -2,6 +2,8 @@ import type { ProcessRunMode } from "../domain/ports/index.js";
 import fs from "node:fs";
 import path from "node:path";
 import { EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
+import { createWorkerConfigAdapter } from "../infrastructure/adapters/worker-config-adapter.js";
+import { resolveConfigDirForInvocation } from "./cli-app-init.js";
 import {
   normalizeOptionalString,
   parseCliBlockTimeout,
@@ -31,6 +33,7 @@ import {
   resolveMakeMarkdownFile,
   resolveVerifyFlag,
 } from "./cli-options.js";
+import type { RunDefaultsConfig } from "../domain/worker-config.js";
 import { cancellableSleep } from "../infrastructure/cancellable-sleep.js";
 import { resolveInvocationCommand } from "./cli-argv.js";
 import {
@@ -44,6 +47,7 @@ import type {
   ResearchCommandInvocationOptions,
 } from "./cli-invocation-types.js";
 import { resolveInvocationWorkspaceContext } from "./invocation-workspace-context.js";
+import { getAgentsTemplate } from "../domain/agents-template.js";
 
 type CliActionResult = number | Promise<number>;
 type CliOpts = Record<string, string | string[] | boolean>;
@@ -60,6 +64,7 @@ type LogCommandHandler = (options: LogCommandOptions) => CliActionResult;
 interface WorkerActionDependencies {
   getApp: () => CliApp;
   getWorkerFromSeparator: () => string[] | undefined;
+  getInvocationArgv?: () => string[];
 }
 
 interface WorkerWorkspaceRuntimeOptions {
@@ -79,6 +84,50 @@ interface HelpActionDependencies extends WorkerActionDependencies {
 
 function emitCliInfo(app: CliApp, message: string): void {
   app.emitOutput?.({ kind: "info", message });
+}
+
+function resolveInvocationArgv(getInvocationArgv: (() => string[]) | undefined): string[] {
+  return getInvocationArgv?.() ?? process.argv.slice(2);
+}
+
+function hasCliOption(argv: string[], optionName: string): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      break;
+    }
+
+    if (token === optionName || token.startsWith(optionName + "=")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasCliFlag(argv: string[], optionName: string): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      break;
+    }
+
+    if (token === optionName) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function loadRunDefaultsFromConfig(invocationArgv: string[]): RunDefaultsConfig | undefined {
+  const configDir = resolveConfigDirForInvocation(invocationArgv)?.configDir;
+  if (!configDir) {
+    return undefined;
+  }
+
+  const loadedConfig = createWorkerConfigAdapter().load(configDir);
+  return loadedConfig?.run;
 }
 
 function resolveWorkerWorkspaceRuntimeOptions(): WorkerWorkspaceRuntimeOptions {
@@ -114,6 +163,11 @@ export function createHelpCommandAction({
     const invocationArgv = getInvocationArgv?.() ?? process.argv.slice(2);
     if (resolveInvocationCommand(invocationArgv) !== "rundown") {
       outputHelp();
+      return EXIT_CODE_SUCCESS;
+    }
+
+    if (hasCliFlag(invocationArgv, "--agents")) {
+      process.stdout.write(getAgentsTemplate());
       return EXIT_CODE_SUCCESS;
     }
 
@@ -222,7 +276,7 @@ interface MigrateCommandOptions {
 }
 
 interface DocsCommandOptions {
-  action?: "publish" | "diff";
+  action?: "release" | "diff";
   dir?: string;
   workspace?: string;
   label?: string;
@@ -278,8 +332,16 @@ export function createRunCommandAction({
   getApp,
   getWorkerFromSeparator,
   runnerModes,
+  getInvocationArgv,
 }: RunActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
   return async (source: string, opts: CliOpts) => {
+    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
+    const runDefaults = loadRunDefaultsFromConfig(invocationArgv);
+    const hasCommitFlag = hasCliOption(invocationArgv, "--commit");
+    const hasRevertableFlag = hasCliOption(invocationArgv, "--revertable");
+    const hasCommitMessageFlag = hasCliOption(invocationArgv, "--commit-message");
+    const hasCommitModeFlag = hasCliOption(invocationArgv, "--commit-mode");
+
     const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     // Resolve all execution-mode options before building the run request payload.
     const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
@@ -293,7 +355,9 @@ export function createRunCommandAction({
     const resolveRepairAttempts = parseResolveRepairAttempts(opts.resolveRepairAttempts as string | undefined);
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
-    const revertable = Boolean(opts.revertable as boolean | undefined);
+    const revertable = hasRevertableFlag
+      ? Boolean(opts.revertable as boolean | undefined)
+      : Boolean(runDefaults?.revertable);
     const keepArtifacts = (opts.keepArtifacts as boolean) || revertable;
     const trace = opts.trace as boolean;
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
@@ -301,9 +365,17 @@ export function createRunCommandAction({
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
-    const commitMode = parseCommitMode(opts.commitMode as string | undefined);
-    const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
+    const commitAfterComplete = (hasCommitFlag
+      ? Boolean(opts.commit as boolean | undefined)
+      : Boolean(runDefaults?.commit)) || revertable;
+    const commitMode = parseCommitMode(
+      hasCommitModeFlag
+        ? opts.commitMode as string | undefined
+        : runDefaults?.commitMode,
+    );
+    const commitMessageTemplate = hasCommitMessageFlag
+      ? normalizeOptionalString(opts.commitMessage)
+      : normalizeOptionalString(runDefaults?.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
     const showAgentOutput = resolveShowAgentOutputOption(opts);
@@ -311,6 +383,12 @@ export function createRunCommandAction({
     const clean = Boolean(opts.clean as boolean | undefined);
     const redo = Boolean(opts.redo as boolean | undefined) || clean;
     const resetAfter = Boolean(opts.resetAfter as boolean | undefined) || clean;
+    const effectiveRunAll = runAll || redo || clean;
+    if (commitMode === "file-done" && !effectiveRunAll) {
+      throw new Error(
+        "Invalid --commit-mode usage: file-done is only supported with effective run-all (`run --all`, `all`, or implicit `--redo`/`--clean`).",
+      );
+    }
     const roundsArg = opts.rounds as string | undefined;
     const rounds = parseRounds(roundsArg);
     if (roundsArg !== undefined && !(clean || (redo && resetAfter))) {
@@ -374,11 +452,13 @@ export function createCallCommandAction({
   getApp,
   getWorkerFromSeparator,
   runnerModes,
+  getInvocationArgv,
 }: CallActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
   const runAction = createRunCommandAction({
     getApp,
     getWorkerFromSeparator,
     runnerModes,
+    getInvocationArgv,
   });
 
   return (source: string, opts: CliOpts) => runAction(source, {
@@ -400,8 +480,16 @@ export function createLoopCommandAction({
   getWorkerFromSeparator,
   runnerModes,
   setLoopSignalExitCode,
+  getInvocationArgv,
 }: LoopActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
   return async (source: string, opts: CliOpts) => {
+    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
+    const runDefaults = loadRunDefaultsFromConfig(invocationArgv);
+    const hasCommitFlag = hasCliOption(invocationArgv, "--commit");
+    const hasRevertableFlag = hasCliOption(invocationArgv, "--revertable");
+    const hasCommitMessageFlag = hasCliOption(invocationArgv, "--commit-message");
+    const hasCommitModeFlag = hasCliOption(invocationArgv, "--commit-mode");
+
     const app = getApp();
     const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const mode = parseRunnerMode(opts.mode as string | undefined, runnerModes);
@@ -418,10 +506,20 @@ export function createLoopCommandAction({
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
     const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
-    const revertable = Boolean(opts.revertable as boolean | undefined);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
-    const commitMode = parseCommitMode(opts.commitMode as string | undefined);
-    const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
+    const revertable = hasRevertableFlag
+      ? Boolean(opts.revertable as boolean | undefined)
+      : Boolean(runDefaults?.revertable);
+    const commitAfterComplete = (hasCommitFlag
+      ? Boolean(opts.commit as boolean | undefined)
+      : Boolean(runDefaults?.commit)) || revertable;
+    const commitMode = parseCommitMode(
+      hasCommitModeFlag
+        ? opts.commitMode as string | undefined
+        : runDefaults?.commitMode,
+    );
+    const commitMessageTemplate = hasCommitMessageFlag
+      ? normalizeOptionalString(opts.commitMessage)
+      : normalizeOptionalString(runDefaults?.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
     const rounds = parseRounds(opts.rounds as string | undefined);
@@ -1062,21 +1160,52 @@ export function createMigrateCommandAction({
 }
 
 /**
- * Creates the `docs publish` command action handler.
+ * Creates the `docs release` command action handler.
  *
  * The returned action reuses the revision snapshot flow currently implemented by
  * the migrate use case and forwards docs-specific options.
+ */
+export function createDocsReleaseCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    return resolveDocsCommandHandler(getApp())({
+      action: "release",
+      dir: normalizeOptionalString(opts.dir),
+      workspace: normalizeOptionalString(opts.workspace),
+      label: normalizeOptionalString(opts.label),
+    });
+  };
+}
+
+/**
+ * Creates the deprecated `docs publish` compatibility command action handler.
  */
 export function createDocsPublishCommandAction({
   getApp,
 }: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
-    return resolveDocsCommandHandler(getApp())({
-      action: "publish",
+    const app = getApp();
+    app.emitOutput?.({
+      kind: "warn",
+      message: "`rundown docs publish` is deprecated; use `rundown docs release`.",
+    });
+
+    return resolveDocsCommandHandler(app)({
+      action: "release",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       label: normalizeOptionalString(opts.label),
     });
+  };
+}
+
+/**
+ * Creates the removed `docs save` command action handler.
+ */
+export function createDocsSaveCommandAction(): () => CliActionResult {
+  return () => {
+    throw new Error("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
   };
 }
 
@@ -1454,8 +1583,16 @@ export function createDoCommandAction({
   getApp,
   getWorkerFromSeparator,
   makeModes,
+  getInvocationArgv,
 }: DoActionDependencies): (seedText: string, markdownFile: string, opts: CliOpts) => CliActionResult {
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
+    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
+    const runDefaults = loadRunDefaultsFromConfig(invocationArgv);
+    const hasCommitFlag = hasCliOption(invocationArgv, "--commit");
+    const hasRevertableFlag = hasCliOption(invocationArgv, "--revertable");
+    const hasCommitMessageFlag = hasCliOption(invocationArgv, "--commit-message");
+    const hasCommitModeFlag = hasCliOption(invocationArgv, "--commit-mode");
+
     const app = getApp();
     const targetMarkdownFile = resolveMakeMarkdownFile(markdownFile);
     const {
@@ -1479,10 +1616,20 @@ export function createDoCommandAction({
     const repairAttempts = parseRepairAttempts(opts.repairAttempts as string | undefined);
     const resolveRepairAttempts = parseResolveRepairAttempts(opts.resolveRepairAttempts as string | undefined);
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
-    const revertable = Boolean(opts.revertable as boolean | undefined);
-    const commitAfterComplete = Boolean(opts.commit as boolean | undefined) || revertable;
-    const commitMode = "per-task" as const;
-    const commitMessageTemplate = normalizeOptionalString(opts.commitMessage);
+    const revertable = hasRevertableFlag
+      ? Boolean(opts.revertable as boolean | undefined)
+      : Boolean(runDefaults?.revertable);
+    const commitAfterComplete = (hasCommitFlag
+      ? Boolean(opts.commit as boolean | undefined)
+      : Boolean(runDefaults?.commit)) || revertable;
+    const commitMode = parseCommitMode(
+      hasCommitModeFlag
+        ? opts.commitMode as string | undefined
+        : runDefaults?.commitMode,
+    );
+    const commitMessageTemplate = hasCommitMessageFlag
+      ? normalizeOptionalString(opts.commitMessage)
+      : normalizeOptionalString(runDefaults?.commitMessage);
     const onCompleteCommand = normalizeOptionalString(opts.onComplete);
     const onFailCommand = normalizeOptionalString(opts.onFail);
     const clean = Boolean(opts.clean as boolean | undefined);

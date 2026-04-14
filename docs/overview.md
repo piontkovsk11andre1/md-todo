@@ -21,8 +21,9 @@ This makes the checkbox a consequence of successful work, not a guess.
 In addition to execute/verify task running, rundown supports a prediction-oriented migration workflow:
 
 - `start` bootstraps a design-first project workspace.
-- `docs publish` snapshots `design/current/` into the next immutable `design/rev.N/` revision.
+- `docs release` snapshots `design/current/` into the next immutable `design/rev.N/` revision.
 - `docs diff [target]` compares revision state for `design/current/` using shorthand or explicit selectors.
+- Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
 - Compatibility fallback remains additive for older projects: `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used when canonical `design/` paths are unavailable.
 - `migrate` advances a numbered migration track and generates satellite artifacts.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
@@ -30,7 +31,7 @@ In addition to execute/verify task running, rundown supports a prediction-orient
 
 Command-boundary rule:
 
-- `rundown docs ...` is for design-doc revision lifecycle (`publish`, `diff`).
+- `rundown docs ...` is for design-doc revision lifecycle (`release`, `diff`).
 - `rundown migrate ...` is for migration lifecycle (proposal generation, execution, satellites, user-session flow).
 
 Prediction migration naming convention:
@@ -247,7 +248,7 @@ Built-in handler aliases:
 
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
-- fast execution (skip verification): `fast:`, `raw:`
+- fast execution (skip verification): `fast:`, `raw:`, `quick:`
 - conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
 - file composition: `include:`
 
@@ -267,8 +268,8 @@ Modifier and handler composition:
 
 Intent precedence notes:
 
-- `fast:` / `raw:` are per-task aliases that disable verification for that task (inverse of `verify:`).
-- `fast:` / `raw:` support directive-parent inheritance (`- fast:` / `- raw:`) for child checkboxes.
+- `fast:` / `raw:` / `quick:` are per-task aliases that disable verification for that task (inverse of `verify:`).
+- `fast:` / `raw:` / `quick:` support directive-parent inheritance (`- fast:` / `- raw:` / `- quick:`) for child checkboxes.
 - Mixed explicit intent prefixes follow first-prefix precedence (`verify: fast: ...` -> verify-only, `fast: verify: ...` -> fast-execution).
 
 Modifiers patch context left-to-right; the terminal handler executes behavior. If only modifiers are present, rundown uses default execute+verify with the modified context.

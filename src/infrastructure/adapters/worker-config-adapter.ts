@@ -7,6 +7,7 @@ import {
 import type { WorkerConfigPort } from "../../domain/ports/worker-config-port.js";
 import {
   DEFAULT_TRACE_STATISTICS_FIELDS,
+  RUN_COMMIT_MODES,
   TRACE_STATISTICS_FIELD_REGISTRY,
   WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_PRIORITY,
   WORKER_HEALTH_POLICY_FALLBACK_STRATEGY_STRICT_ORDER,
@@ -14,6 +15,7 @@ import {
   WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL,
   WORKER_CONFIG_COMMAND_NAMES,
   type WorkerHealthPolicyConfig,
+  type RunDefaultsConfig,
   type TraceStatisticsConfig,
   type WorkerCommand,
   type WorkerCommandProfiles,
@@ -203,6 +205,47 @@ function validateTraceStatisticsConfig(value: unknown, keyPath: string): TraceSt
   };
 }
 
+function validateRunDefaults(value: unknown, keyPath: string): RunDefaultsConfig {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+  }
+
+  const result: RunDefaultsConfig = {};
+
+  if (value.revertable !== undefined && typeof value.revertable !== "boolean") {
+    throw new Error(`Invalid worker config at ${keyPath}.revertable: expected boolean.`);
+  }
+  if (typeof value.revertable === "boolean") {
+    result.revertable = value.revertable;
+  }
+
+  if (value.commit !== undefined && typeof value.commit !== "boolean") {
+    throw new Error(`Invalid worker config at ${keyPath}.commit: expected boolean.`);
+  }
+  if (typeof value.commit === "boolean") {
+    result.commit = value.commit;
+  }
+
+  if (value.commitMessage !== undefined && typeof value.commitMessage !== "string") {
+    throw new Error(`Invalid worker config at ${keyPath}.commitMessage: expected string.`);
+  }
+  if (typeof value.commitMessage === "string") {
+    result.commitMessage = value.commitMessage;
+  }
+
+  if (value.commitMode !== undefined) {
+    const commitMode = value.commitMode;
+    if (typeof commitMode !== "string" || !RUN_COMMIT_MODES.includes(commitMode as RunDefaultsConfig["commitMode"] & string)) {
+      throw new Error(
+        `Invalid worker config at ${keyPath}.commitMode: expected one of ${RUN_COMMIT_MODES.join(", ")}.`,
+      );
+    }
+    result.commitMode = commitMode as RunDefaultsConfig["commitMode"];
+  }
+
+  return result;
+}
+
 function validateNonNegativeNumber(value: unknown, keyPath: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     throw new Error(`Invalid worker config at ${keyPath}: expected non-negative number.`);
@@ -344,6 +387,7 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
       ? undefined
       : validateTraceStatisticsConfig(value.traceStatistics, "traceStatistics"),
     healthPolicy: validateHealthPolicy(value.healthPolicy, "healthPolicy"),
+    run: value.run === undefined ? undefined : validateRunDefaults(value.run, "run"),
   };
 }
 
@@ -444,6 +488,57 @@ function cloneHealthPolicy(value: WorkerHealthPolicyConfig | undefined): WorkerH
   }
 
   return cloned;
+}
+
+function cloneRunDefaults(value: RunDefaultsConfig | undefined): RunDefaultsConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const cloned: RunDefaultsConfig = {
+    revertable: value.revertable,
+    commit: value.commit,
+    commitMessage: value.commitMessage,
+    commitMode: value.commitMode,
+  };
+
+  if (
+    cloned.revertable === undefined
+    && cloned.commit === undefined
+    && cloned.commitMessage === undefined
+    && cloned.commitMode === undefined
+  ) {
+    return undefined;
+  }
+
+  return cloned;
+}
+
+function mergeRunDefaults(
+  base: RunDefaultsConfig | undefined,
+  override: RunDefaultsConfig | undefined,
+): RunDefaultsConfig | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged: RunDefaultsConfig = {
+    revertable: override?.revertable ?? base?.revertable,
+    commit: override?.commit ?? base?.commit,
+    commitMessage: override?.commitMessage ?? base?.commitMessage,
+    commitMode: override?.commitMode ?? base?.commitMode,
+  };
+
+  if (
+    merged.revertable === undefined
+    && merged.commit === undefined
+    && merged.commitMessage === undefined
+    && merged.commitMode === undefined
+  ) {
+    return undefined;
+  }
+
+  return merged;
 }
 
 function mergeWorkers(base: WorkersConfig | undefined, override: WorkersConfig | undefined): WorkersConfig | undefined {
@@ -565,6 +660,7 @@ function mergeWorkerConfig(
       ? cloneTraceStatistics(override.traceStatistics)
       : cloneTraceStatistics(base?.traceStatistics),
     healthPolicy: mergedHealthPolicy,
+    run: mergeRunDefaults(base?.run, override?.run),
   };
 }
 
@@ -584,6 +680,7 @@ function applyBuiltInDefaults(config: WorkerConfig | undefined): WorkerConfig | 
         fields: [...DEFAULT_TRACE_STATISTICS_FIELDS],
       },
     healthPolicy: cloneHealthPolicy(config.healthPolicy),
+    run: cloneRunDefaults(config.run),
   };
 }
 

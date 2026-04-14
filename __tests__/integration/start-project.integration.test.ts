@@ -172,6 +172,14 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
     expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
 
+    const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
+    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
+    expect(initialMigrationSource).toContain("- [ ] Document initial architecture assumptions");
+    expect(initialMigrationSource).toContain("- [ ] Establish baseline project structure");
+    expect(initialMigrationSource).toContain("- [ ] Capture first validation checkpoints");
+    expect(initialMigrationSource).not.toContain("Research target documents and existing project materials");
+    expect(initialMigrationSource).not.toContain("Create the revision-0 baseline target");
+
     const defaultConfig = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
     ) as {
@@ -415,7 +423,137 @@ describeIfStartAvailable("start-project integration", () => {
     const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
-    expect(initialMigrationSource).toContain("- [ ] Create revision 0 target baseline from design/current/Target.md");
+    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from design/current/Target.md");
+  });
+
+  it("uses configured design directory path in non-empty workspace migration seed", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "existing-custom-design";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "README.md"), "# Existing project\n", "utf-8");
+
+    const workerScript = [
+      "const fs=require('node:fs');",
+      "const promptPath=process.argv[process.argv.length-1];",
+      "const prompt=fs.readFileSync(promptPath,'utf-8');",
+      "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+      "  const sourceMatch=prompt.match(/## Source file\\s+`([^`]+)`/m);",
+      "  const sourcePath=sourceMatch?sourceMatch[1]:'';",
+      "  if(sourcePath&&fs.existsSync(sourcePath)){",
+      "    console.log(fs.readFileSync(sourcePath,'utf-8'));",
+      "  }else{",
+      "    console.log('');",
+      "  }",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Edit the source Markdown file directly to improve plan coverage.')){",
+      "  process.exit(0);",
+      "}",
+      "console.log('ok');",
+      "process.exit(0);",
+    ].join("\n");
+
+    const result = await runCli([
+      "start",
+      "Existing directory start",
+      "--dir",
+      projectDirName,
+      "--design-dir",
+      "docs/design",
+      "--",
+      "node",
+      "-e",
+      workerScript,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const initialMigrationPath = path.join(projectDir, "migrations", "0001-initialize.md");
+    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
+    expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
+    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");
+  });
+
+  it("seeds existing-directory migration with custom workspace mapping and persists it in config", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "existing-custom-workspace";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "README.md"), "# Existing project\n", "utf-8");
+
+    const workerScript = [
+      "const fs=require('node:fs');",
+      "const promptPath=process.argv[process.argv.length-1];",
+      "const prompt=fs.readFileSync(promptPath,'utf-8');",
+      "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+      "  const sourceMatch=prompt.match(/## Source file\\s+`([^`]+)`/m);",
+      "  const sourcePath=sourceMatch?sourceMatch[1]:'';",
+      "  if(sourcePath&&fs.existsSync(sourcePath)){",
+      "    console.log(fs.readFileSync(sourcePath,'utf-8'));",
+      "  }else{",
+      "    console.log('');",
+      "  }",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Edit the source Markdown file directly to improve plan coverage.')){",
+      "  process.exit(0);",
+      "}",
+      "console.log('ok');",
+      "process.exit(0);",
+    ].join("\n");
+
+    const result = await runCli([
+      "start",
+      "Existing directory with custom layout",
+      "--dir",
+      projectDirName,
+      "--design-dir",
+      "docs/design",
+      "--specs-dir",
+      "quality/specs",
+      "--migrations-dir",
+      "changesets",
+      "--",
+      "node",
+      "-e",
+      workerScript,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const initialMigrationPath = path.join(projectDir, "changesets", "0001-initialize.md");
+    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
+    expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
+    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        directories?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
+      };
+    };
+
+    expect(config.workspace?.directories).toEqual({
+      design: "docs/design",
+      specs: "quality/specs",
+      migrations: "changesets",
+    });
   });
 });
 

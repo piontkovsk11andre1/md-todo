@@ -94,6 +94,57 @@ describe("executeRundownTask", () => {
     );
   });
 
+  it.each([
+    "/repo/node_modules/.bin/rundown",
+    "/repo/node_modules/.bin/rd",
+  ])("uses current executable entrypoint for delegated invocations (%s)", async (entrypoint) => {
+    process.argv = ["/usr/local/bin/node", entrypoint, "run", "Parent.md"];
+    const child = createChildProcess();
+    spawnMock.mockReturnValue(child);
+
+    const promise = executeRundownTask("run", ["Child.md", "--help"], "/repo");
+    child.emit("close", 0);
+
+    await expect(promise).resolves.toEqual({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      "/usr/local/bin/node",
+      [entrypoint, "run", "Child.md", "--help"],
+      expect.objectContaining({
+        cwd: "/repo",
+        stdio: ["inherit", "pipe", "pipe"],
+        shell: false,
+      }),
+    );
+  });
+
+  it("returns matching non-zero exit codes for delegated rd and rundown entrypoints", async () => {
+    const runWithEntrypoint = async (entrypoint: string): Promise<Awaited<ReturnType<typeof executeRundownTask>>> => {
+      process.argv = ["/usr/local/bin/node", entrypoint, "run", "Parent.md"];
+      const child = createChildProcess();
+      spawnMock.mockReturnValueOnce(child);
+
+      const promise = executeRundownTask("run", ["Child.md"], "/repo");
+      child.emit("close", 2);
+
+      return await promise;
+    };
+
+    const rundownResult = await runWithEntrypoint("/repo/node_modules/.bin/rundown");
+    const rdResult = await runWithEntrypoint("/repo/node_modules/.bin/rd");
+
+    expect(rundownResult).toEqual({
+      exitCode: 2,
+      stdout: "",
+      stderr: "",
+    });
+    expect(rdResult).toEqual(rundownResult);
+  });
+
   it("inherits stdin for delegated runs so nested include prompts stay interactive", async () => {
     process.argv = ["/usr/local/bin/node", "/repo/dist/cli.js", "run", "Parent.md"];
     const child = createChildProcess();

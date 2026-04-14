@@ -387,23 +387,26 @@ What happens:
 
 1. `verify:` / `confirm:` / `check:` run verify-only behavior.
 2. `memory:` / `memorize:` / `remember:` / `inventory:` run capture + persist, then verify.
-3. `fast:` / `raw:` run execution without verification for that task (inverse of verify-only).
+3. `fast:` / `raw:` / `quick:` run execution without verification for that task (inverse of verify-only).
 4. `profile=` applies as a modifier and composes with downstream handler tools.
 5. `include:` executes tasks from a cloned artifacts copy of the target markdown file and auto-checks include on success.
 6. When mixed explicit intent prefixes appear in task text, the first explicit prefix wins (`verify: fast: ...` is verify-only; `fast: verify: ...` is fast-execution).
 7. `optional:` / `skip:` are the preferred control-flow prefixes; legacy `end:` / `return:` / `quit:` / `break:` remain compatibility aliases.
 8. Unknown prefixes are treated as normal task text and do not fail resolution.
 
-## 20. Publish docs revisions and diff before migration
+## 20. Release docs revisions and diff before migration
 
 Use `rundown docs` when you want to manage design-document revisions directly.
 
 ```bash
-# Publish design/current into the next immutable design/rev.N snapshot
-rundown docs publish --dir ./migrations
+# Release design/current into the next immutable design/rev.N snapshot
+rundown docs release --dir ./migrations
 
-# Add optional label metadata to the published revision
-rundown docs publish --dir ./migrations --label "Auth v2 baseline"
+# Add optional label metadata to the released revision
+rundown docs release --dir ./migrations --label "Auth v2 baseline"
+
+# When linked workspace selection is ambiguous, choose explicitly
+rundown docs release --dir ./migrations --workspace ../source-workspace --label "Auth v2 baseline"
 
 # Shorthand diff against current draft
 rundown docs diff --dir ./migrations
@@ -417,15 +420,16 @@ rundown docs diff --dir ./migrations --from rev.3 --to current
 
 What happens:
 
-1. `docs publish` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
-2. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable as compatibility fallback sources.
-3. If there is no byte-level change from the latest revision, publish is a no-op.
-4. `docs diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
-5. Diff output is deterministic and suitable for both human review and migration context.
+1. `docs release` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
+2. `rev.0` is the explicit baseline snapshot when present; if no lower revision exists for a selected target (including `rev.1` as first discovered revision), diff semantics are `nothing -> target`.
+3. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable as compatibility fallback sources.
+4. If there is no byte-level change from the latest revision, release is a no-op.
+5. `docs diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
+6. Diff output is deterministic and suitable for both human review and migration context.
 
 ## 21. Generate migrations after docs revision work
 
-After publishing or reviewing diffs, switch back to `migrate` for migration lifecycle commands.
+After releasing or reviewing diffs, switch back to `migrate` for migration lifecycle commands.
 
 ```bash
 # Propose next migration from revision-aware context
@@ -444,6 +448,6 @@ rundown migrate up --dir ./migrations -- opencode run
 rundown migrate down 1 --dir ./migrations -- opencode run
 ```
 
-`migrate` intentionally excludes docs-revision actions; use `rundown docs publish` and `rundown docs diff` for revision lifecycle work.
+`migrate` intentionally excludes docs-revision actions; use `rundown docs release` and `rundown docs diff` for revision lifecycle work.
 
 If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), `migrate`/`docs` commands fail with candidate guidance and require `--workspace <dir>`.

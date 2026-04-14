@@ -4,7 +4,8 @@
   "description": "A Markdown-native task runtime for agentic workflows. Execute, verify, and repair work directly from Markdown TODOs.",
   "type": "module",
   "bin": {
-    "rundown": "dist/cli.js"
+    "rundown": "dist/cli.js",
+    "rd": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -71,5 +72,8 @@
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
+  },
+  "directories": {
+    "doc": "docs"
   }
 }

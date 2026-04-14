@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cliOutputPort, resetCliOutputPortState, setCliOutputPortQuietMode } from "../../src/presentation/output-port.js";
+import {
+  cliOutputPort,
+  resetCliOutputPortState,
+  setCliOutputPortQuietMode,
+  setCliOutputPortTimestampProvider,
+} from "../../src/presentation/output-port.js";
 
 function stripAnsi(value: string): string {
+  const withoutAnsi = value.replace(/\u001B\[[0-9;]*m/g, "");
+  return withoutAnsi.replace(/\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[^\]]+\]\s/g, "");
+}
+
+function stripAnsiKeepTimestamp(value: string): string {
   return value.replace(/\u001B\[[0-9;]*m/g, "");
 }
 
@@ -11,6 +21,33 @@ afterEach(() => {
 });
 
 describe("cliOutputPort", () => {
+  const TIMESTAMP = "2026-04-14T08:26:01.557Z";
+
+  function withTimestamp(line: string): string {
+    return `[${TIMESTAMP}] ${line}`;
+  }
+
+  it("renders timestamps on command-level terminal events", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+    const stripColorsOnly = (value: string): string => value.replace(/\u001B\[[0-9;]*m/g, "");
+
+    cliOutputPort.emit({ kind: "info", message: "info message" });
+    cliOutputPort.emit({ kind: "success", message: "success message" });
+    cliOutputPort.emit({ kind: "progress", progress: { label: "progress label" } });
+    cliOutputPort.emit({ kind: "warn", message: "warn message" });
+    cliOutputPort.emit({ kind: "error", message: "error message" });
+
+    expect(logSpy).toHaveBeenCalledTimes(3);
+    expect(stripColorsOnly(logSpy.mock.calls[0]?.[0] as string)).toBe(withTimestamp("ℹ info message"));
+    expect(stripColorsOnly(logSpy.mock.calls[1]?.[0] as string)).toBe(withTimestamp("✔ success message"));
+    expect(stripColorsOnly(logSpy.mock.calls[2]?.[0] as string)).toBe(withTimestamp("⏳ progress label"));
+    expect(errorSpy).toHaveBeenCalledTimes(2);
+    expect(stripColorsOnly(errorSpy.mock.calls[0]?.[0] as string)).toBe(withTimestamp("⚠ warn message"));
+    expect(stripColorsOnly(errorSpy.mock.calls[1]?.[0] as string)).toBe(withTimestamp("✖ error message"));
+  });
+
   it("ignores unknown event kinds", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -713,6 +750,55 @@ describe("cliOutputPort", () => {
     }
   });
 
+  it("keeps grouped multiline output stable with timestamped group boundaries", () => {
+    const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
+    const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+    Object.defineProperty(process.stdout, "isTTY", {
+      configurable: true,
+      writable: true,
+      value: true,
+    });
+
+    const previousCi = process.env.CI;
+    delete process.env.CI;
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+
+    try {
+      cliOutputPort.emit({ kind: "group-start", label: "Grouped output" });
+      cliOutputPort.emit({ kind: "text", text: "line-1\nline-2" });
+      cliOutputPort.emit({ kind: "stderr", text: "err-1\nerr-2\n" });
+      cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+      expect(logSpy).toHaveBeenCalledTimes(3);
+      const lines = logSpy.mock.calls.map((call) => stripAnsiKeepTimestamp(call[0] as string));
+      expect(lines[0]).toBe(`┌ ${withTimestamp("Grouped output")}`);
+      expect(lines[1]).toBe("│  line-1\n│  line-2");
+      expect(lines[2]).toBe(`└ ${withTimestamp("✔ Done")}`);
+
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+      expect(stripAnsiKeepTimestamp(stderrSpy.mock.calls[0]?.[0] as string)).toBe("│  err-1\n│  err-2\n");
+    } finally {
+      if (previousCi === undefined) {
+        delete process.env.CI;
+      } else {
+        process.env.CI = previousCi;
+      }
+
+      if (hadIsTTY) {
+        Object.defineProperty(process.stdout, "isTTY", {
+          configurable: true,
+          writable: true,
+          value: previousIsTTY,
+        });
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+    }
+  });
+
   it("renders warn events to stderr", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -729,19 +815,19 @@ describe("cliOutputPort", () => {
 
     cliOutputPort.emit({
       kind: "text",
-      text: "run-20260328T120 | 2m ago | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
+      text: "run-20260328T120 | 2026-03-28T11:58:00.000Z (2m ago) | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
     });
     cliOutputPort.emit({
       kind: "text",
-      text: "run-20260328T110 | 30m ago | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
+      text: "run-20260328T110 | 2026-03-28T11:30:00.000Z (30m ago) | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
     });
 
     expect(logSpy).toHaveBeenCalledTimes(2);
     expect(stripAnsi(logSpy.mock.calls[0]?.[0] as string)).toBe(
-      "run-20260328T120 | 2m ago | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
+      "run-20260328T120 | 2026-03-28T11:58:00.000Z (2m ago) | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
     );
     expect(stripAnsi(logSpy.mock.calls[1]?.[0] as string)).toBe(
-      "run-20260328T110 | 30m ago | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
+      "run-20260328T110 | 2026-03-28T11:30:00.000Z (30m ago) | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
     );
   });
 
@@ -752,6 +838,21 @@ describe("cliOutputPort", () => {
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(logSpy.mock.calls[0]?.[0]).toBe("plain text");
+  });
+
+  it("does not prepend CLI timestamps to plain text or stderr streams", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+
+    cliOutputPort.emit({ kind: "text", text: "machine-like payload" });
+    cliOutputPort.emit({ kind: "stderr", text: "stderr payload" });
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsiKeepTimestamp(logSpy.mock.calls[0]?.[0] as string)).toBe("machine-like payload");
+
+    expect(stderrSpy).toHaveBeenCalledTimes(1);
+    expect(stripAnsiKeepTimestamp(stderrSpy.mock.calls[0]?.[0] as string)).toBe("stderr payload\n");
   });
 
   it("suppresses info-level output events in quiet mode", () => {
@@ -769,13 +870,30 @@ describe("cliOutputPort", () => {
 
   it("still renders warnings and errors in quiet mode", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP);
 
     setCliOutputPortQuietMode(true);
     cliOutputPort.emit({ kind: "warn", message: "heads up" });
     cliOutputPort.emit({ kind: "error", message: "bad" });
 
     expect(errorSpy).toHaveBeenCalledTimes(2);
-    expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toContain("heads up");
-    expect(stripAnsi(errorSpy.mock.calls[1]?.[0] as string)).toContain("bad");
+    expect(stripAnsiKeepTimestamp(errorSpy.mock.calls[0]?.[0] as string)).toBe(withTimestamp("⚠ heads up"));
+    expect(stripAnsiKeepTimestamp(errorSpy.mock.calls[1]?.[0] as string)).toBe(withTimestamp("✖ bad"));
+  });
+
+  it("keeps quiet mode suppression for grouped command-level output with timestamps enabled", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+
+    setCliOutputPortQuietMode(true);
+    cliOutputPort.emit({ kind: "group-start", label: "Suppressed group" });
+    cliOutputPort.emit({ kind: "info", message: "suppressed info" });
+    cliOutputPort.emit({ kind: "progress", progress: { label: "suppressed progress" } });
+    cliOutputPort.emit({ kind: "success", message: "suppressed success" });
+    cliOutputPort.emit({ kind: "group-end", status: "success" });
+
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });

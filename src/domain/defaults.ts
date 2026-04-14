@@ -66,6 +66,12 @@ export const DEFAULT_TEMPLATE_VARS_SECTION = `\
 `;
 
 /**
+ * Canonical root-command welcome line emitted at startup.
+ */
+export const ROOT_COMMAND_WELCOME_MESSAGE =
+  "Welcome to rundown. Start with `plan`, `explore`, `run`, or `help`.";
+
+/**
  * Appends trace-output instructions to a template when tracing is enabled.
  *
  * The block defines a strict fenced format that downstream parsing expects.
@@ -243,6 +249,19 @@ Treat natural requests as workflow triggers. For example, "plan this" maps to \`
 
 Remain a general-purpose assistant: if a request is unrelated to rundown, answer directly. When a request can be handled by rundown, prefer rundown-native operations.
 
+## Root greeting contract
+
+For the root \`rundown\` command path:
+
+Your first assistant output MUST begin with this exact line.
+Do not add any text before it (no preface, bullets, or alternate greeting):
+
+${ROOT_COMMAND_WELCOME_MESSAGE}
+
+Emit this line exactly once on the first assistant turn of a new root help session.
+Do not repeat it on subsequent turns in the same session.
+After this line, continue with normal contextual help.
+
 ## Environment
 
 - CLI version: {{cliVersion}}
@@ -398,7 +417,7 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 - **\`cli: <command>\`** — Execute shell command directly instead of using a worker.
 - **\`verify: <assertion>\`** — Verify-only task (confirm:, check: are aliases).
 - **\`memory: <prompt>\`** — Capture information to source-local memory (memorize:, remember:, inventory:).
-- **\`fast: <task>\`** — Skip verification for this task (raw: is an alias).
+- **\`fast: <task>\`** — Skip verification for this task (raw:, quick: are aliases).
 - **\`optional: <condition>\`** — Conditionally stop processing siblings when condition is true (preferred canonical form).
 - **\`skip: <condition>\`** — Preferred concise alias for \`optional:\` with identical behavior. Legacy aliases: end:, return:, quit:, break:.
 - **\`include: <file.md>\`** — Include and execute tasks from another file.
@@ -1002,7 +1021,7 @@ Use built-in prefixes when they improve execution quality:
 - \`memory:\` for tasks that should capture reusable context.
 - \`include: <path>\` to delegate subtasks to another Markdown file.
 
-Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:\`, \`raw:\`, \`memorize:\`, \`remember:\`, \`inventory:\`). If an existing item uses an alias, normalize it to the canonical form.
+Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:\`, \`raw:\`, \`quick:\`, \`memorize:\`, \`remember:\`, \`inventory:\`). If an existing item uses an alias, normalize it to the canonical form.
 
 You can apply prefixes in either form:
 
@@ -1088,7 +1107,7 @@ Use built-in prefixes when they improve execution quality for child tasks:
 - \`memory:\` for child tasks that should capture reusable context.
 - \`include: <path>\` to delegate child subtasks to another Markdown file.
 
-Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:\`, \`raw:\`, \`memorize:\`, \`remember:\`, \`inventory:\`). If an existing item uses an alias, normalize it to the canonical form.
+Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:\`, \`raw:\`, \`quick:\`, \`memorize:\`, \`remember:\`, \`inventory:\`). If an existing item uses an alias, normalize it to the canonical form.
 
 You can apply prefixes in either form:
 

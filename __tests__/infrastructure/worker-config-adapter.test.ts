@@ -627,6 +627,100 @@ describe("createWorkerConfigAdapter", () => {
     });
   });
 
+  it("loads run defaults from config", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          revertable: true,
+          commit: true,
+          commitMessage: "done: {{task}}",
+          commitMode: "file-done",
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      run: {
+        revertable: true,
+        commit: true,
+        commitMessage: "done: {{task}}",
+        commitMode: "file-done",
+      },
+    });
+  });
+
+  it("merges run defaults with local values overriding global", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          commitMessage: "local message",
+          commitMode: "per-task",
+        },
+      }),
+    );
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        run: {
+          revertable: true,
+          commit: true,
+          commitMessage: "global message",
+          commitMode: "file-done",
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      run: {
+        revertable: true,
+        commit: true,
+        commitMessage: "local message",
+        commitMode: "per-task",
+      },
+    });
+  });
+
+  it("rejects invalid run.commitMode values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          commitMode: "later",
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at run.commitMode: expected one of per-task, file-done.`,
+    );
+  });
+
   it("uses replace semantics for arrays and map entries during layering", () => {
     const configDir = makeTempConfigDir();
     writeConfig(

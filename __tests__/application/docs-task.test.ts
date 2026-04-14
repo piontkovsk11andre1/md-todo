@@ -107,7 +107,7 @@ class InMemoryFileSystem implements FileSystem {
 }
 
 describe("createDocsTask", () => {
-  it("publishes design/current snapshot and keeps no-change no-op behavior", async () => {
+  it("releases design/current snapshot and keeps no-change no-op behavior", async () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
         "/repo": [
@@ -148,7 +148,7 @@ describe("createDocsTask", () => {
 
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/repo");
     try {
-      const firstCode = await docsTask({ action: "publish", dir: "migrations", label: "Baseline" });
+      const firstCode = await docsTask({ action: "release", dir: "migrations", label: "Baseline" });
 
       expect(firstCode).toBe(0);
       expect(fileSystem.exists("/repo/design/rev.1")).toBe(true);
@@ -158,7 +158,7 @@ describe("createDocsTask", () => {
 
       outputEvents.length = 0;
 
-      const secondCode = await docsTask({ action: "publish", dir: "migrations", label: "Baseline" });
+      const secondCode = await docsTask({ action: "release", dir: "migrations", label: "Baseline" });
 
       expect(secondCode).toBe(0);
       expect(fileSystem.exists("/repo/design/rev.2")).toBe(false);
@@ -210,6 +210,58 @@ describe("createDocsTask", () => {
       expect(code).toBe(0);
       expect(fileSystem.readText("/repo/design/current/Target.md")).toBe("legacy\n");
       expect(outputEvents.some((event) => event.kind === "info" && event.message.includes("Bootstrapped design/current/Target.md from legacy Design.md"))).toBe(true);
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  });
+
+  it("uses release as the canonical snapshot action without publish warnings", async () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo": [
+          { name: "design", isDirectory: true, isFile: false },
+          { name: "migrations", isDirectory: true, isFile: false },
+        ],
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/migrations": [
+          { name: "0001-init.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "# Design\n\ninitial\n",
+        "/repo/migrations/0001-init.md": "# init\n",
+      },
+      stats: {
+        "/repo": { isDirectory: true, isFile: false },
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/migrations": { isDirectory: true, isFile: false },
+      },
+    });
+    const outputEvents: ApplicationOutputEvent[] = [];
+
+    const docsTask = createDocsTask({
+      fileSystem,
+      output: {
+        emit: (event) => {
+          outputEvents.push(event);
+        },
+      },
+    });
+
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/repo");
+    try {
+      const code = await docsTask({ action: "release", dir: "migrations" });
+      expect(code).toBe(0);
+      expect(outputEvents.some(
+        (event) => event.kind === "warn"
+          && event.message.includes("`rundown docs publish` is deprecated; use `rundown docs release`"),
+      )).toBe(false);
     } finally {
       cwdSpy.mockRestore();
     }

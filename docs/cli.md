@@ -1,5 +1,7 @@
 ﻿# CLI
 
+`rundown` and `rd` are both supported executable names. `rd` is a strict alias of `rundown` (same entrypoint, commands, flags, output, and exit codes). Examples below use `rundown` as the canonical form unless noted.
+
 ## Global option
 
 `--config-dir <path>` is available on every command.
@@ -21,12 +23,58 @@ rundown --config-dir /workspace/rundown-config run docs/todos.md
 
 ## Help mode (no args)
 
+## `--agents` output mode
+
+Use `--agents` at the root to print deterministic, Markdown-safe AGENTS guidance to stdout and exit `0`.
+
+Behavior:
+
+- Root-only usage: `rundown --agents` and `rd --agents`.
+- Non-interactive path: no worker startup, no live-help fallback, and no TUI dependency.
+- Clean output contract: plain text only (no ANSI colors/spinners/status prefixes), newline-terminated.
+- Deterministic precedence: when combined with `--help`, `--agents` takes precedence and emits AGENTS content.
+- Subcommand misuse is rejected (for example, `rundown run tasks.md --agents`).
+
+Redirection examples (POSIX shells):
+
+```bash
+# Inspect emitted AGENTS guidance in terminal
+rundown --agents
+
+# Create or overwrite AGENTS.md
+rd --agents > AGENTS.md
+
+# Append guidance to existing AGENTS.md
+rd --agents >> AGENTS.md
+```
+
+Redirection examples (PowerShell):
+
+```powershell
+# Inspect emitted AGENTS guidance in terminal
+rundown --agents
+
+# Create or overwrite AGENTS.md
+rd --agents > AGENTS.md
+
+# Append guidance to existing AGENTS.md
+rd --agents >> AGENTS.md
+```
+
+Cross-shell notes:
+
+- `>` overwrites; `>>` appends.
+- Re-running append commands adds another full copy of the guidance (no built-in dedupe).
+- `rd` and `rundown` are alias-equivalent and emit byte-identical `--agents` output.
+
 ### `rundown`
 
 Running `rundown` with no subcommand and no positional arguments starts an interactive live-help session when possible.
 
 Behavior:
 
+- On successful runtime startup, root `rundown` emits this canonical welcome line first (exact text): "Welcome to rundown. Start with `plan`, `explore`, `run`, or `help`."
+- The canonical welcome is session-scoped: it appears exactly once per root invocation before any worker-generated help/discovery output.
 - In an interactive terminal (`stdout` and `stderr` are TTY), rundown attempts to launch a TUI help session.
 - The help session uses the configured `help` worker resolution path (or falls back through command/default worker config as configured).
 - The prompt is template-backed (`help.md`) and includes CLI usage and repository context so you can ask follow-up questions immediately.
@@ -44,12 +92,25 @@ Examples:
 ```bash
 # Interactive terminal: opens live help TUI (when worker is configured)
 rundown
+rd
 
 # Deterministic static help output
 rundown --help
+rd --help
 ```
 
 ## Main commands
+
+### Terminal timestamps
+
+Human-readable CLI output uses deterministic UTC ISO-8601 timestamps where rundown emits command-level lifecycle lines.
+
+- Timestamp format: bracketed UTC ISO-8601 (`[YYYY-MM-DDTHH:mm:ss.sssZ]`).
+- Presentation points: `info`, `warn`, `error`, `success`, `progress`, `group-start`, and `group-end` terminal lines.
+- Timestamp semantics align with artifact/global log timing (`startedAt`/`completedAt` and JSONL `ts`) so terminal events can be correlated directly.
+- Nested/grouped output preserves existing grouping prefixes; timestamps are additive and appear after group markers.
+- Task/detail listing payloads (`task` events) and raw worker transcript text (`text`/`stderr`) keep their existing shape.
+- Text output is human-oriented and may evolve; for machine consumers, use `--json` on supported commands.
 
 ### `rundown start <description>`
 
@@ -144,7 +205,7 @@ Options:
 | `--confirm` | Print generated content and ask before each write. Non-TTY uses default yes. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
 
-Workspace selection notes (`migrate`, `docs publish`, `docs diff`):
+Workspace selection notes (`migrate`, `docs release`, `docs diff`):
 
 - By default, path-sensitive commands resolve workspace from `.rundown/workspace.link`.
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
@@ -156,17 +217,23 @@ Manage design-doc revision lifecycle separately from migration execution.
 
 Use `docs` commands for revision snapshots and revision diffs; use `migrate` commands for migration proposal generation, execution, and satellites.
 
-#### `rundown docs publish`
+#### `rundown docs release`
 
-Publish `design/current/` into the next immutable `design/rev.N/` snapshot.
+Release `design/current/` into the next immutable `design/rev.N/` snapshot.
 
 No-change behavior is preserved: when `design/current/` is byte-for-byte unchanged from the latest revision directory, no new `design/rev.N/` directory is created and the command reports a no-op.
 
 Synopsis:
 
 ```bash
-rundown docs publish [options]
+rundown docs release [options]
 ```
+
+Compatibility note:
+
+- `rundown docs release` is the canonical snapshot command.
+- `rundown docs publish` remains available as a deprecated alias and prints guidance to move to `docs release`.
+- `rundown docs save` is removed and fails with an actionable message that points to `docs release`.
 
 Options:
 
@@ -179,6 +246,12 @@ Options:
 #### `rundown docs diff [target]`
 
 Show revision diff context using either shorthand target or explicit selectors.
+
+Revision contract:
+
+- `rev.0` is the explicit baseline initial state when it exists.
+- For target `rev.N`, compare from the nearest discovered lower revision when available.
+- If no discovered lower revision exists (including repositories where `rev.1` is the first revision), treat diff as `nothing -> rev.N`.
 
 Shorthand targets:
 
@@ -911,7 +984,7 @@ Default behavior:
 
 - Shows only runs with status `completed`.
 - Orders runs newest-first (same order as saved artifacts metadata).
-- Prints one compact line per run: short run ID, relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
+- Prints one compact line per run: short run ID, absolute timestamp (UTC ISO-8601), relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
 - Non-revertable entries are dimmed in terminal output.
 
 Options:
@@ -933,6 +1006,8 @@ rundown log --json
 ```
 
 `--json` outputs an array of run entries with fields such as `runId`, `shortRunId`, `commandName`, `status`, `relativeTime`, `taskSummary`, `source`, `commitSha`, `shortCommitSha`, `revertable`, `startedAt`, and `completedAt`.
+
+Automation note: prefer `rundown log --json` for scripts. The default text view is optimized for operators and includes additive timestamp rendering for readability.
 
 ## Source file locking
 
@@ -1162,7 +1237,7 @@ Built-in handler aliases:
 
 - Verify-only: `verify:`, `confirm:`, `check:`
 - Memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
-- Fast execution (skip verification): `fast:`, `raw:`
+- Fast execution (skip verification): `fast:`, `raw:`, `quick:`
 - Conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
 - Include markdown file execution: `include:`
 
@@ -1191,8 +1266,8 @@ Composition rules:
 
 Intent prefix notes:
 
-- `fast:` and `raw:` are aliases that force execution without verification for that task (the inverse of `verify:`).
-- `fast:` / `raw:` can also be used as directive parents (`- fast:` / `- raw:`) so child checkbox tasks inherit fast-execution intent.
+- `fast:`, `raw:`, and `quick:` are aliases that force execution without verification for that task (the inverse of `verify:`).
+- `fast:` / `raw:` / `quick:` can also be used as directive parents (`- fast:` / `- raw:` / `- quick:`) so child checkbox tasks inherit fast-execution intent.
 - `cli-args:` can be used as a directive parent (`- cli-args: <args>`) so child `cli:` checkbox tasks inherit appended CLI arguments.
 - Prefix detection is case-insensitive and allows whitespace around `:`.
 - For mixed intent prefixes, the first explicit prefix in task text wins (for example `verify: fast: ...` stays verify-only, `fast: verify: ...` stays fast-execution).
@@ -1260,7 +1335,7 @@ Execution behavior for `.md` tools:
 Resolution rules:
 
 - Project `.js` tools are resolved first and can override built-ins.
-- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, `optional:`/`skip:` control-flow aliases, `include:`, `profile=`, `force:`).
+- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` control-flow aliases, `include:`, `profile=`, `force:`).
 - Project `.md` tools are resolved after built-ins (for non-built-in names).
 - Tool matching is case-insensitive and checks the text before the first `:`.
 - Unknown prefixes fall back to normal `execute-and-verify` behavior.
@@ -1283,7 +1358,7 @@ With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and e
 - `--no-verify` â€” skip verification
 - `--only-verify` â€” verify without executing first
 - verify-only task text auto-skips execute phase (for example `verify: ...`, `confirm: ...`, `check: ...`)
-- fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`), even when global `--verify` is enabled
+- fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`, `quick: ...`), even when global `--verify` is enabled
 - `--force-execute` â€” override verify-only auto-skip and run execute phase anyway
 - `force: <task>` â€” wrap a task in an outer retry loop that reruns the full iteration on retryable failure
 - `force: <attempts>, <task>` â€” same as above with per-task retry limit override

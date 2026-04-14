@@ -372,6 +372,43 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", "0002-template-vars-checked.md"))).toBe(true);
   });
 
+  it("renders previous revision as nothing when current has no predecessor revision", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
+    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Design\n\nCurrent-only baseline.\n", "utf-8");
+
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "migrate.md"),
+      [
+        "PREVIOUS={{previousRevisionId}}",
+        "FROM={{designRevisionFromRevision}}",
+        "TO={{designRevisionToTarget}}",
+        "SUMMARY={{revisionDiffSummary}}",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildTemplateVarsAssertionWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".template-vars-prompt.txt"), "utf-8");
+    expect(capturedPrompt).toContain("PREVIOUS=nothing");
+    expect(capturedPrompt).toContain("FROM=nothing");
+    expect(capturedPrompt).toContain("TO=current");
+    expect(capturedPrompt).toContain("SUMMARY=Compared nothing -> current: 1 added 0 modified 0 removed");
+  });
+
   it("emits low-context guidance when docs/current exists but has no files", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
@@ -1116,7 +1153,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
 
     const result = await runCli([
       "docs",
-      "publish",
+      "release",
     ], workspace);
 
     expect(result.code).toBe(0);
@@ -1124,7 +1161,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(fs.existsSync(path.join(workspace, "design", "rev.1", "Target.md"))).toBe(false);
   });
 
-  it("resolves docs publish paths against linked workspace roots", async () => {
+  it("resolves docs release paths against linked workspace roots", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspace = path.join(sandbox, "source-workspace");
     const linkedInvocationDir = path.join(sandbox, "linked-invocation");
@@ -1133,7 +1170,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     fs.mkdirSync(linkedInvocationDir, { recursive: true });
     scaffoldPredictionProject(sourceWorkspace);
     fs.mkdirSync(path.join(sourceWorkspace, "docs", "current"), { recursive: true });
-    fs.writeFileSync(path.join(sourceWorkspace, "docs", "current", "Design.md"), "# Design\n\nlinked publish\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspace, "docs", "current", "Design.md"), "# Design\n\nlinked release\n", "utf-8");
 
     const linkedConfigDir = path.join(linkedInvocationDir, ".rundown");
     fs.mkdirSync(linkedConfigDir, { recursive: true });
@@ -1145,7 +1182,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
 
     const result = await runCli([
       "docs",
-      "publish",
+      "release",
       "--dir",
       "migrations",
     ], linkedInvocationDir);
@@ -1155,7 +1192,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1", "Design.md"))).toBe(false);
   });
 
-  it("supports docs publish with explicit --workspace for multi-record workspace links", async () => {
+  it("supports docs release with explicit --workspace for multi-record workspace links", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
     const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
@@ -1186,7 +1223,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
 
     const result = await runCli([
       "docs",
-      "publish",
+      "release",
       "--workspace",
       path.relative(linkedInvocationDir, sourceWorkspaceA),
       "--dir",
@@ -1249,6 +1286,51 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(combinedOutput).toContain("alpha:");
     expect(combinedOutput).toContain("beta:");
     expect(combinedOutput).toContain("Re-run the command with --workspace <dir>");
+  });
+
+  it("accepts docs publish as deprecated compatibility alias", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Design\n\nalias publish\n", "utf-8");
+
+    const result = await runCli([
+      "docs",
+      "publish",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design", "rev.1", "Target.md"))).toBe(true);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("`rundown docs publish` is deprecated; use `rundown docs release`.");
+  });
+
+  it("rejects removed docs save alias with actionable guidance", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+
+    const result = await runCli([
+      "docs",
+      "save",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
   });
 
   it("resolves docs diff against linked workspace roots", async () => {

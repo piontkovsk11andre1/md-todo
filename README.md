@@ -141,7 +141,7 @@ specs/
 A concrete example:
 
 ```text
-design/rev.0/Target.md             # Last released revision (`rd docs release`)
+design/rev.0/Target.md             # Last released revision (`rundown docs release`)
 design/rev.1/Target.md
 design/current/Target.md           # Current design document
 
@@ -155,6 +155,12 @@ specs/feature-tests.md
 specs/end-to-end-tests.md
 specs/ux-tests.md
 ```
+
+Revision contract for `docs diff` and migration context:
+
+- `rev.0` is the explicit initial baseline revision.
+- The first discovered revision in a repository compares from nothing, even when that first revision is `rev.1`.
+- For any target revision with no discovered lower predecessor, diff semantics are `nothing -> target`.
 
 These files don't have to live in the same directory where you work on the materialization result — which keeps working folders clean. You choose which modules live where: keep the design or the specs in your working directory, and split the rest across separate `rundown` directories.
 
@@ -178,9 +184,11 @@ rundown with pi
 
 # Next time in the same dir:
 rundown
-# or
+# or the supported executable alias:
 rd
 ```
+
+`rd` is a first-class executable alias for `rundown`; both names run the same CLI entrypoint with identical behavior.
 
 Ask the agent to set everything up and start working — it will answer all your questions.
 

@@ -82,6 +82,11 @@ Do not add release or packaging tasks for local prototypes.
 When `rundown` launches with no subcommand and opens live help, `.rundown/help.md`
 can use these placeholders:
 
+Root help first-response contract:
+
+- The first assistant-visible output for root no-arg help mode must start with the canonical welcome line: "Welcome to rundown. Start with `plan`, `explore`, `run`, or `help`."
+- Keep this wording stable (no randomized variants) and emit it once per root session before additional help guidance.
+
 | Placeholder | Description |
 | --- | --- |
 | `{{cliVersion}}` | Current rundown CLI version. |

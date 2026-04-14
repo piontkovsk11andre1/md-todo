@@ -366,21 +366,25 @@ describe("parseTasks", () => {
     expect(tasks[1]!.intent).toBe("verify-only");
   });
 
-  it("propagates fast/raw directive parent intent to child checkboxes", () => {
+  it("propagates fast/raw/quick directive parent intent to child checkboxes", () => {
     const md = [
       "- fast:",
       "  - [ ] Skip verification for setup",
       "- raw:",
       "  - [ ] Run direct execution path",
+      "- quick:",
+      "  - [ ] Run quick execution path",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("Skip verification for setup");
     expect(tasks[0]!.intent).toBe("fast-execution");
     expect(tasks[1]!.text).toBe("Run direct execution path");
     expect(tasks[1]!.intent).toBe("fast-execution");
+    expect(tasks[2]!.text).toBe("Run quick execution path");
+    expect(tasks[2]!.intent).toBe("fast-execution");
   });
 
   it("propagates parallel directive parent intent to child checkboxes", () => {
@@ -443,41 +447,49 @@ describe("parseTasks", () => {
     expect(tasks[2]!.intent).toBeUndefined();
   });
 
-  it("treats whitespace-only fast/raw directives as directive parents", () => {
+  it("treats whitespace-only fast/raw/quick directives as directive parents", () => {
     const md = [
       "- fast :",
       "  - [ ] Skip verification for setup",
       "- RAW:\t",
       "  - [ ] Run direct execution path",
+      "- Quick :",
+      "  - [ ] Run quick execution path",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("Skip verification for setup");
     expect(tasks[0]!.intent).toBe("fast-execution");
     expect(tasks[1]!.text).toBe("Run direct execution path");
     expect(tasks[1]!.intent).toBe("fast-execution");
+    expect(tasks[2]!.text).toBe("Run quick execution path");
+    expect(tasks[2]!.intent).toBe("fast-execution");
   });
 
-  it("does not treat payload-bearing fast/raw lines as directive-only parents", () => {
+  it("does not treat payload-bearing fast/raw/quick lines as directive-only parents", () => {
     const md = [
       "- fast: create deployment checklist",
       "  - [ ] Child task should keep default intent",
       "- raw: run migration script",
       "  - [ ] Another child task keeps default intent",
+      "- quick: run migration script",
+      "  - [ ] Final child task keeps default intent",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("Child task should keep default intent");
     expect(tasks[0]!.intent).toBeUndefined();
     expect(tasks[1]!.text).toBe("Another child task keeps default intent");
     expect(tasks[1]!.intent).toBeUndefined();
+    expect(tasks[2]!.text).toBe("Final child task keeps default intent");
+    expect(tasks[2]!.intent).toBeUndefined();
   });
 
-  it("propagates fast/raw directive parent intent to nested child checkboxes", () => {
+  it("propagates fast/raw/quick directive parent intent to nested child checkboxes", () => {
     const md = [
       "- fast:",
       "  - [ ] Prepare environment",
@@ -485,11 +497,14 @@ describe("parseTasks", () => {
       "- raw:",
       "  - [ ] Run migration",
       "    - [ ] Capture output",
+      "- quick:",
+      "  - [ ] Prepare docs",
+      "    - [ ] Capture summary",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(4);
+    expect(tasks).toHaveLength(6);
     expect(tasks[0]!.text).toBe("Prepare environment");
     expect(tasks[0]!.intent).toBe("fast-execution");
     expect(tasks[1]!.text).toBe("Provision fixtures");
@@ -498,9 +513,13 @@ describe("parseTasks", () => {
     expect(tasks[2]!.intent).toBe("fast-execution");
     expect(tasks[3]!.text).toBe("Capture output");
     expect(tasks[3]!.intent).toBe("fast-execution");
+    expect(tasks[4]!.text).toBe("Prepare docs");
+    expect(tasks[4]!.intent).toBe("fast-execution");
+    expect(tasks[5]!.text).toBe("Capture summary");
+    expect(tasks[5]!.intent).toBe("fast-execution");
   });
 
-  it("does not treat non-checkbox lines under fast/raw directives as intent-tagged tasks", () => {
+  it("does not treat non-checkbox lines under fast/raw/quick directives as intent-tagged tasks", () => {
     const md = [
       "- fast:",
       "  - Plain setup note",
@@ -508,34 +527,43 @@ describe("parseTasks", () => {
       "- raw:",
       "  - Plain migration note",
       "  - [ ] Run migration",
+      "- quick:",
+      "  - Plain quick note",
+      "  - [ ] Run quick task",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks.map((task) => task.text)).toEqual([
       "Prepare environment",
       "Run migration",
+      "Run quick task",
     ]);
     expect(tasks[0]!.intent).toBe("fast-execution");
     expect(tasks[1]!.intent).toBe("fast-execution");
+    expect(tasks[2]!.intent).toBe("fast-execution");
   });
 
-  it("lets explicit child prefixes override inherited fast/raw directive intent", () => {
+  it("lets explicit child prefixes override inherited fast/raw/quick directive intent", () => {
     const md = [
       "- fast:",
       "  - [ ] verify: Run smoke tests",
       "- raw:",
       "  - [ ] memory: Capture release notes",
+      "- quick:",
+      "  - [ ] verify: Check quick-run output",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("verify: Run smoke tests");
     expect(tasks[0]!.intent).toBeUndefined();
     expect(tasks[1]!.text).toBe("memory: Capture release notes");
     expect(tasks[1]!.intent).toBeUndefined();
+    expect(tasks[2]!.text).toBe("verify: Check quick-run output");
+    expect(tasks[2]!.intent).toBeUndefined();
   });
 
   it("propagates profile directive parent to child checkboxes", () => {
@@ -679,6 +707,96 @@ describe("parseTasks", () => {
     expect(tasks[0]!.intent).toBe("verify-only");
   });
 
+  it("limits verify/check directive inheritance to descendant checkbox scope", () => {
+    const md = [
+      "- verify:",
+      "  - [ ] Verify top-level child",
+      "    - [ ] Verify nested child",
+      "- [ ] Sibling remains default",
+      "- check:",
+      "  - [ ] Check top-level child",
+      "- [ ] Final sibling remains default",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(5);
+    expect(tasks[0]!.intent).toBe("verify-only");
+    expect(tasks[1]!.intent).toBe("verify-only");
+    expect(tasks[2]!.intent).toBeUndefined();
+    expect(tasks[3]!.intent).toBe("verify-only");
+    expect(tasks[4]!.intent).toBeUndefined();
+  });
+
+  it("limits fast/raw/quick and parallel inheritance to directive subtrees", () => {
+    const md = [
+      "- fast:",
+      "  - [ ] Fast subtree child",
+      "- [ ] Default after fast",
+      "- raw:",
+      "  - [ ] Raw subtree child",
+      "- [ ] Default after raw",
+      "- quick:",
+      "  - [ ] Quick subtree child",
+      "- [ ] Default after quick",
+      "- parallel:",
+      "  - [ ] Parallel subtree child",
+      "- [ ] Default after parallel",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(8);
+    expect(tasks[0]!.intent).toBe("fast-execution");
+    expect(tasks[1]!.intent).toBeUndefined();
+    expect(tasks[2]!.intent).toBe("fast-execution");
+    expect(tasks[3]!.intent).toBeUndefined();
+    expect(tasks[4]!.intent).toBe("fast-execution");
+    expect(tasks[5]!.intent).toBeUndefined();
+    expect(tasks[6]!.intent).toBe("parallel-group");
+    expect(tasks[7]!.intent).toBeUndefined();
+  });
+
+  it("limits profile= directive inheritance to descendant checkbox scope", () => {
+    const md = [
+      "- profile=fast",
+      "  - [ ] Fast profile child",
+      "    - [ ] Fast profile nested child",
+      "- [ ] Sibling with no profile",
+      "- profile=compact",
+      "  - [ ] Compact profile child",
+      "- [ ] Final sibling with no profile",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(5);
+    expect(tasks[0]!.directiveProfile).toBe("fast");
+    expect(tasks[1]!.directiveProfile).toBe("fast");
+    expect(tasks[2]!.directiveProfile).toBeUndefined();
+    expect(tasks[3]!.directiveProfile).toBe("compact");
+    expect(tasks[4]!.directiveProfile).toBeUndefined();
+  });
+
+  it("does not let profile= sub-items under checkbox tasks become inherited directives", () => {
+    const md = [
+      "- [ ] Parent task",
+      "  - profile=fast",
+      "    - [ ] Nested child stays unscoped",
+      "  - [ ] Direct child stays unscoped",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(3);
+    expect(tasks[0]!.text).toBe("Parent task");
+    expect(tasks[0]!.directiveProfile).toBeUndefined();
+    expect(tasks[1]!.text).toBe("Nested child stays unscoped");
+    expect(tasks[1]!.directiveProfile).toBeUndefined();
+    expect(tasks[2]!.text).toBe("Direct child stays unscoped");
+    expect(tasks[2]!.directiveProfile).toBeUndefined();
+  });
+
   it("ignores profile directive when used directly under a checkbox task", () => {
     const md = [
       "- [ ] Parent task",
@@ -720,38 +838,46 @@ describe("parseTasks", () => {
     expect(tasks[0]!.taskProfile).toBe("compact");
   });
 
-  it("captures taskProfile from profile sub-item for fast/raw prefix tasks", () => {
+  it("captures taskProfile from profile sub-item for fast/raw/quick prefix tasks", () => {
     const md = [
       "- [ ] fast: create release notes",
       "  - profile=compact",
       "- [ ] raw: refresh changelog",
       "  - profile=lightweight",
+      "- [ ] quick: refresh changelog",
+      "  - profile=minimal",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("fast: create release notes");
     expect(tasks[0]!.taskProfile).toBe("compact");
     expect(tasks[1]!.text).toBe("raw: refresh changelog");
     expect(tasks[1]!.taskProfile).toBe("lightweight");
+    expect(tasks[2]!.text).toBe("quick: refresh changelog");
+    expect(tasks[2]!.taskProfile).toBe("minimal");
   });
 
-  it("captures taskProfile for case-insensitive fast/raw prefixes", () => {
+  it("captures taskProfile for case-insensitive fast/raw/quick prefixes", () => {
     const md = [
       "- [ ] Fast : create release notes",
       "  - profile=compact",
       "- [ ] rAw:\trefresh changelog",
       "  - profile=lightweight",
+      "- [ ] QuIcK:\trefresh changelog",
+      "  - profile=minimal",
     ].join("\n");
 
     const tasks = parseTasks(md, "test.md");
 
-    expect(tasks).toHaveLength(2);
+    expect(tasks).toHaveLength(3);
     expect(tasks[0]!.text).toBe("Fast : create release notes");
     expect(tasks[0]!.taskProfile).toBe("compact");
     expect(tasks[1]!.text).toBe("rAw:\trefresh changelog");
     expect(tasks[1]!.taskProfile).toBe("lightweight");
+    expect(tasks[2]!.text).toBe("QuIcK:\trefresh changelog");
+    expect(tasks[2]!.taskProfile).toBe("minimal");
   });
 
   it("captures taskProfile from profile sub-item for tool-style prefix tasks", () => {

@@ -8,6 +8,7 @@ import type {
 import { formatRelativeTimestamp } from "../domain/relative-time.js";
 import { toCompactRunId } from "../domain/run-id.js";
 import { EXIT_CODE_NO_WORK, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
+import { formatCliTimestamp } from "../domain/cli-timestamp.js";
 import { formatNoItemsFound, pluralize } from "./run-task-utils.js";
 
 /**
@@ -38,6 +39,7 @@ interface LogRunEntry {
   shortRunId: string;
   commandName: string;
   status: string;
+  timestamp: string;
   relativeTime: string;
   taskSummary: string;
   source: string;
@@ -88,7 +90,7 @@ export function createLogRuns(
 
     if (options.json) {
       // Preserve machine-readability for downstream scripting.
-      emit({ kind: "text", text: JSON.stringify(entries, null, 2) });
+      emit({ kind: "text", text: JSON.stringify(entries.map(toJsonEntry), null, 2) });
       return EXIT_CODE_SUCCESS;
     }
 
@@ -116,6 +118,7 @@ function toLogRunEntry(run: ArtifactRunMetadata, now: Date): LogRunEntry {
     shortRunId: toCompactRunId(run.runId),
     commandName: run.commandName,
     status: run.status ?? "unknown",
+    timestamp: formatCliTimestamp(timestamp),
     relativeTime: formatRelativeTimestamp(now, timestamp),
     taskSummary: summarizeTask(run.task?.text),
     source: formatSource(run),
@@ -133,7 +136,7 @@ function toLogRunEntry(run: ArtifactRunMetadata, now: Date): LogRunEntry {
 function formatLogLine(entry: LogRunEntry): string {
   return [
     entry.shortRunId,
-    entry.relativeTime,
+    formatTimestampToken(entry.timestamp, entry.relativeTime),
     `[${entry.status}]`,
     entry.taskSummary,
     `source=${entry.source}`,
@@ -141,6 +144,17 @@ function formatLogLine(entry: LogRunEntry): string {
     `sha=${entry.shortCommitSha ?? "-"}`,
     `revertable=${entry.revertable ? "yes" : "no"}`,
   ].join(" | ");
+}
+
+/**
+ * Combines absolute and relative time into one compact token.
+ */
+function formatTimestampToken(absoluteTimestamp: string, relativeTimestamp: string): string {
+  if (absoluteTimestamp === relativeTimestamp) {
+    return absoluteTimestamp;
+  }
+
+  return `${absoluteTimestamp} (${relativeTimestamp})`;
 }
 
 /**
@@ -215,4 +229,24 @@ function normalizeOptionalLower(value: string | undefined): string | undefined {
 
   const normalized = value.trim().toLowerCase();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * Produces the stable JSON output shape for automation clients.
+ */
+function toJsonEntry(entry: LogRunEntry): Omit<LogRunEntry, "timestamp"> {
+  return {
+    runId: entry.runId,
+    shortRunId: entry.shortRunId,
+    commandName: entry.commandName,
+    status: entry.status,
+    relativeTime: entry.relativeTime,
+    taskSummary: entry.taskSummary,
+    source: entry.source,
+    commitSha: entry.commitSha,
+    shortCommitSha: entry.shortCommitSha,
+    revertable: entry.revertable,
+    startedAt: entry.startedAt,
+    completedAt: entry.completedAt,
+  };
 }

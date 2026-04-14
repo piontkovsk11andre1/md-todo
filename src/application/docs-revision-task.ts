@@ -12,7 +12,7 @@ import {
 } from "./prediction-workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
 
-type DocsRevisionAction = "publish" | "diff";
+type DocsRevisionAction = "release" | "diff";
 type DocsRevisionDiffTarget = "current" | "preview";
 
 const LEGACY_WORKSPACE_DIR = "docs";
@@ -38,9 +38,9 @@ export function createDocsRevisionTask(
   const emit = dependencies.output.emit.bind(dependencies.output);
 
   return async function docsRevisionTask(options: DocsRevisionTaskOptions): Promise<number> {
-    const action = options.action ?? "publish";
-    if (action !== "publish" && action !== "diff") {
-      throw new Error("Invalid docs action: " + action + ". Allowed: publish, diff.");
+    const action = options.action ?? "release";
+    if (action !== "release" && action !== "diff") {
+      throw new Error("Invalid docs action: " + action + ". Allowed: release, diff.");
     }
 
     const invocationDir = process.cwd();

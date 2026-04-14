@@ -4,6 +4,7 @@ import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
 } from "../domain/exit-codes.js";
+import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   parseWorkspaceLinkSchema,
   serializeWorkspaceLinkSchema,
@@ -163,7 +164,7 @@ export function createStartProject(
     }
 
     writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
-    writeFileIfMissing(dependencies.fileSystem, agentsPath, DEFAULT_AGENTS_TEMPLATE, emit);
+    writeFileIfMissing(dependencies.fileSystem, agentsPath, getAgentsTemplate(), emit);
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       dependencies.fileSystem.mkdir(migrationsDir, { recursive: true });
@@ -180,6 +181,7 @@ export function createStartProject(
       initialMigrationPath,
       buildInitialMigrationMarkdown(description, {
         seedFromExistingWorkspace: targetDirectoryHadFilesBeforeStart,
+        designDir: workspaceDirectories.designDir,
       }),
       emit,
     );
@@ -210,22 +212,6 @@ export function createStartProject(
   };
 }
 
-const DEFAULT_AGENTS_TEMPLATE = [
-  "# AGENTS",
-  "",
-  "Define project-specific agent roles and responsibilities.",
-  "",
-  "## Planner",
-  "- Owns migration sequencing and trade-off analysis.",
-  "",
-  "## Builder",
-  "- Implements migration tasks and keeps changes cohesive.",
-  "",
-  "## Verifier",
-  "- Validates outcomes against specs and migration intent.",
-  "",
-].join("\n");
-
 function normalizeDescription(value: string | undefined): string {
   const normalized = value?.trim();
   return normalized && normalized.length > 0
@@ -241,9 +227,11 @@ function buildInitialMigrationMarkdown(
   description: string,
   options?: {
     seedFromExistingWorkspace?: boolean;
+    designDir?: string;
   },
 ): string {
   if (options?.seedFromExistingWorkspace) {
+    const designTargetPath = [options.designDir ?? "design", "current", "Target.md"].join("/");
     return [
       "# 0001 initialize",
       "",
@@ -252,7 +240,7 @@ function buildInitialMigrationMarkdown(
       "> " + description,
       "",
       "- [ ] Research target documents and existing project materials",
-      "- [ ] Create revision 0 target baseline from design/current/Target.md",
+      `- [ ] Create the revision-0 baseline target from ${designTargetPath}`,
       "",
     ].join("\n");
   }

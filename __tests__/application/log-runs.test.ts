@@ -52,11 +52,11 @@ describe("log-runs", () => {
     expect(events).toEqual([
       {
         kind: "text",
-        text: "run-20260328T120 | 2m ago | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
+        text: "run-20260328T120 | 2026-03-28T11:58:00.000Z (2m ago) | [completed] | Ship release notes | source=TODO.md:22 | command=run | sha=1234567890ab | revertable=yes",
       },
       {
         kind: "text",
-        text: "run-20260328T110 | 30m ago | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
+        text: "run-20260328T110 | 2026-03-28T11:30:00.000Z (30m ago) | [completed] | Plan rollout | source=roadmap.md:9 | command=plan | sha=- | revertable=no",
       },
       {
         kind: "info",
@@ -79,7 +79,29 @@ describe("log-runs", () => {
     expect(events).toHaveLength(2);
     expect(events[0]).toEqual({
       kind: "text",
-      text: "run-a | 10m ago | [completed] | Do work | source=roadmap.md:3 | command=run | sha=aaa111 | revertable=yes",
+      text: "run-a | 2026-03-28T11:50:00.000Z (10m ago) | [completed] | Do work | source=roadmap.md:3 | command=run | sha=aaa111 | revertable=yes",
+    });
+    expect(events[1]).toEqual({ kind: "info", message: "1 run listed." });
+  });
+
+  it("falls back to startedAt for compact timestamp tokens when completedAt is missing", () => {
+    const runs: ArtifactRunMetadata[] = [
+      createRun({
+        runId: "run-started-at-only",
+        status: "completed",
+        startedAt: "2026-03-28T11:57:00.000Z",
+        completedAt: undefined,
+        extra: { commitSha: "abc123" },
+      }),
+    ];
+    const { logRuns, events } = createDependencies({ runs });
+
+    const code = logRuns({ revertable: false, json: false });
+
+    expect(code).toBe(0);
+    expect(events[0]).toEqual({
+      kind: "text",
+      text: "run-started-at-o | 2026-03-28T11:57:00.000Z (3m ago) | [completed] | Do work | source=roadmap.md:3 | command=run | sha=abc123 | revertable=yes",
     });
     expect(events[1]).toEqual({ kind: "info", message: "1 run listed." });
   });
@@ -98,7 +120,7 @@ describe("log-runs", () => {
     expect(events).toHaveLength(2);
     expect(events[0]).toEqual({
       kind: "text",
-      text: "run-1 | 10m ago | [completed] | Do work | source=roadmap.md:3 | command=run | sha=sha-1 | revertable=yes",
+      text: "run-1 | 2026-03-28T11:50:00.000Z (10m ago) | [completed] | Do work | source=roadmap.md:3 | command=run | sha=sha-1 | revertable=yes",
     });
     expect(events[1]).toEqual({ kind: "info", message: "1 run listed." });
   });
@@ -186,6 +208,32 @@ describe("log-runs", () => {
 
     const parsed = JSON.parse(event.text) as Array<Record<string, unknown>>;
     expect(parsed.map((entry) => entry.relativeTime)).toEqual(["in 30s", "just now", "not-a-date"]);
+  });
+
+  it("keeps compact log line readable when timestamp is invalid", () => {
+    const runs: ArtifactRunMetadata[] = [
+      createRun({
+        runId: "run-invalid-time",
+        status: "completed",
+        startedAt: "not-a-date",
+        completedAt: undefined,
+      }),
+    ];
+    const { logRuns, events } = createDependencies({ runs });
+
+    const code = logRuns({ revertable: false, json: false });
+
+    expect(code).toBe(0);
+    expect(events).toEqual([
+      {
+        kind: "text",
+        text: "run-invalid-time | not-a-date | [completed] | Do work | source=roadmap.md:3 | command=run | sha=- | revertable=no",
+      },
+      {
+        kind: "info",
+        message: "1 run listed.",
+      },
+    ]);
   });
 
   it("generates compact short IDs and preserves run order", () => {

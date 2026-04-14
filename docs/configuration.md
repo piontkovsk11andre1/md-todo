@@ -295,7 +295,7 @@ Supported directive parents:
 
 - `profile=<name>`: children inherit that profile.
 - `verify:` / `confirm:` / `check:`: children are treated as verify-only tasks.
-- `fast:` / `raw:`: children execute with verification suppressed.
+- `fast:` / `raw:` / `quick:`: children execute with verification suppressed.
 - `cli-args: <args>`: appends `<args>` to each child `cli:` checkbox task command.
 
 Example:
@@ -325,6 +325,7 @@ Fast execution aliases are also supported on checkbox text:
 ```markdown
 - [ ] fast: update changelog headings
 - [ ] raw: regenerate API docs summary
+- [ ] quick: update API docs links
 ```
 
 ## Unified prefix tool chain
@@ -355,7 +356,7 @@ Built-in handler aliases:
 
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
-- fast execution (skip verification): `fast:`, `raw:`
+- fast execution (skip verification): `fast:`, `raw:`, `quick:`
 - conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
 - include task file: `include:`
 
@@ -404,14 +405,14 @@ Template variables:
 Resolution and precedence:
 
 - Project `.js` tools in `toolDirs` are checked first and can override built-ins.
-- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw aliases, `include:`, `profile=`).
+- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `include:`, `profile=`).
 - Project `.md` tools are checked after built-ins (for non-built-in tool names).
 - Unknown prefixes do not error; they fall back to normal task execution.
 - Empty payload for handler tools is invalid and fails fast.
 
 Intent precedence notes:
 
-- Explicit text prefixes are classified in this order: verify -> memory -> fast/raw -> tool-expansion -> default execute+verify.
+- Explicit text prefixes are classified in this order: verify -> memory -> fast/raw/quick -> tool-expansion -> default execute+verify.
 - For mixed explicit prefixes, the first prefix in task text wins (`verify: fast: ...` remains verify-only; `fast: verify: ...` remains fast-execution).
 
 Special parser-level prefixes:

@@ -1,5 +1,6 @@
 import type { ApplicationOutputEvent, ApplicationOutputPort } from "../domain/ports/output-port.js";
 import pc from "picocolors";
+import { formatCliTimestamp } from "../domain/cli-timestamp.js";
 import { formatTaskDetailLines } from "./task-detail-lines.js";
 
 interface ProgressPayload {
@@ -12,6 +13,7 @@ interface ProgressPayload {
 
 let groupDepth = 0;
 let quietMode = false;
+let timestampProvider: () => Date | string = () => new Date().toISOString();
 
 /**
  * Preserved for compatibility with callers that previously waited for animations.
@@ -26,6 +28,7 @@ export function drainAnimationQueue(): Promise<void> {
 export function resetCliOutputPortState(): void {
   groupDepth = 0;
   quietMode = false;
+  timestampProvider = () => new Date().toISOString();
 }
 
 /**
@@ -33,6 +36,20 @@ export function resetCliOutputPortState(): void {
  */
 export function setCliOutputPortQuietMode(enabled: boolean): void {
   quietMode = enabled;
+}
+
+/**
+ * Overrides timestamp generation for deterministic rendering (primarily tests).
+ */
+export function setCliOutputPortTimestampProvider(provider: (() => string) | undefined): void {
+  timestampProvider = provider ?? (() => new Date().toISOString());
+}
+
+/**
+ * Prefixes user-facing terminal lines with a UTC ISO-8601 timestamp.
+ */
+function withTimestamp(message: string): string {
+  return `[${formatCliTimestamp(timestampProvider())}] ${message}`;
 }
 
 /**
@@ -214,10 +231,11 @@ export const cliOutputPort: ApplicationOutputPort = {
       case "group-start": {
         const counter = event.counter ? `[${event.counter.current}/${event.counter.total}] ` : "";
         const parentPrefix = groupLinePrefix();
+        const content = withTimestamp(`${counter}${event.label}`);
         if (isInteractiveProgressEnabled()) {
-          console.log(`${parentPrefix}┌ ${counter}${event.label}`);
+          console.log(`${parentPrefix}┌ ${content}`);
         } else {
-          console.log(`${parentPrefix}${counter}${event.label}`);
+          console.log(`${parentPrefix}${content}`);
         }
         groupDepth += 1;
         return;
@@ -228,35 +246,32 @@ export const cliOutputPort: ApplicationOutputPort = {
         const statusLabel = isSuccess ? `${pc.green("✔")} Done` : `${pc.red("✖")} Failed`;
         const suffix = event.message ? ` — ${event.message}` : "";
         const parentPrefix = groupLinePrefix();
+        const content = withTimestamp(`${statusLabel}${suffix}`);
         const writeLine = isSuccess ? console.log : console.error;
 
         if (isInteractiveProgressEnabled()) {
-          writeLine(`${parentPrefix}└ ${statusLabel}${suffix}`);
+          writeLine(`${parentPrefix}└ ${content}`);
         } else {
-          writeLine(`${parentPrefix}${statusLabel}${suffix}`);
+          writeLine(`${parentPrefix}${content}`);
         }
         return;
       }
       case "info":
         {
-          const linePrefix = withGroupPrefix(pc.blue("ℹ"));
-          console.log(`${linePrefix} ${styleInfoMessage(event.message)}`);
+          console.log(withGroupPrefix(withTimestamp(`${pc.blue("ℹ")} ${styleInfoMessage(event.message)}`)));
         }
         return;
       case "warn":
-        console.error(withGroupPrefix(`${pc.yellow("⚠")} ${event.message}`));
+        console.error(withGroupPrefix(withTimestamp(`${pc.yellow("⚠")} ${event.message}`)));
         return;
       case "error":
-        console.error(withGroupPrefix(`${pc.red("✖")} ${event.message}`));
+        console.error(withGroupPrefix(withTimestamp(`${pc.red("✖")} ${event.message}`)));
         return;
       case "success":
-        {
-          const linePrefix = withGroupPrefix(pc.green("✔"));
-          console.log(`${linePrefix} ${event.message}`);
-        }
+        console.log(withGroupPrefix(withTimestamp(`${pc.green("✔")} ${event.message}`)));
         return;
       case "progress":
-        console.log(pc.blue("⏳") + " " + formatProgressLine(event.progress));
+        console.log(withTimestamp(pc.blue("⏳") + " " + formatProgressLine(event.progress)));
         return;
       case "task":
         {

@@ -9,6 +9,8 @@ import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.
 import {
   createDocsDiffCommandAction,
   createDocsPublishCommandAction,
+  createDocsReleaseCommandAction,
+  createDocsSaveCommandAction,
   createHelpCommandAction,
   createLoopCommandAction,
   createMigrateCommandAction,
@@ -22,6 +24,7 @@ import {
 } from "../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../src/presentation/cli-app-init.js";
 import * as sleepModule from "../../src/infrastructure/cancellable-sleep.js";
+import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 type RunTaskRequest = Record<string, unknown>;
 type RunTaskFn = (request: RunTaskRequest) => Promise<number>;
@@ -200,6 +203,35 @@ describe("createLoopCommandAction", () => {
 });
 
 describe("createHelpCommandAction", () => {
+  it("prints AGENTS template and skips help worker when --agents is provided", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
+    }) as typeof process.stdout.write);
+
+    try {
+      const action = createHelpCommandAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => true,
+        getInvocationArgv: () => ["--agents"],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
+      expect(helpTask).not.toHaveBeenCalled();
+      expect(outputHelp).not.toHaveBeenCalled();
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
   it("forwards --trace to helpTask on root interactive invocation", async () => {
     const helpTask = vi.fn(async () => 0);
     const app = { helpTask } as unknown as CliApp;
@@ -287,6 +319,27 @@ describe("createHelpCommandAction", () => {
 
     expect(exitCode).toBe(EXIT_CODE_SUCCESS);
     expect(helpTask).toHaveBeenCalledTimes(1);
+    expect(outputHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns static help for non-root command invocation", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => true,
+      getInvocationArgv: () => ["run", "tasks.md"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+    expect(helpTask).not.toHaveBeenCalled();
     expect(outputHelp).toHaveBeenCalledTimes(1);
   });
 });
@@ -554,11 +607,11 @@ describe("createMigrateCommandAction", () => {
   });
 });
 
-describe("createDocsPublishCommandAction", () => {
-  it("routes docs publish to docsTask publish action", async () => {
+describe("createDocsReleaseCommandAction", () => {
+  it("routes docs release to docsTask release action", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
-    const action = createDocsPublishCommandAction({
+    const action = createDocsReleaseCommandAction({
       getApp: () => app,
     });
 
@@ -572,11 +625,49 @@ describe("createDocsPublishCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(docsTask).toHaveBeenCalledTimes(1);
     expect(docsTask).toHaveBeenCalledWith({
-      action: "publish",
+      action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
       label: "Initial baseline",
     });
+  });
+});
+
+describe("createDocsPublishCommandAction", () => {
+  it("routes docs publish to docsTask release action for compatibility", async () => {
+    const docsTask = vi.fn(async () => 0);
+    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
+    const app = { docsTask, emitOutput } as unknown as CliApp;
+    const action = createDocsPublishCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(docsTask).toHaveBeenCalledTimes(1);
+    expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "warn",
+      message: "`rundown docs publish` is deprecated; use `rundown docs release`.",
+    }));
+    expect(docsTask).toHaveBeenCalledWith({
+      action: "release",
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+    });
+  });
+});
+
+describe("createDocsSaveCommandAction", () => {
+  it("throws actionable guidance for removed docs save alias", () => {
+    const action = createDocsSaveCommandAction();
+    expect(() => action()).toThrow("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
   });
 });
 

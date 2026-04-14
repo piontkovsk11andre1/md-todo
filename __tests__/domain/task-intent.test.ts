@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { classifyTaskIntent } from "../../src/domain/task-intent.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port.js";
+import {
+  FAST_PREFIX_ALIASES,
+  MEMORY_PREFIX_ALIASES,
+  PARALLEL_PREFIX_ALIASES,
+  VERIFY_PREFIX_ALIASES,
+} from "../helpers/prefix-aliases.js";
 
 const noToolResolver: ToolResolverPort = {
   resolve: () => undefined,
@@ -14,6 +20,11 @@ const builtinToolResolver: ToolResolverPort = {
 };
 
 describe("classifyTaskIntent", () => {
+  const verifyAliases = VERIFY_PREFIX_ALIASES;
+  const memoryAliases = MEMORY_PREFIX_ALIASES;
+  const fastAliases = FAST_PREFIX_ALIASES;
+  const parallelAliases = PARALLEL_PREFIX_ALIASES;
+
   it("classifies explicit verify: prefix as verify-only", () => {
     const decision = classifyTaskIntent("verify: release notes are accurate", noToolResolver);
     expect(decision.intent).toBe("verify-only");
@@ -130,7 +141,7 @@ describe("classifyTaskIntent", () => {
     expect(classifyTaskIntent("Update parser output formatting", noToolResolver).intent).toBe("execute-and-verify");
   });
 
-  it("classifies fast: and raw: prefixes as fast-execution", () => {
+  it("classifies fast:/raw:/quick: prefixes as fast-execution", () => {
     const fastDecision = classifyTaskIntent("fast: run release script", noToolResolver);
     expect(fastDecision.intent).toBe("fast-execution");
     expect(fastDecision.reason).toBe("explicit fast marker");
@@ -140,32 +151,54 @@ describe("classifyTaskIntent", () => {
     expect(rawDecision.intent).toBe("fast-execution");
     expect(rawDecision.reason).toBe("explicit fast marker");
     expect(rawDecision.normalizedTaskText).toBe("run release script");
+
+    const quickDecision = classifyTaskIntent("quick: run release script", noToolResolver);
+    expect(quickDecision.intent).toBe("fast-execution");
+    expect(quickDecision.reason).toBe("explicit fast marker");
+    expect(quickDecision.normalizedTaskText).toBe("run release script");
   });
 
   it("matches fast aliases case-insensitively with colon spacing", () => {
     expect(classifyTaskIntent("FAST: compile docs", noToolResolver).intent).toBe("fast-execution");
     expect(classifyTaskIntent("Raw : refresh fixtures", noToolResolver).intent).toBe("fast-execution");
+    expect(classifyTaskIntent("Quick : refresh fixtures", noToolResolver).intent).toBe("fast-execution");
     expect(classifyTaskIntent("fAsT:\tdeploy preview", noToolResolver).intent).toBe("fast-execution");
   });
 
   it("trims fast payload text and flags empty payloads", () => {
     expect(classifyTaskIntent("  fast:   run smoke tests  ", noToolResolver).normalizedTaskText).toBe("run smoke tests");
     expect(classifyTaskIntent("raw:\n  collect logs", noToolResolver).normalizedTaskText).toBe("collect logs");
+    expect(classifyTaskIntent("quick:\n  collect logs", noToolResolver).normalizedTaskText).toBe("collect logs");
 
     expect(classifyTaskIntent("fast:", noToolResolver).hasEmptyPayload).toBe(true);
     expect(classifyTaskIntent("raw:   ", noToolResolver).hasEmptyPayload).toBe(true);
+    expect(classifyTaskIntent("quick:   ", noToolResolver).hasEmptyPayload).toBe(true);
     expect(classifyTaskIntent("FAST :\n\t", noToolResolver).hasEmptyPayload).toBe(true);
   });
 
-  it("does not classify plain text containing fast/raw words as fast-execution", () => {
+  it("does not classify plain text containing fast/raw/quick words as fast-execution", () => {
     expect(classifyTaskIntent("fast forward these docs", noToolResolver).intent).toBe("execute-and-verify");
     expect(classifyTaskIntent("raw logs were truncated", noToolResolver).intent).toBe("execute-and-verify");
+    expect(classifyTaskIntent("quick wins are documented", noToolResolver).intent).toBe("execute-and-verify");
   });
 
   it("does not classify non-prefix memory words as memory-capture", () => {
     const decision = classifyTaskIntent("Document memory:pressure behavior in scheduler", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");
     expect(decision.reason).toBe("default");
+  });
+
+  it.each([
+    "Please verify the migration checklist before merge",
+    "The memory footprint regressed after parser changes",
+    "Need to move fast when triaging flaky tests",
+    "We should run setup in parallel after dependencies install",
+  ])("treats plain sentence '%s' as execute-and-verify", (taskText) => {
+    const decision = classifyTaskIntent(taskText, noToolResolver);
+    expect(decision.intent).toBe("execute-and-verify");
+    expect(decision.reason).toBe("default");
+    expect(decision.normalizedTaskText).toBe(taskText);
+    expect(decision.hasEmptyPayload).toBe(false);
   });
 
   it("treats [verify] bracket prefix as execute-and-verify", () => {
@@ -322,7 +355,59 @@ describe("classifyTaskIntent", () => {
     expect(decision.memoryCapturePrefix).toBe("memory");
   });
 
-  it("applies intent precedence in order: verify -> memory -> fast -> tool -> default", () => {
+  it("keeps explicit prefix alias handling stable when resolver exposes same-name tools", () => {
+    const sameNamePrefixes = [...verifyAliases, ...memoryAliases, ...fastAliases, ...parallelAliases];
+    const toolResolver: ToolResolverPort = {
+      resolve: (toolName) => {
+        const normalized = toolName.trim().toLowerCase();
+        return sameNamePrefixes.includes(normalized as (typeof sameNamePrefixes)[number])
+          ? {
+            name: normalized,
+            kind: "handler",
+            templatePath: `/workspace/.rundown/tools/${normalized}.md`,
+            template: "{{payload}}",
+            frontmatter: { skipExecution: false, shouldVerify: false },
+          }
+          : undefined;
+      },
+      listKnownToolNames: () => sameNamePrefixes,
+    };
+
+    for (const alias of verifyAliases) {
+      const decision = classifyTaskIntent(`${alias}: validate release notes`, toolResolver);
+      expect(decision.intent).toBe("verify-only");
+      expect(decision.reason).toBe("explicit marker");
+      expect(decision.toolName).toBeUndefined();
+      expect(decision.toolPayload).toBeUndefined();
+    }
+
+    for (const alias of memoryAliases) {
+      const decision = classifyTaskIntent(`${alias}: capture release notes`, toolResolver);
+      expect(decision.intent).toBe("memory-capture");
+      expect(decision.reason).toBe("explicit memory marker");
+      expect(decision.memoryCapturePrefix).toBe(alias);
+      expect(decision.toolName).toBeUndefined();
+      expect(decision.toolPayload).toBeUndefined();
+    }
+
+    for (const alias of fastAliases) {
+      const decision = classifyTaskIntent(`${alias}: run release checks`, toolResolver);
+      expect(decision.intent).toBe("fast-execution");
+      expect(decision.reason).toBe("explicit fast marker");
+      expect(decision.toolName).toBeUndefined();
+      expect(decision.toolPayload).toBeUndefined();
+    }
+
+    for (const alias of parallelAliases) {
+      const decision = classifyTaskIntent(`${alias}: run child tasks`, toolResolver);
+      expect(decision.intent).toBe("parallel-group");
+      expect(decision.reason).toBe("explicit parallel marker");
+      expect(decision.toolName).toBeUndefined();
+      expect(decision.toolPayload).toBeUndefined();
+    }
+  });
+
+  it("applies intent precedence in order: verify -> memory -> fast aliases -> tool -> default", () => {
     const toolResolver: ToolResolverPort = {
       resolve: (toolName) => toolName === "fast" || toolName === "deploy"
         ? {
@@ -338,6 +423,7 @@ describe("classifyTaskIntent", () => {
     expect(classifyTaskIntent("verify: fast: check output", toolResolver).intent).toBe("verify-only");
     expect(classifyTaskIntent("memory: fast: capture context", toolResolver).intent).toBe("memory-capture");
     expect(classifyTaskIntent("fast: deploy to prod", toolResolver).intent).toBe("fast-execution");
+    expect(classifyTaskIntent("quick: deploy to prod", toolResolver).intent).toBe("fast-execution");
     expect(classifyTaskIntent("deploy: release candidate", toolResolver).intent).toBe("tool-expansion");
     expect(classifyTaskIntent("just implement the feature", toolResolver).intent).toBe("execute-and-verify");
   });
@@ -351,9 +437,133 @@ describe("classifyTaskIntent", () => {
     expect(fastFirst.intent).toBe("fast-execution");
     expect(fastFirst.normalizedTaskText).toBe("verify: run smoke checks");
 
+    const quickFirst = classifyTaskIntent("quick: verify: run smoke checks", noToolResolver);
+    expect(quickFirst.intent).toBe("fast-execution");
+    expect(quickFirst.normalizedTaskText).toBe("verify: run smoke checks");
+
     const memoryFirst = classifyTaskIntent("memory: fast: capture release notes", noToolResolver);
     expect(memoryFirst.intent).toBe("memory-capture");
     expect(memoryFirst.normalizedTaskText).toBe("fast: capture release notes");
+  });
+
+  it("locks explicit precedence for verify: quick and quick: verify chains", () => {
+    const verifyThenQuick = classifyTaskIntent("verify: quick: run smoke checks", noToolResolver);
+    expect(verifyThenQuick.intent).toBe("verify-only");
+    expect(verifyThenQuick.reason).toBe("explicit marker");
+    expect(verifyThenQuick.normalizedTaskText).toBe("verify: quick: run smoke checks");
+    expect(verifyThenQuick.hasEmptyPayload).toBe(false);
+
+    const quickThenVerify = classifyTaskIntent("quick: verify: run smoke checks", noToolResolver);
+    expect(quickThenVerify.intent).toBe("fast-execution");
+    expect(quickThenVerify.reason).toBe("explicit fast marker");
+    expect(quickThenVerify.normalizedTaskText).toBe("verify: run smoke checks");
+    expect(quickThenVerify.hasEmptyPayload).toBe(false);
+  });
+
+  it("keeps alias behavior in parity with canonical prefixes", () => {
+    for (const alias of verifyAliases) {
+      const decision = classifyTaskIntent(`${alias}: release checklist`, noToolResolver);
+      expect(decision.intent).toBe("verify-only");
+      expect(decision.reason).toContain("explicit");
+      expect(decision.hasEmptyPayload).toBe(false);
+    }
+
+    for (const alias of memoryAliases) {
+      const decision = classifyTaskIntent(`${alias}: capture release checklist`, noToolResolver);
+      expect(decision.intent).toBe("memory-capture");
+      expect(decision.normalizedTaskText).toBe("capture release checklist");
+      expect(decision.hasEmptyPayload).toBe(false);
+      expect(decision.memoryCapturePrefix).toBe(alias);
+    }
+
+    for (const alias of fastAliases) {
+      const decision = classifyTaskIntent(`${alias}: run release checklist`, noToolResolver);
+      expect(decision.intent).toBe("fast-execution");
+      expect(decision.reason).toBe("explicit fast marker");
+      expect(decision.normalizedTaskText).toBe("run release checklist");
+      expect(decision.hasEmptyPayload).toBe(false);
+    }
+
+    for (const alias of parallelAliases) {
+      const decision = classifyTaskIntent(`${alias}: run release checklist`, noToolResolver);
+      expect(decision.intent).toBe("parallel-group");
+      expect(decision.reason).toBe("explicit parallel marker");
+      expect(decision.normalizedTaskText).toBe("run release checklist");
+      expect(decision.hasEmptyPayload).toBe(false);
+    }
+  });
+
+  it("normalizes case and spacing consistently across alias groups", () => {
+    for (const alias of verifyAliases) {
+      const decision = classifyTaskIntent(`  ${alias.toUpperCase()}   :\tverify output`, noToolResolver);
+      expect(decision.intent).toBe("verify-only");
+      expect(decision.normalizedTaskText).toContain(":\tverify output");
+    }
+
+    for (const alias of memoryAliases) {
+      const decision = classifyTaskIntent(`  ${alias.toUpperCase()}   :\n  persist output`, noToolResolver);
+      expect(decision.intent).toBe("memory-capture");
+      expect(decision.normalizedTaskText).toBe("persist output");
+    }
+
+    for (const alias of fastAliases) {
+      const decision = classifyTaskIntent(`  ${alias.toUpperCase()}   :\n  skip verify`, noToolResolver);
+      expect(decision.intent).toBe("fast-execution");
+      expect(decision.normalizedTaskText).toBe("skip verify");
+    }
+
+    for (const alias of parallelAliases) {
+      const decision = classifyTaskIntent(`  ${alias.toUpperCase()}   :\n  run siblings`, noToolResolver);
+      expect(decision.intent).toBe("parallel-group");
+      expect(decision.normalizedTaskText).toBe("run siblings");
+    }
+  });
+
+  it("handles empty payloads consistently for all prefix groups", () => {
+    for (const alias of verifyAliases) {
+      const decision = classifyTaskIntent(`${alias}:   `, noToolResolver);
+      expect(decision.intent).toBe("verify-only");
+      expect(decision.normalizedTaskText).toBe(`${alias}:`);
+      expect(decision.hasEmptyPayload).toBe(false);
+    }
+
+    for (const alias of memoryAliases) {
+      const decision = classifyTaskIntent(`${alias}:   `, noToolResolver);
+      expect(decision.intent).toBe("memory-capture");
+      expect(decision.normalizedTaskText).toBe("");
+      expect(decision.hasEmptyPayload).toBe(true);
+    }
+
+    for (const alias of fastAliases) {
+      const decision = classifyTaskIntent(`${alias}:   `, noToolResolver);
+      expect(decision.intent).toBe("fast-execution");
+      expect(decision.normalizedTaskText).toBe("");
+      expect(decision.hasEmptyPayload).toBe(true);
+    }
+
+    for (const alias of parallelAliases) {
+      const decision = classifyTaskIntent(`${alias}:   `, noToolResolver);
+      expect(decision.intent).toBe("parallel-group");
+      expect(decision.normalizedTaskText).toBe("");
+      expect(decision.hasEmptyPayload).toBe(true);
+    }
+  });
+
+  it("uses the first recognized prefix when multiple alias groups are chained", () => {
+    const verifyThenQuick = classifyTaskIntent("confirm: quick: run smoke checks", noToolResolver);
+    expect(verifyThenQuick.intent).toBe("verify-only");
+
+    const quickThenVerify = classifyTaskIntent("quick: check: run smoke checks", noToolResolver);
+    expect(quickThenVerify.intent).toBe("fast-execution");
+    expect(quickThenVerify.normalizedTaskText).toBe("check: run smoke checks");
+
+    const memoryThenParallel = classifyTaskIntent("remember: parallel: capture release notes", noToolResolver);
+    expect(memoryThenParallel.intent).toBe("memory-capture");
+    expect(memoryThenParallel.normalizedTaskText).toBe("parallel: capture release notes");
+
+    const parallelThenMemory = classifyTaskIntent("concurrent: memory: capture release notes", noToolResolver);
+    expect(parallelThenMemory.intent).toBe("parallel-group");
+    expect(parallelThenMemory.normalizedTaskText).toBe("memory: capture release notes");
   });
 
   it("parses parallel aliases in composed-prefix forms", () => {

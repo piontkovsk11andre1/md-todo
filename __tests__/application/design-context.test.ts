@@ -218,6 +218,210 @@ describe("design-context revision metadata and immutability", () => {
     });
   });
 
+  it("returns unchanged when design/current matches the latest saved revision", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.5", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+          { name: "notes", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current/notes": [
+          { name: "api.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/rev.5": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+          { name: "notes", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.5/notes": [
+          { name: "api.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "same\n",
+        "/repo/design/current/notes/api.md": "same\n",
+        "/repo/design/rev.5/Target.md": "same\n",
+        "/repo/design/rev.5/notes/api.md": "same\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/current/notes": { isDirectory: true, isFile: false },
+        "/repo/design/rev.5": { isDirectory: true, isFile: false },
+        "/repo/design/rev.5/notes": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, "/repo");
+
+    expect(saved).toMatchObject({
+      kind: "unchanged",
+      latestRevision: {
+        index: 5,
+        name: "rev.5",
+        metadata: { createdAt: "", label: "" },
+      },
+    });
+    if (saved.kind === "unchanged") {
+      expect(normalizePath(saved.sourcePath)).toBe("/repo/design/current");
+      expect(normalizePath(saved.latestRevision.absolutePath)).toBe("/repo/design/rev.5");
+      expect(normalizePath(saved.latestRevision.metadataPath)).toBe("/repo/design/rev.5.meta.json");
+    }
+    expect(fileSystem.stat("/repo/design/rev.6")).toBeNull();
+  });
+
+  it("writes optional label metadata into revision sidecar", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "draft\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, "/repo", {
+      label: "  stable  ",
+      now: new Date("2026-01-02T03:04:05.000Z"),
+    });
+
+    expect(saved.kind).toBe("saved");
+    expect(JSON.parse(fileSystem.readText("/repo/design/rev.1.meta.json"))).toEqual({
+      revision: "rev.1",
+      index: 1,
+      createdAt: "2026-01-02T03:04:05.000Z",
+      label: "stable",
+    });
+  });
+
+  it("throws immutable conflicts when next revision directory or sidecar already exists", () => {
+    const occupiedRevisionDir = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "draft\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+        "/repo/design/rev.3": { isDirectory: false, isFile: true },
+      },
+    });
+
+    expect(() => saveDesignRevisionSnapshot(occupiedRevisionDir, "/repo")).toThrow(
+      /Cannot save design revision: target snapshot already exists and revisions are immutable/,
+    );
+
+    const occupiedMetadataSidecar = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "draft\n",
+        "/repo/design/rev.3.meta.json": "{}\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+        "/repo/design/rev.3.meta.json": { isDirectory: false, isFile: true },
+      },
+    });
+
+    expect(() => saveDesignRevisionSnapshot(occupiedMetadataSidecar, "/repo")).toThrow(
+      /Cannot save design revision: metadata sidecar already exists for immutable snapshot rev\.3/,
+    );
+  });
+
+  it("respects configured workspace design directory for snapshot resolution and guidance", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/blueprint": [
+          { name: "current", isDirectory: true, isFile: false },
+        ],
+        "/repo/blueprint/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/.rundown/config.json": JSON.stringify({
+          workspace: {
+            directories: {
+              design: "blueprint",
+            },
+          },
+        }),
+        "/repo/blueprint/current/Target.md": "configured\n",
+      },
+      stats: {
+        "/repo/.rundown/config.json": { isDirectory: false, isFile: true },
+        "/repo/blueprint": { isDirectory: true, isFile: false },
+        "/repo/blueprint/current": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, "/repo");
+    expect(saved).toMatchObject({
+      kind: "saved",
+      revision: {
+        name: "rev.1",
+      },
+    });
+    if (saved.kind === "saved") {
+      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/blueprint/rev.1");
+      expect(normalizePath(saved.revision.sourcePath)).toBe("/repo/blueprint/current");
+    }
+
+    const missingCurrent = new InMemoryFileSystem({
+      directories: {
+        "/repo/blueprint": [],
+      },
+      files: {
+        "/repo/.rundown/config.json": JSON.stringify({
+          workspace: {
+            directories: {
+              design: "blueprint",
+            },
+          },
+        }),
+      },
+      stats: {
+        "/repo/.rundown/config.json": { isDirectory: false, isFile: true },
+        "/repo/blueprint": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(() => saveDesignRevisionSnapshot(missingCurrent, "/repo")).toThrow(
+      /Design working directory is missing: .*blueprint[\\/]current\. Create blueprint\/current\/ first \(or run `rundown start \.\.\.`\)\./,
+    );
+  });
+
   it("derives revision metadata from sidecars for revision-to-revision diffs", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
@@ -307,6 +511,210 @@ describe("design-context revision metadata and immutability", () => {
     expect(normalizePath(diff.fromRevision?.absolutePath ?? "")).toBe("/repo/docs/rev.1");
     expect(normalizePath(diff.toTarget.absolutePath)).toBe("/repo/docs/current");
     expect(diff.summary).toBe("Compared rev.1 -> current: 0 added 1 modified 0 removed");
+  });
+
+  it("treats explicit rev.0 target as migration from nothing when rev.0 is first", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "rev.0", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/rev.0": [
+          { name: "Design.md", isDirectory: false, isFile: true },
+          { name: "notes.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/docs/rev.0/Design.md": "zero\n",
+        "/repo/docs/rev.0/notes.md": "note\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.0": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.0" });
+
+    expect(diff.hasComparison).toBe(true);
+    expect(diff.fromRevision).toBeNull();
+    expect(diff.summary).toBe("Compared nothing -> rev.0: 2 added 0 modified 0 removed");
+    expect(diff.sourceReferences.map(normalizePath)).toEqual(["/repo/docs/rev.0"]);
+    expect(diff.changes.map((change) => ({
+      ...change,
+      toPath: normalizePath(change.toPath),
+    }))).toEqual([
+      {
+        relativePath: "Design.md",
+        kind: "added",
+        fromPath: "",
+        toPath: "/repo/docs/rev.0/Design.md",
+      },
+      {
+        relativePath: "notes.md",
+        kind: "added",
+        fromPath: "",
+        toPath: "/repo/docs/rev.0/notes.md",
+      },
+    ]);
+  });
+
+  it("treats explicit rev.1 target as migration from nothing when rev.1 is first", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/rev.1": [
+          { name: "Design.md", isDirectory: false, isFile: true },
+          { name: "notes.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/docs/rev.1/Design.md": "one\n",
+        "/repo/docs/rev.1/notes.md": "note\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.1": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.1" });
+
+    expect(diff.hasComparison).toBe(true);
+    expect(diff.fromRevision).toBeNull();
+    expect(diff.summary).toBe("Compared nothing -> rev.1: 2 added 0 modified 0 removed");
+    expect(diff.sourceReferences.map(normalizePath)).toEqual(["/repo/docs/rev.1"]);
+    expect(diff.changes.map((change) => ({
+      ...change,
+      toPath: normalizePath(change.toPath),
+    }))).toEqual([
+      {
+        relativePath: "Design.md",
+        kind: "added",
+        fromPath: "",
+        toPath: "/repo/docs/rev.1/Design.md",
+      },
+      {
+        relativePath: "notes.md",
+        kind: "added",
+        fromPath: "",
+        toPath: "/repo/docs/rev.1/notes.md",
+      },
+    ]);
+  });
+
+  it("compares rev.0 -> rev.1 when both are present and rev.1 is targeted", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "rev.0", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/rev.0": [
+          { name: "Design.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/docs/rev.1": [
+          { name: "Design.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/docs/rev.0/Design.md": "zero\n",
+        "/repo/docs/rev.1/Design.md": "one\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.0": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.1": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.1" });
+
+    expect(diff.hasComparison).toBe(true);
+    expect(diff.fromRevision?.name).toBe("rev.0");
+    expect(diff.summary).toBe("Compared rev.0 -> rev.1: 0 added 1 modified 0 removed");
+    expect(diff.sourceReferences.map(normalizePath)).toEqual([
+      "/repo/docs/rev.0",
+      "/repo/docs/rev.1",
+    ]);
+  });
+
+  it("ignores malformed revision entries and still picks highest valid predecessor for current", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.bad", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+          { name: "rev.10", isDirectory: true, isFile: false },
+          { name: "rev.3.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/docs/current": [{ name: "Design.md", isDirectory: false, isFile: true }],
+        "/repo/docs/rev.2": [{ name: "Design.md", isDirectory: false, isFile: true }],
+        "/repo/docs/rev.10": [{ name: "Design.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/docs/current/Design.md": "current\n",
+        "/repo/docs/rev.2/Design.md": "two\n",
+        "/repo/docs/rev.10/Design.md": "ten\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/current": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.bad": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.2": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.10": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo");
+
+    expect(diff.hasComparison).toBe(true);
+    expect(diff.fromRevision?.name).toBe("rev.10");
+    expect(diff.summary).toBe("Compared rev.10 -> current: 0 added 1 modified 0 removed");
+  });
+
+  it("returns graceful diff-unavailable result when explicit revision target directory is missing", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/docs": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/docs/current": [{ name: "Design.md", isDirectory: false, isFile: true }],
+        "/repo/docs/rev.1": [{ name: "Design.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/docs/current/Design.md": "current\n",
+        "/repo/docs/rev.1/Design.md": "one\n",
+      },
+      stats: {
+        "/repo/docs": { isDirectory: true, isFile: false },
+        "/repo/docs/current": { isDirectory: true, isFile: false },
+        "/repo/docs/rev.1": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.9" });
+
+    expect(diff.fromRevision).toBeNull();
+    expect(diff.toTarget).toMatchObject({
+      kind: "revision",
+      name: "rev.9",
+      metadata: { createdAt: "", label: "" },
+      revisionIndex: 9,
+    });
+    expect(normalizePath(diff.toTarget.absolutePath)).toBe("/repo/docs/rev.9");
+    expect(normalizePath(diff.toTarget.metadataPath)).toBe("/repo/docs/rev.9.meta.json");
+    expect(diff.hasComparison).toBe(false);
+    expect(diff.summary).toBe("Design diff unavailable: target directory does not exist for rev.9.");
+    expect(diff.addedCount).toBe(0);
+    expect(diff.removedCount).toBe(0);
+    expect(diff.modifiedCount).toBe(0);
+    expect(diff.changes).toEqual([]);
+    expect(diff.sourceReferences.map(normalizePath)).toEqual(["/repo/docs/rev.9"]);
   });
 });
 
