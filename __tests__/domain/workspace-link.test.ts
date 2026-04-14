@@ -185,7 +185,11 @@ describe("resolveWorkspaceLink", () => {
     tempDirs.push(tempDir);
 
     const invocationDir = path.join(tempDir, "invocation");
+    const workspaceA = path.join(tempDir, "workspace-a");
+    const workspaceB = path.join(tempDir, "workspace-b");
     fs.mkdirSync(path.join(invocationDir, ".rundown"), { recursive: true });
+    fs.mkdirSync(workspaceA, { recursive: true });
+    fs.mkdirSync(workspaceB, { recursive: true });
     fs.writeFileSync(
       path.join(invocationDir, ".rundown", "workspace.link"),
       JSON.stringify({
@@ -209,6 +213,76 @@ describe("resolveWorkspaceLink", () => {
       linkPath: path.join(invocationDir, WORKSPACE_LINK_RELATIVE_PATH),
       relativeTarget: "",
       reason: "ambiguous",
+    });
+  });
+
+  it("returns invalid target-missing when any workspace record target is missing", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-workspace-link-"));
+    tempDirs.push(tempDir);
+
+    const invocationDir = path.join(tempDir, "invocation");
+    const existingWorkspace = path.join(tempDir, "workspace-a");
+    fs.mkdirSync(path.join(invocationDir, ".rundown"), { recursive: true });
+    fs.mkdirSync(existingWorkspace, { recursive: true });
+    fs.writeFileSync(
+      path.join(invocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        records: [
+          { id: "alpha", workspacePath: "../workspace-a", default: true },
+          { id: "beta", workspacePath: "../workspace-b" },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = resolveWorkspaceLink({
+      currentDir: invocationDir,
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      linkPath: path.join(invocationDir, WORKSPACE_LINK_RELATIVE_PATH),
+      relativeTarget: "../workspace-b",
+      reason: "target-missing",
+    });
+  });
+
+  it("returns invalid target-not-directory when any workspace record target is not a directory", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-workspace-link-"));
+    tempDirs.push(tempDir);
+
+    const invocationDir = path.join(tempDir, "invocation");
+    const existingWorkspace = path.join(tempDir, "workspace-a");
+    const staleTargetFile = path.join(tempDir, "workspace-b.txt");
+    fs.mkdirSync(path.join(invocationDir, ".rundown"), { recursive: true });
+    fs.mkdirSync(existingWorkspace, { recursive: true });
+    fs.writeFileSync(staleTargetFile, "stale", "utf-8");
+    fs.writeFileSync(
+      path.join(invocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+        records: [
+          { id: "alpha", workspacePath: "../workspace-a", default: true },
+          { id: "beta", workspacePath: "../workspace-b.txt" },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const result = resolveWorkspaceLink({
+      currentDir: invocationDir,
+      fileSystem: createNodeFileSystem(),
+      pathOperations: createNodePathOperationsAdapter(),
+    });
+
+    expect(result).toEqual({
+      status: "invalid",
+      linkPath: path.join(invocationDir, WORKSPACE_LINK_RELATIVE_PATH),
+      relativeTarget: "../workspace-b.txt",
+      reason: "target-not-directory",
     });
   });
 });
@@ -295,6 +369,32 @@ describe("parseWorkspaceLinkSchema", () => {
       status: "error",
       reason: "conflicting-default-markers",
       message: "workspace.link defaultRecordId conflicts with record.default marker.",
+    });
+  });
+
+  it("rejects duplicate workspace paths after normalization", () => {
+    const parsed = parseWorkspaceLinkSchema(JSON.stringify({
+      schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+      records: [
+        { id: "alpha", workspacePath: "../workspace/./a" },
+        { id: "beta", workspacePath: "../workspace/a" },
+      ],
+    }));
+
+    expect(parsed).toEqual({
+      status: "error",
+      reason: "duplicate-workspace-path",
+      message: "workspace.link record \"beta\" duplicates workspacePath \"../workspace/a\".",
+    });
+  });
+
+  it("rejects workspace paths containing null characters", () => {
+    const parsed = parseWorkspaceLinkSchema("../workspace/\u0000broken");
+
+    expect(parsed).toEqual({
+      status: "error",
+      reason: "invalid-record",
+      message: "workspace path contains invalid null characters.",
     });
   });
 });

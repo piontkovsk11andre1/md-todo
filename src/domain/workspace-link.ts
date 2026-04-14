@@ -41,6 +41,7 @@ export type WorkspaceLinkSchemaErrorReason =
   | "unsupported-schema"
   | "invalid-record"
   | "duplicate-record-id"
+  | "duplicate-workspace-path"
   | "missing-default-record"
   | "multiple-default-records"
   | "conflicting-default-markers";
@@ -163,6 +164,7 @@ export function parseWorkspaceLinkSchema(rawContent: string): ParseWorkspaceLink
 
   const records: CanonicalWorkspaceLinkRecord[] = [];
   const seenIds = new Set<string>();
+  const seenWorkspacePaths = new Set<string>();
 
   for (const rawRecord of recordsValue) {
     if (!isPlainObject(rawRecord)) {
@@ -205,6 +207,15 @@ export function parseWorkspaceLinkSchema(rawContent: string): ParseWorkspaceLink
     if (normalizedPath.status === "error") {
       return normalizedPath;
     }
+
+    if (seenWorkspacePaths.has(normalizedPath.workspacePath)) {
+      return {
+        status: "error",
+        reason: "duplicate-workspace-path",
+        message: `workspace.link record "${id}" duplicates workspacePath "${normalizedPath.workspacePath}".`,
+      };
+    }
+    seenWorkspacePaths.add(normalizedPath.workspacePath);
 
     records.push({
       id,
@@ -353,6 +364,28 @@ export function resolveWorkspaceLink(input: ResolveWorkspaceLinkInput): Workspac
     };
   }
 
+  for (const record of parsedSchema.schema.records) {
+    const candidateWorkspaceRoot = input.pathOperations.resolve(currentDir, record.workspacePath);
+    const candidateStats = input.fileSystem.stat(candidateWorkspaceRoot);
+    if (candidateStats === null) {
+      return {
+        status: "invalid",
+        linkPath,
+        relativeTarget: record.workspacePath,
+        reason: "target-missing",
+      };
+    }
+
+    if (!candidateStats.isDirectory) {
+      return {
+        status: "invalid",
+        linkPath,
+        relativeTarget: record.workspacePath,
+        reason: "target-not-directory",
+      };
+    }
+  }
+
   const selectedRecord = parsedSchema.schema.defaultRecordId !== undefined
     ? parsedSchema.schema.records.find((record) => record.id === parsedSchema.schema.defaultRecordId)
     : parsedSchema.schema.records.length === 1
@@ -410,6 +443,14 @@ function normalizeRelativeWorkspacePath(value: string):
     };
   }
 
+  if (trimmed.includes("\0")) {
+    return {
+      status: "error",
+      reason: "invalid-record",
+      message: "workspace path contains invalid null characters.",
+    };
+  }
+
   const unifiedSeparators = trimmed.replace(/\\/g, "/");
   if (isAbsoluteWorkspacePath(unifiedSeparators)) {
     return {
@@ -446,7 +487,7 @@ function normalizeRelativeWorkspacePath(value: string):
 }
 
 function isAbsoluteWorkspacePath(value: string): boolean {
-  return value.startsWith("/") || value.startsWith("//") || /^[A-Za-z]:\//.test(value);
+  return value.startsWith("/") || value.startsWith("//") || /^[A-Za-z]:(\/|$|[^/])/.test(value);
 }
 
 function isValidWorkspaceRecordId(value: string): boolean {
