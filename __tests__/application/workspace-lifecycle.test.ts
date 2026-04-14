@@ -238,6 +238,55 @@ describe("workspace-lifecycle remove", () => {
     expect(code).toBe(1);
   });
 
+  it("removes single-record legacy workspace.link metadata without requiring --workspace", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const workspaceTarget = path.resolve(invocationDir, "../workspace-a");
+    const { removeTask, fileSystem, interactiveInput } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-a\n",
+      },
+      directories: [workspaceTarget],
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: false, dryRun: false, force: false });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceLinkPath, { force: true });
+    expect(vi.mocked(fileSystem.rm).mock.calls.some((call) => call[0] === workspaceTarget)).toBe(false);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
+  });
+
+  it("fails safely with candidate guidance when multi-record selection is ambiguous", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { removeTask, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "alpha", workspacePath: "../workspace-a" },
+            { id: "beta", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: false, dryRun: false, force: false });
+
+    expect(code).toBe(1);
+    const errorEvent = events.find((event) => event.kind === "error");
+    expect(errorEvent?.kind).toBe("error");
+    if (errorEvent?.kind === "error") {
+      expect(errorEvent.message).toContain("ambiguous");
+      expect(errorEvent.message).toContain("Candidates:");
+      expect(errorEvent.message).toContain("alpha");
+      expect(errorEvent.message).toContain("beta");
+      expect(errorEvent.message).toContain("--workspace <dir|id>");
+    }
+  });
+
   it("supports metadata-only remove without deleting workspace targets", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
