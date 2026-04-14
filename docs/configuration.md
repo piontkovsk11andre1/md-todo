@@ -28,6 +28,17 @@ When created by `rundown init`, this file starts as an empty JSON object (`{}`).
 
 That means no default worker is configured until you add one. Worker-required commands (`run`, `plan`, `discuss`, `research`, `reverify`) must receive a worker explicitly via `--worker <command...>` or `-- <command>` when config is empty.
 
+## Empty or partial config behavior
+
+`rundown` treats missing config keys as missing configuration, not as permission to guess a different worker.
+
+- Empty local config (`{}`): no local worker defaults are present. Resolution still follows the normal cascade (built-in -> global -> local -> command/profile -> CLI).
+- Partial config: only provided keys participate. Omitted keys stay omitted, so unresolved worker-required commands fail rather than silently switching to an incompatible command-specific worker.
+- Invalid/incompatible worker values (wrong types, malformed arrays, or invalid JSON) fail fast with path-specific actionable errors.
+- When no worker is resolved for a worker-required command, rundown exits non-zero with guidance to set `defaults.worker` or `commands.<name>.worker`, or to pass `--worker <pattern>` / `-- <command>` for that invocation.
+
+This behavior is intentional for deterministic prediction flows: no silent fallback to incompatible worker settings.
+
 Example:
 
 ```json

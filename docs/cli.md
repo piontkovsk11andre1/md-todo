@@ -1297,6 +1297,8 @@ If both are provided, `--worker` takes precedence.
 
 With a freshly initialized empty config (`{}`), no worker is resolved by default. In that case, provide one explicitly using either `--worker <pattern>` or `-- <command>`.
 
+If `.rundown/config.json` is partial, rundown uses only the keys that are present and preserves normal precedence; omitted worker keys are not auto-filled by command-specific guesses. For worker-required commands, unresolved worker config fails with actionable guidance instead of silently falling back to incompatible worker settings.
+
 Worker resolution cascade (lowest to highest priority):
 
 - Built-in defaults
