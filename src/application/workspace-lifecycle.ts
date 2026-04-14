@@ -98,6 +98,21 @@ export function createWorkspaceUnlinkTask(
         kind: "info",
         message: `Dry run: ${selectedRecords.records.length} workspace record(s) would be unlinked (metadata only).`,
       });
+      emit({ kind: "text", text: "Dry-run metadata impact:" });
+      emit({ kind: "text", text: "  - Records to unlink:" });
+      for (const record of selectedRecords.records) {
+        emit({
+          kind: "text",
+          text: `    - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+        });
+      }
+      emit({
+        kind: "text",
+        text: remainingRecords.length === 0
+          ? `  - workspace.link: remove ${workspaceLinkPath}`
+          : `  - workspace.link: rewrite ${workspaceLinkPath} with ${remainingRecords.length} remaining record(s)`,
+      });
+      emit({ kind: "text", text: "  - File/directory deletions: none (unlink is metadata-only)" });
       emit({
         kind: "info",
         message: "Linked workspace files/directories are not deleted by workspace unlink.",
@@ -331,12 +346,37 @@ export function createWorkspaceRemoveTask(
         kind: "info",
         message: `Dry run: ${selectedRecords.records.length} workspace record(s) would be removed.`,
       });
+      emit({ kind: "text", text: "Dry-run impact preview:" });
+      emit({ kind: "text", text: "  - Records to remove:" });
+      for (const record of selectedRecords.records) {
+        emit({
+          kind: "text",
+          text: `    - ${record.id}: ${dependencies.pathOperations.resolve(invocationDir, record.workspacePath)}`,
+        });
+      }
+      emit({
+        kind: "text",
+        text: remainingRecords.length === 0
+          ? `  - workspace.link: remove ${workspaceLinkPath}`
+          : `  - workspace.link: rewrite ${workspaceLinkPath} with ${remainingRecords.length} remaining record(s)`,
+      });
       if (options.deleteFiles) {
         emit({
           kind: "info",
           message: `Dry run: ${selectedWorkspaceTargets.length} workspace file/directory target(s) would be deleted.`,
         });
+        emit({ kind: "text", text: "  - File/directory targets:" });
+        for (const targetPath of selectedWorkspaceTargets) {
+          const targetStats = dependencies.fileSystem.stat(targetPath);
+          const targetKind = targetStats === null
+            ? "missing (would be skipped)"
+            : targetStats.isDirectory
+              ? "directory"
+              : "file";
+          emit({ kind: "text", text: `    - ${targetPath} (${targetKind})` });
+        }
       } else {
+        emit({ kind: "text", text: "  - File/directory deletions: none (--delete-files not set)" });
         emit({
           kind: "info",
           message: "Workspace remove ran in metadata-only mode (no file deletion).",

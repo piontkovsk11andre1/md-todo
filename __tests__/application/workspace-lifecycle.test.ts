@@ -68,6 +68,9 @@ describe("workspace-lifecycle unlink", () => {
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("Dry-run metadata impact"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("workspace.link: remove"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("File/directory deletions: none"))).toBe(true);
   });
 
   it("unlinks selected record and preserves remaining records", async () => {
@@ -158,7 +161,7 @@ describe("workspace-lifecycle remove", () => {
   it("supports dry-run remove with delete-files without mutating metadata or files", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
-    const { removeTask, fileSystem } = createHarness(invocationDir, {
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
       files: {
         [workspaceLinkPath]: "../workspace-a\n",
       },
@@ -170,6 +173,28 @@ describe("workspace-lifecycle remove", () => {
     expect(code).toBe(0);
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
     expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "text" && event.text.includes("Dry-run impact preview"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("workspace.link: remove"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("(directory)"))).toBe(true);
+  });
+
+  it("supports dry-run remove in metadata-only mode with explicit file impact listing", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-a\n",
+      },
+      directories: [path.resolve(invocationDir, "../workspace-a")],
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: false, dryRun: true, force: false });
+
+    expect(code).toBe(0);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(fileSystem.rm)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "text" && event.text.includes("Dry-run impact preview"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes("File/directory deletions: none"))).toBe(true);
   });
 
   it("requires confirmation before destructive cleanup when --force is not set", async () => {
