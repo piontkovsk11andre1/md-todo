@@ -142,6 +142,56 @@ describe("workspace-lifecycle unlink", () => {
     expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
   });
 
+  it("fails with clear permission error when removing workspace.link metadata fails", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { unlinkTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../source-workspace\n",
+      },
+    });
+
+    vi.mocked(fileSystem.rm).mockImplementation(() => {
+      const error = new Error("operation not permitted");
+      (error as Error & { code?: string }).code = "EPERM";
+      throw error;
+    });
+
+    const code = await unlinkTask({ all: false, dryRun: false });
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("permission denied"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes(workspaceLinkPath))).toBe(true);
+  });
+
+  it("fails with clear missing-path error when rewriting workspace.link during unlink fails", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { unlinkTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "alpha", workspacePath: "../workspace-a", default: true },
+            { id: "beta", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+    });
+
+    vi.mocked(fileSystem.writeText).mockImplementation(() => {
+      const error = new Error("ENOENT: no such file or directory");
+      (error as Error & { code?: string }).code = "ENOENT";
+      throw error;
+    });
+
+    const code = await unlinkTask({ workspace: "alpha", all: false, dryRun: false });
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("path does not exist"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes(workspaceLinkPath))).toBe(true);
+  });
+
   it("cleans stale workspace metadata and warns when selected target is missing", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
@@ -299,6 +349,91 @@ describe("workspace-lifecycle remove", () => {
     expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceLinkPath, { force: true });
   });
 
+  it("warns clearly when cleanup targets are missing and still removes metadata", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const missingTarget = path.resolve(invocationDir, "../workspace-missing");
+    const { removeTask, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-missing\n",
+      },
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: true, dryRun: false, force: true });
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("path is missing"))).toBe(true);
+    expect(events.some((event) => event.kind === "warn" && event.message.includes("Skipped 1 workspace cleanup target"))).toBe(true);
+    expect(events.some((event) => event.kind === "success" && event.message.includes("removed empty workspace.link"))).toBe(true);
+    expect(events.some((event) => event.kind === "text" && event.text.includes(missingTarget))).toBe(true);
+  });
+
+  it("fails with permission-denied error and preserves metadata when cleanup fails", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const lockedTarget = path.resolve(invocationDir, "../workspace-a");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: "../workspace-a\n",
+      },
+      directories: [lockedTarget],
+    });
+
+    vi.mocked(fileSystem.rm).mockImplementation((targetPath: string) => {
+      if (path.resolve(targetPath) === lockedTarget) {
+        const error = new Error("permission denied");
+        (error as Error & { code?: string }).code = "EACCES";
+        throw error;
+      }
+    });
+
+    const code = await removeTask({ all: false, deleteFiles: true, dryRun: false, force: true });
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("permission denied"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Workspace cleanup completed partially"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("metadata was preserved"))).toBe(true);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(fileSystem.rm).mock.calls.some((call) => call[0] === workspaceLinkPath)).toBe(false);
+  });
+
+  it("reports partial cleanup outcomes when one target fails and another succeeds", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const successTarget = path.resolve(invocationDir, "../workspace-a");
+    const failingTarget = path.resolve(invocationDir, "../workspace-b");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "alpha", workspacePath: "../workspace-a" },
+            { id: "beta", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+      directories: [successTarget, failingTarget],
+    });
+
+    vi.mocked(fileSystem.rm).mockImplementation((targetPath: string) => {
+      if (path.resolve(targetPath) === failingTarget) {
+        const error = new Error("operation not permitted");
+        (error as Error & { code?: string }).code = "EPERM";
+        throw error;
+      }
+    });
+
+    const code = await removeTask({ all: true, deleteFiles: true, dryRun: false, force: true });
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("Workspace cleanup completed partially"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("deleted 1, missing 0, failed 1"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes(failingTarget))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("metadata was preserved"))).toBe(true);
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(fileSystem.rm).mock.calls.some((call) => call[0] === workspaceLinkPath)).toBe(false);
+  });
+
   it("skips confirmation when --force is set", async () => {
     const invocationDir = path.resolve("/repo/project");
     const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
@@ -315,6 +450,34 @@ describe("workspace-lifecycle remove", () => {
     expect(code).toBe(0);
     expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
     expect(vi.mocked(fileSystem.rm)).toHaveBeenCalledWith(workspaceTarget, { recursive: true, force: true });
+  });
+
+  it("fails with clear missing-path message when rewriting workspace.link fails", async () => {
+    const invocationDir = path.resolve("/repo/project");
+    const workspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    const { removeTask, fileSystem, events } = createHarness(invocationDir, {
+      files: {
+        [workspaceLinkPath]: JSON.stringify({
+          schemaVersion: WORKSPACE_LINK_SCHEMA_VERSION,
+          records: [
+            { id: "alpha", workspacePath: "../workspace-a", default: true },
+            { id: "beta", workspacePath: "../workspace-b" },
+          ],
+        }),
+      },
+    });
+
+    vi.mocked(fileSystem.writeText).mockImplementation(() => {
+      const error = new Error("ENOENT: no such file or directory");
+      (error as Error & { code?: string }).code = "ENOENT";
+      throw error;
+    });
+
+    const code = await removeTask({ workspace: "alpha", all: false, deleteFiles: false, dryRun: false, force: false });
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("path does not exist"))).toBe(true);
+    expect(events.some((event) => event.kind === "error" && event.message.includes(workspaceLinkPath))).toBe(true);
   });
 
   it("blocks destructive cleanup when a selected target resolves to filesystem root", async () => {

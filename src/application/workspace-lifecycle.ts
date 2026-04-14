@@ -41,6 +41,12 @@ interface WorkspaceRecordStatus {
   health: WorkspaceRecordHealth;
 }
 
+interface WorkspaceCleanupOutcome {
+  targetPath: string;
+  status: "deleted" | "missing" | "failed";
+  errorMessage?: string;
+}
+
 export function createWorkspaceUnlinkTask(
   dependencies: WorkspaceLifecycleDependencies,
 ): (options: WorkspaceUnlinkOptions) => Promise<number> {
@@ -150,7 +156,19 @@ export function createWorkspaceUnlinkTask(
     }
 
     if (remainingRecords.length === 0) {
-      dependencies.fileSystem.rm(workspaceLinkPath, { force: true });
+      try {
+        dependencies.fileSystem.rm(workspaceLinkPath, { force: true });
+      } catch (error: unknown) {
+        emit({
+          kind: "error",
+          message: buildFileOperationErrorMessage({
+            action: "remove workspace.link metadata file",
+            targetPath: workspaceLinkPath,
+            error,
+          }),
+        });
+        return EXIT_CODE_FAILURE;
+      }
       emit({
         kind: "success",
         message: `Unlinked ${selectedRecords.records.length} workspace record(s) and removed empty workspace.link metadata file.`,
@@ -176,7 +194,19 @@ export function createWorkspaceUnlinkTask(
       })),
       defaultRecordId: nextDefaultRecordId,
     });
-    dependencies.fileSystem.writeText(workspaceLinkPath, serialized);
+    try {
+      dependencies.fileSystem.writeText(workspaceLinkPath, serialized);
+    } catch (error: unknown) {
+      emit({
+        kind: "error",
+        message: buildFileOperationErrorMessage({
+          action: "rewrite workspace.link metadata file",
+          targetPath: workspaceLinkPath,
+          error,
+        }),
+      });
+      return EXIT_CODE_FAILURE;
+    }
 
     emit({
       kind: "success",
@@ -519,27 +549,99 @@ export function createWorkspaceRemoveTask(
         }
       }
 
+      const cleanupOutcomes: WorkspaceCleanupOutcome[] = [];
       for (const targetPath of selectedWorkspaceTargets) {
-        const targetStats = dependencies.fileSystem.stat(targetPath);
+        let targetStats: ReturnType<FileSystem["stat"]>;
+        try {
+          targetStats = dependencies.fileSystem.stat(targetPath);
+        } catch (error: unknown) {
+          const errorMessage = buildFileOperationErrorMessage({
+            action: "inspect workspace cleanup target",
+            targetPath,
+            error,
+          });
+          cleanupOutcomes.push({
+            targetPath,
+            status: "failed",
+            errorMessage,
+          });
+          emit({ kind: "error", message: errorMessage });
+          continue;
+        }
+
         if (targetStats === null) {
+          cleanupOutcomes.push({
+            targetPath,
+            status: "missing",
+          });
           emit({
             kind: "warn",
-            message: `Skipping file cleanup target because it does not exist: ${targetPath}`,
+            message: `Skipping workspace cleanup target because path is missing: ${targetPath}`,
           });
           continue;
         }
 
-        if (targetStats.isDirectory) {
-          dependencies.fileSystem.rm(targetPath, { recursive: true, force: true });
-          continue;
+        try {
+          if (targetStats.isDirectory) {
+            dependencies.fileSystem.rm(targetPath, { recursive: true, force: true });
+          } else {
+            dependencies.fileSystem.rm(targetPath, { force: true });
+          }
+          cleanupOutcomes.push({
+            targetPath,
+            status: "deleted",
+          });
+        } catch (error: unknown) {
+          const errorMessage = buildFileOperationErrorMessage({
+            action: "delete workspace cleanup target",
+            targetPath,
+            error,
+          });
+          cleanupOutcomes.push({
+            targetPath,
+            status: "failed",
+            errorMessage,
+          });
+          emit({ kind: "error", message: errorMessage });
         }
+      }
 
-        dependencies.fileSystem.rm(targetPath, { force: true });
+      const failedCleanupOutcomes = cleanupOutcomes.filter((outcome) => outcome.status === "failed");
+      if (failedCleanupOutcomes.length > 0) {
+        emit({
+          kind: "error",
+          message: buildPartialCleanupFailureMessage(cleanupOutcomes),
+        });
+        emit({
+          kind: "info",
+          message: "workspace.link metadata was preserved because workspace file cleanup did not fully succeed.",
+        });
+        return EXIT_CODE_FAILURE;
+      }
+
+      const missingCleanupOutcomes = cleanupOutcomes.filter((outcome) => outcome.status === "missing");
+      if (missingCleanupOutcomes.length > 0) {
+        emit({
+          kind: "warn",
+          message: `Skipped ${missingCleanupOutcomes.length} workspace cleanup target(s) because paths were missing.`,
+        });
       }
     }
 
     if (remainingRecords.length === 0) {
-      dependencies.fileSystem.rm(workspaceLinkPath, { force: true });
+      try {
+        dependencies.fileSystem.rm(workspaceLinkPath, { force: true });
+      } catch (error: unknown) {
+        emit({
+          kind: "error",
+          message: buildFileOperationErrorMessage({
+            action: "remove workspace.link metadata file",
+            targetPath: workspaceLinkPath,
+            error,
+          }),
+        });
+        return EXIT_CODE_FAILURE;
+      }
       emit({
         kind: "success",
         message: `Removed ${selectedRecords.records.length} workspace record(s) and removed empty workspace.link metadata file.`,
@@ -567,7 +669,19 @@ export function createWorkspaceRemoveTask(
       })),
       defaultRecordId: nextDefaultRecordId,
     });
-    dependencies.fileSystem.writeText(workspaceLinkPath, serialized);
+    try {
+      dependencies.fileSystem.writeText(workspaceLinkPath, serialized);
+    } catch (error: unknown) {
+      emit({
+        kind: "error",
+        message: buildFileOperationErrorMessage({
+          action: "rewrite workspace.link metadata file",
+          targetPath: workspaceLinkPath,
+          error,
+        }),
+      });
+      return EXIT_CODE_FAILURE;
+    }
 
     emit({
       kind: "success",
@@ -725,4 +839,57 @@ function emitStaleWorkspaceRecordWarnings(input: {
       message: `Stale workspace record: ${status.record.id} -> ${status.absolutePath} (${describeWorkspaceRecordHealth(status.health)})`,
     });
   }
+}
+
+function buildPartialCleanupFailureMessage(cleanupOutcomes: WorkspaceCleanupOutcome[]): string {
+  const deletedCount = cleanupOutcomes.filter((outcome) => outcome.status === "deleted").length;
+  const missingCount = cleanupOutcomes.filter((outcome) => outcome.status === "missing").length;
+  const failedOutcomes = cleanupOutcomes.filter((outcome) => outcome.status === "failed");
+
+  const lines = [
+    `Workspace cleanup completed partially: deleted ${deletedCount}, missing ${missingCount}, failed ${failedOutcomes.length}.`,
+    "Failed cleanup targets:",
+    ...failedOutcomes.map((outcome) => {
+      const detail = typeof outcome.errorMessage === "string" ? outcome.errorMessage : "unknown error";
+      return `- ${outcome.targetPath}: ${detail}`;
+    }),
+  ];
+
+  return lines.join("\n");
+}
+
+function buildFileOperationErrorMessage(input: {
+  action: string;
+  targetPath: string;
+  error: unknown;
+}): string {
+  const errorDetails = toFileSystemErrorDetails(input.error);
+  if (errorDetails.code === "ENOENT") {
+    return `Unable to ${input.action}: path does not exist: ${input.targetPath}.`;
+  }
+  if (errorDetails.code === "EACCES" || errorDetails.code === "EPERM") {
+    return `Unable to ${input.action}: permission denied for ${input.targetPath}.`;
+  }
+  const codePrefix = errorDetails.code !== undefined ? `${errorDetails.code}: ` : "";
+  return `Unable to ${input.action}: ${codePrefix}${errorDetails.message}`;
+}
+
+function toFileSystemErrorDetails(error: unknown): {
+  code?: string;
+  message: string;
+} {
+  if (error instanceof Error) {
+    const withCode = error as Error & { code?: unknown };
+    const code = typeof withCode.code === "string" ? withCode.code : undefined;
+    return {
+      code,
+      message: error.message,
+    };
+  }
+  if (typeof error === "string") {
+    return { message: error };
+  }
+  return {
+    message: "unknown filesystem error",
+  };
 }
