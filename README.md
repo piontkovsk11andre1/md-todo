@@ -165,7 +165,17 @@ Ask the agent to set everything up and start working — it will answer all your
 ## Installation
 
 ```bash
+# npm
 npm i -g @p10i/rundown
+
+# yarn
+yarn global add @p10i/rundown
+
+# pnpm
+pnpm add -g @p10i/rundown
+
+# bun
+bun add -g @p10i/rundown
 ```
 
 ## Documentation
