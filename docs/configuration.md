@@ -256,6 +256,21 @@ rundown discuss --worker opencode
 rundown run --worker opencode run
 ```
 
+## Linked workspace and path-sensitive commands
+
+Config resolution and workspace resolution are separate and both affect prediction flows:
+
+- `--config-dir` (or upward `.rundown/` discovery) selects the config root for config/templates/vars/runs/logs.
+- Linked workspace resolution (from `.rundown/workspace.link`, optionally overridden by `--workspace`) selects `sourcedir` for workspace-bucket paths.
+- `--config-dir` does not replace `--workspace` and does not choose the linked source workspace.
+
+When `--workspace` must be provided:
+
+- If `.rundown/workspace.link` has multiple records and no default, path-sensitive prediction commands cannot pick a unique source root and fail with candidate guidance.
+- In scripted or CI multi-workspace contexts, setting `--workspace <dir>` explicitly is recommended for deterministic `sourcedir` selection.
+
+Commands most sensitive to workspace-root selection include migration/design lifecycle commands (`migrate`, `design release`, `design diff`) and prediction context flows that resolve bucket paths (`research`, `plan`, `run` prompt context, and wrappers such as `explore` and `make`).
+
 ## Config command
 
 `rundown config` is the CLI surface for inspect/update operations without manual JSON edits.

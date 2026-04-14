@@ -7,8 +7,9 @@
 `--config-dir <path>` is available on every command.
 
 - If provided, rundown uses that directory as the `.rundown` config root and skips upward discovery.
-- If omitted, rundown discovers `.rundown/` by walking upward from the command start directory until it finds one.
+- If omitted, rundown discovers `.rundown/` by walking upward from the effective start directory (command invocation directory for command-scoped flows, source file directory for source-scoped flows) until it finds one.
 - If discovery finds nothing, command-specific fallback behavior applies (for example, `init` creates one locally).
+- Config directory discovery and linked-workspace selection are separate concerns: `--config-dir` controls config/templates/vars/runs/logs roots, while linked workspace resolution controls `sourcedir` for path-sensitive prediction commands.
 
 Examples:
 
@@ -228,6 +229,8 @@ Workspace selection notes (`migrate`, `design release`, `design diff`):
 - By default, path-sensitive commands resolve workspace from `.rundown/workspace.link`.
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
 - Use `--workspace <dir>` to select the effective workspace explicitly (relative to invocation directory).
+- `--workspace` is required for these commands when ambiguity exists (for example, multiple link records with no default, or when invocation context is not the intended source root).
+- `--config-dir` does not pick the linked workspace; it only selects the config root used for discovery and runtime files.
 
 Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
 
@@ -237,6 +240,12 @@ Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `rese
 - Mixed placement is valid (for example, `design` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`).
 - In linked mode, `sourcedir` maps to the resolved linked workspace, while `workdir` stays at the invocation directory.
 - If any two buckets resolve to the same absolute path (including across different roots), command resolution fails with a placement conflict error.
+
+When `--workspace` is required for path-sensitive prediction commands:
+
+- `migrate`, `design release`, and `design diff` fail fast and require `--workspace <dir>` when linked-workspace metadata is ambiguous.
+- For prediction flows that derive context from workspace buckets (`research`, `plan`, `run` prompt context, and wrappers like `explore`/`make`), pass `--workspace <dir>` whenever linked records could resolve to multiple plausible `sourcedir` roots.
+- In CI or scripted multi-workspace environments, prefer always setting `--workspace` to make source-root selection deterministic.
 
 Mixed-placement example:
 

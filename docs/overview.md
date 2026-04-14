@@ -99,6 +99,13 @@ Resolution order:
 4. If not found, move to the parent directory and repeat.
 5. Stop when the filesystem root is reached; if no `.rundown/` was found, discovery returns `undefined`.
 
+Linked-workspace note:
+
+- Config discovery decides where rundown reads/writes config-driven assets (`config.json`, templates, vars, runs, logs).
+- Linked-workspace resolution decides which directory is treated as `sourcedir` for path-sensitive prediction commands.
+- These are independent; `--config-dir` does not choose a linked workspace source root.
+- When linked-workspace metadata is ambiguous (for example multiple records without a default), path-sensitive prediction commands require explicit `--workspace <dir>` selection.
+
 When discovery returns `undefined`, behavior is consumer-specific:
 
 - Template consumers (`run`, `discuss`, `plan`, `reverify`) fall back to built-in templates.
