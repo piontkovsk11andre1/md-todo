@@ -1,43 +1,62 @@
-`rundown`
+# `rundown`
 
-Future prediction test-driven framework.
-With it you can create art, run a business, do research, and write code.
+> A future-prediction, test-driven framework.
+> Use it to create art, run a business, do research, and write code.
+
+---
 
 ## Prediction
 
-The plan of any work is a prediction of the future. If work is planned correctly, then for distant predictions it doesn't need to be executed — it's enough to ask the AI to imagine that the plan has already been carried out and to plan further based on that.
+The plan of any work is a prediction of the future. If the work is planned correctly, then for distant predictions it doesn't need to be executed — it's enough to ask the AI to imagine that the plan has already been carried out and to plan further from there.
 
-Imagine work like this:
-```
+Imagine work shaped like this:
+
+```text
 A -> B -> C
 ```
 
-We can isolate two tasks that best model real situations where predictions are useful to us.
+From this shape we can isolate two tasks that best model the real situations in which predictions are useful.
 
 ### Planning
 
-In task #1 we know `A` and `C`, but `B` is unknown. At a certain scale, AI will be able to predict `A -> C` across all domains from the training set. But if the complexity of `materialization` is high — there may be many steps, millions of them. There is a limit at which we hit the point where an insufficiently precisely described step (too large a group) can be understood in too many ways. In other words — the chance of successfully predicting lower-level steps drops.
+In **task #1** we know `A` and `C`, but `B` is unknown.
 
-And this is the level at which materialization of the plan happens, where we want to use AI, computers, controllers, robots. At this boundary between planning and direct work (plan / build), predictability matters most: for automation and optimization. This is another level `A1 -> C1` at which we exit prediction only when the AI directly performs `output` or `launch`. At this level we care about cheapness and the ability to group steps into reusable tools.
+At a sufficient scale, AI can predict `A -> C` across all domains present in its training set. But if the *materialization* is complex — potentially millions of steps — we eventually hit a limit: an insufficiently precise step (too large a group) admits too many interpretations. The chance of successfully predicting lower-level steps drops.
 
-When predicting "in depth" we predict in chunks, trying to find the optimal level of step description at which sequential materialization and optimization will be effective.
+And this is the level at which the plan is materialized — where we want to use AI, computers, controllers, robots. At this boundary between **plan** and **build**, predictability matters most: for automation and optimization. It is another level, `A1 -> C1`, which we only leave when the AI directly produces an `output` or triggers a `launch`. Here we care about:
 
-But what if we ask "what is Z?", knowing `A` and the steps? In task #2 we ask the AI to imagine a state that resulted from the sum of the predicted steps, if this is cheaper than `materializing` it (doing the work in the real world and looking at the result, taking a measurement). AI can handle this quite effectively too, which lets us plan further toward `C` fairly clearly.
+- **Cost** — each step should be cheap.
+- **Reusability** — steps should group into reusable tools.
 
-The problem arises when it comes to guaranteeing that we can reach `C` if we follow the plan. To guarantee this, we need a protocol that allows us to verify correspondence between the prediction and something that actually happened in the real world.
+When predicting *in depth*, we predict in chunks, searching for the optimal level of description at which sequential materialization and optimization remain effective.
+
+But what if we ask *"what is C?"*, knowing `A`, `A -> B` and `B -> C`? In **task #2** we ask the AI to imagine the state that results from the sum of the predicted steps — provided this is cheaper than *materializing* it (doing the work in the real world and measuring the result). AI handles this quite effectively, which lets us plan further toward `C` with reasonable clarity.
+
+The problem arises when we need to *guarantee* that `C` is reachable by following the plan. To guarantee this, we need a protocol that verifies correspondence between the prediction and something that actually happened in the real world.
 
 ### Execution
 
-When materializing a prediction in reality, at some point we touch the real world. This moment of contact is very important, because at it the prediction transitions to the level where materialization directly happens. This moment is essentially the "agent" between the prediction and the real world.
+When materializing a prediction, at some point we touch reality. This moment of contact matters: it is where the prediction transitions into the level at which materialization directly occurs. This moment is, in effect, the **agent** between prediction and the real world.
 
-With each touch to the real world, the prediction splits into "before" and "after". We want to control this process, analyze it, collect metrics for analysis, to confirm that the AI is 100% right and we are still materializing the prediction accurately enough. But each action individually is part of a session, a group, which we want to observe separately. For all of this we need non-probabilistic deterministic automation that guarantees each interaction with the real world happened in the right order and at the right time, and that the materialized result matches the predicted one.
+Each touch splits the prediction into *before* and *after*. We want to:
 
-### Rundown
+- **Control** the process.
+- **Analyze** what happened.
+- **Collect metrics** to confirm that the AI is still right and that materialization remains accurate.
 
-This is what rundown exists for.
+But each action is also part of a session — a group we want to observe on its own. For all of this we need **non-probabilistic, deterministic automation** that guarantees each interaction with the real world happened in the correct order, at the correct time, and that the materialized result matches the prediction.
 
-At the lowest level it defines the workload protocol:
-```
+---
+
+## Rundown
+
+This is what `rundown` is for.
+
+### The workload protocol
+
+At the lowest level, `rundown` defines a workload protocol:
+
+```markdown
 Context body.
 
 - [x] Finished task
@@ -45,16 +64,19 @@ Context body.
 - [ ] Another unfinished task
 ```
 
-In which an empty checkbox is interpreted as an instruction.
+An empty checkbox is interpreted as an **instruction**.
 
-This instruction will be wrapped in a loop, in which we can control retries, which lets us work through imperfect execution predictions:
-```
+Each instruction is wrapped in a loop, with configurable retries, so imperfect execution predictions can be worked through:
+
+```text
 execute -> validate -> repair -> validate -> repair -> ... -> resolve -> repair -> stop or reset
 ```
 
-It supports a flexible set of tools that you can extend:
+### Extensible tooling
 
-```
+`rundown` supports a flexible, extensible tool set:
+
+```markdown
 ---
 rundown:
   profiles:
@@ -72,35 +94,47 @@ Context body.
     - [ ] verify: Tests run ok
 ```
 
-And much more.
+…and more.
 
-At the highest level, rundown recommends this structure (it can be renamed):
+### Recommended project structure
 
-```
-design
-migrations
-specs
+At the highest level, `rundown` recommends the following layout (names can be changed):
+
+```text
+design/
+migrations/
+specs/
 ```
 
-For example, with a set of files like this:
-```
-design/rev.0/Target.md               <- Last released revision (`rd docs release`)
+A concrete example:
+
+```text
+design/rev.0/Target.md             # Last released revision (`rd docs release`)
 design/rev.1/Target.md
-design/current/Target.md             <- Current design document
-migrations/1. Initialization.md      <- First migration
-migrations/2. Add Feature.md         <- Adding a feature (changes relative to rev.0)
-migrations/2.1 Snapshot.md           <- Predicted state up to this point
-migrations/2.2 Backlog.md            <- Debt for continuing started migrations
-migrations/2.3 Review.md             <- Comparison of prediction against design
+design/current/Target.md           # Current design document
+
+migrations/1. Initialization.md    # First migration
+migrations/2. Add Feature.md       # Adding a feature (changes relative to rev.0)
+migrations/2.1 Snapshot.md         # Predicted state up to this point
+migrations/2.2 Backlog.md          # Debt for continuing started migrations
+migrations/2.3 Review.md           # Prediction vs. design comparison
+
 specs/feature-tests.md
 specs/end-to-end-tests.md
 specs/ux-tests.md
 ```
 
-These files don't have to live in the same directory where you work on the materialization result — which keeps folders clean.
-You choose which modules to declare where. You can keep the design or the specs in your own directory, and split the other components across separate `rundown` working directories.
+These files don't have to live in the same directory where you work on the materialization result — which keeps working folders clean. You choose which modules live where: keep the design or the specs in your working directory, and split the rest across separate `rundown` directories.
 
-You can work on a document and predict migrations, or create migrations that drift the target. `rundown` will predict the materialized target from the migrations and propose the next migrations. You can run automated tests based on the prediction, which will show how many features have already been predicted, whether scenarios work, whether the document conforms to the format, and much more. Any quality gate.
+### What it does
+
+You can work on a document and predict migrations, or create migrations that drift the target. `rundown` will:
+
+- Predict the materialized target from the migrations.
+- Propose the next migrations.
+- Run automated tests based on the prediction — how many features are already predicted, whether scenarios work, whether the document conforms to the format, and any other **quality gate** you define.
+
+### As a harness
 
 You can use `rundown` as a harness:
 
@@ -111,9 +145,11 @@ rundown with claude
 rundown with pi
 ```
 
-And ask the agent to set everything up and start working. It will answer all your questions.
+Ask the agent to set everything up and start working — it will answer all your questions.
 
-Installation:
+---
+
+## Installation
 
 ```bash
 npm i -g @p10i/rundown

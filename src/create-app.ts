@@ -693,9 +693,15 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     }),
     workspaceUnlinkTask: (ports) => createWorkspaceUnlinkTask({
       output: ports.output,
+      fileSystem: ports.fileSystem,
+      pathOperations: ports.pathOperations,
+      workingDirectory: ports.workingDirectory,
     }),
     workspaceRemoveTask: (ports) => createWorkspaceRemoveTask({
       output: ports.output,
+      fileSystem: ports.fileSystem,
+      pathOperations: ports.pathOperations,
+      workingDirectory: ports.workingDirectory,
     }),
   };
 }
