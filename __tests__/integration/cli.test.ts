@@ -13425,8 +13425,8 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     expect(fs.readFileSync(path.join(configDir, "config.json"), "utf-8")).toBe("{\n  \"custom\": true\n}\n");
     expect(fs.readFileSync(path.join(configDir, "vars.json"), "utf-8")).toBe("{\n  \"name\": \"Ada\"\n}\n");
-    expect(result.errors.map(stripAnsi)).toContain("⚠ .rundown/config.json already exists, skipping.");
-    expect(result.errors.map(stripAnsi)).toContain("⚠ .rundown/vars.json already exists, skipping.");
+    expect(result.errors.map(stripAnsi)).toContain("⚠ Preserved .rundown/config.json (already exists).");
+    expect(result.errors.map(stripAnsi)).toContain("⚠ Preserved .rundown/vars.json (already exists).");
   });
 
   it("init --overwrite-config replaces existing vars.json and config.json", async () => {

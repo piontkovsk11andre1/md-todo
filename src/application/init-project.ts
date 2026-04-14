@@ -114,7 +114,7 @@ export function createInitProject(
       const displayFilePath = `${displayConfigDir}/${name}`;
       const exists = dependencies.fileSystem.exists(filePath);
       if (exists && !options.overwriteConfig) {
-        emit({ kind: "warn", message: `${displayFilePath} already exists, skipping.` });
+        emit({ kind: "warn", message: `Preserved ${displayFilePath} (already exists).` });
         return;
       }
 

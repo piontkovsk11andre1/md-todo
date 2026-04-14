@@ -171,8 +171,8 @@ describe("init-project", () => {
       "/workspace/.rundown/config.json",
       expect.any(String),
     );
-    expect(events.some((event) => event.kind === "warn" && event.message.endsWith("/vars.json already exists, skipping."))).toBe(true);
-    expect(events.some((event) => event.kind === "warn" && event.message.endsWith("/config.json already exists, skipping."))).toBe(true);
+    expect(events.some((event) => event.kind === "warn" && event.message.endsWith("/vars.json (already exists)."))).toBe(true);
+    expect(events.some((event) => event.kind === "warn" && event.message.endsWith("/config.json (already exists)."))).toBe(true);
   });
 
   it("overwrites existing vars.json and config.json when overwriteConfig is enabled", async () => {
