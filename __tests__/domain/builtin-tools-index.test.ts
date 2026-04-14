@@ -82,6 +82,24 @@ describe("builtin tools registry", () => {
     }
   });
 
+  it("keeps verify alias handlers equivalent across verify/confirm/check", () => {
+    const verify = resolveBuiltinTool("verify");
+    const aliasNames = ["confirm", "check"];
+
+    expect(verify?.kind).toBe("handler");
+    expect(verify?.frontmatter).toEqual({
+      skipExecution: true,
+      shouldVerify: true,
+    });
+
+    for (const aliasName of aliasNames) {
+      const alias = resolveBuiltinTool(aliasName);
+      expect(alias?.kind).toBe("handler");
+      expect(alias?.handler).toBe(verify?.handler);
+      expect(alias?.frontmatter).toEqual(verify?.frontmatter);
+    }
+  });
+
   it("maps for/each/foreach as canonical loop handler aliases", () => {
     const loopTool = resolveBuiltinTool("for");
     const aliasNames = ["each", "foreach"];

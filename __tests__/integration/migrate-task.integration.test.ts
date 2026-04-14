@@ -1128,8 +1128,8 @@ describeIfMigrateAvailable("migrate revision-action removals", () => {
   });
 });
 
-describeIfDocsDiffAvailable("docs diff integration", () => {
-  it("uses configured workspace migrations directory for docs commands when --dir is omitted", async () => {
+describeIfDocsDiffAvailable("design revision command integration", () => {
+  it("uses configured workspace migrations directory for design commands when --dir is omitted", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     fs.writeFileSync(
@@ -1152,7 +1152,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     fs.writeFileSync(path.join(workspace, "design-docs", "current", "Target.md"), "# Design\n\nconfigured docs\n", "utf-8");
 
     const result = await runCli([
-      "docs",
+      "design",
       "release",
     ], workspace);
 
@@ -1161,7 +1161,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(fs.existsSync(path.join(workspace, "design", "rev.1", "Target.md"))).toBe(false);
   });
 
-  it("resolves docs release paths against linked workspace roots", async () => {
+  it("resolves design release paths against linked workspace roots", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspace = path.join(sandbox, "source-workspace");
     const linkedInvocationDir = path.join(sandbox, "linked-invocation");
@@ -1181,7 +1181,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     );
 
     const result = await runCli([
-      "docs",
+      "design",
       "release",
       "--dir",
       "migrations",
@@ -1192,7 +1192,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1", "Design.md"))).toBe(false);
   });
 
-  it("supports docs release with explicit --workspace for multi-record workspace links", async () => {
+  it("supports design release with explicit --workspace for multi-record workspace links", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
     const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
@@ -1222,7 +1222,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     );
 
     const result = await runCli([
-      "docs",
+      "design",
       "release",
       "--workspace",
       path.relative(linkedInvocationDir, sourceWorkspaceA),
@@ -1236,7 +1236,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1", "Design.md"))).toBe(false);
   });
 
-  it("fails docs diff with actionable ambiguity guidance when --workspace is omitted", async () => {
+  it("fails design diff with actionable ambiguity guidance when --workspace is omitted", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
     const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
@@ -1267,7 +1267,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     );
 
     const result = await runCli([
-      "docs",
+      "design",
       "diff",
       "preview",
       "--dir",
@@ -1309,7 +1309,30 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("`rundown docs publish` is deprecated; use `rundown docs release`.");
+    expect(combinedOutput).toContain("`rundown docs publish` is deprecated; use `rundown design release`.");
+  });
+
+  it("accepts docs release as deprecated compatibility alias", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Design\n\nalias release\n", "utf-8");
+
+    const result = await runCli([
+      "docs",
+      "release",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("`rundown docs release` is deprecated; use `rundown design release`.");
   });
 
   it("rejects removed docs save alias with actionable guidance", async () => {
@@ -1330,10 +1353,10 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
+    expect(combinedOutput).toContain("`rundown docs save` was removed. Use `rundown design release` (preferred) or `rundown docs publish` (deprecated alias).");
   });
 
-  it("resolves docs diff against linked workspace roots", async () => {
+  it("resolves design diff against linked workspace roots", async () => {
     const sandbox = makeTempWorkspace();
     const sourceWorkspace = path.join(sandbox, "source-workspace");
     const linkedInvocationDir = path.join(sandbox, "linked-invocation");
@@ -1353,7 +1376,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     );
 
     const result = await runCli([
-      "docs",
+      "design",
       "diff",
       "preview",
       "--dir",
@@ -1372,7 +1395,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(combinedOutput).toMatch(/docs[\\/]current/);
   });
 
-  it("docs diff previews revision changes without requiring a worker command", async () => {
+  it("design diff previews revision changes without requiring a worker command", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
     fs.mkdirSync(path.join(workspace, "docs", "rev.1", "notes"), { recursive: true });
@@ -1385,7 +1408,7 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     fs.writeFileSync(path.join(workspace, "docs", "rev.1", "notes", "x.md"), "same\n", "utf-8");
 
     const result = await runCli([
-      "docs",
+      "design",
       "diff",
       "--dir",
       "migrations",
@@ -1406,7 +1429,90 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
     expect(combinedOutput).not.toContain("No worker command available");
   });
 
-  it("docs diff preview includes revision sources plus file-level change summary", async () => {
+  it("design diff preview includes revision sources plus file-level change summary", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "old\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "new\n", "utf-8");
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "preview",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design revision diff preview:");
+    expect(combinedOutput).toContain("Sources:");
+    expect(combinedOutput).toMatch(/docs[\\/]rev\.1/);
+    expect(combinedOutput).toMatch(/docs[\\/]current/);
+    expect(combinedOutput).toContain("Changes:");
+    expect(combinedOutput).toContain("- modified: Design.md");
+  });
+
+  it("design diff bootstraps docs/current from legacy Design.md when needed", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "old\n", "utf-8");
+    fs.rmSync(path.join(workspace, "docs", "current"), { recursive: true, force: true });
+    fs.writeFileSync(path.join(workspace, "Design.md"), "new\n", "utf-8");
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.readFileSync(path.join(workspace, "docs", "current", "Design.md"), "utf-8")).toBe("new\n");
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
+    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+  });
+
+  it("design diff preview fails clearly when docs/current and legacy Design.md are both missing", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProject(workspace);
+    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
+    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "preview",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Design working directory is missing:");
+    expect(combinedOutput).toContain("docs/current");
+  });
+
+  it("accepts docs diff as deprecated compatibility alias", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
     fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
@@ -1429,64 +1535,8 @@ describeIfDocsDiffAvailable("docs diff integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
+    expect(combinedOutput).toContain("`rundown docs diff` is deprecated; use `rundown design diff`.");
     expect(combinedOutput).toContain("Design revision diff preview:");
-    expect(combinedOutput).toContain("Sources:");
-    expect(combinedOutput).toMatch(/docs[\\/]rev\.1/);
-    expect(combinedOutput).toMatch(/docs[\\/]current/);
-    expect(combinedOutput).toContain("Changes:");
-    expect(combinedOutput).toContain("- modified: Design.md");
-  });
-
-  it("docs diff bootstraps docs/current from legacy Design.md when needed", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Design.md"), "old\n", "utf-8");
-    fs.rmSync(path.join(workspace, "docs", "current"), { recursive: true, force: true });
-    fs.writeFileSync(path.join(workspace, "Design.md"), "new\n", "utf-8");
-
-    const result = await runCli([
-      "docs",
-      "diff",
-      "--dir",
-      "migrations",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-    expect(fs.readFileSync(path.join(workspace, "docs", "current", "Design.md"), "utf-8")).toBe("new\n");
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
-    expect(combinedOutput).toContain("Compared rev.1 -> current:");
-  });
-
-  it("docs diff preview fails clearly when docs/current and legacy Design.md are both missing", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProject(workspace);
-    fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
-    fs.rmSync(path.join(workspace, "Design.md"), { force: true });
-
-    const result = await runCli([
-      "docs",
-      "diff",
-      "preview",
-      "--dir",
-      "migrations",
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toContain("Design working directory is missing:");
-    expect(combinedOutput).toContain("docs/current");
   });
 });
 

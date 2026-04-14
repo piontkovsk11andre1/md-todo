@@ -269,6 +269,34 @@ describe("classifyTaskIntent", () => {
     expect(decision.hasEmptyPayload).toBe(true);
   });
 
+  it("classifies empty-payload tool prefixes as tool-expansion when resolver matches", () => {
+    const toolResolver: ToolResolverPort = {
+      resolve: (toolName) => toolName.trim().toLowerCase() === "deploy"
+        ? {
+          name: "deploy",
+          kind: "handler",
+          templatePath: "/workspace/.rundown/tools/deploy.md",
+          template: "{{payload}}",
+        }
+        : undefined,
+      listKnownToolNames: () => ["deploy"],
+    };
+
+    const canonical = classifyTaskIntent("deploy:", toolResolver);
+    expect(canonical.intent).toBe("tool-expansion");
+    expect(canonical.toolName).toBe("deploy");
+    expect(canonical.toolPayload).toBe("");
+    expect(canonical.normalizedTaskText).toBe("");
+    expect(canonical.hasEmptyPayload).toBe(true);
+
+    const spaced = classifyTaskIntent("  Deploy :   ", toolResolver);
+    expect(spaced.intent).toBe("tool-expansion");
+    expect(spaced.toolName).toBe("deploy");
+    expect(spaced.toolPayload).toBe("");
+    expect(spaced.normalizedTaskText).toBe("");
+    expect(spaced.hasEmptyPayload).toBe(true);
+  });
+
   it("falls through to execute-and-verify when tool prefix is unknown", () => {
     const decision = classifyTaskIntent("unknown-tool: payload", noToolResolver);
     expect(decision.intent).toBe("execute-and-verify");

@@ -248,6 +248,17 @@ describe("parsePrefixChain", () => {
     expect(chain.remainingText).toBe("services");
   });
 
+  it.each([",", ";"])("splits profile=<name> modifier from known handler using %s separator", (separator) => {
+    const chain = parsePrefixChain(`profile=fast${separator} verify: run smoke tests`, builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("run smoke tests");
+    expect(chain.remainingText).toBe("run smoke tests");
+  });
+
   it.each([",", ";"])("parses profile/fast composition with %s separator and keeps loop alias canonical", (separator) => {
     const chain = parsePrefixChain(`profile=fast${separator} foreach: services`, builtinToolResolver);
 
@@ -305,6 +316,26 @@ describe("parsePrefixChain", () => {
     expect(chain.handler?.tool.name).toBe("verify");
     expect(chain.handler?.payload).toBe("investigate memory usage; parallel execution can be fast");
     expect(chain.remainingText).toBe("investigate memory usage; parallel execution can be fast");
+  });
+
+  it("preserves payload text containing additional colons after a valid prefix", () => {
+    const chain = parsePrefixChain("verify: keep parser:prefix behavior stable", builtinToolResolver);
+
+    expect(chain.modifiers).toEqual([]);
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("keep parser:prefix behavior stable");
+    expect(chain.remainingText).toBe("keep parser:prefix behavior stable");
+  });
+
+  it("accepts profile=<name> syntax as a valid modifier form", () => {
+    const chain = parsePrefixChain("PrOfIlE = fast, verify: tests pass", builtinToolResolver);
+
+    expect(chain.modifiers).toHaveLength(1);
+    expect(chain.modifiers[0]?.tool.name).toBe("profile");
+    expect(chain.modifiers[0]?.payload).toBe("fast");
+    expect(chain.handler?.tool.name).toBe("verify");
+    expect(chain.handler?.payload).toBe("tests pass");
+    expect(chain.remainingText).toBe("tests pass");
   });
 
   it.each(["for", "each", "foreach"])("keeps verify as terminal handler when %s appears inside verify payload", (alias) => {

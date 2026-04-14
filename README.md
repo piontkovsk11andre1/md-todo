@@ -141,7 +141,7 @@ specs/
 A concrete example:
 
 ```text
-design/rev.0/Target.md             # Last released revision (`rundown docs release`)
+design/rev.0/Target.md             # Last released revision (`rundown design release`)
 design/rev.1/Target.md
 design/current/Target.md           # Current design document
 
@@ -156,7 +156,7 @@ specs/end-to-end-tests.md
 specs/ux-tests.md
 ```
 
-Revision contract for `docs diff` and migration context:
+Revision contract for `design diff` and migration context:
 
 - `rev.0` is the explicit initial baseline revision.
 - The first discovered revision in a repository compares from nothing, even when that first revision is `rev.1`.

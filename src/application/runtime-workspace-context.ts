@@ -3,7 +3,10 @@ import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import type { PathOperationsPort } from "../domain/ports/index.js";
 import {
   DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
+  DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
   type PredictionWorkspaceDirectories,
+  type PredictionWorkspacePaths,
+  type PredictionWorkspacePlacementMap,
 } from "./prediction-workspace-paths.js";
 
 /**
@@ -27,6 +30,9 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspaceDesignDir",
   "workspaceSpecsDir",
   "workspaceMigrationsDir",
+  "workspaceDesignPlacement",
+  "workspaceSpecsPlacement",
+  "workspaceMigrationsPlacement",
   "workspaceDesignPath",
   "workspaceSpecsPath",
   "workspaceMigrationsPath",
@@ -77,20 +83,80 @@ export function resolveRuntimeWorkspaceContext(
  */
 export function buildWorkspaceContextTemplateVars(
   context: RuntimeWorkspaceContext,
-  predictionWorkspaceDirectories: PredictionWorkspaceDirectories = DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
+  predictionWorkspace?: PredictionWorkspaceDirectories | {
+    directories?: PredictionWorkspaceDirectories;
+    placement?: PredictionWorkspacePlacementMap;
+    paths?: PredictionWorkspacePaths;
+  },
 ): ExtraTemplateVars {
+  const normalizedPredictionWorkspace = normalizePredictionWorkspaceTemplateInput(predictionWorkspace);
+  const directories = normalizedPredictionWorkspace.directories ?? DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES;
+  const placement = normalizedPredictionWorkspace.placement ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT;
+  const paths = normalizedPredictionWorkspace.paths ?? {
+    design: path.join(resolvePlacementRoot(context, placement.design), directories.design),
+    specs: path.join(resolvePlacementRoot(context, placement.specs), directories.specs),
+    migrations: path.join(resolvePlacementRoot(context, placement.migrations), directories.migrations),
+  };
+
   return {
     invocationDir: context.invocationDir,
     workspaceDir: context.workspaceDir,
     workspaceLinkPath: context.workspaceLinkPath,
     isLinkedWorkspace: context.isLinkedWorkspace ? "true" : "false",
-    workspaceDesignDir: predictionWorkspaceDirectories.design,
-    workspaceSpecsDir: predictionWorkspaceDirectories.specs,
-    workspaceMigrationsDir: predictionWorkspaceDirectories.migrations,
-    workspaceDesignPath: path.join(context.workspaceDir, predictionWorkspaceDirectories.design),
-    workspaceSpecsPath: path.join(context.workspaceDir, predictionWorkspaceDirectories.specs),
-    workspaceMigrationsPath: path.join(context.workspaceDir, predictionWorkspaceDirectories.migrations),
+    workspaceDesignDir: directories.design,
+    workspaceSpecsDir: directories.specs,
+    workspaceMigrationsDir: directories.migrations,
+    workspaceDesignPlacement: placement.design,
+    workspaceSpecsPlacement: placement.specs,
+    workspaceMigrationsPlacement: placement.migrations,
+    workspaceDesignPath: paths.design,
+    workspaceSpecsPath: paths.specs,
+    workspaceMigrationsPath: paths.migrations,
   };
+}
+
+function resolvePlacementRoot(
+  context: RuntimeWorkspaceContext,
+  placement: PredictionWorkspacePlacementMap[keyof PredictionWorkspacePlacementMap],
+): string {
+  return placement === "workdir" ? context.invocationDir : context.workspaceDir;
+}
+
+function normalizePredictionWorkspaceTemplateInput(
+  input: PredictionWorkspaceDirectories | {
+    directories?: PredictionWorkspaceDirectories;
+    placement?: PredictionWorkspacePlacementMap;
+    paths?: PredictionWorkspacePaths;
+  } | undefined,
+): {
+  directories?: PredictionWorkspaceDirectories;
+  placement?: PredictionWorkspacePlacementMap;
+  paths?: PredictionWorkspacePaths;
+} {
+  if (!input) {
+    return {};
+  }
+
+  if (isPredictionWorkspaceDirectories(input)) {
+    return { directories: input };
+  }
+
+  return input;
+}
+
+function isPredictionWorkspaceDirectories(value: unknown): value is PredictionWorkspaceDirectories {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  if (!("design" in value) || !("specs" in value) || !("migrations" in value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record.design === "string"
+    && typeof record.specs === "string"
+    && typeof record.migrations === "string";
 }
 
 /**

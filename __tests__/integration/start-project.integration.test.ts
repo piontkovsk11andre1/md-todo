@@ -189,12 +189,22 @@ describeIfStartAvailable("start-project integration", () => {
           specs?: string;
           migrations?: string;
         };
+        placement?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
       };
     };
     expect(defaultConfig.workspace?.directories).toEqual({
       design: "design",
       specs: "specs",
       migrations: "migrations",
+    });
+    expect(defaultConfig.workspace?.placement).toEqual({
+      design: "sourcedir",
+      specs: "sourcedir",
+      migrations: "sourcedir",
     });
   });
 
@@ -251,12 +261,22 @@ describeIfStartAvailable("start-project integration", () => {
           specs?: string;
           migrations?: string;
         };
+        placement?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
       };
     };
     expect(config.workspace?.directories).toEqual({
       design: "design",
       specs: "specs",
       migrations: "migrations",
+    });
+    expect(config.workspace?.placement).toEqual({
+      design: "sourcedir",
+      specs: "sourcedir",
+      migrations: "sourcedir",
     });
   });
 
@@ -274,6 +294,22 @@ describeIfStartAvailable("start-project integration", () => {
     const stderr = [...result.errors, ...result.stderrWrites].join("\n");
     expect(stderr).toContain("Invalid --design-dir value");
     expect(stderr).toContain("relative to the project root");
+  });
+
+  it("fails when --design-placement is invalid", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Invalid placement",
+      "--design-placement",
+      "source",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --design-placement value");
+    expect(stderr).toContain("Allowed values: sourcedir, workdir");
   });
 
   it("fails when override escapes project root", async () => {
@@ -371,6 +407,48 @@ describeIfStartAvailable("start-project integration", () => {
       design: "docs/design",
       specs: "quality/specs",
       migrations: "changesets",
+    });
+  });
+
+  it("persists explicit workspace placement mapping in .rundown/config.json", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "custom-placement");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Custom placement layout",
+      "--dir",
+      "custom-placement",
+      "--design-placement",
+      "workdir",
+      "--specs-placement",
+      "sourcedir",
+      "--migrations-placement",
+      "workdir",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        placement?: {
+          design?: string;
+          specs?: string;
+          migrations?: string;
+        };
+      };
+    };
+
+    expect(config.workspace?.placement).toEqual({
+      design: "workdir",
+      specs: "sourcedir",
+      migrations: "workdir",
     });
   });
 

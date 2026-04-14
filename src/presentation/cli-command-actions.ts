@@ -275,7 +275,7 @@ interface MigrateCommandOptions {
   runId?: string;
 }
 
-interface DocsCommandOptions {
+interface DesignCommandOptions {
   action?: "release" | "diff";
   dir?: string;
   workspace?: string;
@@ -283,7 +283,7 @@ interface DocsCommandOptions {
   target?: "current" | "preview";
 }
 
-type DocsCommandHandler = (options: DocsCommandOptions) => CliActionResult;
+type DesignCommandHandler = (options: DesignCommandOptions) => CliActionResult;
 
 type MigrateCommandHandler = (options: MigrateCommandOptions) => CliActionResult;
 
@@ -1105,8 +1105,11 @@ export function createStartCommandAction({
       description,
       dir: normalizeOptionalString(opts.dir),
       designDir: normalizeOptionalString(opts.designDir),
+      designPlacement: normalizeOptionalString(opts.designPlacement),
       specsDir: normalizeOptionalString(opts.specsDir),
+      specsPlacement: normalizeOptionalString(opts.specsPlacement),
       migrationsDir: normalizeOptionalString(opts.migrationsDir),
+      migrationsPlacement: normalizeOptionalString(opts.migrationsPlacement),
     });
   };
 }
@@ -1160,21 +1163,38 @@ export function createMigrateCommandAction({
 }
 
 /**
- * Creates the `docs release` command action handler.
+ * Creates the `design release` command action handler.
  *
  * The returned action reuses the revision snapshot flow currently implemented by
- * the migrate use case and forwards docs-specific options.
+ * the design revision use case and forwards release-specific options.
  */
-export function createDocsReleaseCommandAction({
+export function createDesignReleaseCommandAction({
   getApp,
 }: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
-    return resolveDocsCommandHandler(getApp())({
+    return resolveDesignCommandHandler(getApp())({
       action: "release",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       label: normalizeOptionalString(opts.label),
     });
+  };
+}
+
+/**
+ * Creates the deprecated `docs release` compatibility command action handler.
+ */
+export function createDocsReleaseCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    const app = getApp();
+    app.emitOutput?.({
+      kind: "warn",
+      message: "`rundown docs release` is deprecated; use `rundown design release`.",
+    });
+
+    return createDesignReleaseCommandAction({ getApp: () => app })(opts);
   };
 }
 
@@ -1188,15 +1208,10 @@ export function createDocsPublishCommandAction({
     const app = getApp();
     app.emitOutput?.({
       kind: "warn",
-      message: "`rundown docs publish` is deprecated; use `rundown docs release`.",
+      message: "`rundown docs publish` is deprecated; use `rundown design release`.",
     });
 
-    return resolveDocsCommandHandler(app)({
-      action: "release",
-      dir: normalizeOptionalString(opts.dir),
-      workspace: normalizeOptionalString(opts.workspace),
-      label: normalizeOptionalString(opts.label),
-    });
+    return createDesignReleaseCommandAction({ getApp: () => app })(opts);
   };
 }
 
@@ -1205,17 +1220,17 @@ export function createDocsPublishCommandAction({
  */
 export function createDocsSaveCommandAction(): () => CliActionResult {
   return () => {
-    throw new Error("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
+    throw new Error("`rundown docs save` was removed. Use `rundown design release` (preferred) or `rundown docs publish` (deprecated alias).");
   };
 }
 
 /**
- * Creates the `docs diff` command action handler.
+ * Creates the `design diff` command action handler.
  *
- * The returned action maps docs diff selectors and shorthand target form to the
+ * The returned action maps design diff selectors and shorthand target form to the
  * current revision diff behavior while preserving deterministic defaults.
  */
-export function createDocsDiffCommandAction({
+export function createDesignDiffCommandAction({
   getApp,
 }: Pick<WorkerActionDependencies, "getApp">): (target: string | undefined, opts: CliOpts) => CliActionResult {
   return (target: string | undefined, opts: CliOpts) => {
@@ -1225,12 +1240,29 @@ export function createDocsDiffCommandAction({
       to: normalizeOptionalString(opts.to),
     });
 
-    return resolveDocsCommandHandler(getApp())({
+    return resolveDesignCommandHandler(getApp())({
       action: "diff",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       target: resolvedDiffMode,
     });
+  };
+}
+
+/**
+ * Creates the deprecated `docs diff` compatibility command action handler.
+ */
+export function createDocsDiffCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (target: string | undefined, opts: CliOpts) => CliActionResult {
+  return (target: string | undefined, opts: CliOpts) => {
+    const app = getApp();
+    app.emitOutput?.({
+      kind: "warn",
+      message: "`rundown docs diff` is deprecated; use `rundown design diff`.",
+    });
+
+    return createDesignDiffCommandAction({ getApp: () => app })(target, opts);
   };
 }
 
@@ -2079,18 +2111,23 @@ function resolveMigrateCommandHandler(appInstance: CliApp): MigrateCommandHandle
 }
 
 /**
- * Resolves the active docs command implementation for the current app build.
+ * Resolves the active design command implementation for the current app build.
  */
-function resolveDocsCommandHandler(appInstance: CliApp): DocsCommandHandler {
-  const maybeDocsHandler = appInstance as CliApp & {
-    docsTask?: DocsCommandHandler;
+function resolveDesignCommandHandler(appInstance: CliApp): DesignCommandHandler {
+  const maybeDesignHandler = appInstance as CliApp & {
+    designTask?: DesignCommandHandler;
+    docsTask?: DesignCommandHandler;
   };
 
-  if (typeof maybeDocsHandler.docsTask === "function") {
-    return maybeDocsHandler.docsTask;
+  if (typeof maybeDesignHandler.designTask === "function") {
+    return maybeDesignHandler.designTask;
   }
 
-  throw new Error("The `docs` command is not available in this build.");
+  if (typeof maybeDesignHandler.docsTask === "function") {
+    return maybeDesignHandler.docsTask;
+  }
+
+  throw new Error("The `design` command is not available in this build.");
 }
 
 /**
@@ -2159,7 +2196,7 @@ function resolveDocsDiffMigrateAction(target: string | undefined): "current" | "
     return "preview";
   }
 
-  throw new Error("Invalid docs diff target: " + target + ". Allowed: current, preview.");
+  throw new Error("Invalid design diff target: " + target + ". Allowed: current, preview.");
 }
 
 function resolveDocsDiffMode(input: {
@@ -2175,11 +2212,11 @@ function resolveDocsDiffMode(input: {
   }
 
   if (target !== undefined) {
-    throw new Error("Invalid docs diff selector usage: [target] shorthand cannot be combined with --from/--to.");
+    throw new Error("Invalid design diff selector usage: [target] shorthand cannot be combined with --from/--to.");
   }
 
   if (from === undefined || to === undefined) {
-    throw new Error("Invalid docs diff selector usage: --from and --to must be provided together.");
+    throw new Error("Invalid design diff selector usage: --from and --to must be provided together.");
   }
 
   parseDocsDiffRevisionSelector(from, "from");
@@ -2187,9 +2224,9 @@ function resolveDocsDiffMode(input: {
 
   if (toSelector !== "current") {
     throw new Error(
-      "Unsupported docs diff selector combination in this build: --to "
+      "Unsupported design diff selector combination in this build: --to "
       + to
-      + ". Use --to current, or use shorthand `rundown docs diff [current|preview]`.",
+      + ". Use --to current, or use shorthand `rundown design diff [current|preview]`.",
     );
   }
 
@@ -2205,7 +2242,7 @@ function parseDocsDiffRevisionSelector(value: string, optionName: "from" | "to")
   const revisionMatch = /^rev\.([0-9]+)$/i.exec(normalized);
   if (!revisionMatch) {
     throw new Error(
-      "Invalid docs diff --"
+      "Invalid design diff --"
       + optionName
       + " selector: "
       + value

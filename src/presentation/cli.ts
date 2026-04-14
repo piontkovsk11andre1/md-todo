@@ -37,9 +37,11 @@ import {
   createLoopCommandAction,
   createDiscussCommandAction,
   createDoCommandAction,
+  createDesignDiffCommandAction,
+  createDesignReleaseCommandAction,
   createDocsDiffCommandAction,
-  createDocsReleaseCommandAction,
   createDocsPublishCommandAction,
+  createDocsReleaseCommandAction,
   createDocsSaveCommandAction,
   createExploreCommandAction,
   createHelpCommandAction,
@@ -307,8 +309,11 @@ program
   .argument("<description>", "Seed description for design/current/Target.md")
   .option("--dir <path>", "Target project directory (default: current working directory)")
   .option("--design-dir <path>", "Design workspace directory (default: design)", "design")
+  .option("--design-placement <mode>", "Design placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--specs-dir <path>", "Specs workspace directory (default: specs)", "specs")
+  .option("--specs-placement <mode>", "Specs placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)", "migrations")
+  .option("--migrations-placement <mode>", "Migrations placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
@@ -342,6 +347,7 @@ program
       "",
       "Examples:",
       "  - rundown start \"Ship auth flow\" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
+      "  - rundown start \"Ship auth flow\" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run",
       "  - rundown start \"Ship auth flow\" --dir ./predict-auth --design-dir docs --specs-dir checks --migrations-dir changes -- opencode run",
     ].join("\n"),
   );
@@ -383,14 +389,65 @@ migrateCommand.addHelpText(
   ].join("\n"),
 );
 
+const designCommand = program
+  .command("design")
+  .description("Manage design revision lifecycle (release and diff).")
+  .configureHelp({ showGlobalOptions: true })
+  .addHelpText(
+    "after",
+    [
+      "",
+      "Examples:",
+      "  - rundown design release --label \"Initial baseline\"",
+      "  - rundown design release --workspace ../source-workspace --label \"Initial baseline\"",
+      "  - rundown design diff",
+      "  - rundown design diff preview",
+      "  - rundown design diff --workspace ../source-workspace",
+    ].join("\n"),
+  );
+
+designCommand
+  .command("release")
+  .description("Release design/current/ into the next immutable design/rev.N/ snapshot.")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--label <text>", "Optional label to store in revision metadata")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDesignReleaseCommandAction({
+    getApp,
+  })));
+
+designCommand
+  .command("diff")
+  .description("Show revision diff summary for design/current/ against the latest revision.")
+  .argument("[target]", "Diff target shorthand: current (default) | preview")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--from <rev|current>", "Explicit source revision selector (use with --to)")
+  .option("--to <rev|current>", "Explicit destination revision selector (use with --from)")
+  .allowUnknownOption(false)
+  .action(withCliAction(createDesignDiffCommandAction({
+    getApp,
+  })))
+  .addHelpText(
+    "after",
+    [
+      "",
+      "Examples:",
+      "  - rundown design diff",
+      "  - rundown design diff preview",
+      "  - rundown design diff --workspace ../source-workspace",
+    ].join("\n"),
+  );
+
 const docsCommand = program
   .command("docs")
-  .description("Manage design revision lifecycle (release and diff).")
+  .description("Deprecated alias for `design` revision commands.")
   .configureHelp({ showGlobalOptions: true });
 
 docsCommand
   .command("release")
-  .description("Release design/current/ into the next immutable design/rev.N/ snapshot.")
+  .description("Deprecated alias for `design release`; use `rundown design release`.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--label <text>", "Optional label to store in revision metadata")
@@ -401,7 +458,7 @@ docsCommand
 
 docsCommand
   .command("publish")
-  .description("Deprecated alias for `docs release`; use `rundown docs release`.")
+  .description("Deprecated alias for `design release`; use `rundown design release`.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--label <text>", "Optional label to store in revision metadata")
@@ -412,7 +469,7 @@ docsCommand
 
 docsCommand
   .command("save")
-  .description("Removed alias. Use `rundown docs release`.")
+  .description("Removed alias. Use `rundown design release`.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--label <text>", "Ignored for removed command; kept for compatibility with old scripts")
@@ -421,7 +478,7 @@ docsCommand
 
 docsCommand
   .command("diff")
-  .description("Show revision diff summary for design/current/ against the latest revision.")
+  .description("Deprecated alias for `design diff`; use `rundown design diff`.")
   .argument("[target]", "Diff target shorthand: current (default) | preview")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
@@ -430,20 +487,7 @@ docsCommand
   .allowUnknownOption(false)
   .action(withCliAction(createDocsDiffCommandAction({
     getApp,
-  })))
-  .addHelpText(
-    "after",
-    [
-      "",
-      "Examples:",
-      "  - rundown docs diff",
-      "  - rundown docs diff preview",
-      "  - rundown docs diff --workspace ../source-workspace",
-      "  - rundown docs release --label \"Initial baseline\"",
-      "  - rundown docs release --workspace ../source-workspace --label \"Initial baseline\"",
-      "  - rundown docs publish --label \"Initial baseline\"  # deprecated; prefer docs release",
-    ].join("\n"),
-  );
+  })));
 
 program
   .command("test")

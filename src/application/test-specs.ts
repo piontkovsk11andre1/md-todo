@@ -22,6 +22,7 @@ import { resolveEffectiveWorkspaceRoot } from "../domain/workspace-link.js";
 import {
   resolvePredictionWorkspaceDirectories,
   resolvePredictionWorkspacePath,
+  resolvePredictionWorkspacePlacement,
 } from "./prediction-workspace-paths.js";
 
 interface TestRunResult {
@@ -68,12 +69,18 @@ export function createTestSpecs(
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
     const specsDir = resolvePredictionWorkspacePath({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
+      invocationRoot: invocationDir,
       bucket: "specs",
       overrideDir: options.dir,
       directories: workspaceDirectories,
+      placement: workspacePlacement,
     });
 
     if (options.action === "new") {
@@ -99,6 +106,7 @@ export function createTestSpecs(
 
       return runSpecFiles([createdSpecPath], {
         cwd: workspaceRoot,
+        invocationRoot: invocationDir,
         workerPattern: options.workerPattern,
         showAgentOutput: options.showAgentOutput,
       });
@@ -125,6 +133,7 @@ export function createTestSpecs(
 
     return runSpecFiles(specFiles, {
       cwd: workspaceRoot,
+      invocationRoot: invocationDir,
       workerPattern: options.workerPattern,
       showAgentOutput: options.showAgentOutput,
     });
@@ -134,15 +143,16 @@ export function createTestSpecs(
     specFiles: readonly string[],
     options: {
       cwd: string;
+      invocationRoot: string;
       workerPattern: ParsedWorkerPattern;
       showAgentOutput?: boolean;
     },
   ): Promise<number> {
-    const { cwd, workerPattern, showAgentOutput } = options;
+    const { cwd, invocationRoot, workerPattern, showAgentOutput } = options;
 
     const templatePath = path.join(cwd, ".rundown", "test-verify.md");
     const verifyTemplate = dependencies.templateLoader.load(templatePath) ?? DEFAULT_TEST_VERIFY_TEMPLATE;
-    const testContext = buildTestContext(dependencies.fileSystem, cwd);
+    const testContext = buildTestContext(dependencies.fileSystem, cwd, invocationRoot);
     if (testContext.lowContextGuidance.length > 0) {
       emit({ kind: "warn", message: testContext.lowContextGuidance });
     }
@@ -276,22 +286,28 @@ function stripBackticks(value: string): string {
     : value;
 }
 
-function buildTestContext(fileSystem: FileSystem, projectRoot: string): TestContext {
+function buildTestContext(fileSystem: FileSystem, projectRoot: string, invocationRoot: string): TestContext {
   const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+    fileSystem,
+    workspaceRoot: projectRoot,
+  });
+  const workspacePlacement = resolvePredictionWorkspacePlacement({
     fileSystem,
     workspaceRoot: projectRoot,
   });
   const migrationsDir = resolvePredictionWorkspacePath({
     fileSystem,
     workspaceRoot: projectRoot,
+    invocationRoot,
     bucket: "migrations",
     directories: workspaceDirectories,
+    placement: workspacePlacement,
   });
 
   const state = readMigrationState(fileSystem, migrationsDir);
   const latestSnapshot = getLatestSatellitePath(state, "snapshot");
-  const designContext = resolveDesignContext(fileSystem, projectRoot);
-  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot);
+  const designContext = resolveDesignContext(fileSystem, projectRoot, { invocationRoot });
+  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
   const designContextSourceReferences = designContextSources.sourceReferences
     .map((sourcePath) => "- " + sourcePath)
     .join("\n");

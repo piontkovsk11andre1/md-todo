@@ -9,6 +9,8 @@ import {
 import {
   resolvePredictionWorkspaceDirectories,
   resolvePredictionWorkspacePath,
+  resolvePredictionWorkspacePlacement,
+  resolvePredictionWorkspacePaths,
 } from "./prediction-workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
 
@@ -40,7 +42,7 @@ export function createDocsRevisionTask(
   return async function docsRevisionTask(options: DocsRevisionTaskOptions): Promise<number> {
     const action = options.action ?? "release";
     if (action !== "release" && action !== "diff") {
-      throw new Error("Invalid docs action: " + action + ". Allowed: release, diff.");
+      throw new Error("Invalid design action: " + action + ". Allowed: release, diff.");
     }
 
     const invocationDir = process.cwd();
@@ -55,16 +57,30 @@ export function createDocsRevisionTask(
     }
 
     const workspaceRoot = workspaceSelection.workspaceRoot;
+    const executionContext = workspaceSelection.executionContext;
     const workspaceDirectories = resolvePredictionWorkspaceDirectories({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
+    const workspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      invocationRoot: executionContext.invocationDir,
+      directories: workspaceDirectories,
+      placement: workspacePlacement,
+    });
     const migrationsDir = resolvePredictionWorkspacePath({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
+      invocationRoot: executionContext.invocationDir,
       bucket: "migrations",
       overrideDir: options.dir,
       directories: workspaceDirectories,
+      placement: workspacePlacement,
     });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
@@ -76,6 +92,7 @@ export function createDocsRevisionTask(
     const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
       dependencies.fileSystem,
       projectRoot,
+      workspacePaths.design,
       workspaceDirectories.design,
       emit,
     );
@@ -87,12 +104,13 @@ export function createDocsRevisionTask(
     if (action === "diff") {
       const target = options.target ?? "current";
       if (target !== "current" && target !== "preview") {
-        throw new Error("Invalid docs diff target: " + target + ". Allowed: current, preview.");
+        throw new Error("Invalid design diff target: " + target + ". Allowed: current, preview.");
       }
 
       emitDesignRevisionDiffPreview({
         fileSystem: dependencies.fileSystem,
-        projectRoot,
+        workspaceRoot: projectRoot,
+        invocationRoot: executionContext.invocationDir,
         emit,
         includeSourceReferences: target === "preview",
       });
@@ -102,6 +120,7 @@ export function createDocsRevisionTask(
     let saveResult;
     try {
       saveResult = saveDesignRevisionSnapshot(dependencies.fileSystem, projectRoot, {
+        invocationRoot: executionContext.invocationDir,
         label: options.label,
       });
     } catch (error) {
@@ -161,12 +180,16 @@ export function createDocsRevisionTask(
 
 function emitDesignRevisionDiffPreview(input: {
   fileSystem: FileSystem;
-  projectRoot: string;
+  workspaceRoot: string;
+  invocationRoot: string;
   emit: ApplicationOutputPort["emit"];
   includeSourceReferences: boolean;
 }): void {
-  const { fileSystem, projectRoot, emit, includeSourceReferences } = input;
-  const diff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, { target: "current" });
+  const { fileSystem, workspaceRoot, invocationRoot, emit, includeSourceReferences } = input;
+  const diff = prepareDesignRevisionDiffContext(fileSystem, workspaceRoot, {
+    invocationRoot,
+    target: "current",
+  });
 
   emit({
     kind: "info",
@@ -194,22 +217,23 @@ function emitDesignRevisionDiffPreview(input: {
 
 function ensureManagedDesignWorkspaceForRevisionCommands(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
+  designWorkspacePath: string,
   designWorkspaceDir: string,
   emit: ApplicationOutputPort["emit"],
 ): { ok: true } | { ok: false; message: string } {
-  const canonicalCurrentDir = path.join(projectRoot, designWorkspaceDir, "current");
+  const canonicalCurrentDir = path.join(designWorkspacePath, "current");
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     return { ok: true };
   }
 
-  const legacyCurrentDir = path.join(projectRoot, LEGACY_WORKSPACE_DIR, "current");
+  const legacyCurrentDir = path.join(workspaceRoot, LEGACY_WORKSPACE_DIR, "current");
   if (isDirectory(fileSystem, legacyCurrentDir)) {
     return { ok: true };
   }
 
-  const canonicalRootDir = path.join(projectRoot, designWorkspaceDir);
-  const legacyRootDir = path.join(projectRoot, LEGACY_WORKSPACE_DIR);
+  const canonicalRootDir = designWorkspacePath;
+  const legacyRootDir = path.join(workspaceRoot, LEGACY_WORKSPACE_DIR);
   const bootstrapTarget = isDirectory(fileSystem, canonicalRootDir)
     ? {
       currentDir: canonicalCurrentDir,
@@ -228,7 +252,7 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
         label: designWorkspaceDir + "/current/" + CANONICAL_PRIMARY_FILE,
       };
 
-  const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
+  const legacyDesignPath = path.join(workspaceRoot, LEGACY_PRIMARY_FILE);
   if (isFile(fileSystem, legacyDesignPath)) {
     fileSystem.mkdir(bootstrapTarget.currentDir, { recursive: true });
     const bootstrappedDesignPath = path.join(bootstrapTarget.currentDir, bootstrapTarget.primaryFile);

@@ -396,35 +396,35 @@ What happens:
 
 ## 20. Release docs revisions and diff before migration
 
-Use `rundown docs` when you want to manage design-document revisions directly.
+Use `rundown design` when you want to manage design-document revisions directly.
 
 ```bash
 # Release design/current into the next immutable design/rev.N snapshot
-rundown docs release --dir ./migrations
+rundown design release --dir ./migrations
 
 # Add optional label metadata to the released revision
-rundown docs release --dir ./migrations --label "Auth v2 baseline"
+rundown design release --dir ./migrations --label "Auth v2 baseline"
 
 # When linked workspace selection is ambiguous, choose explicitly
-rundown docs release --dir ./migrations --workspace ../source-workspace --label "Auth v2 baseline"
+rundown design release --dir ./migrations --workspace ../source-workspace --label "Auth v2 baseline"
 
 # Shorthand diff against current draft
-rundown docs diff --dir ./migrations
+rundown design diff --dir ./migrations
 
 # Preview diff with revision source references
-rundown docs diff preview --dir ./migrations
+rundown design diff preview --dir ./migrations
 
 # Explicit selector form
-rundown docs diff --dir ./migrations --from rev.3 --to current
+rundown design diff --dir ./migrations --from rev.3 --to current
 ```
 
 What happens:
 
-1. `docs release` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
+1. `design release` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
 2. `rev.0` is the explicit baseline snapshot when present; if no lower revision exists for a selected target (including `rev.1` as first discovered revision), diff semantics are `nothing -> target`.
 3. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable as compatibility fallback sources.
 4. If there is no byte-level change from the latest revision, release is a no-op.
-5. `docs diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
+5. `design diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
 6. Diff output is deterministic and suitable for both human review and migration context.
 
 ## 21. Generate migrations after docs revision work
@@ -448,6 +448,6 @@ rundown migrate up --dir ./migrations -- opencode run
 rundown migrate down 1 --dir ./migrations -- opencode run
 ```
 
-`migrate` intentionally excludes docs-revision actions; use `rundown docs release` and `rundown docs diff` for revision lifecycle work.
+`migrate` intentionally excludes design-revision actions; use `rundown design release` and `rundown design diff` for revision lifecycle work.
 
-If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), `migrate`/`docs` commands fail with candidate guidance and require `--workspace <dir>`.
+If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), `migrate`/`design` commands fail with candidate guidance and require `--workspace <dir>`.

@@ -32,6 +32,8 @@ import {
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import {
   resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePaths,
+  resolvePredictionWorkspacePlacement,
 } from "./prediction-workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
@@ -230,9 +232,24 @@ export function createPlanTask(
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+    });
+    const workspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+      directories: workspaceDirectories,
+      placement: workspacePlacement,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
-      workspaceDirectories,
+      {
+        directories: workspaceDirectories,
+        placement: workspacePlacement,
+        paths: workspacePaths,
+      },
     );
     const cliExecutionOptions = cliBlockTimeoutMs === undefined
       ? undefined

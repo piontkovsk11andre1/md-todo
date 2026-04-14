@@ -24,6 +24,8 @@ import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import {
   resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePaths,
+  resolvePredictionWorkspacePlacement,
 } from "./prediction-workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
@@ -154,13 +156,32 @@ export function createResearchTask(
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+    });
+    const workspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+      directories: workspaceDirectories,
+      placement: workspacePlacement,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
-      workspaceDirectories,
+      {
+        directories: workspaceDirectories,
+        placement: workspacePlacement,
+        paths: workspacePaths,
+      },
     );
     const projectRoot = runtimeWorkspaceContext.workspaceDir;
-    const designContext = resolveDesignContext(dependencies.fileSystem, projectRoot);
-    const designContextSources = resolveDesignContextSourceReferences(dependencies.fileSystem, projectRoot);
+    const designContext = resolveDesignContext(dependencies.fileSystem, projectRoot, {
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
+    const designContextSources = resolveDesignContextSourceReferences(dependencies.fileSystem, projectRoot, {
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const designContextSourceReferences = designContextSources.sourceReferences
       .map((sourcePath) => "- " + sourcePath)
       .join("\n");

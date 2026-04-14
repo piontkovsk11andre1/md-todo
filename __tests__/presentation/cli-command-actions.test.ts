@@ -7,6 +7,8 @@ import {
 } from "../../src/domain/exit-codes.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.js";
 import {
+  createDesignDiffCommandAction,
+  createDesignReleaseCommandAction,
   createDocsDiffCommandAction,
   createDocsPublishCommandAction,
   createDocsReleaseCommandAction,
@@ -607,10 +609,37 @@ describe("createMigrateCommandAction", () => {
   });
 });
 
-describe("createDocsReleaseCommandAction", () => {
-  it("routes docs release to docsTask release action", async () => {
+describe("createDesignReleaseCommandAction", () => {
+  it("routes design release to docsTask release action", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
+    const action = createDesignReleaseCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(docsTask).toHaveBeenCalledTimes(1);
+    expect(docsTask).toHaveBeenCalledWith({
+      action: "release",
+      dir: "migrations",
+      workspace: "../workspace-source",
+      label: "Initial baseline",
+    });
+  });
+});
+
+describe("createDocsReleaseCommandAction", () => {
+  it("routes docs release to docsTask release action with deprecation warning", async () => {
+    const docsTask = vi.fn(async () => 0);
+    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
+    const app = { docsTask, emitOutput } as unknown as CliApp;
     const action = createDocsReleaseCommandAction({
       getApp: () => app,
     });
@@ -623,6 +652,10 @@ describe("createDocsReleaseCommandAction", () => {
     });
 
     expect(exitCode).toBe(0);
+    expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "warn",
+      message: "`rundown docs release` is deprecated; use `rundown design release`.",
+    }));
     expect(docsTask).toHaveBeenCalledTimes(1);
     expect(docsTask).toHaveBeenCalledWith({
       action: "release",
@@ -653,7 +686,7 @@ describe("createDocsPublishCommandAction", () => {
     expect(docsTask).toHaveBeenCalledTimes(1);
     expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
       kind: "warn",
-      message: "`rundown docs publish` is deprecated; use `rundown docs release`.",
+      message: "`rundown docs publish` is deprecated; use `rundown design release`.",
     }));
     expect(docsTask).toHaveBeenCalledWith({
       action: "release",
@@ -667,15 +700,15 @@ describe("createDocsPublishCommandAction", () => {
 describe("createDocsSaveCommandAction", () => {
   it("throws actionable guidance for removed docs save alias", () => {
     const action = createDocsSaveCommandAction();
-    expect(() => action()).toThrow("`rundown docs save` was removed. Use `rundown docs release` (preferred) or `rundown docs publish` (deprecated alias).");
+    expect(() => action()).toThrow("`rundown docs save` was removed. Use `rundown design release` (preferred) or `rundown docs publish` (deprecated alias).");
   });
 });
 
-describe("createDocsDiffCommandAction", () => {
-  it("routes shorthand defaults and preview target to docs diff action", async () => {
+describe("createDesignDiffCommandAction", () => {
+  it("routes shorthand defaults and preview target to design diff action", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
-    const action = createDocsDiffCommandAction({
+    const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
 
@@ -707,7 +740,7 @@ describe("createDocsDiffCommandAction", () => {
   it("accepts explicit --from/--to selectors with deterministic current target", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
-    const action = createDocsDiffCommandAction({
+    const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
 
@@ -728,7 +761,7 @@ describe("createDocsDiffCommandAction", () => {
   it("rejects invalid selector combinations and values", async () => {
     const docsTask = vi.fn(async () => 0);
     const app = { docsTask } as unknown as CliApp;
-    const action = createDocsDiffCommandAction({
+    const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
 
@@ -744,12 +777,40 @@ describe("createDocsDiffCommandAction", () => {
     expect(() => action(undefined, {
       from: "release-1",
       to: "current",
-    })).toThrow("Invalid docs diff --from selector");
+    })).toThrow("Invalid design diff --from selector");
 
     expect(() => action(undefined, {
       from: "rev.1",
       to: "rev.2",
-    })).toThrow("Unsupported docs diff selector combination");
+    })).toThrow("Unsupported design diff selector combination");
+  });
+});
+
+describe("createDocsDiffCommandAction", () => {
+  it("routes docs diff to docsTask diff action with deprecation warning", async () => {
+    const docsTask = vi.fn(async () => 0);
+    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
+    const app = { docsTask, emitOutput } as unknown as CliApp;
+    const action = createDocsDiffCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action("preview", {
+      dir: "migrations",
+      workspace: "../workspace-source",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "warn",
+      message: "`rundown docs diff` is deprecated; use `rundown design diff`.",
+    }));
+    expect(docsTask).toHaveBeenCalledWith(expect.objectContaining({
+      action: "diff",
+      target: "preview",
+      dir: "migrations",
+      workspace: "../workspace-source",
+    }));
   });
 });
 
@@ -764,8 +825,11 @@ describe("createStartCommandAction", () => {
     const exitCode = await action("Ship auth flow", {
       dir: "./predict-auth",
       designDir: "design-docs",
+      designPlacement: "workdir",
       specsDir: "assertions",
+      specsPlacement: "sourcedir",
       migrationsDir: "changes",
+      migrationsPlacement: "workdir",
     });
 
     expect(exitCode).toBe(0);
@@ -774,8 +838,11 @@ describe("createStartCommandAction", () => {
       description: "Ship auth flow",
       dir: "./predict-auth",
       designDir: "design-docs",
+      designPlacement: "workdir",
       specsDir: "assertions",
+      specsPlacement: "sourcedir",
       migrationsDir: "changes",
+      migrationsPlacement: "workdir",
     });
   });
 });

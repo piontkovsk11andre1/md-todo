@@ -125,6 +125,9 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: path.join("/workspace/invocation", "design"),
       workspaceSpecsPath: path.join("/workspace/invocation", "specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "migrations"),
@@ -152,9 +155,91 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "docs/design",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: path.join("/workspace/source", "docs/design"),
       workspaceSpecsPath: path.join("/workspace/source", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/source", "changesets"),
+    });
+  });
+
+  it("emits configured placement and explicit bucket paths", () => {
+    expect(buildWorkspaceContextTemplateVars(
+      {
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/source",
+        workspaceLinkPath: "/workspace/invocation/.rundown/workspace.link",
+        isLinkedWorkspace: true,
+      },
+      {
+        directories: {
+          design: "design-docs",
+          specs: "quality/specs",
+          migrations: "changesets",
+        },
+        placement: {
+          design: "sourcedir",
+          specs: "workdir",
+          migrations: "workdir",
+        },
+        paths: {
+          design: "/workspace/source/design-docs",
+          specs: "/workspace/invocation/quality/specs",
+          migrations: "/workspace/invocation/changesets",
+        },
+      },
+    )).toEqual({
+      invocationDir: "/workspace/invocation",
+      workspaceDir: "/workspace/source",
+      workspaceLinkPath: "/workspace/invocation/.rundown/workspace.link",
+      isLinkedWorkspace: "true",
+      workspaceDesignDir: "design-docs",
+      workspaceSpecsDir: "quality/specs",
+      workspaceMigrationsDir: "changesets",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "workdir",
+      workspaceMigrationsPlacement: "workdir",
+      workspaceDesignPath: "/workspace/source/design-docs",
+      workspaceSpecsPath: "/workspace/invocation/quality/specs",
+      workspaceMigrationsPath: "/workspace/invocation/changesets",
+    });
+  });
+
+  it("derives fallback bucket paths from placement roots", () => {
+    expect(buildWorkspaceContextTemplateVars(
+      {
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/source",
+        workspaceLinkPath: "/workspace/invocation/.rundown/workspace.link",
+        isLinkedWorkspace: true,
+      },
+      {
+        directories: {
+          design: "design-docs",
+          specs: "quality/specs",
+          migrations: "changesets",
+        },
+        placement: {
+          design: "sourcedir",
+          specs: "workdir",
+          migrations: "workdir",
+        },
+      },
+    )).toEqual({
+      invocationDir: "/workspace/invocation",
+      workspaceDir: "/workspace/source",
+      workspaceLinkPath: "/workspace/invocation/.rundown/workspace.link",
+      isLinkedWorkspace: "true",
+      workspaceDesignDir: "design-docs",
+      workspaceSpecsDir: "quality/specs",
+      workspaceMigrationsDir: "changesets",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "workdir",
+      workspaceMigrationsPlacement: "workdir",
+      workspaceDesignPath: path.join("/workspace/source", "design-docs"),
+      workspaceSpecsPath: path.join("/workspace/invocation", "quality/specs"),
+      workspaceMigrationsPath: path.join("/workspace/invocation", "changesets"),
     });
   });
 });
@@ -184,6 +269,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceDesignDir: "design-docs",
         workspaceSpecsDir: "quality/specs",
         workspaceMigrationsDir: "changesets",
+        workspaceDesignPlacement: "sourcedir",
+        workspaceSpecsPlacement: "sourcedir",
+        workspaceMigrationsPlacement: "sourcedir",
         workspaceDesignPath: "/real/workspace/design-docs",
         workspaceSpecsPath: "/real/workspace/quality/specs",
         workspaceMigrationsPath: "/real/workspace/changesets",
@@ -198,6 +286,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceDesignDir: "design-docs",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: "/real/workspace/design-docs",
       workspaceSpecsPath: "/real/workspace/quality/specs",
       workspaceMigrationsPath: "/real/workspace/changesets",
@@ -223,6 +314,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceDesignDir: "design",
         workspaceSpecsDir: "specs",
         workspaceMigrationsDir: "migrations",
+        workspaceDesignPlacement: "sourcedir",
+        workspaceSpecsPlacement: "sourcedir",
+        workspaceMigrationsPlacement: "sourcedir",
         workspaceDesignPath: "/workspace/invocation/design",
         workspaceSpecsPath: "/workspace/invocation/specs",
         workspaceMigrationsPath: "/workspace/invocation/migrations",
@@ -240,6 +334,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: "/workspace/invocation/design",
       workspaceSpecsPath: "/workspace/invocation/specs",
       workspaceMigrationsPath: "/workspace/invocation/migrations",

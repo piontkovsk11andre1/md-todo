@@ -56,6 +56,9 @@ export const DEFAULT_TEMPLATE_VARS_SECTION = `\
 - Prediction design directory: \`{{workspaceDesignDir}}\`
 - Prediction specs directory: \`{{workspaceSpecsDir}}\`
 - Prediction migrations directory: \`{{workspaceMigrationsDir}}\`
+- Prediction design placement: \`{{workspaceDesignPlacement}}\`
+- Prediction specs placement: \`{{workspaceSpecsPlacement}}\`
+- Prediction migrations placement: \`{{workspaceMigrationsPlacement}}\`
 - Prediction design path: \`{{workspaceDesignPath}}\`
 - Prediction specs path: \`{{workspaceSpecsPath}}\`
 - Prediction migrations path: \`{{workspaceMigrationsPath}}\`

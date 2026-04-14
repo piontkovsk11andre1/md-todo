@@ -64,6 +64,33 @@ describe("parseTasks", () => {
     expect(parseDirectiveParent("cli-arg: --worker opencode")).toEqual({});
   });
 
+  it("recognizes empty-payload directive-only forms for verify/fast/parallel families", () => {
+    expect(parseDirectiveParent("verify:")).toEqual({ intent: "verify-only" });
+    expect(parseDirectiveParent("confirm :\t")).toEqual({ intent: "verify-only" });
+    expect(parseDirectiveParent("CHECK :")).toEqual({ intent: "verify-only" });
+
+    expect(parseDirectiveParent("fast:")).toEqual({ intent: "fast-execution" });
+    expect(parseDirectiveParent("RAW : \t")).toEqual({ intent: "fast-execution" });
+    expect(parseDirectiveParent("quick:\n")).toEqual({ intent: "fast-execution" });
+
+    expect(parseDirectiveParent("parallel:")).toEqual({ intent: "parallel-group" });
+    expect(parseDirectiveParent("concurrent :\t")).toEqual({ intent: "parallel-group" });
+    expect(parseDirectiveParent("par:\r\n")).toEqual({ intent: "parallel-group" });
+  });
+
+  it("does not classify payload-bearing verify/fast/parallel lines as directive-only forms", () => {
+    expect(parseDirectiveParent("verify: run smoke tests")).toEqual({});
+    expect(parseDirectiveParent("check: release checklist")).toEqual({});
+
+    expect(parseDirectiveParent("fast: refresh build cache")).toEqual({});
+    expect(parseDirectiveParent("raw: run migration script")).toEqual({});
+    expect(parseDirectiveParent("quick: trim output")).toEqual({});
+
+    expect(parseDirectiveParent("parallel: setup workers")).toEqual({});
+    expect(parseDirectiveParent("concurrent: setup workers")).toEqual({});
+    expect(parseDirectiveParent("par: setup workers")).toEqual({});
+  });
+
   it("exports SubItem shape for plain list item metadata", () => {
     const subItem: SubItem = {
       text: "Note",
@@ -726,6 +753,46 @@ describe("parseTasks", () => {
     expect(tasks[2]!.intent).toBeUndefined();
     expect(tasks[3]!.intent).toBe("verify-only");
     expect(tasks[4]!.intent).toBeUndefined();
+  });
+
+  it("applies directive inheritance only to checkbox descendants when prose includes prefix-like text", () => {
+    const md = [
+      "- verify:",
+      "  - verify: this is prose, not a directive-only line",
+      "  - quick: this is prose, not a directive-only line",
+      "  - Notes that mention check: and fast: inline",
+      "  - [ ] Real checkbox child inherits verify intent",
+      "- [ ] Sibling task keeps default intent",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.text).toBe("Real checkbox child inherits verify intent");
+    expect(tasks[0]!.intent).toBe("verify-only");
+    expect(tasks[1]!.text).toBe("Sibling task keeps default intent");
+    expect(tasks[1]!.intent).toBeUndefined();
+  });
+
+  it("keeps directive inheritance stable when fenced blocks contain prefix-like checkbox lines", () => {
+    const md = [
+      "- quick:",
+      "  - [ ] Real fast child",
+      "  ```md",
+      "  - [ ] verify: fake checkbox in code block",
+      "  - check:",
+      "    - [ ] fake nested checkbox in code block",
+      "  ```",
+      "- [ ] Outside task keeps default intent",
+    ].join("\n");
+
+    const tasks = parseTasks(md, "test.md");
+
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]!.text).toBe("Real fast child");
+    expect(tasks[0]!.intent).toBe("fast-execution");
+    expect(tasks[1]!.text).toBe("Outside task keeps default intent");
+    expect(tasks[1]!.intent).toBeUndefined();
   });
 
   it("limits fast/raw/quick and parallel inheritance to directive subtrees", () => {

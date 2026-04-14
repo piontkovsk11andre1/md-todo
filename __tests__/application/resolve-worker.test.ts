@@ -3,13 +3,21 @@ import {
   resolveWorkerForInvocation,
   resolveWorkerPatternForInvocation,
 } from "../../src/application/resolve-worker.js";
+import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
+import { classifyTaskIntent } from "../../src/domain/task-intent.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.js";
+import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port.js";
 import {
   WORKER_HEALTH_STATUS_COOLING_DOWN,
   WORKER_HEALTH_STATUS_UNAVAILABLE,
   buildWorkerHealthProfileKey,
   buildWorkerHealthWorkerKey,
 } from "../../src/domain/worker-health.js";
+
+const builtinToolResolver: ToolResolverPort = {
+  resolve: (toolName) => resolveBuiltinTool(toolName),
+  listKnownToolNames: () => listBuiltinToolNames(),
+};
 
 describe("resolve-worker", () => {
   it("resolves worker from config layers and warns on ignored profile sub-item", () => {
@@ -124,6 +132,76 @@ describe("resolve-worker", () => {
       "gpt-5.3-mini",
       "--no-approval",
     ]);
+  });
+
+  it("derives commands.verify override key from verify alias prefixes", () => {
+    const intent = classifyTaskIntent("check: release checklist", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+          verify: ["opencode", "run", "--from-commands-verify", "1"],
+        },
+      },
+      source: "- [ ] check: release checklist\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("verify-only");
+    expect(command).toEqual(["opencode", "run", "--from-commands-verify", "1"]);
+  });
+
+  it("derives commands.memory override key from memory alias prefixes", () => {
+    const intent = classifyTaskIntent("remember: capture release context", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+          memory: ["opencode", "run", "--from-commands-memory", "1"],
+        },
+      },
+      source: "- [ ] remember: capture release context\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("memory-capture");
+    expect(command).toEqual(["opencode", "run", "--from-commands-memory", "1"]);
+  });
+
+  it("derives commands.tools.<canonicalName> override key from tool aliases", () => {
+    const intent = classifyTaskIntent("each: item in releaseFiles => verify: item", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+          "tools.for": ["opencode", "run", "--from-commands-tools-for", "1"],
+        },
+      },
+      source: "- [ ] each: item in releaseFiles => verify: item\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("tool-expansion");
+    expect(intent.toolName).toBe("for");
+    expect(command).toEqual(["opencode", "run", "--from-commands-tools-for", "1"]);
   });
 
   it("applies tool-expansion profile precedence — last override wins", () => {
@@ -419,6 +497,73 @@ describe("resolve-worker", () => {
       "--from-commands-run",
       "1",
     ]);
+  });
+
+  it("keeps verify alias tasks on commands.run override when commands.verify is not configured", () => {
+    const intent = classifyTaskIntent("confirm: release checklist", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+        },
+      },
+      source: "- [ ] confirm: release checklist\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("verify-only");
+    expect(command).toEqual(["opencode", "run", "--from-commands-run", "1"]);
+  });
+
+  it("keeps memory alias tasks on commands.run override when commands.memory is not configured", () => {
+    const intent = classifyTaskIntent("inventory: capture release context", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+        },
+      },
+      source: "- [ ] inventory: capture release context\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("memory-capture");
+    expect(command).toEqual(["opencode", "run", "--from-commands-run", "1"]);
+  });
+
+  it("keeps tool alias tasks on commands.run override when commands.tools.<toolName> is not configured", () => {
+    const intent = classifyTaskIntent("foreach: item in releaseFiles => verify: item", builtinToolResolver);
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["opencode", "run", "--from-defaults", "1"],
+        },
+        commands: {
+          run: ["opencode", "run", "--from-commands-run", "1"],
+        },
+      },
+      source: "- [ ] foreach: item in releaseFiles => verify: item\n",
+      cliWorkerCommand: [],
+      taskIntent: intent.intent,
+      toolName: intent.toolName,
+    });
+
+    expect(intent.intent).toBe("tool-expansion");
+    expect(intent.toolName).toBe("for");
+    expect(command).toEqual(["opencode", "run", "--from-commands-run", "1"]);
   });
 
   it("does not warn on profile sub-item for supported prefix intents", () => {

@@ -9,7 +9,12 @@ import {
   parseWorkspaceLinkSchema,
   serializeWorkspaceLinkSchema,
 } from "../domain/workspace-link.js";
-import { DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES } from "./prediction-workspace-paths.js";
+import {
+  DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
+  DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
+  PREDICTION_WORKSPACE_PLACEMENTS,
+  type PredictionWorkspacePlacement,
+} from "./prediction-workspace-paths.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
   FileSystem,
@@ -24,6 +29,9 @@ export interface StartProjectOptions {
   designDir?: string;
   specsDir?: string;
   migrationsDir?: string;
+  designPlacement?: string;
+  specsPlacement?: string;
+  migrationsPlacement?: string;
 }
 
 interface ValidatedWorkspaceDirectories {
@@ -32,12 +40,23 @@ interface ValidatedWorkspaceDirectories {
   migrationsDir: string;
 }
 
+interface ValidatedWorkspacePlacement {
+  designPlacement: PredictionWorkspacePlacement;
+  specsPlacement: PredictionWorkspacePlacement;
+  migrationsPlacement: PredictionWorkspacePlacement;
+}
+
 interface RundownConfigDocument {
   workspace?: {
     directories?: {
       design: string;
       specs: string;
       migrations: string;
+    };
+    placement?: {
+      design: PredictionWorkspacePlacement;
+      specs: PredictionWorkspacePlacement;
+      migrations: PredictionWorkspacePlacement;
     };
   };
   [key: string]: unknown;
@@ -81,6 +100,7 @@ export function createStartProject(
     }
 
     let workspaceDirectories: ValidatedWorkspaceDirectories;
+    let workspacePlacement: ValidatedWorkspacePlacement;
     try {
       workspaceDirectories = resolveAndValidateWorkspaceDirectories({
         targetDirectory,
@@ -88,6 +108,11 @@ export function createStartProject(
         specsDirOption: options.specsDir,
         migrationsDirOption: options.migrationsDir,
         pathOperations: dependencies.pathOperations,
+      });
+      workspacePlacement = resolveAndValidateWorkspacePlacement({
+        designPlacementOption: options.designPlacement,
+        specsPlacementOption: options.specsPlacement,
+        migrationsPlacementOption: options.migrationsPlacement,
       });
     } catch (error) {
       emit({
@@ -136,12 +161,16 @@ export function createStartProject(
     }
 
     try {
-      persistWorkspaceDirectoryMapping({
+      persistWorkspaceConfiguration({
         fileSystem: dependencies.fileSystem,
         configPath: rundownConfigPath,
         directories: workspaceDirectories,
+        placement: workspacePlacement,
       });
-      emit({ kind: "success", message: "Persisted workspace directories in " + rundownConfigPath });
+      emit({
+        kind: "success",
+        message: "Persisted workspace directories and placement in " + rundownConfigPath,
+      });
     } catch (error) {
       emit({
         kind: "error",
@@ -583,12 +612,56 @@ function isAncestorOrDescendantPath(left: string, right: string): boolean {
   return left.startsWith(right + "/") || right.startsWith(left + "/");
 }
 
-function persistWorkspaceDirectoryMapping(input: {
+function resolveAndValidateWorkspacePlacement(input: {
+  designPlacementOption: string | undefined;
+  specsPlacementOption: string | undefined;
+  migrationsPlacementOption: string | undefined;
+}): ValidatedWorkspacePlacement {
+  const designPlacement = normalizeWorkspacePlacementOverride(
+    input.designPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.design,
+    "--design-placement",
+  );
+  const specsPlacement = normalizeWorkspacePlacementOverride(
+    input.specsPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.specs,
+    "--specs-placement",
+  );
+  const migrationsPlacement = normalizeWorkspacePlacementOverride(
+    input.migrationsPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.migrations,
+    "--migrations-placement",
+  );
+
+  return {
+    designPlacement,
+    specsPlacement,
+    migrationsPlacement,
+  };
+}
+
+function normalizeWorkspacePlacementOverride(
+  rawValue: string,
+  optionName: string,
+): PredictionWorkspacePlacement {
+  const trimmedValue = rawValue.trim();
+  if (trimmedValue.length === 0) {
+    throw new Error(`Invalid ${optionName} value: placement cannot be empty.`);
+  }
+
+  if (!PREDICTION_WORKSPACE_PLACEMENTS.includes(trimmedValue as PredictionWorkspacePlacement)) {
+    throw new Error(
+      `Invalid ${optionName} value: "${trimmedValue}". Allowed values: ${PREDICTION_WORKSPACE_PLACEMENTS.join(", ")}.`,
+    );
+  }
+
+  return trimmedValue as PredictionWorkspacePlacement;
+}
+
+function persistWorkspaceConfiguration(input: {
   fileSystem: FileSystem;
   configPath: string;
   directories: ValidatedWorkspaceDirectories;
+  placement: ValidatedWorkspacePlacement;
 }): void {
-  const { fileSystem, configPath, directories } = input;
+  const { fileSystem, configPath, directories, placement } = input;
   const existingSource = fileSystem.exists(configPath)
     ? fileSystem.readText(configPath)
     : "{}\n";
@@ -616,6 +689,11 @@ function persistWorkspaceDirectoryMapping(input: {
         design: directories.designDir,
         specs: directories.specsDir,
         migrations: directories.migrationsDir,
+      },
+      placement: {
+        design: placement.designPlacement,
+        specs: placement.specsPlacement,
+        migrations: placement.migrationsPlacement,
       },
     },
   };

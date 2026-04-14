@@ -11100,6 +11100,10 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Linked workspace behavior:");
     expect(compactHelpOutput).toContain("start writes link metadata in both target and source workspaces");
     expect(compactHelpOutput).toContain("supports multiple records for multiple started targets");
+    expect(compactHelpOutput).toContain("--design-placement <mode>");
+    expect(compactHelpOutput).toContain("--specs-placement <mode>");
+    expect(compactHelpOutput).toContain("--migrations-placement <mode>");
+    expect(compactHelpOutput).toContain("Design placement root: sourcedir or workdir (default: sourcedir)");
   });
 
   it("migrate --help explains explicit workspace selection for ambiguous links", async () => {
@@ -11115,16 +11119,16 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
   });
 
-  it("docs diff --help includes --workspace examples", async () => {
+  it("design diff --help includes --workspace examples", async () => {
     const workspace = makeTempWorkspace();
 
-    const result = await runCli(["docs", "diff", "--help"], workspace);
+    const result = await runCli(["design", "diff", "--help"], workspace);
 
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--workspace <dir> Workspace directory to use for linked/multi-workspace resolution");
-    expect(compactHelpOutput).toContain("rundown docs diff --workspace ../source-workspace");
+    expect(compactHelpOutput).toContain("rundown design diff --workspace ../source-workspace");
   });
 
   it("explore --help shows variadic argument and plan-phase options", async () => {

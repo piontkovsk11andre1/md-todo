@@ -52,6 +52,27 @@ describe("resolveIterationVerificationMode", () => {
     });
   });
 
+  it.each(["fast", "raw", "quick"])("treats empty-payload %s prefixes as fast-execution and still skips verification", (prefix) => {
+    const emit = vi.fn();
+
+    const mode = resolveIterationVerificationMode({
+      configuredOnlyVerify: false,
+      configuredShouldVerify: true,
+      forceExecute: false,
+      task: createTask(`${prefix}:   `),
+      emit,
+    });
+
+    expect(mode.taskIntentDecision.intent).toBe("fast-execution");
+    expect(mode.taskIntentDecision.hasEmptyPayload).toBe(true);
+    expect(mode.onlyVerify).toBe(false);
+    expect(mode.shouldVerify).toBe(false);
+    expect(emit).toHaveBeenCalledWith({
+      kind: "info",
+      message: "Task uses fast/raw/quick intent (explicit fast marker); skipping verification.",
+    });
+  });
+
   it("suppresses verification for fast tasks when configuredOnlyVerify is enabled", () => {
     const emit = vi.fn();
 
@@ -112,6 +133,26 @@ describe("resolveIterationVerificationMode", () => {
     expect(emit).toHaveBeenCalledWith({
       kind: "info",
       message: "Task classified as verify-only (explicit marker); skipping execution.",
+    });
+  });
+
+  it("respects force-execute for verify-only tasks and reports the override", () => {
+    const emit = vi.fn();
+
+    const mode = resolveIterationVerificationMode({
+      configuredOnlyVerify: false,
+      configuredShouldVerify: false,
+      forceExecute: true,
+      task: createTask("check: confirm changelog is complete"),
+      emit,
+    });
+
+    expect(mode.taskIntentDecision.intent).toBe("verify-only");
+    expect(mode.onlyVerify).toBe(false);
+    expect(mode.shouldVerify).toBe(false);
+    expect(emit).toHaveBeenCalledWith({
+      kind: "info",
+      message: "Task classified as verify-only (explicit marker), but --force-execute is enabled; running execution.",
     });
   });
 

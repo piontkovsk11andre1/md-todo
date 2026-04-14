@@ -38,6 +38,9 @@ describe("default prompt templates", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: "/repo/workspace/design",
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
@@ -52,6 +55,9 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Prediction design directory: `design`");
     expect(result).toContain("- Prediction specs directory: `specs`");
     expect(result).toContain("- Prediction migrations directory: `migrations`");
+    expect(result).toContain("- Prediction design placement: `sourcedir`");
+    expect(result).toContain("- Prediction specs placement: `sourcedir`");
+    expect(result).toContain("- Prediction migrations placement: `sourcedir`");
     expect(result).toContain("- Prediction design path: `/repo/workspace/design`");
     expect(result).toContain("- Prediction specs path: `/repo/workspace/specs`");
     expect(result).toContain("- Prediction migrations path: `/repo/workspace/migrations`");
@@ -73,6 +79,9 @@ describe("default prompt templates", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspaceDesignPlacement: "sourcedir",
+      workspaceSpecsPlacement: "sourcedir",
+      workspaceMigrationsPlacement: "sourcedir",
       workspaceDesignPath: "/repo/workspace/design",
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
@@ -86,6 +95,9 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Prediction design directory: `design`");
     expect(result).toContain("- Prediction specs directory: `specs`");
     expect(result).toContain("- Prediction migrations directory: `migrations`");
+    expect(result).toContain("- Prediction design placement: `sourcedir`");
+    expect(result).toContain("- Prediction specs placement: `sourcedir`");
+    expect(result).toContain("- Prediction migrations placement: `sourcedir`");
     expect(result).toContain("- Prediction design path: `/repo/workspace/design`");
     expect(result).toContain("- Prediction specs path: `/repo/workspace/specs`");
     expect(result).toContain("- Prediction migrations path: `/repo/workspace/migrations`");

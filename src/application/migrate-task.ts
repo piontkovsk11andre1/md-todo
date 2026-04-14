@@ -48,6 +48,8 @@ import {
 } from "./design-context.js";
 import {
   resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePaths,
+  resolvePredictionWorkspacePlacement,
   resolvePredictionWorkspacePath,
 } from "./prediction-workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
@@ -159,12 +161,25 @@ export function createMigrateTask(
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
+    const workspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      invocationRoot: executionContext.invocationDir,
+      directories: workspaceDirectories,
+      placement: workspacePlacement,
+    });
     const migrationsDir = resolvePredictionWorkspacePath({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
+      invocationRoot: executionContext.invocationDir,
       bucket: "migrations",
       overrideDir: options.dir,
       directories: workspaceDirectories,
+      placement: workspacePlacement,
     });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
@@ -272,7 +287,12 @@ export function createMigrateTask(
       });
     }
 
-    emitLowDesignContextGuidance(dependencies.fileSystem, projectRoot, emit);
+    emitLowDesignContextGuidance(
+      dependencies.fileSystem,
+      projectRoot,
+      executionContext.invocationDir,
+      emit,
+    );
 
     const state = readMigrationState(dependencies.fileSystem, migrationsDir);
 
@@ -291,11 +311,15 @@ export function createMigrateTask(
         await generateNextMigration({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          workerPattern: resolvedWorker.workerPattern,
-          slugWorkerPattern,
-          artifactContext,
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           workerPattern: resolvedWorker.workerPattern,
+           slugWorkerPattern,
+           artifactContext,
           confirm: Boolean(options.confirm),
           showAgentOutput: Boolean(options.showAgentOutput),
         });
@@ -303,11 +327,15 @@ export function createMigrateTask(
         await generateSatellite({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          templateFile: "migrate-snapshot.md",
-          defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
-          satelliteType: "snapshot",
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           templateFile: "migrate-snapshot.md",
+           defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
+           satelliteType: "snapshot",
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -317,11 +345,15 @@ export function createMigrateTask(
         await generateSatellite({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          templateFile: "migrate-backlog.md",
-          defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
-          satelliteType: "backlog",
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           templateFile: "migrate-backlog.md",
+           defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
+           satelliteType: "backlog",
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -331,11 +363,15 @@ export function createMigrateTask(
         await generateSatellite({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          templateFile: "migrate-context.md",
-          defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
-          satelliteType: "context",
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           templateFile: "migrate-context.md",
+           defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
+           satelliteType: "context",
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -345,11 +381,15 @@ export function createMigrateTask(
         await generateSatellite({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          templateFile: "migrate-review.md",
-          defaultTemplate: DEFAULT_MIGRATE_REVIEW_TEMPLATE,
-          satelliteType: "review",
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           templateFile: "migrate-review.md",
+           defaultTemplate: DEFAULT_MIGRATE_REVIEW_TEMPLATE,
+           satelliteType: "review",
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -359,11 +399,15 @@ export function createMigrateTask(
         await generateSatellite({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          templateFile: "migrate-ux.md",
-          defaultTemplate: DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
-          satelliteType: "user-experience",
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           templateFile: "migrate-ux.md",
+           defaultTemplate: DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
+           satelliteType: "user-experience",
           workerPattern: resolvedWorker.workerPattern,
           artifactContext,
           confirm: Boolean(options.confirm),
@@ -373,11 +417,15 @@ export function createMigrateTask(
         await runUserSession({
           dependencies,
           state,
-          projectRoot,
-          workspaceRoot,
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
+           projectRoot,
+           invocationRoot: executionContext.invocationDir,
+           workspaceRoot,
+           workspaceDirectories,
+           workspacePlacement,
+           workspacePaths,
+           workerPattern: resolvedWorker.workerPattern,
+           artifactContext,
+           confirm: Boolean(options.confirm),
           showAgentOutput: Boolean(options.showAgentOutput),
         });
       }
@@ -601,9 +649,10 @@ function toProjectRelativePath(projectRoot: string, absolutePath: string): strin
 function emitLowDesignContextGuidance(
   fileSystem: FileSystem,
   projectRoot: string,
+  invocationRoot: string,
   emit: ApplicationOutputPort["emit"],
 ): void {
-  const designContext = resolveDesignContext(fileSystem, projectRoot);
+  const designContext = resolveDesignContext(fileSystem, projectRoot, { invocationRoot });
   if (!designContext.isLowContext || designContext.lowContextGuidance.trim().length === 0) {
     return;
   }
@@ -659,7 +708,11 @@ async function runUserSession(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  invocationRoot: string;
   workspaceRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   confirm: boolean;
@@ -669,7 +722,11 @@ async function runUserSession(input: {
     dependencies,
     state,
     projectRoot,
+    invocationRoot,
     workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
     workerPattern,
     artifactContext,
     confirm,
@@ -738,7 +795,11 @@ async function runUserSession(input: {
     dependencies,
     state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
     projectRoot,
+    invocationRoot,
     workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
     templateFile: "migrate-backlog.md",
     defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
     satelliteType: "backlog",
@@ -825,7 +886,11 @@ async function generateNextMigration(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  invocationRoot: string;
   workspaceRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
@@ -836,7 +901,11 @@ async function generateNextMigration(input: {
     dependencies,
     state,
     projectRoot,
+    invocationRoot,
     workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
     workerPattern,
     slugWorkerPattern,
     artifactContext,
@@ -850,7 +919,15 @@ async function generateNextMigration(input: {
     "migrate.md",
     DEFAULT_MIGRATE_TEMPLATE,
   );
-  const vars = buildTemplateVars(dependencies.fileSystem, state, projectRoot);
+  const vars = buildTemplateVars({
+    fileSystem: dependencies.fileSystem,
+    state,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+  });
   const prompt = renderTemplate(template, vars);
 
   const result = await dependencies.workerExecutor.runWorker({
@@ -910,7 +987,11 @@ async function generateNextMigration(input: {
     dependencies,
     state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
     projectRoot,
+    invocationRoot,
     workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
     templateFile: "migrate-context.md",
     defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
     satelliteType: "context",
@@ -946,7 +1027,11 @@ async function generateSatellite(input: {
   dependencies: MigrateTaskDependencies;
   state: ReturnType<typeof readMigrationState>;
   projectRoot: string;
+  invocationRoot: string;
   workspaceRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
   templateFile: string;
   defaultTemplate: string;
   satelliteType: SatelliteType;
@@ -959,7 +1044,11 @@ async function generateSatellite(input: {
     dependencies,
     state,
     projectRoot,
+    invocationRoot,
     workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
     templateFile,
     defaultTemplate,
     satelliteType,
@@ -976,7 +1065,15 @@ async function generateSatellite(input: {
     templateFile,
     defaultTemplate,
   );
-  const vars = buildTemplateVars(dependencies.fileSystem, state, projectRoot);
+  const vars = buildTemplateVars({
+    fileSystem: dependencies.fileSystem,
+    state,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+  });
   const prompt = renderTemplate(template, vars);
 
   const result = await dependencies.workerExecutor.runWorker({
@@ -1031,23 +1128,35 @@ function readTemplate(
   return templateLoader.load(templatePath) ?? fallback;
 }
 
-function buildTemplateVars(
-  fileSystem: FileSystem,
-  state: ReturnType<typeof readMigrationState>,
-  projectRoot: string,
-): TemplateVars {
-  const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+function buildTemplateVars(input: {
+  fileSystem: FileSystem;
+  state: ReturnType<typeof readMigrationState>;
+  projectRoot: string;
+  invocationRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
+}): TemplateVars {
+  const {
     fileSystem,
-    workspaceRoot: projectRoot,
-  });
+    state,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+  } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
   const latestContext = state.latestContext;
   const latestBacklog = state.latestBacklog;
   const latestSnapshot = getLatestSatellitePath(state, "snapshot");
 
-  const design = resolveDesignContext(fileSystem, projectRoot).design;
-  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot);
-  const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, { target: "current" });
+  const design = resolveDesignContext(fileSystem, projectRoot, { invocationRoot }).design;
+  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
+  const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, {
+    invocationRoot,
+    target: "current",
+  });
   const previousRevisionId = revisionDiff.fromRevision?.name ?? (revisionDiff.hasComparison ? "nothing" : "");
   const currentRevisionId = revisionDiff.toTarget.name;
   const currentRevisionCreatedAt = revisionDiff.toTarget.metadata.createdAt;
@@ -1106,9 +1215,14 @@ function buildTemplateVars(
     workspaceDesignDir: workspaceDirectories.design,
     workspaceSpecsDir: workspaceDirectories.specs,
     workspaceMigrationsDir: workspaceDirectories.migrations,
-    workspaceDesignPath: path.join(projectRoot, workspaceDirectories.design),
-    workspaceSpecsPath: path.join(projectRoot, workspaceDirectories.specs),
-    workspaceMigrationsPath: path.join(projectRoot, workspaceDirectories.migrations),
+    workspaceDesignPlacement: workspacePlacement.design,
+    workspaceSpecsPlacement: workspacePlacement.specs,
+    workspaceMigrationsPlacement: workspacePlacement.migrations,
+    workspaceDesignPath: workspacePaths.design,
+    workspaceSpecsPath: workspacePaths.specs,
+    workspaceMigrationsPath: workspacePaths.migrations,
+    invocationDir: invocationRoot,
+    workspaceDir: projectRoot,
     position: state.currentPosition,
   };
 }

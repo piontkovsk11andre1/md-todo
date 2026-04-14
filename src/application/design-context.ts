@@ -1,6 +1,9 @@
 import path from "node:path";
 import type { FileSystem } from "../domain/ports/index.js";
-import { resolvePredictionWorkspaceDirectories } from "./prediction-workspace-paths.js";
+import {
+  resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePlacement,
+} from "./prediction-workspace-paths.js";
 
 export interface DesignContextResolution {
   design: string;
@@ -89,9 +92,17 @@ const LEGACY_WORKSPACE_DIR = "docs";
 const CANONICAL_PRIMARY_FILE = "Target.md";
 const LEGACY_PRIMARY_FILE = "Design.md";
 
-export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string): DesignContextResolution {
-  const configuredWorkspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, projectRoot);
-  const managedCurrentCandidates = getManagedCurrentWorkspaceCandidates(projectRoot, configuredWorkspaceDir);
+export function resolveDesignContext(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+  options?: { invocationRoot?: string },
+): DesignContextResolution {
+  const configuredWorkspace = resolveConfiguredDesignWorkspace(fileSystem, workspaceRoot, options?.invocationRoot);
+  const managedCurrentCandidates = getManagedCurrentWorkspaceCandidates(
+    workspaceRoot,
+    configuredWorkspace.workspaceDir,
+    configuredWorkspace.workspacePath,
+  );
   let firstEmptyManagedCandidate: {
     currentDir: string;
     relativeCurrentDir: string;
@@ -120,7 +131,7 @@ export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string
     }
   }
 
-  const canonicalRootPath = path.join(projectRoot, CANONICAL_PRIMARY_FILE);
+  const canonicalRootPath = path.join(workspaceRoot, CANONICAL_PRIMARY_FILE);
   if (isFile(fileSystem, canonicalRootPath)) {
     return {
       design: fileSystem.readText(canonicalRootPath),
@@ -130,7 +141,7 @@ export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string
     };
   }
 
-  const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
+  const legacyDesignPath = path.join(workspaceRoot, LEGACY_PRIMARY_FILE);
   if (isFile(fileSystem, legacyDesignPath)) {
     return {
       design: fileSystem.readText(legacyDesignPath),
@@ -162,7 +173,7 @@ export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string
     isLowContext: true,
     lowContextGuidance:
       "No design context found. Add "
-      + configuredWorkspaceDir
+       + configuredWorkspace.workspaceDir
       + "/current/"
       + CANONICAL_PRIMARY_FILE
       + " (preferred), "
@@ -172,13 +183,15 @@ export function resolveDesignContext(fileSystem: FileSystem, projectRoot: string
 
 export function resolveDesignContextSourceReferences(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
+  options?: { invocationRoot?: string },
 ): DesignContextSourceReferencesResolution {
-  const configuredWorkspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, projectRoot);
+  const configuredWorkspace = resolveConfiguredDesignWorkspace(fileSystem, workspaceRoot, options?.invocationRoot);
   const canonicalSourceReferences = collectManagedSourceReferencesForWorkspace(
     fileSystem,
-    projectRoot,
-    configuredWorkspaceDir,
+    workspaceRoot,
+    configuredWorkspace.workspaceDir,
+    configuredWorkspace.workspacePath,
   );
   if (canonicalSourceReferences.length > 0) {
     return {
@@ -189,7 +202,7 @@ export function resolveDesignContextSourceReferences(
 
   const legacySourceReferences = collectManagedSourceReferencesForWorkspace(
     fileSystem,
-    projectRoot,
+    workspaceRoot,
     LEGACY_WORKSPACE_DIR,
   );
   if (legacySourceReferences.length > 0) {
@@ -199,7 +212,7 @@ export function resolveDesignContextSourceReferences(
     };
   }
 
-  const canonicalRootPath = path.join(projectRoot, CANONICAL_PRIMARY_FILE);
+  const canonicalRootPath = path.join(workspaceRoot, CANONICAL_PRIMARY_FILE);
   if (isFile(fileSystem, canonicalRootPath)) {
     return {
       sourceReferences: [canonicalRootPath],
@@ -207,7 +220,7 @@ export function resolveDesignContextSourceReferences(
     };
   }
 
-  const legacyDesignPath = path.join(projectRoot, LEGACY_PRIMARY_FILE);
+  const legacyDesignPath = path.join(workspaceRoot, LEGACY_PRIMARY_FILE);
   if (!isFile(fileSystem, legacyDesignPath)) {
     return {
       sourceReferences: [],
@@ -223,9 +236,10 @@ export function resolveDesignContextSourceReferences(
 
 export function discoverDesignRevisionDirectories(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
+  options?: { invocationRoot?: string },
 ): DesignRevisionDirectory[] {
-  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot, options?.invocationRoot);
   if (!isDirectory(fileSystem, workspace.rootDir)) {
     return [];
   }
@@ -284,13 +298,14 @@ export function parseDesignRevisionDirectoryName(name: string): { index: number 
 
 export function saveDesignRevisionSnapshot(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
   options?: {
+    invocationRoot?: string;
     label?: string;
     now?: Date;
   },
 ): SaveDesignRevisionSnapshotResult {
-  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot, options?.invocationRoot);
 
   if (!isDirectory(fileSystem, workspace.currentDir)) {
     throw new Error(
@@ -302,7 +317,9 @@ export function saveDesignRevisionSnapshot(
     );
   }
 
-  const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
+  const revisions = discoverDesignRevisionDirectories(fileSystem, workspaceRoot, {
+    invocationRoot: options?.invocationRoot,
+  });
   let nextIndex = 1;
   for (const revision of revisions) {
     if (revision.index >= nextIndex) {
@@ -363,13 +380,16 @@ export function saveDesignRevisionSnapshot(
 
 export function prepareDesignRevisionDiffContext(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
   options?: {
+    invocationRoot?: string;
     target?: "current" | string | number;
   },
 ): DesignRevisionDiffContext {
-  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, projectRoot);
-  const revisions = discoverDesignRevisionDirectories(fileSystem, projectRoot);
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot, options?.invocationRoot);
+  const revisions = discoverDesignRevisionDirectories(fileSystem, workspaceRoot, {
+    invocationRoot: options?.invocationRoot,
+  });
 
   const target = resolveDesignDiffTarget(fileSystem, workspace, revisions, options?.target);
   const sourceReferences = [target.absolutePath];
@@ -1011,8 +1031,9 @@ function isFile(fileSystem: FileSystem, absolutePath: string): boolean {
 }
 
 function getManagedCurrentWorkspaceCandidates(
-  projectRoot: string,
+  workspaceRoot: string,
   configuredWorkspaceDir: string,
+  configuredWorkspacePath?: string,
 ): Array<{
   currentDir: string;
   relativeCurrentDir: string;
@@ -1020,12 +1041,12 @@ function getManagedCurrentWorkspaceCandidates(
 }> {
   return [
     {
-      currentDir: path.join(projectRoot, configuredWorkspaceDir, "current"),
+      currentDir: path.join(configuredWorkspacePath ?? path.join(workspaceRoot, configuredWorkspaceDir), "current"),
       relativeCurrentDir: configuredWorkspaceDir + "/current",
       primaryFileName: CANONICAL_PRIMARY_FILE,
     },
     {
-      currentDir: path.join(projectRoot, LEGACY_WORKSPACE_DIR, "current"),
+      currentDir: path.join(workspaceRoot, LEGACY_WORKSPACE_DIR, "current"),
       relativeCurrentDir: LEGACY_WORKSPACE_DIR + "/current",
       primaryFileName: LEGACY_PRIMARY_FILE,
     },
@@ -1034,10 +1055,11 @@ function getManagedCurrentWorkspaceCandidates(
 
 function collectManagedSourceReferencesForWorkspace(
   fileSystem: FileSystem,
-  projectRoot: string,
+  workspaceRoot: string,
   workspaceDirectory: string,
+  workspacePath?: string,
 ): string[] {
-  const rootDir = path.join(projectRoot, workspaceDirectory);
+  const rootDir = workspacePath ?? path.join(workspaceRoot, workspaceDirectory);
   const currentDir = path.join(rootDir, "current");
   const sourceReferences: string[] = [];
 
@@ -1073,25 +1095,29 @@ function collectManagedSourceReferencesForWorkspace(
   return sourceReferences;
 }
 
-function resolveDesignWorkspaceForRevisions(fileSystem: FileSystem, projectRoot: string): {
+function resolveDesignWorkspaceForRevisions(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+  invocationRoot?: string,
+): {
   rootDir: string;
   currentDir: string;
   relativeRootDir: string;
   relativeCurrentDir: string;
 } {
-  const configuredWorkspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, projectRoot);
-  const canonicalRootDir = path.join(projectRoot, configuredWorkspaceDir);
+  const configuredWorkspace = resolveConfiguredDesignWorkspace(fileSystem, workspaceRoot, invocationRoot);
+  const canonicalRootDir = configuredWorkspace.workspacePath;
   const canonicalCurrentDir = path.join(canonicalRootDir, "current");
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     return {
       rootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
-      relativeRootDir: configuredWorkspaceDir,
-      relativeCurrentDir: configuredWorkspaceDir + "/current",
+      relativeRootDir: configuredWorkspace.workspaceDir,
+      relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
     };
   }
 
-  const legacyRootDir = path.join(projectRoot, LEGACY_WORKSPACE_DIR);
+  const legacyRootDir = path.join(workspaceRoot, LEGACY_WORKSPACE_DIR);
   const legacyCurrentDir = path.join(legacyRootDir, "current");
   if (isDirectory(fileSystem, legacyCurrentDir)) {
     return {
@@ -1106,8 +1132,8 @@ function resolveDesignWorkspaceForRevisions(fileSystem: FileSystem, projectRoot:
     return {
       rootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
-      relativeRootDir: configuredWorkspaceDir,
-      relativeCurrentDir: configuredWorkspaceDir + "/current",
+      relativeRootDir: configuredWorkspace.workspaceDir,
+      relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
     };
   }
 
@@ -1123,14 +1149,38 @@ function resolveDesignWorkspaceForRevisions(fileSystem: FileSystem, projectRoot:
   return {
     rootDir: canonicalRootDir,
     currentDir: path.join(canonicalRootDir, "current"),
-    relativeRootDir: configuredWorkspaceDir,
-    relativeCurrentDir: configuredWorkspaceDir + "/current",
+    relativeRootDir: configuredWorkspace.workspaceDir,
+    relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
   };
 }
 
-function getConfiguredDesignWorkspaceDir(fileSystem: FileSystem, projectRoot: string): string {
+function getConfiguredDesignWorkspaceDir(fileSystem: FileSystem, workspaceRoot: string): string {
   return resolvePredictionWorkspaceDirectories({
     fileSystem,
-    workspaceRoot: projectRoot,
+    workspaceRoot,
   }).design;
+}
+
+function resolveConfiguredDesignWorkspace(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+  invocationRoot?: string,
+): {
+  workspaceDir: string;
+  workspacePath: string;
+} {
+  const workspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, workspaceRoot);
+  const placement = resolvePredictionWorkspacePlacement({
+    fileSystem,
+    workspaceRoot,
+  });
+  const workspacePath = path.join(
+    placement.design === "workdir" ? (invocationRoot ?? workspaceRoot) : workspaceRoot,
+    workspaceDir,
+  );
+
+  return {
+    workspaceDir,
+    workspacePath,
+  };
 }

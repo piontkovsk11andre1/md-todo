@@ -126,7 +126,21 @@ By default, `start` creates a design-first project structure and prepares migrat
 - `specs/`
 - `.rundown/`
 
-Use `--design-dir`, `--specs-dir`, and `--migrations-dir` to override these workspace directories at bootstrap time. Rundown persists the resolved mapping in `.rundown/config.json` and reuses it across prediction flows (`migrate`, `docs`, `test`, and related commands).
+Use `--design-dir`, `--specs-dir`, and `--migrations-dir` to override these workspace directories at bootstrap time. Rundown persists the resolved mapping in `.rundown/config.json` and reuses it across prediction flows (`migrate`, `design`, `test`, and related commands).
+
+Use `--design-placement`, `--specs-placement`, and `--migrations-placement` to choose the placement root for each bucket:
+
+- `sourcedir` (default): resolve bucket path under the effective workspace/source directory.
+- `workdir`: resolve bucket path under the invocation/working directory.
+
+Placement defaults are persisted to `.rundown/config.json` under `workspace.placement` and apply to path-sensitive prediction flows.
+
+Placement terminology:
+
+- `sourcedir`: effective workspace/source directory used by command resolution.
+- `workdir`: invocation directory where the command was launched.
+
+In non-linked mode, `sourcedir` and `workdir` are the same path. In linked mode, they can differ.
 
 Linked-workspace behavior:
 
@@ -159,6 +173,9 @@ Options:
 | `--design-dir <path>` | Design workspace directory name/path for start scaffold. | `design` |
 | `--specs-dir <path>` | Specs workspace directory name/path for start scaffold. | `specs` |
 | `--migrations-dir <path>` | Migrations workspace directory name/path for start scaffold. | `migrations` |
+| `--design-placement <mode>` | Design placement root: `sourcedir` or `workdir`. | `sourcedir` |
+| `--specs-placement <mode>` | Specs placement root: `sourcedir` or `workdir`. | `sourcedir` |
+| `--migrations-placement <mode>` | Migrations placement root: `sourcedir` or `workdir`. | `sourcedir` |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
 
 Examples:
@@ -166,6 +183,7 @@ Examples:
 ```bash
 rundown start "Ship auth flow" -- opencode run
 rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
+rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run
 rundown start "Ship auth flow" --dir ./predict-auth --design-dir docs --specs-dir checks --migrations-dir changes -- opencode run
 ```
 
@@ -205,19 +223,56 @@ Options:
 | `--confirm` | Print generated content and ask before each write. Non-TTY uses default yes. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
 
-Workspace selection notes (`migrate`, `docs release`, `docs diff`):
+Workspace selection notes (`migrate`, `design release`, `design diff`):
 
 - By default, path-sensitive commands resolve workspace from `.rundown/workspace.link`.
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
 - Use `--workspace <dir>` to select the effective workspace explicitly (relative to invocation directory).
 
-### `rundown docs`
+Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
+
+- Bucket paths are resolved from two config layers: `workspace.directories.<bucket>` and `workspace.placement.<bucket>`.
+- Effective bucket path rule: selected root (`sourcedir` or `workdir`) + configured relative bucket directory.
+- Default placement is `sourcedir` for `design`, `specs`, and `migrations` when placement config is omitted.
+- Mixed placement is valid (for example, `design` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`).
+- In linked mode, `sourcedir` maps to the resolved linked workspace, while `workdir` stays at the invocation directory.
+- If any two buckets resolve to the same absolute path (including across different roots), command resolution fails with a placement conflict error.
+
+Mixed-placement example:
+
+```json
+{
+  "workspace": {
+    "directories": {
+      "design": "design",
+      "specs": "checks/specs",
+      "migrations": "migrations"
+    },
+    "placement": {
+      "design": "sourcedir",
+      "specs": "workdir",
+      "migrations": "sourcedir"
+    }
+  }
+}
+```
+
+Linked workspace example (resolved roots):
+
+- invocation (`workdir`): `/Users/alex/client-a`
+- resolved workspace (`sourcedir`): `/Users/alex/platform-core`
+- effective paths:
+  - design -> `/Users/alex/platform-core/design`
+  - specs -> `/Users/alex/client-a/checks/specs`
+  - migrations -> `/Users/alex/platform-core/migrations`
+
+### `rundown design`
 
 Manage design-doc revision lifecycle separately from migration execution.
 
-Use `docs` commands for revision snapshots and revision diffs; use `migrate` commands for migration proposal generation, execution, and satellites.
+Use `design` commands for revision snapshots and revision diffs; use `migrate` commands for migration proposal generation, execution, and satellites.
 
-#### `rundown docs release`
+#### `rundown design release`
 
 Release `design/current/` into the next immutable `design/rev.N/` snapshot.
 
@@ -226,14 +281,15 @@ No-change behavior is preserved: when `design/current/` is byte-for-byte unchang
 Synopsis:
 
 ```bash
-rundown docs release [options]
+rundown design release [options]
 ```
 
 Compatibility note:
 
-- `rundown docs release` is the canonical snapshot command.
-- `rundown docs publish` remains available as a deprecated alias and prints guidance to move to `docs release`.
-- `rundown docs save` is removed and fails with an actionable message that points to `docs release`.
+- `rundown design release` is the canonical snapshot command.
+- `rundown docs release` remains available as a deprecated alias and prints guidance to move to `design release`.
+- `rundown docs publish` remains available as a deprecated alias and prints guidance to move to `design release`.
+- `rundown docs save` is removed and fails with an actionable message that points to `design release`.
 
 Options:
 
@@ -243,7 +299,7 @@ Options:
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
 | `--label <text>` | Optional label stored in revision sidecar metadata. | unset |
 
-#### `rundown docs diff [target]`
+#### `rundown design diff [target]`
 
 Show revision diff context using either shorthand target or explicit selectors.
 
@@ -267,7 +323,7 @@ Explicit selector form:
 Synopsis:
 
 ```bash
-rundown docs diff [target] [options]
+rundown design diff [target] [options]
 ```
 
 Options:
@@ -278,6 +334,15 @@ Options:
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
 | `--from <rev|current>` | Explicit source selector (use with `--to`). | unset |
 | `--to <rev|current>` | Explicit destination selector (use with `--from`; must be `current` in this build). | unset |
+
+#### `rundown docs` (deprecated alias)
+
+`rundown docs` remains available as a transition alias for one migration window.
+
+- `rundown docs release` -> deprecated alias for `rundown design release`
+- `rundown docs diff` -> deprecated alias for `rundown design diff`
+- `rundown docs publish` -> deprecated alias for `rundown design release`
+- `rundown docs save` -> removed alias with actionable migration guidance
 
 Migration file naming:
 

@@ -150,6 +150,9 @@ Built-in worker-facing templates include:
   - `{{workspaceDesignDir}}`
   - `{{workspaceSpecsDir}}`
   - `{{workspaceMigrationsDir}}`
+  - `{{workspaceDesignPlacement}}`
+  - `{{workspaceSpecsPlacement}}`
+  - `{{workspaceMigrationsPlacement}}`
   - `{{workspaceDesignPath}}`
   - `{{workspaceSpecsPath}}`
   - `{{workspaceMigrationsPath}}`
@@ -163,6 +166,13 @@ phase prompts when those phases are active).
 
 All workspace-context fields are runtime-injected as absolute normalized paths/values:
 
+Placement term contract used across config, CLI docs, and prompt variables:
+
+- `sourcedir`: effective workspace/source directory chosen by command resolution.
+- `workdir`: invocation directory where the command was launched.
+
+In non-linked mode, both terms resolve to the same absolute path. In linked mode, they may differ.
+
 | Variable | Meaning |
 | --- | --- |
 | `{{invocationDir}}` | Absolute directory where the CLI command was invoked. |
@@ -172,9 +182,12 @@ All workspace-context fields are runtime-injected as absolute normalized paths/v
 | `{{workspaceDesignDir}}` | Project-relative design workspace directory from prediction workspace config (default: `design`). |
 | `{{workspaceSpecsDir}}` | Project-relative specs workspace directory from prediction workspace config (default: `specs`). |
 | `{{workspaceMigrationsDir}}` | Project-relative migrations workspace directory from prediction workspace config (default: `migrations`). |
-| `{{workspaceDesignPath}}` | Absolute path to the effective design workspace directory (`workspaceDir` + `workspaceDesignDir`). |
-| `{{workspaceSpecsPath}}` | Absolute path to the effective specs workspace directory (`workspaceDir` + `workspaceSpecsDir`). |
-| `{{workspaceMigrationsPath}}` | Absolute path to the effective migrations workspace directory (`workspaceDir` + `workspaceMigrationsDir`). |
+| `{{workspaceDesignPlacement}}` | Placement mode for design bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
+| `{{workspaceSpecsPlacement}}` | Placement mode for specs bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
+| `{{workspaceMigrationsPlacement}}` | Placement mode for migrations bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
+| `{{workspaceDesignPath}}` | Absolute path to effective design bucket (`workspaceDesignDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
+| `{{workspaceSpecsPath}}` | Absolute path to effective specs bucket (`workspaceSpecsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
+| `{{workspaceMigrationsPath}}` | Absolute path to effective migrations bucket (`workspaceMigrationsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
 
 Fallback semantics are deterministic:
 
@@ -185,8 +198,41 @@ Fallback semantics are deterministic:
 - Stale/broken link targets: values fall back to non-linked semantics so prompts do not
   claim a linked workspace when resolution is invalid.
 
+Placement behavior notes:
+
+- `workspaceDesignPath`, `workspaceSpecsPath`, and `workspaceMigrationsPath` are computed from both configured bucket directory names and bucket placement modes.
+- Default placement for all buckets is `sourcedir` when `workspace.placement` keys are omitted.
+- Mixed placement is supported and represented explicitly via `workspace*Placement` variables.
+- Prompt consumers should treat the resolved `workspace*Path` variables as authoritative instead of recomputing paths.
+
 Workspace-context keys are authoritative runtime fields and cannot be overridden by
 user-provided `--var` or `--vars-file` values.
+
+### Placement examples
+
+Mixed placement (non-linked workspace where `invocationDir === workspaceDir`):
+
+| Variable | Example value |
+| --- | --- |
+| `{{workspaceDesignPlacement}}` | `sourcedir` |
+| `{{workspaceSpecsPlacement}}` | `workdir` |
+| `{{workspaceMigrationsPlacement}}` | `sourcedir` |
+| `{{workspaceDesignPath}}` | `/repo/design` |
+| `{{workspaceSpecsPath}}` | `/repo/specs` |
+| `{{workspaceMigrationsPath}}` | `/repo/migrations` |
+
+Mixed placement (linked workspace where roots differ):
+
+| Variable | Example value |
+| --- | --- |
+| `{{invocationDir}}` | `/work/client-a` |
+| `{{workspaceDir}}` | `/work/platform-core` |
+| `{{workspaceDesignPlacement}}` | `sourcedir` |
+| `{{workspaceSpecsPlacement}}` | `workdir` |
+| `{{workspaceMigrationsPlacement}}` | `sourcedir` |
+| `{{workspaceDesignPath}}` | `/work/platform-core/design` |
+| `{{workspaceSpecsPath}}` | `/work/client-a/specs` |
+| `{{workspaceMigrationsPath}}` | `/work/platform-core/migrations` |
 
 `{{userVariables}}` is a formatted dump of all extra template variables (merged from
 `--vars-file` and `--var`, with `--var` winning on conflicts).

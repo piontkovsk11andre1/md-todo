@@ -260,7 +260,7 @@ describe("createDocsTask", () => {
       expect(code).toBe(0);
       expect(outputEvents.some(
         (event) => event.kind === "warn"
-          && event.message.includes("`rundown docs publish` is deprecated; use `rundown docs release`"),
+          && event.message.includes("`rundown docs publish` is deprecated; use `rundown design release`"),
       )).toBe(false);
     } finally {
       cwdSpy.mockRestore();

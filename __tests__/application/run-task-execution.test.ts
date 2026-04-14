@@ -174,6 +174,7 @@ describe("run-task-execution helpers", () => {
       workspaceDir: "/fake/file/workspace",
       workspaceLinkPath: "/fake/file/workspace.link",
       isLinkedWorkspace: "false",
+      workspaceDesignPlacement: "workdir",
     });
     dependencies.templateLoader.load = (templatePath: string) => {
       if (templatePath.endsWith("execute.md")) {
@@ -185,6 +186,9 @@ describe("run-task-execution helpers", () => {
           "workspaceDesignDir={{workspaceDesignDir}}",
           "workspaceSpecsDir={{workspaceSpecsDir}}",
           "workspaceMigrationsDir={{workspaceMigrationsDir}}",
+          "workspaceDesignPlacement={{workspaceDesignPlacement}}",
+          "workspaceSpecsPlacement={{workspaceSpecsPlacement}}",
+          "workspaceMigrationsPlacement={{workspaceMigrationsPlacement}}",
           "workspaceDesignPath={{workspaceDesignPath}}",
           "workspaceSpecsPath={{workspaceSpecsPath}}",
           "workspaceMigrationsPath={{workspaceMigrationsPath}}",
@@ -203,6 +207,7 @@ describe("run-task-execution helpers", () => {
         "workspaceDir=/fake/cli/workspace",
         "workspaceLinkPath=/fake/cli/workspace.link",
         "isLinkedWorkspace=false",
+        "workspaceDesignPlacement=workdir",
       ],
       invocationDir: "/real/invocation",
       workspaceDir: "/real/workspace",
@@ -220,6 +225,9 @@ describe("run-task-execution helpers", () => {
     expect(prompt).toContain("workspaceDesignDir=design");
     expect(prompt).toContain("workspaceSpecsDir=specs");
     expect(prompt).toContain("workspaceMigrationsDir=migrations");
+    expect(prompt).toContain("workspaceDesignPlacement=sourcedir");
+    expect(prompt).toContain("workspaceSpecsPlacement=sourcedir");
+    expect(prompt).toContain("workspaceMigrationsPlacement=sourcedir");
     expect(prompt).toContain(`workspaceDesignPath=${path.resolve("/real/workspace", "design")}`);
     expect(prompt).toContain(`workspaceSpecsPath=${path.resolve("/real/workspace", "specs")}`);
     expect(prompt).toContain(`workspaceMigrationsPath=${path.resolve("/real/workspace", "migrations")}`);
@@ -246,6 +254,9 @@ describe("run-task-execution helpers", () => {
           "workspaceDesignDir={{workspaceDesignDir}}",
           "workspaceSpecsDir={{workspaceSpecsDir}}",
           "workspaceMigrationsDir={{workspaceMigrationsDir}}",
+          "workspaceDesignPlacement={{workspaceDesignPlacement}}",
+          "workspaceSpecsPlacement={{workspaceSpecsPlacement}}",
+          "workspaceMigrationsPlacement={{workspaceMigrationsPlacement}}",
           "workspaceDesignPath={{workspaceDesignPath}}",
           "workspaceSpecsPath={{workspaceSpecsPath}}",
           "workspaceMigrationsPath={{workspaceMigrationsPath}}",
@@ -274,6 +285,9 @@ describe("run-task-execution helpers", () => {
     expect(prompt).toContain("workspaceDesignDir=design");
     expect(prompt).toContain("workspaceSpecsDir=specs");
     expect(prompt).toContain("workspaceMigrationsDir=migrations");
+    expect(prompt).toContain("workspaceDesignPlacement=sourcedir");
+    expect(prompt).toContain("workspaceSpecsPlacement=sourcedir");
+    expect(prompt).toContain("workspaceMigrationsPlacement=sourcedir");
     expect(prompt).toContain(`workspaceDesignPath=${path.resolve("/real/invocation", "design")}`);
     expect(prompt).toContain(`workspaceSpecsPath=${path.resolve("/real/invocation", "specs")}`);
     expect(prompt).toContain(`workspaceMigrationsPath=${path.resolve("/real/invocation", "migrations")}`);

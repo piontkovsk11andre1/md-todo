@@ -2997,7 +2997,7 @@ function createDependencies(options: {
   };
 
   const fileSystem: FileSystem = {
-    exists: vi.fn(() => true),
+    exists: vi.fn((filePath: string) => filePath === options.markdownFile),
     readText: vi.fn((filePath: string) => {
       if (options.readThrows && filePath === options.markdownFile) {
         throw new Error("missing file");

@@ -38,6 +38,8 @@ import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
 import {
   resolvePredictionWorkspaceDirectories,
+  resolvePredictionWorkspacePaths,
+  resolvePredictionWorkspacePlacement,
 } from "./prediction-workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
@@ -527,9 +529,24 @@ export function createRunTaskExecution(
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
+    const workspacePlacement = resolvePredictionWorkspacePlacement({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+    });
+    const workspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+      directories: workspaceDirectories,
+      placement: workspacePlacement,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
-      workspaceDirectories,
+      {
+        directories: workspaceDirectories,
+        placement: workspacePlacement,
+        paths: workspacePaths,
+      },
     );
 
     let cliBlockExecutor = cacheCliBlocks
