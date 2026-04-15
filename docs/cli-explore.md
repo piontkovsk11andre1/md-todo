@@ -50,7 +50,7 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--mode <mode>` | Shared execution mode forwarded to both phases (`research` + `plan`). Use `wait` for compatibility with `plan`. | `wait` |
-| `--scan-count <n>` | Planner-only maximum clean-session scan iterations forwarded to `plan`. Must be a safe positive integer. | `3` |
+| `--scan-count <n>` | Planner-only maximum clean-session scan iterations cap forwarded to `plan`. Must be a safe positive integer. Omit for convergence-driven planning (no user-set scan cap). | unset |
 | `--deep <n>` | Planner-only nested pass count forwarded to `plan`. Must be a safe non-negative integer. | `0` |
 | `--max-items <n>` | Planner-only item cap forwarded to `plan`. | unset |
 | `--force-unlock` | Remove stale source lockfiles before each phase lock acquisition. Active locks held by live processes are not removed. | off |
@@ -79,6 +79,9 @@ Examples:
 rundown explore docs/spec.md
 
 # Include nested TODO generation in the plan phase
+rundown explore docs/spec.md --deep 1
+
+# Optional explicit planner scan cap
 rundown explore docs/spec.md --scan-count 3 --deep 1
 
 # PowerShell-safe worker form (explicit worker override)

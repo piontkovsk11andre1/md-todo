@@ -113,7 +113,7 @@ Use `research` when a document is still thin and needs implementation context be
 
 ```bash
 rundown research docs/release-plan.md -- opencode run
-rundown plan docs/release-plan.md --scan-count 3 -- opencode run
+rundown plan docs/release-plan.md -- opencode run
 ```
 
 What happens:

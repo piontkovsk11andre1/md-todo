@@ -6,7 +6,7 @@ For thin specs, run `research` first so `plan` has richer context:
 
 ```bash
 rundown research docs/spec.md
-rundown plan docs/spec.md --scan-count 3
+rundown plan docs/spec.md
 ```
 
 `plan` treats the full document as intent input. It creates actionable TODOs when none exist, then runs clean-session coverage scans that append only missing TODO items until convergence or the scan cap is reached.
@@ -42,7 +42,7 @@ Options:
 
 | Option | Description | Default |
 |---|---|---|
-| `--scan-count <n>` | Maximum clean-session scan iterations. Must be a safe positive integer. | `3` |
+| `--scan-count <n>` | Maximum clean-session scan iterations cap. Must be a safe positive integer. Omit for convergence-driven planning (no user-set scan cap). | unset |
 | `--max-items <n>` | Maximum total TODO items allowed in the document after each scan merge. Planning stops once this cap is reached. Must be a safe non-negative integer. | unset |
 | `--deep <n>` | Additional nested planning passes after top-level scans. Must be a safe non-negative integer (`0` disables deep passes). | `0` |
 | `--mode <mode>` | Planner execution mode. Currently only `wait` is supported. | `wait` |
@@ -67,7 +67,8 @@ Worker resolution:
 
 Scan loop and convergence semantics:
 
-- Scans run from `1..scan-count` and always read the latest on-disk document before each pass.
+- If `--scan-count <n>` is set, scans run from `1..scan-count` and always read the latest on-disk document before each pass.
+- If `--scan-count` is omitted, scans continue until convergence (bounded only by internal emergency safeguards).
 - Each scan may only add TODO lines; edits/deletes/reorders of existing TODO text are rejected.
 - Converges early when either:
   - worker output is empty, or
@@ -93,10 +94,13 @@ Artifacts and audit expectations:
 Examples:
 
 ```bash
-# Basic plan run
-rundown plan roadmap.md --scan-count 3
+# Basic plan run (convergence-driven; no explicit scan cap)
+rundown plan roadmap.md
 
 # No TODOs yet: bootstrap actionable TODOs, then converge
+rundown plan docs/spec.md
+
+# Optional explicit scan cap
 rundown plan docs/spec.md --scan-count 3
 
 # Existing TODOs: append missing implementation items only

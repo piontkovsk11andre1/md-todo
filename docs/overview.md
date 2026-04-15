@@ -445,7 +445,7 @@ Guardrails:
 Typical flow:
 
 1. `rundown research <source> -- opencode run`
-2. `rundown plan <source> --scan-count 3 -- opencode run`
+2. `rundown plan <source> -- opencode run`
 3. `rundown run <source> -- opencode run`
 
 ## Planning

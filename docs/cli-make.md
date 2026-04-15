@@ -48,7 +48,7 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--mode <mode>` | Make execution mode. Only `wait` is supported for deterministic non-interactive chaining. | `wait` |
-| `--scan-count <n>` | Maximum clean-session scan iterations for the `plan` phase. Must be a safe positive integer. | `3` |
+| `--scan-count <n>` | Maximum clean-session scan iterations cap for the `plan` phase. Must be a safe positive integer. Omit for convergence-driven planning (no user-set scan cap). | unset |
 | `--force-unlock` | Remove stale source lockfiles before each phase lock acquisition. Active locks held by live processes are not removed. | off |
 | `--dry-run` | Render phase prompts + execution intent and exit without running workers. | off |
 | `--print-prompt` | Print rendered phase prompts and exit `0` without running workers. | off |
