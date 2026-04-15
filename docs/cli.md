@@ -133,7 +133,7 @@ See the command-focused reference: [cli-run.md](cli-run.md).
 
 Shorthand for `rundown run <source> --all`.
 
-See the command-focused reference: [cli-run.md](cli-run.md).
+See the command-focused reference: [cli-all.md](cli-all.md).
 
 ### `rundown call <source>`
 
