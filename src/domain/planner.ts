@@ -274,10 +274,14 @@ function normalizeTodoChildLine(line: string): string {
 const CHECKBOX_PATTERN = /^\s*[-*+]\s+\[([ xX])\]\s+\S/;
 const FENCE_PATTERN = /^\s*(`{3,}|~{3,})/;
 
-function classifyTodoLinesOutsideFences(lines: string[]): { proseLines: string[]; todoLines: string[]; todoIndices: number[] } {
-  const proseLines: string[] = [];
-  const todoLines: string[] = [];
-  const todoIndices: number[] = [];
+interface TodoCheckboxLineEntry {
+  index: number;
+  line: string;
+  normalized: string;
+}
+
+function collectTodoCheckboxLinesOutsideFences(lines: string[]): TodoCheckboxLineEntry[] {
+  const entries: TodoCheckboxLineEntry[] = [];
   let openFence: { char: "`" | "~"; length: number } | null = null;
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -290,32 +294,29 @@ function classifyTodoLinesOutsideFences(lines: string[]): { proseLines: string[]
 
       if (openFence === null) {
         openFence = { char, length };
-        proseLines.push(line);
         continue;
       }
 
       if (openFence.char === char && length >= openFence.length) {
         openFence = null;
-        proseLines.push(line);
         continue;
       }
     }
 
     if (openFence !== null) {
-      proseLines.push(line);
       continue;
     }
 
     if (CHECKBOX_PATTERN.test(line)) {
-      todoLines.push(line);
-      todoIndices.push(index);
-      continue;
+      entries.push({
+        index,
+        line,
+        normalized: normalizeTodoCheckboxLine(line),
+      });
     }
-
-    proseLines.push(line);
   }
 
-  return { proseLines, todoLines, todoIndices };
+  return entries;
 }
 
 /**
@@ -331,61 +332,33 @@ export function relocateInsertedTodosToEnd(beforeSource: string, afterSource: st
   const beforeLines = beforeSource.split(/\r?\n/);
   const afterLines = afterSource.split(/\r?\n/);
 
-  const { todoLines: beforeTodoLines } = classifyTodoLinesOutsideFences(beforeLines);
-  const { todoLines: afterTodoLines } = classifyTodoLinesOutsideFences(afterLines);
+  const beforeTodoEntries = collectTodoCheckboxLinesOutsideFences(beforeLines);
+  const afterTodoEntries = collectTodoCheckboxLinesOutsideFences(afterLines);
 
-  const beforeCounts = toCountMap(beforeTodoLines.map((line) => normalizeTodoCheckboxLine(line)));
+  const beforeCounts = toCountMap(beforeTodoEntries.map((entry) => entry.normalized));
   const addedTodoLines: string[] = [];
+  const addedTodoIndices = new Set<number>();
 
-  for (const line of afterTodoLines) {
-    const normalized = normalizeTodoCheckboxLine(line);
+  for (const entry of afterTodoEntries) {
+    const normalized = entry.normalized;
     const beforeCount = beforeCounts.get(normalized) ?? 0;
     if (beforeCount > 0) {
       beforeCounts.set(normalized, beforeCount - 1);
       continue;
     }
 
-    addedTodoLines.push(line);
+    addedTodoLines.push(entry.line);
+    addedTodoIndices.add(entry.index);
   }
 
   if (addedTodoLines.length === 0) {
     return afterSource;
   }
 
-  const removableCounts = toCountMap(addedTodoLines.map((line) => normalizeTodoCheckboxLine(line)));
   const linesWithoutAddedTodos: string[] = [];
-  let openFence: { char: "`" | "~"; length: number } | null = null;
   for (let i = 0; i < afterLines.length; i += 1) {
     const line = afterLines[i] ?? "";
-
-    const fenceMatch = line.match(FENCE_PATTERN);
-    if (fenceMatch) {
-      const marker = fenceMatch[1] ?? "";
-      const char = marker[0] as "`" | "~";
-      const length = marker.length;
-      if (openFence === null) {
-        openFence = { char, length };
-      } else if (openFence.char === char && length >= openFence.length) {
-        openFence = null;
-      }
-      linesWithoutAddedTodos.push(line);
-      continue;
-    }
-
-    if (openFence !== null) {
-      linesWithoutAddedTodos.push(line);
-      continue;
-    }
-
-    if (!CHECKBOX_PATTERN.test(line)) {
-      linesWithoutAddedTodos.push(line);
-      continue;
-    }
-
-    const normalized = normalizeTodoCheckboxLine(line);
-    const removableCount = removableCounts.get(normalized) ?? 0;
-    if (removableCount > 0) {
-      removableCounts.set(normalized, removableCount - 1);
+    if (addedTodoIndices.has(i)) {
       continue;
     }
 
