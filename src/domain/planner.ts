@@ -331,10 +331,10 @@ function collectTodoCheckboxLinesOutsideFences(lines: string[]): TodoCheckboxLin
  * - Otherwise, append new items at the very end of the document.
  */
 export function relocateInsertedTodosToEnd(beforeSource: string, afterSource: string): string {
-  const eol = afterSource.includes("\r\n") ? "\r\n" : "\n";
+  const eol = detectPreferredEol(beforeSource, afterSource);
   const beforeLines = beforeSource.split(/\r?\n/);
   const afterLines = afterSource.split(/\r?\n/);
-  const endsWithNewline = afterSource.endsWith("\n") || afterSource.endsWith("\r\n");
+  const endsWithNewline = sourceEndsWithNewline(beforeSource);
 
   const beforeTodoEntries = collectTodoCheckboxLinesOutsideFences(beforeLines);
   const afterTodoEntries = collectTodoCheckboxLinesOutsideFences(afterLines);
@@ -387,6 +387,26 @@ export function relocateInsertedTodosToEnd(beforeSource: string, afterSource: st
   }
 
   return result.join(eol);
+}
+
+function detectPreferredEol(source: string, fallbackSource: string): "\n" | "\r\n" {
+  if (source.includes("\r\n")) {
+    return "\r\n";
+  }
+
+  if (source.includes("\n")) {
+    return "\n";
+  }
+
+  if (fallbackSource.includes("\r\n")) {
+    return "\r\n";
+  }
+
+  return "\n";
+}
+
+function sourceEndsWithNewline(source: string): boolean {
+  return source.endsWith("\n") || source.endsWith("\r\n");
 }
 
 function endsWithTodoBlockOutsideFences(lines: string[]): boolean {

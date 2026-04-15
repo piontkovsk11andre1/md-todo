@@ -616,6 +616,37 @@ describe("relocateInsertedTodosToEnd", () => {
     ].join("\r\n"));
   });
 
+  it("rebuilds using before-source newline style and final newline behavior", () => {
+    const beforeSource = [
+      "# Spec",
+      "",
+      "- [ ] Existing",
+      "",
+      "Narrative.",
+    ].join("\n");
+    const afterSource = [
+      "# Spec",
+      "",
+      "- [ ] Existing",
+      "",
+      "Narrative.",
+      "- [ ] Added",
+      "",
+    ].join("\r\n");
+
+    const result = relocateInsertedTodosToEnd(beforeSource, afterSource);
+
+    expect(result).toBe([
+      "# Spec",
+      "",
+      "- [ ] Existing",
+      "",
+      "Narrative.",
+      "",
+      "- [ ] Added",
+    ].join("\n"));
+  });
+
   it("returns edited content unchanged when no new TODOs were added", () => {
     const beforeSource = [
       "# Examples",
