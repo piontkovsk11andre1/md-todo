@@ -362,6 +362,24 @@ When repair runs, `{{verificationResult}}` is sourced from the latest verify-pha
 
 If verification fails and repair attempts are enabled, `rundown` renders the repair template, runs another pass, and verifies again.
 
+Worker routing across verify/repair lifecycle is phase-aware:
+
+- verify, repair, resolve, and resolve-informed repair can each resolve a different worker via `run.workerRouting`.
+- attempt-aware selectors allow escalation by attempt number (for example, stronger worker at later repair attempts).
+
+Health failover and semantic escalation are separate mechanisms:
+
+- inherited worker routes continue to use technical failover from `workers.fallbacks`.
+- explicit phase routes are deterministic and do not use `workers.fallbacks` unless `useFallbacks: true` is set.
+
+When `run.workerRouting.reset` is configured, rundown can do one semantic reset retry after verify/repair exhaustion:
+
+- restore git state for the failed cycle,
+- retry using the dedicated reset worker route,
+- keep this semantic retry independent from health-failover budgets.
+
+Semantic reset is opt-in and artifact-backed. If required run metadata or git commit context is unavailable, rundown fails with guidance rather than attempting unsafe history reconstruction.
+
 ## Reverify historical tasks
 
 `rundown reverify` re-runs verify/repair for a previously completed task from saved artifacts.
@@ -398,6 +416,8 @@ This command only works for runs that were completed with both:
 
 - `--commit` (so the run lifecycle recorded a commit SHA), and
 - `--keep-artifacts` (so `run.json` and `extra.commitSha` are still available).
+
+This same artifact discipline underpins semantic reset retries: reset-based retry requires auditable run metadata and commit context to safely restore pre-cycle git state before retrying.
 
 Revert granularity follows commit timing:
 

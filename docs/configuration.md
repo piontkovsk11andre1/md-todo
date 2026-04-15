@@ -8,6 +8,7 @@ This lets you:
 - define a default worker so you do not need `--worker` on every command,
 - set per-command worker overrides (`run`, `plan`, `discuss`, `help`, `research`, `reverify`, `verify`, `memory`, `tools.<toolName>`),
 - define named profiles (for model or other worker args),
+- route `run`/`reverify` phases (`verify`, `repair`, `resolve`, `resolveRepair`, `reset`) to different workers,
 - configure inline task trace statistics written under completed TODOs,
 - apply profiles from file frontmatter, directive parent list items, or `profile=` prefix modifiers,
 - override everything from the CLI when needed.
@@ -68,6 +69,43 @@ All command arrays and arg arrays must be JSON arrays of strings.
   "profiles": {
     "<profileName>": ["string", "..."]
   },
+  "run": {
+    "revertable": true,
+    "commit": true,
+    "commitMessage": "string",
+    "commitMode": "per-task",
+    "workerRouting": {
+      "execute": { "worker": ["string", "..."], "useFallbacks": false },
+      "verify": { "worker": ["string", "..."], "useFallbacks": false },
+      "repair": {
+        "default": { "worker": ["string", "..."], "useFallbacks": false },
+        "attempts": [
+          {
+            "selector": { "attempt": 2 },
+            "worker": ["string", "..."],
+            "useFallbacks": false
+          },
+          {
+            "selector": { "fromAttempt": 3 },
+            "worker": ["string", "..."],
+            "useFallbacks": false
+          }
+        ]
+      },
+      "resolve": { "worker": ["string", "..."], "useFallbacks": false },
+      "resolveRepair": {
+        "default": { "worker": ["string", "..."], "useFallbacks": false },
+        "attempts": [
+          {
+            "selector": { "fromAttempt": 2, "toAttempt": 3 },
+            "worker": ["string", "..."],
+            "useFallbacks": false
+          }
+        ]
+      },
+      "reset": { "worker": ["string", "..."], "useFallbacks": false }
+    }
+  },
   "traceStatistics": {
     "enabled": true,
     "fields": ["total_time", "tokens_estimated"]
@@ -83,7 +121,54 @@ Section behavior:
 - `commands.<name>`: command-specific worker override (for example `plan`, `verify`, or `memory`).
 - `commands.tools.<toolName>`: command-specific override for one tool-expansion prefix task (for example `tools.post-on-gitea`).
 - `profiles.<name>`: named reusable worker command overrides selected from frontmatter, directives, or prefix modifiers.
+- `run.workerRouting.*`: phase-scoped worker routing for `run` and `reverify` verify/repair lifecycle stages.
 - `traceStatistics`: controls optional inline trace summary lines written below completed checkbox tasks.
+
+## Run phase worker routing
+
+`run.workerRouting` lets you route lifecycle phases to different workers without changing task text or CLI worker flags.
+
+Supported phases:
+
+- `execute`
+- `verify`
+- `repair`
+- `resolve`
+- `resolveRepair`
+- `reset`
+
+Route shape:
+
+- single-phase routes (`execute`, `verify`, `resolve`, `reset`) use `{ "worker": [...], "useFallbacks": <bool?> }`.
+- attempt-scoped phases (`repair`, `resolveRepair`) use:
+  - `default` for unmatched attempts,
+  - `attempts[]` for exact/range matching with selectors.
+
+Attempt selector rules (`repair.attempts[]` and `resolveRepair.attempts[]`):
+
+- use either `selector.attempt` (exact match) or `selector.fromAttempt`/`selector.toAttempt` (range).
+- `attempt` cannot be combined with `fromAttempt` or `toAttempt`.
+- selector values must be positive integers.
+- when both bounds are provided, `fromAttempt` must be `<= toAttempt`.
+
+Matching behavior:
+
+- attempt routes are evaluated in array order; first match wins.
+- if no attempt selector matches, `default` is used when present.
+- if neither match/default exists, the phase inherits normal worker resolution (`workers.default`/`workers.tui` + command/profile/CLI precedence).
+
+Fallback behavior is intentionally split between semantic routing and health failover:
+
+- inherited routes (no explicit phase worker selected) keep normal fallback behavior via `workers.fallbacks`.
+- explicit phase routes do **not** use `workers.fallbacks` unless `useFallbacks: true` is set on that route.
+- explicit phase routes are deterministic worker selections; failures are surfaced directly when fallbacks are disabled.
+
+`reset` phase semantics:
+
+- `run.workerRouting.reset` is opt-in. If omitted, exhausted verify/repair flow stops as before.
+- when configured, rundown can perform one semantic reset retry per task after verification/repair exhaustion.
+- semantic reset restores git state for the failed cycle, then retries on the configured `reset` route.
+- this is a semantic retry path, independent from health failover budgets and `workers.fallbacks`.
 
 ## Trace statistics
 
@@ -210,6 +295,7 @@ Layer merge semantics (`global` -> `local`):
 - Arrays use replace semantics (no append/union during layer merge).
 - Command/profile maps merge by entry; local `commands.<name>` or `profiles.<name>` replaces the same global entry.
 - `healthPolicy` uses deterministic nested key merge for `cooldownSecondsByFailureClass` and `unavailableReevaluation`.
+- `run` merges by object key, but arrays inside it (for example `run.workerRouting.repair.attempts`) still use replace semantics.
 
 Edge cases:
 

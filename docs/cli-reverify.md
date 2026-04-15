@@ -10,6 +10,8 @@ Use this when you want a deterministic confidence check against an exact histori
 
 `--worker` is optional when rundown can resolve a worker for `reverify` from `.rundown/config.json`.
 
+`reverify` applies the same phase-aware routing rules as `run` for verify/repair/resolve/resolve-informed-repair stages.
+
 ## Global option: `--config-dir <path>`
 
 `--config-dir <path>` is available on every command.
@@ -38,6 +40,7 @@ Options:
 | `--all` | Re-verify all completed runs. Default processing order is newest first. |
 | `--oldest-first` | Process selected runs in oldest-first order (applies to `--all` and `--last <n>`). |
 | `--repair-attempts <n>` | Retry repair up to `n` times when verification fails. |
+| `--resolve-repair-attempts <n>` | Retry resolve-informed repair up to `n` times after resolve diagnosis. |
 | `--no-repair` | Disable repair attempts and fail immediately on verification failure. |
 | `--worker <pattern>` | Worker pattern to execute verify/repair phases (preferred on PowerShell). |
 | `--print-prompt` | Print the rendered verify prompt and exit `0` without running the worker. |
@@ -45,6 +48,27 @@ Options:
 | `--keep-artifacts` | Keep the reverify run folder under `<config-dir>/runs/`. |
 | `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. |
 | `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). Default: `30000`. |
+
+## Phase-aware routing behavior
+
+For each selected historical run, `reverify` resolves workers per phase:
+
+- verify
+- repair attempt `N`
+- resolve
+- resolve-informed repair attempt `N`
+
+Routing source is `run.workerRouting` in config (shared with `run` semantics).
+
+Fallback policy is identical to `run`:
+
+- inherited routes use normal health failover (`workers.fallbacks`),
+- explicit phase routes skip fallbacks unless `useFallbacks: true` is set.
+
+Notes:
+
+- `reverify` does not run an execute phase and does not use the `reset` phase route.
+- `--worker`/`-- <command>` still overrides config for all reverify phases.
 
 Note: `--print-prompt` is only supported for single-run reverify. Combining it with `--all` or `--last` returns exit code `1`.
 

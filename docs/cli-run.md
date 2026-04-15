@@ -6,6 +6,8 @@ With `--all` (or the shorthand `all` command), process tasks sequentially until 
 
 Agent stdout/stderr is hidden by default. Use `--show-agent-output` to display worker output only for the supported `execute`, `verify`, and `repair` stages.
 
+`run` now supports phase-aware worker routing from config (`run.workerRouting`), so verify/repair/resolve stages can use different workers than execute.
+
 ## Global option: `--config-dir <path>`
 
 `--config-dir <path>` is available on every command.
@@ -64,6 +66,47 @@ Options:
 - `--ignore-cli-block`: Disable execution of `cli` fenced blocks during prompt expansion.
 - `--cache-cli-blocks`: Cache `cli` fenced block command output for the duration of the run.
 - `--cli-block-timeout <ms>`: Timeout in milliseconds for executing `cli` fenced blocks (`0` disables timeout).
+
+## Phase-aware worker routing
+
+`run` resolves workers per lifecycle phase:
+
+- execute
+- verify
+- repair attempt `N`
+- resolve
+- resolve-informed repair attempt `N`
+- optional semantic reset retry
+
+Routing source is `run.workerRouting` in config. This allows attempt-aware escalation (for example, stronger model at repair attempt 2+) without task-text changes.
+
+Behavior summary:
+
+- if a phase has no explicit route, worker resolution follows the normal cascade (`workers.default`/`workers.tui`, command/profile, CLI).
+- if a phase has an explicit route, that worker is used deterministically for that phase.
+- `--worker`/`-- <command>` still overrides all config and is applied across phases.
+
+## Fallback vs semantic escalation
+
+`run` treats configured phase escalation differently from health failover:
+
+- inherited routes keep technical failover via `workers.fallbacks` and health-policy eligibility checks.
+- explicit phase routes do not use `workers.fallbacks` unless that route sets `useFallbacks: true`.
+- health failover retry budgets remain independent from semantic phase routing.
+
+## Semantic reset after exhaustion
+
+When `run.workerRouting.reset.worker` is configured, rundown can retry once per task after verify/repair/resolve attempts are exhausted:
+
+- restores failed-cycle git state using semantic reset safeguards,
+- retries the task using the configured `reset` phase worker,
+- counts as semantic retry (not health fallback).
+
+Guardrails:
+
+- reset routing is opt-in; without it, behavior remains stop-on-failure.
+- reset requires valid run metadata and git commit context for deterministic restore.
+- if required metadata is unavailable, rundown fails with actionable guidance instead of guessing git state.
 
 Examples:
 
