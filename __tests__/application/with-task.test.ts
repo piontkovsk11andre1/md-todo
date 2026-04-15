@@ -189,7 +189,7 @@ describe("with-task", () => {
     });
 
     expect(() => withTask({ harness: "unknown-harness" })).toThrow(
-      "Unknown harness preset: unknown-harness. Supported presets: opencode, claude, gemini, codex, aider, cursor, pi.",
+      "Unknown harness preset: unknown-harness. Supported presets: opencode, claude, gemini, codex, aider, cursor, pi. Run `rundown with <harness>` using one of the supported names.",
     );
   });
 });

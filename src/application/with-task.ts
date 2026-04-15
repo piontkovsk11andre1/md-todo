@@ -57,7 +57,7 @@ export function createWithTask(
     const harnessKey = resolveHarnessPresetKey(options.harness);
     if (!harnessKey) {
       throw new Error(
-        `Unknown harness preset: ${options.harness}. Supported presets: ${listHarnessPresetKeys().join(", ")}.`,
+        `Unknown harness preset: ${options.harness}. Supported presets: ${listHarnessPresetKeys().join(", ")}. Run \`rundown with <harness>\` using one of the supported names.`,
       );
     }
 
