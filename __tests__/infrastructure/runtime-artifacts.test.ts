@@ -19,6 +19,8 @@ import {
   scanRuntimeArtifactPhases,
 } from "../../src/infrastructure/runtime-artifacts.js";
 
+const UTC_ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -108,6 +110,10 @@ describe("runtime-artifacts", () => {
     const failed = listFailedRuntimeArtifacts(cwd);
 
     expect(saved).toHaveLength(2);
+    expect(saved[0]?.startedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
+    expect(saved[0]?.completedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
+    expect(saved[1]?.startedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
+    expect(saved[1]?.completedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
     expect(failed).toHaveLength(1);
     expect(failed[0]?.runId).toBe(second.runId);
     expect(latestSavedRuntimeArtifact(cwd)?.runId).toBe(second.runId);
@@ -199,6 +205,7 @@ describe("runtime-artifacts", () => {
     expect(metadata.stdoutFile).toBeNull();
     expect(metadata.stderrFile).toBeNull();
     expect(typeof metadata.completedAt).toBe("string");
+    expect(metadata.completedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
     expect(fs.existsSync(path.join(phase.dir, "prompt.md"))).toBe(false);
     expect(fs.existsSync(path.join(phase.dir, "stdout.log"))).toBe(false);
     expect(fs.existsSync(path.join(phase.dir, "stderr.log"))).toBe(false);
@@ -247,9 +254,13 @@ describe("runtime-artifacts", () => {
     const metadata = JSON.parse(fs.readFileSync(phase.metadataFile, "utf-8")) as {
       phase: string;
       phaseLabel?: string;
+      startedAt?: string;
+      completedAt?: string;
     };
     expect(metadata.phase).toBe("plan");
     expect(metadata.phaseLabel).toBe("plan-scan-01");
+    expect(metadata.startedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
+    expect(metadata.completedAt).toMatch(UTC_ISO_8601_TIMESTAMP);
   });
 
   it("returns early when finalizing a deleted non-preserved run", () => {

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
 
+const UTC_ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 describe("trace-run-session", () => {
   it("emits run lifecycle events", () => {
     const write = vi.fn();
@@ -65,6 +67,13 @@ describe("trace-run-session", () => {
     expect(write.mock.calls.some((call) => call[0]?.event_type === "round.completed")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "task.completed")).toBe(true);
     expect(write.mock.calls.some((call) => call[0]?.event_type === "run.completed")).toBe(true);
+    const timestamps = write.mock.calls
+      .map((call) => (call[0] as { timestamp?: string })?.timestamp)
+      .filter((value): value is string => typeof value === "string");
+    expect(timestamps.length).toBeGreaterThan(0);
+    for (const timestamp of timestamps) {
+      expect(timestamp).toMatch(UTC_ISO_8601_TIMESTAMP);
+    }
     expect(session.getRunId()).toBe("run-1");
     expect(session.hasActiveRun()).toBe(true);
   });

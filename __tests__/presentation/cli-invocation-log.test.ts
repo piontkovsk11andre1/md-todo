@@ -1,7 +1,9 @@
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { configureCommanderOutputHandlers } from "../../src/presentation/cli-invocation-log.js";
+import { configureCommanderOutputHandlers, emitCliFatalError } from "../../src/presentation/cli-invocation-log.js";
 import type { CliInvocationLogState } from "../../src/presentation/cli-invocation-types.js";
+
+const UTC_ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 describe("configureCommanderOutputHandlers", () => {
   afterEach(() => {
@@ -101,5 +103,45 @@ describe("configureCommanderOutputHandlers", () => {
       session_id: "session-1",
       ts: expect.any(String),
     }));
+
+    const firstTs = (write.mock.calls[0]?.[0] as { ts: string }).ts;
+    const secondTs = (write.mock.calls[1]?.[0] as { ts: string }).ts;
+    expect(firstTs).toMatch(UTC_ISO_8601_TIMESTAMP);
+    expect(secondTs).toMatch(UTC_ISO_8601_TIMESTAMP);
+  });
+
+  it("writes fatal invocation log entries with UTC ISO timestamps", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-28T21:22:23.456Z"));
+
+    const write = vi.fn();
+    const state: CliInvocationLogState = {
+      writer: { write },
+      context: {
+        command: "run",
+        argv: ["run", "tasks.md"],
+        cwd: "/workspace",
+        pid: 123,
+        version: "1.2.3",
+        sessionId: "session-fatal",
+      },
+    };
+
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    emitCliFatalError("boom", state);
+
+    expect(stderrSpy).toHaveBeenCalled();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "cli-fatal",
+      level: "error",
+      stream: "stderr",
+      message: "boom",
+      ts: "2026-03-28T21:22:23.456Z",
+    }));
+    expect((write.mock.calls[0]?.[0] as { ts: string }).ts).toMatch(UTC_ISO_8601_TIMESTAMP);
+
+    vi.useRealTimers();
   });
 });

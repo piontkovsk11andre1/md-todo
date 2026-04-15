@@ -2,7 +2,41 @@ import { describe, expect, it, vi } from "vitest";
 import { createLoggedOutputPort } from "../../src/presentation/logged-output-port.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.js";
 
+const UTC_ISO_8601_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 describe("createLoggedOutputPort", () => {
+  it("uses UTC ISO timestamps for persisted global log entries by default", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-28T15:04:05.678Z"));
+
+    const writer = {
+      write: vi.fn(),
+    };
+
+    const port = createLoggedOutputPort({
+      output: { emit: vi.fn() },
+      writer,
+      context: {
+        command: "rundown",
+        argv: ["run", "TODO.md"],
+        cwd: "/workspace",
+        pid: 222,
+        version: "1.2.3",
+        sessionId: "session-utc-default",
+      },
+    });
+
+    port.emit({ kind: "info", message: "hello" });
+
+    expect(writer.write).toHaveBeenCalledTimes(1);
+    expect(writer.write).toHaveBeenCalledWith(expect.objectContaining({
+      ts: "2026-03-28T15:04:05.678Z",
+    }));
+    expect((writer.write.mock.calls[0]?.[0] as { ts: string }).ts).toMatch(UTC_ISO_8601_TIMESTAMP);
+
+    vi.useRealTimers();
+  });
+
   it("logs each event before forwarding to wrapped output", () => {
     const callOrder: string[] = [];
     const outputEmit = vi.fn(() => {
