@@ -27,7 +27,7 @@ What happens:
 5. runs repair attempts if configured,
 6. and only then marks the task complete.
 
-## 1b. One-command OpenCode onboarding with `with`
+## 2. One-command OpenCode onboarding with `with`
 
 ```bash
 rundown with opencode
@@ -47,7 +47,7 @@ rundown run roadmap.md
 rundown discuss roadmap.md
 ```
 
-## 2. PowerShell-safe worker usage
+## 3. PowerShell-safe worker usage
 
 ```powershell
 rundown run docs/ --worker 'opencode run --file $file $bootstrap'
@@ -55,7 +55,7 @@ rundown run docs/ --worker 'opencode run --file $file $bootstrap'
 
 This form avoids common PowerShell argument-splitting friction around `--`.
 
-## 3. Interactive TUI handoff
+## 4. Interactive TUI handoff
 
 ```bash
 rundown run roadmap.md --mode tui -- opencode
@@ -63,7 +63,7 @@ rundown run roadmap.md --mode tui -- opencode
 
 This opens the interactive session, lets the user steer it, then returns to `rundown` for verification and optional repair after exit.
 
-## 4. Inline CLI task
+## 5. Inline CLI task
 
 Markdown:
 
@@ -79,7 +79,7 @@ rundown run . -- opencode run
 
 Because the task starts with `cli:`, `rundown` executes `npm test` directly instead of sending the task to the worker.
 
-## 5. Plan first, execute later
+## 6. Plan first, execute later
 
 Markdown:
 
@@ -103,7 +103,7 @@ Possible planner output:
 
 Those items are inserted as nested subtasks. Because child tasks must complete before the parent, the new subitems become the next runnable work.
 
-## 6. Research before planning
+## 7. Research before planning
 
 Use `research` when a document is still thin and needs implementation context before TODO synthesis.
 
@@ -119,7 +119,7 @@ What happens:
 3. rejects output that introduces new unchecked TODO items,
 4. then `plan` appends actionable TODOs from that enriched foundation.
 
-## 7. Variables for repository context
+## 8. Variables for repository context
 
 ```bash
 rundown run roadmap.md --vars-file --var ticket=ENG-42 -- opencode run
@@ -127,7 +127,7 @@ rundown run roadmap.md --vars-file --var ticket=ENG-42 -- opencode run
 
 This loads `.rundown/vars.json`, overrides `ticket`, and makes those values available in templates.
 
-## 8. Keep artifacts for inspection
+## 9. Keep artifacts for inspection
 
 ```bash
 rundown run roadmap.md --keep-artifacts -- opencode run
@@ -135,7 +135,7 @@ rundown run roadmap.md --keep-artifacts -- opencode run
 
 This preserves the per-run folder under `.rundown/runs/` so prompts, logs, and metadata can be inspected later.
 
-## 9. Auto-commit completed tasks
+## 10. Auto-commit completed tasks
 
 ```bash
 rundown run docs/ --commit -- opencode run
@@ -173,7 +173,7 @@ rundown run docs/ --all --commit --commit-mode per-task -- opencode run
 
 `per-task` remains the default commit mode; pass it explicitly in automation when you want that behavior to be stable and obvious.
 
-## 10. Post-completion hooks
+## 11. Post-completion hooks
 
 Run any command after a task completes. Task metadata is available as environment variables.
 
@@ -193,7 +193,7 @@ Or use the hook for notifications, logging, or chaining:
 rundown run roadmap.md --on-complete 'echo "Completed: $RUNDOWN_TASK in $RUNDOWN_FILE"' -- opencode run
 ```
 
-## 11. A practical OpenCode setup
+## 12. A practical OpenCode setup
 
 A clean default pattern is:
 
@@ -202,7 +202,7 @@ A clean default pattern is:
 
 This keeps prompt handoff durable, inspectable, and friendly to large Markdown context.
 
-## 12. Reverify before release
+## 13. Reverify before release
 
 ```bash
 rundown reverify --no-repair -- opencode run
@@ -212,7 +212,7 @@ Use this to re-check the latest completed task with the current verify template 
 
 If historical metadata no longer maps to a unique task after major edits, `reverify` exits with code `3` instead of guessing.
 
-## 13. Revert a previously completed task
+## 14. Revert a previously completed task
 
 ```bash
 rundown revert --run latest
@@ -222,7 +222,7 @@ rundown revert --run latest
 
 If the original run used `--commit-mode file-done` in run-all mode, revert applies to the single final run-level commit (not each intermediate task).
 
-## 14. Concurrent run protection on one source file
+## 15. Concurrent run protection on one source file
 
 Terminal A:
 
@@ -245,7 +245,7 @@ rundown run roadmap.md -- opencode run
 rundown run docs/setup.md -- opencode run
 ```
 
-## 15. Recover from stale locks
+## 16. Recover from stale locks
 
 If a previous process crashed and left a stale lockfile, remove it manually:
 
@@ -262,7 +262,7 @@ rundown plan roadmap.md --force-unlock -- opencode run
 
 `--force-unlock` and `unlock` only remove stale locks. They do not break locks held by a live process.
 
-## 16. Mixed TODO with `cli:` and `rundown:` tasks
+## 17. Mixed TODO with `cli:` and `rundown:` tasks
 
 Markdown:
 
@@ -289,7 +289,7 @@ What happens:
 
 Note: legacy `--retries <n>` is still accepted as an alias for `--repair-attempts <n>`, but docs use `--repair-attempts` as the primary flag.
 
-## 17. Layered worker profiles from config
+## 18. Layered worker profiles from config
 
 Fresh `rundown init` writes `.rundown/config.json` as `{}`. With that empty default, pass a worker explicitly (`--worker ...` or `-- ...`) until you configure one.
 
@@ -348,7 +348,7 @@ How model selection resolves:
 3. Tasks under `- check:` are verify-only tasks.
 4. A CLI worker still overrides all config/profile layers when provided.
 
-## 18. Command-output blocks (`cli` fenced blocks)
+## 19. Command-output blocks (`cli` fenced blocks)
 
 Use fenced `cli` blocks in Markdown or templates when you want `rundown` to execute commands and inject their output into the worker prompt.
 
@@ -393,7 +393,7 @@ Useful flags:
 - `--ignore-cli-block` keeps `cli` blocks unexpanded (safe for review and dry inspection).
 - `--cli-block-timeout 60000` increases command timeout to 60 seconds.
 
-## 19. Unified prefix composition
+## 20. Unified prefix composition
 
 Markdown:
 
@@ -416,7 +416,7 @@ What happens:
 7. `optional:` / `skip:` are the preferred control-flow prefixes; legacy `end:` / `return:` / `quit:` / `break:` remain compatibility aliases.
 8. Unknown prefixes are treated as normal task text and do not fail resolution.
 
-## 20. Release design revisions and diff before migration
+## 21. Release design revisions and diff before migration
 
 Use `rundown design` when you want to manage design-document revisions directly.
 
@@ -449,7 +449,7 @@ What happens:
 5. `design diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
 6. Diff output is deterministic and suitable for both human review and migration context.
 
-## 21. Generate migrations after design revision work
+## 22. Generate migrations after design revision work
 
 After releasing or reviewing diffs, switch back to `migrate` for migration lifecycle commands.
 
