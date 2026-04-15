@@ -22,7 +22,7 @@ Enrich a single Markdown document with context and structure before planning.
 - New unchecked TODO items (`- [ ]`) are not allowed in research output.
 - `research` runs a single pass (no `--scan-count` convergence loop).
 
-## Options
+Options:
 
 | Option | Description | Default |
 |---|---|---|
@@ -65,7 +65,7 @@ If no CLI worker is provided and no worker is resolvable from config, the comman
 
 `No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.`
 
-## Examples
+Examples:
 
 ```bash
 # Enrich a thin spec before planning

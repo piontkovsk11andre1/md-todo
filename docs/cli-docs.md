@@ -60,7 +60,7 @@ Migration guidance:
 - Preferred: use `rundown design release`.
 - Transitional fallback: `rundown docs publish` remains available as a deprecated alias.
 
-## Examples
+Examples:
 
 ```bash
 # Canonical replacement for legacy docs release/publish
