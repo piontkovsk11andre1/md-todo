@@ -16,6 +16,7 @@ Store templates in `.rundown/`:
   research.md
   verify.md
   repair.md
+  resolve.md
   plan.md
   plan-prepend.md
   plan-append.md
@@ -40,6 +41,7 @@ Store templates in `.rundown/`:
 | `.rundown/research.md` | Instructions for enriching document context before planning |
 | `.rundown/verify.md` | Instructions for deciding whether the task is truly complete |
 | `.rundown/repair.md` | Instructions for fixing a failed attempt |
+| `.rundown/resolve.md` | Instructions for diagnosis and guidance before resolve-informed repair retries |
 | `.rundown/plan.md` | Instructions for breaking a task into nested subtasks |
 | `.rundown/plan-prepend.md` | Optional advisory guidance for what should appear near the beginning of generated plan tasks |
 | `.rundown/plan-append.md` | Optional advisory guidance for what should appear near the end of generated plan tasks |

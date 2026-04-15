@@ -4,22 +4,22 @@ Display a built-in introduction to rundown concepts, workflow, and command famil
 
 Use `intro` for quick onboarding when you want a concise orientation before running task commands.
 
-Synopsis:
+## Synopsis
 
 ```bash
 rundown intro
 rd intro
 ```
 
-Arguments:
+## Arguments
 
 - None.
 
-Options:
+## Options
 
 - No command-specific options.
 
-Examples:
+## Examples
 
 ```bash
 # Show introduction and workflow guidance
