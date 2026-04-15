@@ -4,7 +4,7 @@ Manage design-doc revision lifecycle separately from migration execution.
 
 Use `design` commands for revision snapshots and revision diffs; use `migrate` commands for migration proposal generation, execution, and satellites.
 
-#### `rundown design release`
+## `rundown design release`
 
 Release `design/current/` into the next immutable `design/rev.N/` snapshot.
 
@@ -31,7 +31,7 @@ Options:
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
 | `--label <text>` | Optional label stored in revision sidecar metadata. | unset |
 
-#### `rundown design diff [target]`
+## `rundown design diff [target]`
 
 Show revision diff context using either shorthand target or explicit selectors.
 
@@ -67,7 +67,7 @@ Options:
 | `--from <rev|current>` | Explicit source selector (use with `--to`). | unset |
 | `--to <rev|current>` | Explicit destination selector (use with `--from`; must be `current` in this build). | unset |
 
-#### `rundown docs` (deprecated alias)
+## `rundown docs` (deprecated alias)
 
 `rundown docs` remains available as a transition alias for one migration window.
 
