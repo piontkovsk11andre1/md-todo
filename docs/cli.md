@@ -1499,7 +1499,7 @@ Behavior:
 
 - Validates `<harness>` against known presets (case-insensitive aliases are accepted).
 - Creates `.rundown/config.json` when missing.
-- Updates preset-targeted keys (`defaults.worker`, `commands.discuss.worker`, and preset-managed `commands.<name>.worker` overrides) without clobbering unrelated config.
+- Updates preset-targeted keys (`workers.default`, `workers.tui`, and `commands.discuss`) without clobbering unrelated config.
 - Preserves other config sections (`workspace`, `trace`, run defaults, tool directories, and other command settings).
 - Prints configured keys and resolved config path.
 - Unknown harness exits non-zero with an actionable error and the supported preset list.
@@ -1518,7 +1518,7 @@ OpenCode conventions applied by `rundown with opencode`:
 
 - Deterministic commands (`run`, `plan`, `research`, `reverify`) use `opencode run` with file-first prompt transport (`$file` + `$bootstrap`).
 - Interactive discussion (`discuss`) uses base `opencode`.
-- The deterministic/interactive split is persisted via `defaults.worker` plus `commands.discuss.worker`.
+- The deterministic/interactive split is persisted via `workers.default`, `workers.tui`, and `commands.discuss`.
 
 ### `rundown config`
 
@@ -1577,7 +1577,7 @@ Subcommands:
 
 | Subcommand | Description |
 |---|---|
-| `get <key>` | Read one config value by dotted path (for example `defaults.worker`). |
+| `get <key>` | Read one config value by dotted path (for example `workers.default`). |
 | `list` | Print all keys/values for a scope. |
 | `set <key> <value>` | Set a value at key path in writable scope (`local` or `global`). |
 | `unset <key>` | Remove a key from writable scope (`local` or `global`). |
@@ -1604,19 +1604,19 @@ Examples:
 
 ```bash
 # Read merged value (global + local + defaults)
-rundown config get defaults.worker
+rundown config get workers.default
 
 # Inspect local-only override
-rundown config get defaults.worker --scope local
+rundown config get workers.default --scope local
 
 # Set project-local default worker
-rundown config set defaults.worker '["opencode","run"]' --type json --scope local
+rundown config set workers.default '["opencode","run","--file","$file","$bootstrap"]' --type json --scope local
 
-# Set user-level global default model args
-rundown config set defaults.workerArgs '["--model","gpt-5.3-codex"]' --type json --scope global
+# Set user-level global command override
+rundown config set commands.plan '["opencode","run","--file","$file","$bootstrap","--model","gpt-5.3-codex"]' --type json --scope global
 
 # Remove a local command override so global/default can apply
-rundown config unset commands.plan.worker --scope local
+rundown config unset commands.plan --scope local
 
 # List merged config with attribution
 rundown config list --scope effective --show-source --json
@@ -1644,7 +1644,7 @@ With a freshly initialized empty config (`{}`), no worker is resolved by default
 
 Worker resolution cascade (lowest to highest priority):
 
-- `defaults` in `.rundown/config.json`
+- `workers.default` in `.rundown/config.json` (or `workers.tui` when mode is `tui`)
 - `commands.<command>` in `.rundown/config.json` (`run`, `plan`, `make`, `discuss`, `research`, `reverify`, `help`)
 - Markdown frontmatter `profile: <name>`
 - Parent directive item `- profile=<name>` for child checkbox tasks
@@ -1655,7 +1655,7 @@ Worker resolution cascade (lowest to highest priority):
 Profile behavior:
 
 - Named profiles are defined under `profiles` in `.rundown/config.json`.
-- A resolved profile contributes `workerArgs`, appended to the resolved base worker command.
+- A resolved profile contributes a full worker command array and replaces the current command at its precedence level.
 
 ## Unified tool prefixes
 

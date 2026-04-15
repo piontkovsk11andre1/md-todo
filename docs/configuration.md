@@ -32,41 +32,21 @@ Example:
 
 ```json
 {
-  "defaults": {
-    "worker": ["opencode", "run"]
+  "workers": {
+    "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
+    "tui": ["opencode"]
   },
   "commands": {
-    "plan": {
-      "worker": ["opencode", "run"],
-      "workerArgs": ["--model", "opus-4.6"]
-    },
-    "discuss": {
-      "worker": ["opencode"]
-    },
-    "research": {
-      "worker": ["opencode", "run"],
-      "workerArgs": ["--model", "opus-4.6"]
-    },
-    "verify": {
-      "worker": ["opencode", "run"],
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    },
-    "memory": {
-      "worker": ["opencode", "run"],
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    },
-    "tools.post-on-gitea": {
-      "worker": ["opencode", "run"],
-      "workerArgs": ["--model", "gpt-5.3-codex", "--tools", "web-search"]
-    }
+    "plan": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"],
+    "discuss": ["opencode"],
+    "research": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"],
+    "verify": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "gpt-5.3-codex"],
+    "memory": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "gpt-5.3-codex"],
+    "tools.post-on-gitea": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "gpt-5.3-codex", "--tools", "web-search"]
   },
   "profiles": {
-    "complex": {
-      "workerArgs": ["--model", "opus-4.6"]
-    },
-    "fast": {
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    }
+    "complex": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"],
+    "fast": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "gpt-5.3-codex"]
   }
 }
 ```
@@ -77,21 +57,16 @@ All command arrays and arg arrays must be JSON arrays of strings.
 
 ```json
 {
-  "defaults": {
-    "worker": ["string", "..."],
-    "workerArgs": ["string", "..."]
+  "workers": {
+    "default": ["string", "..."],
+    "tui": ["string", "..."],
+    "fallbacks": [["string", "..."]]
   },
   "commands": {
-    "<commandName>": {
-      "worker": ["string", "..."],
-      "workerArgs": ["string", "..."]
-    }
+    "<commandName>": ["string", "..."]
   },
   "profiles": {
-    "<profileName>": {
-      "worker": ["string", "..."],
-      "workerArgs": ["string", "..."]
-    }
+    "<profileName>": ["string", "..."]
   },
   "traceStatistics": {
     "enabled": true,
@@ -102,10 +77,12 @@ All command arrays and arg arrays must be JSON arrays of strings.
 
 Section behavior:
 
-- `defaults`: global baseline for all commands.
-- `commands.<name>`: override/extend defaults for one command (for example `plan`, `verify`, or `memory`).
-- `commands.tools.<toolName>`: override/extend defaults for one tool-expansion prefix task (for example `tools.post-on-gitea`).
-- `profiles.<name>`: named reusable profile values, selected from frontmatter, directives, or prefix modifiers.
+- `workers.default`: global baseline worker command for non-TUI executions.
+- `workers.tui`: baseline worker command used when execution mode is TUI.
+- `workers.fallbacks`: ordered fallback worker commands for worker failover.
+- `commands.<name>`: command-specific worker override (for example `plan`, `verify`, or `memory`).
+- `commands.tools.<toolName>`: command-specific override for one tool-expansion prefix task (for example `tools.post-on-gitea`).
+- `profiles.<name>`: named reusable worker command overrides selected from frontmatter, directives, or prefix modifiers.
 - `traceStatistics`: controls optional inline trace summary lines written below completed checkbox tasks.
 
 ## Trace statistics
@@ -184,7 +161,7 @@ Rundown first builds an effective config with this layer precedence (lowest to h
 
 Then worker resolution applies command/task precedence on that effective config:
 
-1. `config.defaults`
+1. `config.workers.default` (or `config.workers.tui` when mode is TUI)
 2. `config.commands.<command>`
 3. file frontmatter `profile: <name>`
 4. directive parent `profile=<name>`
@@ -250,33 +227,39 @@ Defaults and constraints:
 Examples:
 
 ```bash
-rundown config get defaults.worker
-rundown config get defaults.worker --scope local
-rundown config set defaults.worker '["opencode","run"]' --type json --scope local
-rundown config set defaults.workerArgs '["--model","gpt-5.3-codex"]' --type json --scope global
-rundown config unset commands.plan.worker --scope local
+rundown config get workers.default
+rundown config get workers.default --scope local
+rundown config set workers.default '["opencode","run","--file","$file","$bootstrap"]' --type json --scope local
+rundown config set commands.plan '["opencode","run","--file","$file","$bootstrap","--model","gpt-5.3-codex"]' --type json --scope global
+rundown config unset commands.plan --scope local
 rundown config list --scope effective --show-source --json
 rundown config path --scope global
 ```
 
-## Worker and workerArgs resolution
+## Worker resolution
 
-`worker` and `workerArgs` do not use the same rule at every stage.
+Worker command resolution always selects one full command array.
 
 Config-layer merge (`built-in` -> `global` -> `local`):
 
-- both `worker` and `workerArgs` are arrays, so they use replace semantics when a higher layer provides the key.
+- arrays use replace semantics when a higher layer provides the same key.
 
 Worker resolution cascade (defaults/command/profile/task/CLI precedence):
 
-- `worker` uses replace semantics (highest-priority provided value wins),
-- `workerArgs` use append semantics in cascade order.
+- `workers.default` (or `workers.tui` when mode is TUI)
+- `commands.<command>`
+- file frontmatter `profile: <name>`
+- directive parent `profile=<name>`
+- prefix modifier `profile=<name>`
+- CLI `--worker` / `-- <command>`
+
+At each step, the highest-priority provided value replaces the current command.
 
 Example:
 
-- base worker: `["opencode", "run"]`
-- profile args: `["--model", "opus-4.6"]`
-- resolved command: `opencode run --model opus-4.6`
+- base worker: `["opencode", "run", "--file", "$file", "$bootstrap"]`
+- profile override: `["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"]`
+- resolved command: `opencode run --file $file $bootstrap --model opus-4.6`
 
 ## Frontmatter profile
 

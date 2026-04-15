@@ -35,9 +35,9 @@ rundown with opencode
 
 What this configures:
 
-1. `defaults.worker` for deterministic execution (`opencode run --file $file $bootstrap`),
-2. `commands.discuss.worker` for interactive discussion sessions (`opencode`),
-3. `commands.run.worker` / `commands.plan.worker` / `commands.research.worker` / `commands.reverify.worker` for deterministic command-level overrides,
+1. `workers.default` for deterministic execution (`opencode run --file $file $bootstrap`),
+2. `workers.tui` and `commands.discuss` for interactive discussion sessions (`opencode`),
+3. command-level worker arrays for deterministic tasks (`commands.run`, `commands.plan`, `commands.research`, `commands.reverify`) when applicable,
 4. while preserving unrelated `.rundown/config.json` keys.
 
 After this, worker flags are optional for standard OpenCode usage:
@@ -297,21 +297,16 @@ Example `.rundown/config.json`:
 
 ```json
 {
-  "defaults": {
-    "worker": ["opencode", "run"]
+  "workers": {
+    "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
+    "tui": ["opencode"]
   },
   "commands": {
-    "plan": {
-      "workerArgs": ["--model", "opus-4.6"]
-    }
+    "plan": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"]
   },
   "profiles": {
-    "fast": {
-      "workerArgs": ["--model", "gpt-5.3-codex"]
-    },
-    "complex": {
-      "workerArgs": ["--model", "opus-4.6"]
-    }
+    "fast": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "gpt-5.3-codex"],
+    "complex": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"]
   }
 }
 ```
