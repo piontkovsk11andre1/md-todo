@@ -469,6 +469,52 @@ describe("verification exit code propagation", () => {
 });
 
 describe("createMaterializeCommandAction", () => {
+  it("matches run --all --revertable core action fields", async () => {
+    const runViaRunTask = vi.fn(async (_request: Record<string, unknown>) => 0);
+    const runViaMaterializeTask = vi.fn(async (_request: Record<string, unknown>) => 0);
+    const runApp = { runTask: runViaRunTask } as unknown as CliApp;
+    const materializeApp = { runTask: runViaMaterializeTask } as unknown as CliApp;
+
+    const runAction = createRunCommandAction({
+      getApp: () => runApp,
+      getWorkerFromSeparator: () => undefined,
+      runnerModes: ["wait", "tui", "detached"],
+      getInvocationArgv: () => ["run", "tasks.md", "--all", "--revertable"],
+    });
+    const materializeAction = createMaterializeCommandAction({
+      getApp: () => materializeApp,
+      getWorkerFromSeparator: () => undefined,
+      runnerModes: ["wait", "tui", "detached"],
+      getInvocationArgv: () => ["materialize", "tasks.md"],
+    });
+
+    await runAction("tasks.md", {
+      all: true,
+      revertable: true,
+      worker: "opencode run",
+    });
+    await materializeAction("tasks.md", {
+      worker: "opencode run",
+    });
+
+    expect(runViaRunTask).toHaveBeenCalledTimes(1);
+    expect(runViaMaterializeTask).toHaveBeenCalledTimes(1);
+
+    const runRequest = runViaRunTask.mock.calls[0][0];
+    const materializeRequest = runViaMaterializeTask.mock.calls[0][0];
+
+    expect(materializeRequest).toEqual(expect.objectContaining({
+      runAll: runRequest.runAll,
+      commitAfterComplete: runRequest.commitAfterComplete,
+      keepArtifacts: runRequest.keepArtifacts,
+    }));
+    expect(materializeRequest).toEqual(expect.objectContaining({
+      runAll: true,
+      commitAfterComplete: true,
+      keepArtifacts: true,
+    }));
+  });
+
   it("enforces run --all --revertable semantics", async () => {
     const runTask = vi.fn(async () => 0);
     const app = { runTask } as unknown as CliApp;
