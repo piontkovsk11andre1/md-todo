@@ -6,6 +6,27 @@ With `--all` (or the shorthand `all` command), process tasks sequentially until 
 
 Agent stdout/stderr is hidden by default. Use `--show-agent-output` to display worker output for `execute`, `verify`, and `plan` stages while keeping `discuss` worker output silent.
 
+Synopsis:
+
+```bash
+rundown run <source> [options] -- <command>
+rundown run <source> [options] --worker <pattern>
+rd run <source> [options]
+```
+
+Arguments:
+
+- `<source>`: Markdown file, directory, or glob to process.
+
+Options:
+
+- `--all`: Process runnable tasks sequentially until completion or first failure.
+- `--show-agent-output`: Show worker-derived `text`/`stderr` transcript output for supported stages.
+- `--redo`: Re-run previously completed tasks before continuing normal task selection.
+- `--reset-after`: Reset completion state after processing so tasks can be run again.
+- `--clean`: Clear prior run bookkeeping before starting execution.
+- Supports additional shared run/execution options; see [cli.md](cli.md) for the full command set.
+
 Examples:
 
 ```bash
