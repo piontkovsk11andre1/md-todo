@@ -125,7 +125,9 @@ See the command-focused reference: [cli-migrate.md](cli-migrate.md).
 
 See the command-focused reference: [cli-design.md](cli-design.md).
 
-### `rundown docs`
+### `rundown docs` (deprecated alias)
+
+`rundown docs` remains available as a compatibility alias, but `rundown design ...` is the canonical command family for new usage.
 
 See the command-focused reference: [cli-docs.md](cli-docs.md).
 
