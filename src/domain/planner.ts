@@ -331,6 +331,7 @@ export function relocateInsertedTodosToEnd(beforeSource: string, afterSource: st
   const eol = afterSource.includes("\r\n") ? "\r\n" : "\n";
   const beforeLines = beforeSource.split(/\r?\n/);
   const afterLines = afterSource.split(/\r?\n/);
+  const endsWithNewline = afterSource.endsWith("\n") || afterSource.endsWith("\r\n");
 
   const beforeTodoEntries = collectTodoCheckboxLinesOutsideFences(beforeLines);
   const afterTodoEntries = collectTodoCheckboxLinesOutsideFences(afterLines);
@@ -378,8 +379,6 @@ export function relocateInsertedTodosToEnd(beforeSource: string, afterSource: st
 
   result.push(...addedTodoLines);
 
-  // Restore a single final newline if the original ended with one.
-  const endsWithNewline = afterSource.endsWith("\n") || afterSource.endsWith("\r\n");
   if (endsWithNewline) {
     result.push("");
   }
