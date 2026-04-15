@@ -253,6 +253,8 @@ rundown run docs/setup.md -- opencode run
 
 If a previous process crashed and left a stale lockfile, remove it manually:
 
+For `roadmap.md`, the stale lock path is `<source-dir>/.rundown/<basename>.lock` (for example, `.rundown/roadmap.lock` in the source directory).
+
 ```bash
 rundown unlock roadmap.md
 ```

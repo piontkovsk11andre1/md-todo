@@ -252,13 +252,13 @@ Stale lock detection:
 Stale lock recovery:
 
 - `run`, `plan`, `research`, `make`, and `explore` support `--force-unlock` to remove stale lockfiles before normal lock acquisition. Live-process locks are never removed by this flag.
-- `unlock` provides manual stale-lock cleanup for one source file.
+- `unlock` provides manual stale-lock cleanup for one source file at `<source-dir>/.rundown/<basename>.lock`.
 
 `unlock` exit behavior:
 
 - `0`: stale lock removed
 - `1`: lock held by live process (no change)
-- `3`: no lockfile found for source
+- `3`: no lockfile found at `<source-dir>/.rundown/<basename>.lock`
 
 ## Global output log (JSONL)
 
