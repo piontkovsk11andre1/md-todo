@@ -1495,6 +1495,171 @@ describe("run-task-iteration", () => {
     expect(completeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("reproduces premature parent-check on first minimal for-loop pass with missing transition signals", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "for: Alpha, Beta", {
+      children: [
+        createTask(taskFile, "Do this", {
+          index: 1,
+          line: 2,
+          depth: 1,
+        }),
+        createTask(taskFile, "Do that", {
+          index: 2,
+          line: 3,
+          depth: 1,
+        }),
+      ],
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "- [ ] for: Alpha, Beta",
+        "  - [ ] Do this",
+        "  - [ ] Do that",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "- for-item: Alpha",
+        "- for-item: Beta",
+      ].join("\n"),
+      stderr: "",
+    }));
+    dependencies.toolResolver = {
+      resolve: (toolName) => resolveBuiltinTool(toolName),
+      listKnownToolNames: () => listBuiltinToolNames(),
+    };
+    const completeSpy = vi.spyOn(completeTaskIterationModule, "completeTaskIteration");
+    const emit = (event: Parameters<typeof runTaskIteration>[0]["emit"] extends (arg: infer T) => void ? T : never) => {
+      events.push(event);
+    };
+
+    const traceRunSession = createTraceRunSession({
+      getTraceWriter: () => dependencies.traceWriter,
+      source: "tasks.md",
+      mode: "wait",
+      transport: "file",
+      traceEnabled: false,
+    });
+
+    const result = await runTaskIteration({
+      dependencies,
+      emit,
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+        artifactContext: null,
+        traceEnrichmentContext: null,
+      },
+      context: {
+        source: fileSystem.readText(taskFile),
+        fileSource: fileSystem.readText(taskFile),
+        taskIndex: 0,
+        totalTasks: 1,
+        files: [taskFile],
+        task,
+      },
+      execution: {
+        mode: "wait",
+        verbose: false,
+        taskIndex: 0,
+        totalTasks: 1,
+        forceAttempts: 2,
+        keepArtifacts: true,
+        printPrompt: false,
+        dryRun: false,
+        dryRunSuppressesCliExpansion: false,
+        cliExpansionEnabled: true,
+        ignoreCliBlock: false,
+        verify: true,
+        noRepair: false,
+        repairAttempts: 0,
+        forceExecute: false,
+        showAgentOutput: false,
+        hideHookOutput: false,
+        trace: false,
+        traceOnly: false,
+      },
+      worker: {
+        workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+        loadedWorkerConfig: undefined,
+      },
+      verifyConfig: {
+        configuredOnlyVerify: false,
+        configuredShouldVerify: true,
+        maxRepairAttempts: 0,
+        allowRepair: false,
+      },
+      completion: {
+        effectiveRunAll: true,
+        commitAfterComplete: false,
+        deferCommitUntilPostRun: false,
+        commitMessageTemplate: undefined,
+        onCompleteCommand: undefined,
+        onFailCommand: undefined,
+        extraTemplateVars: {},
+      },
+      prompts: {
+        extraTemplateVars: {},
+        cliExecutionOptions: undefined,
+        cliBlockExecutor: {
+          execute: vi.fn(async () => ({
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+          })),
+        },
+        nowIso: () => "2026-01-01T00:00:00.000Z",
+      },
+      traceConfig: {
+        traceRunSession,
+        pendingPreRunResetTraceEvents: [],
+        roundContext: {
+          currentRound: 1,
+          totalRounds: 1,
+        },
+      },
+      lifecycle: {
+        failRun: vi.fn(async () => 1),
+        finishRun: vi.fn(async () => 0),
+        resetArtifacts: vi.fn(),
+      },
+    });
+
+    expect(result.continueLoop).toBe(true);
+    expect(completeSpy).toHaveBeenCalledTimes(1);
+    expect(completeSpy.mock.calls[0]?.[0]?.forLoopAdvanced).toEqual({
+      current: "Alpha",
+      remainingItems: 1,
+    });
+    expect(completeSpy.mock.calls[0]?.[0]?.forLoopCompleted).toBeUndefined();
+    expect(fileSystem.readText(taskFile)).toBe([
+      "- [x] for: Alpha, Beta",
+      "  - for-item: Alpha",
+      "  - for-item: Beta",
+      "  - for-current: Alpha",
+      "  - [ ] Do this",
+      "  - [ ] Do that",
+      "",
+    ].join("\n"));
+
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(1);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Loop advanced to item:"))).toBe(false);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Loop completed"))).toBe(false);
+    expect(events).toContainEqual({ kind: "success", message: "Task checked: Alpha, Beta" });
+  });
+
   it.each(["fast:", "raw:"])("skips %s tasks that have no payload text without invoking worker execution", async (taskText) => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
