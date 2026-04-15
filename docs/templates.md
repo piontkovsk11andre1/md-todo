@@ -20,6 +20,9 @@ Store templates in `.rundown/`:
   plan-prepend.md
   plan-append.md
   discuss.md
+  test-materialized.md
+  test-future.md
+  test-verify.md
   vars.json
 ```
 
@@ -37,6 +40,9 @@ Store templates in `.rundown/`:
 | `.rundown/plan-prepend.md` | Optional advisory guidance for what should appear near the beginning of generated plan tasks |
 | `.rundown/plan-append.md` | Optional advisory guidance for what should appear near the end of generated plan tasks |
 | `.rundown/discuss.md` | Instructions for interactive task refinement before execution |
+| `.rundown/test-materialized.md` | Instructions for `rundown test` materialized mode (present-state validation) |
+| `.rundown/test-future.md` | Instructions for `rundown test --future` prediction mode (future-state validation) |
+| `.rundown/test-verify.md` | Shared verification instructions used by both `rundown test` modes |
 
 ## Planner guidance files (optional)
 
