@@ -130,6 +130,42 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
     expect(combinedOutput).toContain("PASS cwd-check.md");
   });
 
+  it("rundown test default materialized mode excludes predicted context from prompt", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSHOULD_NOT_APPEAR_DESIGN\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "snapshot")), "SNAP-SHOULD-NOT-APPEAR\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "specs", "materialized-context.md"), "assert materialized prompt scope", "utf-8");
+
+    const result = await runCli([
+      "test",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "const hasPredictedSection=prompt.includes('## Predicted context');",
+        "const hasDesignToken=prompt.includes('SHOULD_NOT_APPEAR_DESIGN');",
+        "const hasSnapshotToken=prompt.includes('SNAP-SHOULD-NOT-APPEAR');",
+        "if(!hasPredictedSection&&!hasDesignToken&&!hasSnapshotToken){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected materialized mode prompt to ignore design and migration context');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS materialized-context.md");
+  });
+
   it("rundown test uses configured workspace specs directory when --dir is omitted", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
@@ -536,6 +572,49 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
       ...result.stderrWrites,
     ].join("\n"));
     expect(combinedOutput).toContain("PASS future-latest.md");
+  });
+
+  it("rundown test --future prompt includes predicted context and excludes materialized source content", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nFUTURE_DESIGN_TOKEN\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "context")), "# Context\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "snapshot")), "FUTURE_SNAPSHOT_TOKEN\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "future-step")), "# 0002 future step\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "src", "materialized-only.txt"), "MATERIALIZED_SOURCE_TOKEN\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "specs", "future-context.md"), "assert future prompt scope", "utf-8");
+
+    const result = await runCli([
+      "test",
+      "--future",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "const hasPredictedSection=prompt.includes('## Predicted context');",
+        "const hasDesignToken=prompt.includes('FUTURE_DESIGN_TOKEN');",
+        "const hasSnapshotToken=prompt.includes('FUTURE_SNAPSHOT_TOKEN');",
+        "const hasMigrationTwo=prompt.includes('2. Future Step.md');",
+        "const hasMaterializedSourceToken=prompt.includes('MATERIALIZED_SOURCE_TOKEN');",
+        "if(hasPredictedSection&&hasDesignToken&&hasSnapshotToken&&hasMigrationTwo&&!hasMaterializedSourceToken){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected future mode prompt to use only predicted context');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS future-context.md");
   });
 });
 

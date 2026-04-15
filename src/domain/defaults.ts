@@ -956,23 +956,62 @@ Return your verification result on stdout as exactly one of the following:
 - \`NOT_OK: <short explanation of what is still missing>\`
 
 Output ONLY the verdict line and nothing else.
-
-Interpretation rules:
-
-- If mode is \`future\`, evaluate only predicted state context (design + migration/snapshot inputs). Do not rely on current repository implementation state.
-- If mode is \`materialized\`, evaluate only the materialized workspace state and ignore design/specs/migrations inputs.
 {{traceInstructions}}
 `;
 
 /**
  * Default test verification prompt template for prediction/future mode.
  */
-export const DEFAULT_TEST_FUTURE_TEMPLATE = DEFAULT_TEST_VERIFY_TEMPLATE;
+export const DEFAULT_TEST_FUTURE_TEMPLATE = `\
+${DEFAULT_TEST_VERIFY_TEMPLATE}
+
+Interpretation rules:
+
+- This run is in \`future\` mode. Evaluate only predicted state context (design + migration/snapshot inputs).
+- Do not rely on the current materialized source implementation for verdict decisions.
+`;
 
 /**
  * Default test verification prompt template for materialized mode.
  */
-export const DEFAULT_TEST_MATERIALIZED_TEMPLATE = DEFAULT_TEST_VERIFY_TEMPLATE;
+export const DEFAULT_TEST_MATERIALIZED_TEMPLATE = `\
+${DEFAULT_TEMPLATE_SHARED_PREFIX}
+${DEFAULT_TEMPLATE_MEMORY_SECTION}
+${DEFAULT_TEMPLATE_VARS_SECTION}
+
+## Phase
+
+Verify whether the selected test assertion is true.
+
+## Test mode
+
+- Mode: {{testMode}}
+
+## Included directories
+
+{{includedDirectories}}
+
+## Excluded directories
+
+{{excludedDirectories}}
+
+## Assertion
+
+{{assertion}}
+
+Return your verification result on stdout as exactly one of the following:
+
+- \`OK\`
+- \`NOT_OK: <short explanation of what is still missing>\`
+
+Output ONLY the verdict line and nothing else.
+
+Interpretation rules:
+
+- This run is in \`materialized\` mode. Evaluate only the materialized workspace state under included directories.
+- Ignore prediction inputs entirely (design/specs/migrations) for verdict decisions.
+{{traceInstructions}}
+`;
 
 /**
  * Default repair-phase prompt template used after a failed verification result.

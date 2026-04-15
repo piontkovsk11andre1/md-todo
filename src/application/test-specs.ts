@@ -1,5 +1,8 @@
 import path from "node:path";
-import { DEFAULT_TEST_VERIFY_TEMPLATE } from "../domain/defaults.js";
+import {
+  DEFAULT_TEST_FUTURE_TEMPLATE,
+  DEFAULT_TEST_MATERIALIZED_TEMPLATE,
+} from "../domain/defaults.js";
 import {
   parseMigrationFilename,
   parseMigrationDirectory,
@@ -422,12 +425,12 @@ function loadTestVerifyTemplate(
   if (useFutureTemplate) {
     return templateLoader.load(path.join(configDir, "test-future.md"))
       ?? templateLoader.load(path.join(configDir, "test-verify.md"))
-      ?? DEFAULT_TEST_VERIFY_TEMPLATE;
+      ?? DEFAULT_TEST_FUTURE_TEMPLATE;
   }
 
   return templateLoader.load(path.join(configDir, "test-materialized.md"))
     ?? templateLoader.load(path.join(configDir, "test-verify.md"))
-    ?? DEFAULT_TEST_VERIFY_TEMPLATE;
+    ?? DEFAULT_TEST_MATERIALIZED_TEMPLATE;
 }
 
 function resolvePredictionDirectoryContext(
