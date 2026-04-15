@@ -8,6 +8,79 @@ import {
   resolveForLoopItems,
 } from "../for-loop.js";
 
+function buildForLoopResearchPrompt(payload: string, source: string, contextBefore: string, taskText: string): string {
+  return [
+    "You are a full-scale research agent preparing concrete loop items for a for-each task.",
+    "Investigate the repository context and derive specific actionable items.",
+    "Return JSON only.",
+    "Use the format: {\"results\":[\"item 1\",\"item 2\"]}.",
+    "Preserve discovery order and avoid duplicates.",
+    "If no items are found, return {\"results\":[]}",
+    "Do not include commentary.",
+    "",
+    "Loop task:",
+    taskText,
+    "",
+    "Loop payload:",
+    payload,
+    "",
+    "Context before task:",
+    contextBefore,
+    "",
+    "Full source document:",
+    source,
+  ].join("\n");
+}
+
+function extractForLoopItemsFromOutput(output: string): string[] {
+  try {
+    const parsed = JSON.parse(output) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+    }
+
+    if (typeof parsed === "object" && parsed !== null) {
+      const container = parsed as Record<string, unknown>;
+      const candidates = [container.results, container.items, container.names];
+      for (const candidate of candidates) {
+        if (!Array.isArray(candidate)) {
+          continue;
+        }
+
+        return candidate
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0);
+      }
+    }
+  } catch {
+    // Fall through to line-based parsing.
+  }
+
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*+]\s+/, ""))
+    .filter((line) => line.length > 0);
+}
+
+function dedupeItems(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const item of items) {
+    if (seen.has(item)) {
+      continue;
+    }
+    seen.add(item);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
 /**
  * Built-in for-each loop handler.
  *
@@ -33,7 +106,59 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
     };
   }
 
-  const { items: bakedItems, source: itemSource } = resolveForLoopItems(context.task.subItems, payload);
+  let bakedItems: string[];
+  let itemSource: "metadata" | "payload" | "research";
+  const metadataItems = resolveForLoopItems(context.task.subItems, payload);
+  if (metadataItems.source === "metadata" && metadataItems.items.length > 0) {
+    bakedItems = metadataItems.items;
+    itemSource = "metadata";
+  } else {
+    let researchOutput = "";
+    try {
+      const prompt = buildForLoopResearchPrompt(payload, context.source, context.contextBefore, context.task.text);
+      const runResult = await context.workerExecutor.runWorker({
+        workerPattern: context.workerPattern,
+        prompt,
+        mode: context.mode as "wait" | "detached" | "tui",
+        trace: context.trace,
+        cwd: context.cwd,
+        env: context.executionEnv,
+        configDir: context.configDir,
+        artifactContext: context.artifactContext,
+        artifactPhase: "execute",
+        artifactExtra: { taskType: "for-loop-research" },
+      });
+
+      if (context.showAgentOutput) {
+        if (runResult.stdout.trim().length > 0) {
+          context.emit({ kind: "text", text: runResult.stdout });
+        }
+        if (runResult.stderr.trim().length > 0) {
+          context.emit({ kind: "stderr", text: runResult.stderr });
+        }
+      }
+
+      if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+        return {
+          exitCode: runResult.exitCode,
+          failureMessage: "For loop research worker exited with code " + runResult.exitCode + ".",
+          failureReason: "For loop research worker exited with a non-zero code.",
+        };
+      }
+
+      researchOutput = runResult.stdout;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        exitCode: 1,
+        failureMessage: "Failed to run for loop research: " + message,
+        failureReason: "For loop research worker invocation failed.",
+      };
+    }
+
+    bakedItems = dedupeItems(extractForLoopItemsFromOutput(researchOutput));
+    itemSource = "research";
+  }
 
   if (bakedItems.length === 0) {
     context.emit({ kind: "warn", message: "For loop resolved zero unique items; completing without iteration." });

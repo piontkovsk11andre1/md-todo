@@ -25,17 +25,27 @@ interface OpenFence {
   length: number;
 }
 
-function buildExtractionPrompt(query: string): string {
+function buildExtractionPrompt(query: string, context: ToolHandlerContext): string {
   return [
-    "You are extracting a concrete list of names from a task query.",
+    "You are a full-scale research agent resolving a task query against the current project.",
+    "Investigate the repository context thoroughly before answering.",
     "Return JSON only.",
     "Use the format: {\"results\":[\"name 1\",\"name 2\"]}.",
     "Preserve discovery order.",
-    "If no names are found, return {\"results\":[]}.",
+    "If no results are found, return {\"results\":[]}.",
     "Do not include commentary.",
+    "",
+    "Task:",
+    context.task.text,
     "",
     "Query:",
     query,
+    "",
+    "Context before task:",
+    context.contextBefore,
+    "",
+    "Full source document:",
+    context.source,
   ].join("\n");
 }
 
@@ -366,7 +376,7 @@ export const getHandler: ToolHandlerFn = async (context) => {
     });
   }
 
-  const extractionPrompt = buildExtractionPrompt(query);
+  const extractionPrompt = buildExtractionPrompt(query, context);
 
   let runResult: Awaited<ReturnType<typeof context.workerExecutor.runWorker>>;
   try {

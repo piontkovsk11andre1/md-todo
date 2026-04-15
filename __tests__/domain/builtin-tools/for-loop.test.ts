@@ -3,6 +3,20 @@ import { forLoopHandler } from "../../../src/domain/builtin-tools/for-loop.js";
 import type { ToolHandlerContext } from "../../../src/domain/ports/tool-handler-port.js";
 
 function createContext(overrides: Partial<ToolHandlerContext> = {}): ToolHandlerContext {
+  const payload = typeof overrides.payload === "string"
+    ? overrides.payload
+    : "This, That, Omg";
+  const defaultRunWorker = vi.fn(async () => ({
+    exitCode: 0,
+    stdout: JSON.stringify({
+      results: payload
+        .split(/[\r\n,]+/)
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    }),
+    stderr: "",
+  }));
+
   return {
     task: {
       text: "for: controllers",
@@ -34,7 +48,7 @@ function createContext(overrides: Partial<ToolHandlerContext> = {}): ToolHandler
       subItems: [],
     },
     allTasks: [],
-    payload: "This, That, Omg",
+    payload,
     source: "- [ ] for: controllers\n",
     contextBefore: "",
     fileSystem: {
@@ -57,7 +71,7 @@ function createContext(overrides: Partial<ToolHandlerContext> = {}): ToolHandler
     emit: vi.fn(),
     configDir: undefined,
     workerExecutor: {
-      runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      runWorker: defaultRunWorker,
       executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
     },
@@ -82,7 +96,7 @@ function createContext(overrides: Partial<ToolHandlerContext> = {}): ToolHandler
     keepArtifacts: false,
     templateVars: {
       task: "for: controllers",
-      payload: "This, That, Omg",
+      payload,
       file: "tasks.md",
       context: "",
       taskIndex: 0,
@@ -107,9 +121,11 @@ describe("builtin-tools/for-loop", () => {
       "for-item: That",
       "for-item: Omg",
     ]);
+    const runWorkerCall = (context.workerExecutor.runWorker as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(runWorkerCall?.prompt ?? "").toContain("You are a full-scale research agent preparing concrete loop items for a for-each task.");
     expect(context.emit).toHaveBeenCalledWith({
       kind: "info",
-      message: "For loop baked 3 unique items from payload: This, That, Omg",
+      message: "For loop baked 3 unique items from research: This, That, Omg",
     });
     expect(context.emit).toHaveBeenCalledWith({
       kind: "info",
@@ -136,6 +152,7 @@ describe("builtin-tools/for-loop", () => {
       "for-item: Existing A",
       "for-item: Existing B",
     ]);
+    expect(context.workerExecutor.runWorker).not.toHaveBeenCalled();
   });
 
   it("deduplicates payload items while preserving first-seen order", async () => {
