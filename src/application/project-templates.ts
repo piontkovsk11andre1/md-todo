@@ -76,9 +76,15 @@ export function loadProjectTemplatesFromPorts(
 
   // Resolve template paths relative to the discovered project config directory.
   const dir = configDir.configDir;
+  const loadedAgentTemplate = templateLoader.load(pathOperations.join(dir, "agent.md"));
+  const agentTemplate =
+    loadedAgentTemplate && loadedAgentTemplate.trim().length > 0
+      ? loadedAgentTemplate
+      : DEFAULT_AGENT_TEMPLATE;
+
   return {
     // Prefer project overrides, then fall back to bundled default templates.
-    agent: templateLoader.load(pathOperations.join(dir, "agent.md")) ?? DEFAULT_AGENT_TEMPLATE,
+    agent: agentTemplate,
     task: templateLoader.load(pathOperations.join(dir, "execute.md")) ?? DEFAULT_TASK_TEMPLATE,
     help: templateLoader.load(pathOperations.join(dir, "help.md")) ?? DEFAULT_HELP_TEMPLATE,
     discuss: templateLoader.load(pathOperations.join(dir, "discuss.md")) ?? DEFAULT_DISCUSS_TEMPLATE,

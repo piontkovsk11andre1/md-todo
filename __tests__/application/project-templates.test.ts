@@ -186,4 +186,38 @@ describe("project-templates", () => {
     expect(templates.agent).toBe("AGENT");
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "agent.md"));
   });
+
+  it("falls back to default warmup when agent.md is empty or whitespace", () => {
+    const configDir = "/workspace/.rundown";
+
+    const emptyTemplateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("agent.md")) {
+          return "";
+        }
+        return null;
+      }),
+    };
+    const emptyTemplates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      emptyTemplateLoader,
+      path,
+    );
+    expect(emptyTemplates.agent).toBe(DEFAULT_AGENT_TEMPLATE);
+
+    const whitespaceTemplateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("agent.md")) {
+          return "   \n\t  ";
+        }
+        return null;
+      }),
+    };
+    const whitespaceTemplates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      whitespaceTemplateLoader,
+      path,
+    );
+    expect(whitespaceTemplates.agent).toBe(DEFAULT_AGENT_TEMPLATE);
+  });
 });
