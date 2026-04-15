@@ -1520,6 +1520,26 @@ OpenCode conventions applied by `rundown with opencode`:
 - Interactive discussion (`discuss`) uses base `opencode`.
 - The deterministic/interactive split is persisted via `workers.default`, `workers.tui`, and `commands.discuss`.
 
+### `rundown intro`
+
+Display a built-in introduction to rundown concepts, workflow, and command families.
+
+Use `intro` for quick onboarding when you want a concise orientation before running task commands.
+
+Synopsis:
+
+```bash
+rundown intro
+rd intro
+```
+
+Examples:
+
+```bash
+# Show introduction and workflow guidance
+rundown intro
+```
+
 ### `rundown config`
 
 Manage rundown configuration without editing JSON files manually.
