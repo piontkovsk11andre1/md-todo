@@ -519,43 +519,37 @@ export async function completeTaskIteration(params: {
     }
   }
 
-  if (skipRemainingSiblingsReason) {
-    const skipResult = skipRemainingSiblingsUsingFileSystem(task, skipRemainingSiblingsReason, dependencies.fileSystem);
-    emit({
-      kind: "info",
-      message: "Skipped " + skipResult.skippedSiblingCount + " "
-        + pluralize(skipResult.skippedSiblingCount, "sibling task", "sibling tasks")
-        + (skipResult.skippedDescendantCount > 0
-          ? " and " + skipResult.skippedDescendantCount + " "
-            + pluralize(skipResult.skippedDescendantCount, "descendant task", "descendant tasks")
-          : "")
-        + " because end condition was met.",
-    });
+  const siblingSkipReason = terminalStop?.reason ?? skipRemainingSiblingsReason;
+  if (siblingSkipReason) {
+    const skipResult = skipRemainingSiblingsUsingFileSystem(task, siblingSkipReason, dependencies.fileSystem);
+    if (terminalStop) {
+      emit({
+        kind: "info",
+        message: "Terminal stop requested by " + terminalStop.requestedBy
+          + ": skipped " + skipResult.skippedSiblingCount + " "
+          + pluralize(skipResult.skippedSiblingCount, "sibling task", "sibling tasks")
+          + (skipResult.skippedDescendantCount > 0
+            ? " and " + skipResult.skippedDescendantCount + " "
+              + pluralize(skipResult.skippedDescendantCount, "descendant task", "descendant tasks")
+            : "")
+          + ".",
+      });
+    } else {
+      emit({
+        kind: "info",
+        message: "Skipped " + skipResult.skippedSiblingCount + " "
+          + pluralize(skipResult.skippedSiblingCount, "sibling task", "sibling tasks")
+          + (skipResult.skippedDescendantCount > 0
+            ? " and " + skipResult.skippedDescendantCount + " "
+              + pluralize(skipResult.skippedDescendantCount, "descendant task", "descendant tasks")
+            : "")
+          + " because end condition was met.",
+      });
+    }
     for (const skippedTaskText of skipResult.skippedTaskTexts) {
       emit({
         kind: "info",
-        message: "Skipped sibling: " + skippedTaskText + " (reason: " + skipRemainingSiblingsReason + ")",
-      });
-    }
-  }
-
-  if (terminalStop) {
-    const terminalSkipResult = skipRemainingSiblingsUsingFileSystem(task, terminalStop.reason, dependencies.fileSystem);
-    emit({
-      kind: "info",
-      message: "Terminal stop requested by " + terminalStop.requestedBy
-        + ": skipped " + terminalSkipResult.skippedSiblingCount + " "
-        + pluralize(terminalSkipResult.skippedSiblingCount, "sibling task", "sibling tasks")
-        + (terminalSkipResult.skippedDescendantCount > 0
-          ? " and " + terminalSkipResult.skippedDescendantCount + " "
-            + pluralize(terminalSkipResult.skippedDescendantCount, "descendant task", "descendant tasks")
-          : "")
-        + ".",
-    });
-    for (const skippedTaskText of terminalSkipResult.skippedTaskTexts) {
-      emit({
-        kind: "info",
-        message: "Skipped sibling: " + skippedTaskText + " (reason: " + terminalStop.reason + ")",
+        message: "Skipped sibling: " + skippedTaskText + " (reason: " + siblingSkipReason + ")",
       });
     }
   }
