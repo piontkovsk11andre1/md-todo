@@ -4,6 +4,11 @@ Manually remove a stale per-source lockfile (`<source-dir>/.rundown/<basename>.l
 
 `unlock` is a safety command for lock recovery. It only removes locks that are not owned by a currently running process.
 
+Path resolution:
+
+- `unlock <source>` resolves the lockfile at `<source-dir>/.rundown/<basename>.lock` (source-relative lock path).
+- `unlock` does not resolve lockfiles under `<config-dir>/locks/`.
+
 Behavior:
 
 - If no lockfile exists for the source, exits `3`.
