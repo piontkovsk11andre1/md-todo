@@ -124,6 +124,10 @@ export async function completeTaskIteration(params: {
   executionEnv?: Record<string, string>;
   automationCommand: string[];
   automationWorkerPattern: ParsedWorkerPattern;
+  resolveVerifyRepairWorkerPattern?: (input: {
+    phase: "verify" | "repair" | "resolve" | "resolveRepair";
+    attempt?: number;
+  }) => ParsedWorkerPattern;
   shouldVerify: boolean;
   runMode: ProcessRunMode;
   traceOnly?: boolean;
@@ -190,6 +194,7 @@ export async function completeTaskIteration(params: {
     executionEnv,
     automationCommand,
     automationWorkerPattern,
+    resolveVerifyRepairWorkerPattern,
     shouldVerify,
     runMode,
     traceOnly = false,
@@ -284,6 +289,7 @@ export async function completeTaskIteration(params: {
         resolveTemplate: resolvedResolveTemplate,
         executionStdout,
         workerPattern: automationWorkerPattern,
+        resolveWorkerPattern: resolveVerifyRepairWorkerPattern,
         configDir: dependencies.configDir?.configDir,
         maxRepairAttempts,
         maxResolveRepairAttempts,

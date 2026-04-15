@@ -49,6 +49,10 @@ export interface VerifyRepairLoopInput {
   resolveTemplate?: string;
   executionStdout?: string;
   workerPattern: ParsedWorkerPattern;
+  resolveWorkerPattern?: (input: {
+    phase: "verify" | "repair" | "resolve" | "resolveRepair";
+    attempt?: number;
+  }) => ParsedWorkerPattern;
   configDir?: string;
   maxRepairAttempts: number;
   maxResolveRepairAttempts?: number;
@@ -104,6 +108,16 @@ export async function runVerifyRepairLoop(
   dependencies: VerifyRepairLoopDependencies,
   input: VerifyRepairLoopInput,
 ): Promise<VerifyRepairLoopResult> {
+  const resolvePhaseWorkerPattern = (
+    phase: "verify" | "repair" | "resolve" | "resolveRepair",
+    attempt?: number,
+  ): ParsedWorkerPattern => {
+    if (!input.resolveWorkerPattern) {
+      return input.workerPattern;
+    }
+
+    return input.resolveWorkerPattern({ phase, attempt });
+  };
   const isExplicitlyEmptyOutput = (stdout: string | undefined): boolean =>
     typeof stdout === "string" && stdout.trim().length === 0;
   const emit = dependencies.output.emit.bind(dependencies.output);
@@ -418,12 +432,13 @@ export async function runVerifyRepairLoop(
   }
 
   const initialVerificationStartedAt = Date.now();
+  const verifyWorkerPattern = resolvePhaseWorkerPattern("verify", 1);
   const { valid, formatWarning, stdout: verificationStdout } = await dependencies.taskVerification.verify({
     task: input.task,
     source: input.source,
     contextBefore: input.contextBefore,
     template: input.verifyTemplate,
-    workerPattern: input.workerPattern,
+    workerPattern: verifyWorkerPattern,
     mode: "wait",
     configDir: input.configDir,
     templateVars: input.templateVars,
@@ -523,13 +538,14 @@ export async function runVerifyRepairLoop(
 
     // Each repair invocation performs one repair cycle and one verification pass.
     const repairStartedAt = Date.now();
+    const repairWorkerPattern = resolvePhaseWorkerPattern("repair", attempts);
     const result = await dependencies.taskRepair.repair({
       task: input.task,
       source: input.source,
       contextBefore: input.contextBefore,
       repairTemplate: input.repairTemplate,
       verifyTemplate: input.verifyTemplate,
-      workerPattern: input.workerPattern,
+      workerPattern: repairWorkerPattern,
       maxRetries: 1,
       mode: "wait",
       configDir: input.configDir,
@@ -656,7 +672,7 @@ export async function runVerifyRepairLoop(
       source: input.source,
       contextBefore: input.contextBefore,
       resolveTemplate: input.resolveTemplate,
-      workerPattern: input.workerPattern,
+      workerPattern: resolvePhaseWorkerPattern("resolve"),
       verificationFailureMessage: previousFailure,
       executionStdout: input.executionStdout,
       repairAttemptHistory,
@@ -748,7 +764,7 @@ export async function runVerifyRepairLoop(
         contextBefore: input.contextBefore,
         repairTemplate: input.repairTemplate,
         verifyTemplate: input.verifyTemplate,
-        workerPattern: input.workerPattern,
+        workerPattern: resolvePhaseWorkerPattern("resolveRepair", resolveRepairAttempts),
         maxRetries: 1,
         mode: "wait",
         configDir: input.configDir,

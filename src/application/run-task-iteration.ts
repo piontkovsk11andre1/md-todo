@@ -387,6 +387,29 @@ export async function runTaskIteration(params: {
       usesFile: automationCommand.some((token) => token.includes("$file")),
       appendFile: !automationCommand.some((token) => token.includes("$bootstrap") || token.includes("$file")),
     };
+  const resolveVerifyRepairWorkerPattern = (resolveInput: {
+    phase: "verify" | "repair" | "resolve" | "resolveRepair";
+    attempt?: number;
+  }): ParsedWorkerPattern => {
+    const resolvedPhaseWorker = resolveWorkerPatternForInvocation({
+      commandName: "run",
+      workerConfig: worker.loadedWorkerConfig,
+      source: fileSource,
+      task: taskForExecution,
+      modifierProfile,
+      cliWorkerPattern: worker.workerPattern,
+      taskIntent: taskIntentDecision.intent,
+      toolName: taskIntentDecision.toolName,
+      emit,
+      mode: "wait",
+      workerHealthEntries: worker.workerHealthEntries,
+      evaluateWorkerHealthAtMs: worker.evaluateWorkerHealthAtMs,
+      runWorkerPhase: resolveInput.phase,
+      runWorkerAttempt: resolveInput.attempt,
+    });
+
+    return resolvedPhaseWorker.workerPattern;
+  };
 
   // Abort early when a task requires a worker command but none is available.
   if (requiresWorkerCommand({
@@ -671,6 +694,7 @@ export async function runTaskIteration(params: {
     executionEnv: prompts.executionEnv,
     automationCommand,
     automationWorkerPattern,
+    resolveVerifyRepairWorkerPattern,
     shouldVerify: dispatchResult.shouldVerify,
     runMode: execution.mode,
     executionOutputCaptured: dispatchResult.shouldVerify
