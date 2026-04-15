@@ -554,6 +554,35 @@ describe("builtin-tools/get getHandler", () => {
     ].join("\n"));
   });
 
+  it("ignores tilde-fenced get-result-like lines in worker output parsing", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: [
+          "~~~md",
+          "- get-result: Example inside fence",
+          "~~~",
+          "- Actual",
+        ].join("\n"),
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    expect(writeText.mock.calls[0]?.[1] ?? "").toBe([
+      "- [ ] get: All current names of this and that",
+      "  - get-result: Actual",
+      "",
+    ].join("\n"));
+  });
+
   it("round-trips escaped get-result values through parser and deterministic rerun", async () => {
     const source = "- [ ] get: All current names of this and that\n";
     const firstRun = createContext({

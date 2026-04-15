@@ -2546,6 +2546,53 @@ describe("run-task-execution helpers", () => {
     expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
   });
 
+  it("refreshes get-result metadata without mutating fenced regions during normal run", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "- [ ] get: All current names of this and that",
+        "  ~~~md",
+        "  - get-result: Example inside fence",
+        "  ~~~",
+        "  - get-mode: refresh",
+        "  - get-result: Legacy",
+        "",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "get: All current names of this and that"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: (toolName) => resolveBuiltinTool(toolName),
+      listKnownToolNames: () => listBuiltinToolNames(),
+    };
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: '{"results":["This","That"]}',
+      stderr: "",
+    }));
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(taskFile)).toBe([
+      "- [x] get: All current names of this and that",
+      "  ~~~md",
+      "  - get-result: Example inside fence",
+      "  ~~~",
+      "  - get-mode: refresh",
+      "  - get-result: This",
+      "  - get-result: That",
+      "",
+    ].join("\n"));
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(1);
+  });
+
   it("re-parses task context after tool updates so downstream tasks see new sub-items", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;

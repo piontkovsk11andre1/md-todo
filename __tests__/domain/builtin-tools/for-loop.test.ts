@@ -266,6 +266,31 @@ describe("builtin-tools/for-loop", () => {
     ]);
   });
 
+  it("ignores tilde-fenced for-item-like lines in worker output parsing", async () => {
+    const context = createContext({
+      payload: "Ignored",
+      workerExecutor: {
+        ...createContext().workerExecutor,
+        runWorker: vi.fn(async () => ({
+          exitCode: 0,
+          stdout: [
+            "~~~md",
+            "- for-item: Example inside fence",
+            "~~~",
+            "- Actual",
+          ].join("\n"),
+          stderr: "",
+        })),
+      },
+    });
+
+    const result = await forLoopHandler(context);
+
+    expect(result.childTasks).toEqual([
+      "for-item: Actual",
+    ]);
+  });
+
   it("strips only the first for-item prefix token and preserves later colons", async () => {
     const context = createContext({
       payload: "Ignored",

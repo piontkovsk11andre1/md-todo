@@ -192,14 +192,24 @@ function tryParseJsonResults(raw: string): string[] | null {
 function parseTextResults(raw: string): string[] {
   const lines = raw.split(/\r?\n/);
   const parsed: string[] = [];
-  let insideFence = false;
+  const fencePattern = /^(`{3,}|~{3,})/;
+  let openFence: OpenFence | null = null;
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith("```")) {
-      insideFence = !insideFence;
+    const fenceMatch = trimmed.match(fencePattern);
+    if (fenceMatch) {
+      const marker = fenceMatch[1] ?? "";
+      const char = marker[0] as "`" | "~";
+      const length = marker.length;
+
+      if (openFence === null) {
+        openFence = { char, length };
+      } else if (openFence.char === char && length >= openFence.length) {
+        openFence = null;
+      }
       continue;
     }
-    if (insideFence || trimmed.length === 0) {
+    if (openFence !== null || trimmed.length === 0) {
       continue;
     }
 
