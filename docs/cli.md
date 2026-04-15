@@ -1014,176 +1014,19 @@ rundown do "ship release checklist" "docs/release.md" --clean --rounds 2
 
 ### `rundown query <text>`
 
-Research the codebase, plan investigation steps, and execute a query workflow.
-
-`query` orchestrates three phases:
-
-1. research context enrichment,
-2. plan/task decomposition,
-3. execution and result aggregation.
-
-By default, output is Markdown. Use `--format` to emit JSON or strict pass/fail style output.
-
-Synopsis:
-
-```bash
-rundown query <text> [options] -- <command>
-rundown query <text> [options] --worker <pattern>
-```
-
-Arguments:
-
-- `<text>`: natural-language query to investigate.
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--dir <path>` | Target directory to analyze. | current working directory |
-| `--format <format>` | Output format: `markdown`, `json`, `yn`, `success-error`. | `markdown` |
-| `--output <file>` | Write final query output to a file instead of stdout. | unset |
-| `--skip-research` | Skip phase 1 and start from plan phase. | off |
-| `--mode <mode>` | Query mode. Currently only `wait` is supported. | `wait` |
-| `--scan-count <n>` | Max plan scan iterations (omit for convergence-driven unlimited mode). | unset |
-| `--max-items <n>` | Cap total TODO items added across all plan scans. | unset |
-| `--deep <n>` | Additional nested plan depth passes after top-level scans. | `0` |
-| `--dry-run` | Show planned query orchestration without running workers. | off |
-| `--print-prompt` | Print rendered query prompts and exit `0`. | off |
-| `--keep-artifacts` | Preserve runtime prompts, logs, and metadata under `<config-dir>/runs`. | off |
-| `--show-agent-output` | Show worker stdout/stderr during execution. | off |
-| `-v, --verbose` | Show detailed per-task run diagnostics. | off |
-| `-q, --quiet` | Suppress info-level output. | off |
-| `--trace` | Write structured trace events to run and global trace logs. | off |
-| `--force-unlock` | Break stale source lockfiles before phase locks. | off |
-| `--vars-file [path]` | Load template variables from JSON (default path: `<config-dir>/vars.json`). | unset |
-| `--var <key=value>` | Inject template variables (repeatable). | none |
-| `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. | off |
-| `--cli-block-timeout <ms>` | Timeout for `cli` fenced-block execution (`0` disables timeout). | `30000` |
-| `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
-
-Examples:
-
-```bash
-# Default markdown output
-rundown query "Where do we classify worker failures?"
-
-# JSON output written to file
-rundown query "Which commands support --trace?" --format json --output reports/query.json
-
-# Skip research and run plan+execute only
-rundown query "Does memory-clean remove index entries?" --skip-research
-```
+See the command-focused reference: [docs/cli-query.md](cli-query.md).
 
 ### `rundown memory-view <source>`
 
-Display source-local memory entries for one or more Markdown sources.
-
-Synopsis:
-
-```bash
-rundown memory-view <source> [options]
-```
-
-Arguments:
-
-- `<source>`: file, directory, or glob to scan for Markdown memory.
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--json` | Print memory entries as JSON. | off |
-| `--summary` | Show index summary fields without full memory body content. | off |
-| `--all` | Show memory for all matched files (otherwise first resolved source). | off |
-
-Examples:
-
-```bash
-# Show memory for first matched source
-rundown memory-view docs/tasks.md
-
-# Show summaries for all matched markdown files
-rundown memory-view "docs/**/*.md" --all --summary
-
-# Emit machine-readable output
-rundown memory-view roadmap.md --json
-```
+See the command-focused reference: [docs/cli-memory-view.md](cli-memory-view.md).
 
 ### `rundown memory-validate <source>`
 
-Validate source-local memory consistency and report issues.
-
-Checks include orphaned index entries, missing index entries for body files, entry-count mismatch, summary drift, and stale source references.
-
-Synopsis:
-
-```bash
-rundown memory-validate <source> [options]
-```
-
-Arguments:
-
-- `<source>`: file, directory, or glob to scan for Markdown memory.
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--fix` | Auto-fix recoverable index issues while validating. | off |
-| `--json` | Print validation report as JSON. | off |
-
-Examples:
-
-```bash
-# Human-readable validation report
-rundown memory-validate docs/
-
-# Validate and attempt automatic repairs
-rundown memory-validate docs/ --fix
-
-# Emit JSON report for automation
-rundown memory-validate "docs/**/*.md" --json
-```
+See the command-focused reference: [docs/cli-memory-validate.md](cli-memory-validate.md).
 
 ### `rundown memory-clean <source>`
 
-Remove orphaned, outdated, or invalid source-local memory artifacts.
-
-By default, `memory-clean` targets orphaned, invalid, or outdated memory. Use filters to narrow scope.
-
-Synopsis:
-
-```bash
-rundown memory-clean <source> [options]
-```
-
-Arguments:
-
-- `<source>`: file, directory, or glob to scan for Markdown memory.
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--dry-run` | Preview what would be removed without deleting files. | off |
-| `--orphans` | Remove only memory whose source file no longer exists. | off |
-| `--outdated` | Remove only memory older than threshold. | off |
-| `--older-than <duration>` | Age threshold for `--outdated` (for example `30d`, `6m`). | `90d` |
-| `--all` | Remove all memory for matched sources. Requires `--force`. | off |
-| `--force` | Skip safety confirmation gates for destructive cleanup modes. | off |
-
-Examples:
-
-```bash
-# Preview default cleanup selection
-rundown memory-clean docs/ --dry-run
-
-# Remove only orphaned memories
-rundown memory-clean "docs/**/*.md" --orphans
-
-# Remove all memory for matched sources
-rundown memory-clean docs/ --all --force
-```
+See the command-focused reference: [docs/cli-memory-clean.md](cli-memory-clean.md).
 
 ### `rundown worker-health`
 
@@ -1234,79 +1077,7 @@ rundown unlock docs/todos.md
 
 ### `rundown workspace`
 
-Manage workspace link metadata and optional workspace cleanup from the current invocation directory.
-
-`workspace` separates metadata unlinking from destructive file cleanup:
-
-- `unlink`: remove link record(s) only (no file deletion)
-- `remove`: remove link record(s), with optional on-disk file deletion via `--delete-files`
-
-#### `rundown workspace unlink`
-
-Remove workspace link record(s) from the current directory context without touching linked workspace files/directories.
-
-Synopsis:
-
-```bash
-rundown workspace unlink [options]
-```
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--workspace <dir|id>` | Select a specific workspace record by relative path or record id. | unset |
-| `--all` | Unlink all records in the current `.rundown/workspace.link`. | off |
-| `--dry-run` | Preview records that would be removed without writing metadata. | off |
-
-Behavior constraints:
-
-- If multiple records exist and no selector is provided, command flow must fail safely with candidate guidance.
-- Legacy single-record `workspace.link` format remains supported.
-- `--dry-run` prints exactly which records would be unlinked.
-
-#### `rundown workspace remove`
-
-Remove workspace link record(s); optionally delete selected linked workspace files/directories.
-
-Synopsis:
-
-```bash
-rundown workspace remove [options]
-```
-
-Options:
-
-| Option | Description | Default |
-|---|---|---|
-| `--workspace <dir|id>` | Select a specific workspace record by relative path or record id. | unset |
-| `--all` | Remove all records in the current `.rundown/workspace.link`. | off |
-| `--delete-files` | Delete selected linked workspace files/directories (destructive). | off |
-| `--dry-run` | Preview records/files that would be removed without changing disk. | off |
-| `--force` | Skip confirmation prompts for destructive cleanup operations. | off |
-
-Behavior constraints:
-
-- By default, `remove` without `--delete-files` is metadata-only.
-- File deletion requires explicit confirmation unless `--force` is set.
-- Deletion targets outside allowed workspace boundaries must be blocked.
-- `--dry-run` prints exactly which records/files would be removed.
-
-Examples:
-
-```bash
-# Remove one link record only
-rundown workspace unlink --workspace ../predict-auth
-
-# Preview unlinking every record in current workspace.link
-rundown workspace unlink --all --dry-run
-
-# Remove one record and preview destructive file cleanup
-rundown workspace remove --workspace auth-workspace --delete-files --dry-run
-
-# Remove all records and delete linked files without interactive confirmation
-rundown workspace remove --all --delete-files --force
-```
+See the command-focused reference: [docs/cli-workspace.md](cli-workspace.md).
 
 ### `rundown next <source>`
 
@@ -1346,61 +1117,11 @@ In this example, `Confirm target branch` is a non-checkable detail item, and the
 
 ### `rundown artifacts`
 
-Inspect or clean saved runtime artifact folders under `<config-dir>/runs/`.
-
-Options:
-
-| Option | Description |
-|---|---|
-| `--json` | Output artifact information as JSON. |
-| `--failed` | Show only failed runs. |
-| `--open <runId>` | Open a specific run folder by ID (use `latest` for the most recent run). |
-| `--clean` | Delete saved run folders. |
-| `--clean --failed` | Delete only failed run folders. |
-
-Examples:
-
-```bash
-rundown artifacts
-rundown artifacts --json
-rundown artifacts --failed
-rundown artifacts --open latest
-rundown artifacts --clean --failed
-```
+See the command-focused reference: [docs/cli-artifacts.md](cli-artifacts.md).
 
 ### `rundown log`
 
-Show completed run history in a compact, one-line-per-run format to help pick revert targets.
-
-Default behavior:
-
-- Shows only runs with status `completed`.
-- Orders runs newest-first (same order as saved artifacts metadata).
-- Prints one compact line per run: short run ID, absolute local timestamp (ISO-8601 with numeric offset), relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
-- Text-mode absolute timestamps are local display values; persisted run metadata (`startedAt`/`completedAt`) remains UTC ISO-8601.
-- Non-revertable entries are dimmed in terminal output.
-
-Options:
-
-| Option | Description |
-|---|---|
-| `--revertable` | Show only revertable runs (`status=completed` and metadata contains `extra.commitSha`). |
-| `--command <name>` | Filter by command name (for example `run`, `plan`, `revert`, `reverify`). |
-| `--limit <n>` | Show only the first `n` matching runs. |
-| `--json` | Print matching runs as JSON for machine consumption. |
-
-Examples:
-
-```bash
-rundown log
-rundown log --revertable
-rundown log --command run --limit 5
-rundown log --json
-```
-
-`--json` outputs an array of run entries with fields such as `runId`, `shortRunId`, `commandName`, `status`, `relativeTime`, `taskSummary`, `source`, `commitSha`, `shortCommitSha`, `revertable`, `startedAt`, and `completedAt`.
-
-Automation note: prefer `rundown log --json` for scripts. The default text view is optimized for operators and includes additive timestamp rendering for readability.
+See the command-focused reference: [docs/cli-log.md](cli-log.md).
 
 ## Source file locking
 
