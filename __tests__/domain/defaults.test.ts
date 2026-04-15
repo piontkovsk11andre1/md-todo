@@ -123,6 +123,9 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`include: <path>`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("there is no explicit target file write/edit/create in that child task");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Do NOT use `memory:` when the child task asks to write/edit/create/update any file");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("split into separate child TODOs when possible");
   });
 
   it("maps sample prompts to rundown workflows and preserves migration + fallback guidance in help template", () => {

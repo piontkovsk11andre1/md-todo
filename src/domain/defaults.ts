@@ -1235,7 +1235,8 @@ Use built-in prefixes when they improve execution quality for child tasks:
 - \`verify:\` skips execution and runs only the verification phase. Use it for child tasks that assert existing state without doing any work (e.g. "verify: all tests pass"). Do NOT use \`verify:\` for tasks that require creating, writing, or changing anything — those need execution.
 - \`fast:\` executes the task but skips the verification phase entirely. Use it for small, mechanical changes where per-task verification is wasteful.
 - \`profile=<name>\` to choose a worker profile for specific child tasks.
-- \`memory:\` for child tasks that should capture reusable context.
+- \`memory:\` for child tasks that gather reusable context for later steps when the task does not specify a file to write/edit/create.
+- If child task text includes write/edit/create/update filesystem intent, keep it as a normal execution TODO (not \`memory:\`).
 - \`include: <path>\` to delegate child subtasks to another Markdown file.
 
 Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:\`, \`raw:\`, \`quick:\`, \`memorize:\`, \`remember:\`, \`inventory:\`). If an existing item uses an alias, normalize it to the canonical form.
@@ -1260,6 +1261,9 @@ Heuristics:
 - Use \`fast:\` when the child task is a small mechanical edit that does not warrant its own verification pass.
 - Prefer grouping child tasks as \`fast:\` steps followed by a \`verify:\` step that validates the group. A parent task can have multiple such groups when work naturally splits into stages.
 - Use \`profile=\` when child task complexity or cost/speed trade-offs suggest a non-default worker.
+- Use \`memory:\` when the child task objective is research/inventory/constraints/reference capture for later tasks and there is no explicit target file write/edit/create in that child task.
+- Do NOT use \`memory:\` when the child task asks to write/edit/create/update any file or persistent document artifact (including "prepare notes section in this doc" or "research and write findings into X.md"). These must remain normal execution TODOs.
+- For mixed intents, split into separate child TODOs when possible: a \`memory:\` capture task first, then a normal write/edit task.
 - Use directive parents when multiple adjacent child tasks share the same prefix.
 - Prefer plain \`- [ ]\` child items when no special behavior is needed.
 
