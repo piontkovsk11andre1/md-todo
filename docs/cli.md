@@ -1,4 +1,4 @@
-﻿# CLI
+# CLI
 
 `rundown` and `rd` are both supported executable names. `rd` is a strict alias of `rundown` (same entrypoint, commands, flags, output, and exit codes). Examples below use `rundown` as the canonical form unless noted.
 
@@ -1024,7 +1024,7 @@ rundown list roadmap.md --all
 Example hierarchical output:
 
 ```text
-TODO.md:1 [#0] Release prep (blocked â€” has unchecked subtasks)
+TODO.md:1 [#0] Release prep (blocked — has unchecked subtasks)
   TODO.md:2 - Confirm target branch
   TODO.md:3 [#1] Rewrite README opening
     TODO.md:4 [#2] Capture before/after screenshots
@@ -1477,18 +1477,18 @@ With `.rundown/tools/post-on-gitea.md` present, rundown runs that template and e
 
 ### Verification and repair
 
-- `--no-verify` â€” skip verification
-- `--only-verify` â€” verify without executing first
+- `--no-verify` — skip verification
+- `--only-verify` — verify without executing first
 - verify-only task text auto-skips execute phase (for example `verify: ...`, `confirm: ...`, `check: ...`)
 - fast-execution task text auto-skips verification (for example `fast: ...`, `raw: ...`, `quick: ...`), even when global `--verify` is enabled
-- `--force-execute` â€” override verify-only auto-skip and run execute phase anyway
-- `force: <task>` â€” wrap a task in an outer retry loop that reruns the full iteration on retryable failure
-- `force: <attempts>, <task>` â€” same as above with per-task retry limit override
-- `--force-attempts <n>` â€” default outer retry attempts for `force:` tasks when count is omitted
+- `--force-execute` — override verify-only auto-skip and run execute phase anyway
+- `force: <task>` — wrap a task in an outer retry loop that reruns the full iteration on retryable failure
+- `force: <attempts>, <task>` — same as above with per-task retry limit override
+- `--force-attempts <n>` — default outer retry attempts for `force:` tasks when count is omitted
 - `--force-execute` and `force:` are independent: `--force-execute` decides whether verify-only text still runs execution, while `force:` decides whether a failed iteration is retried
 - `force:` is a no-op in `--mode detached`: detached task dispatch returns immediate success (`continueLoop: false`, `exitCode: 0`), so outer retries never trigger
-- `--repair-attempts <n>` â€” retry repair up to `n` times
-- `--no-repair` â€” disable repair explicitly
+- `--repair-attempts <n>` — retry repair up to `n` times
+- `--no-repair` — disable repair explicitly
 
 When verification fails, rundown surfaces the failure reason in user-visible output at each stage:
 
@@ -1500,16 +1500,16 @@ If the worker does not provide details, rundown prints fallback reasons (for exa
 
 ### Execution mode
 
-- `--mode wait` â€” start the worker and wait
-- `--mode tui` â€” start an interactive terminal session and continue after exit
-- `--mode detached` â€” start the worker without waiting
+- `--mode wait` — start the worker and wait
+- `--mode tui` — start an interactive terminal session and continue after exit
+- `--mode detached` — start the worker without waiting
 
 ### Worker patterns and prompt delivery
 
 Rundown always writes the rendered task prompt to a runtime file and supports worker pattern placeholders:
 
-- `$file` â€” replaced with the prompt file path on disk
-- `$bootstrap` â€” replaced with a short instruction telling the worker to read the prompt file
+- `$file` — replaced with the prompt file path on disk
+- `$bootstrap` — replaced with a short instruction telling the worker to read the prompt file
 
 If neither `$file` nor `$bootstrap` appears in the worker pattern, rundown appends `$file` as the final argument (backward-compatible default).
 
@@ -1590,8 +1590,8 @@ rundown research docs/spec.md --dry-run --vars-file --var ticket=ENG-42
 
 ### Command-output block expansion
 
-- `--ignore-cli-block` â€” skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
-- `--cli-block-timeout <ms>` â€” per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
+- `--ignore-cli-block` — skip execution of markdown fenced `cli` blocks during prompt expansion (blocks remain unexpanded)
+- `--cli-block-timeout <ms>` — per-command timeout for fenced `cli` block execution (default `30000`, `0` disables timeout)
 
 These options apply to `run`, `discuss`, `plan`, `explore`, `make`, `reverify`, and `research`.
 
@@ -1606,9 +1606,9 @@ During fenced `cli` block execution, variables loaded from `--var` and `--vars-f
 
 ### Variables
 
-- `--var key=value` â€” inject a template variable
-- `--vars-file path/to/file.json` â€” load template variables from JSON
-- `--vars-file` â€” load `<config-dir>/vars.json`
+- `--var key=value` — inject a template variable
+- `--vars-file path/to/file.json` — load template variables from JSON
+- `--vars-file` — load `<config-dir>/vars.json`
 
 Direct `--var` entries override values loaded from `--vars-file`.
 
@@ -1620,16 +1620,16 @@ Variable environment export behavior:
 
 ### Artifacts
 
-- `--keep-artifacts` â€” keep the run folder under `<config-dir>/runs/`
+- `--keep-artifacts` — keep the run folder under `<config-dir>/runs/`
 
 ### Planning
 
-- `--scan-count <n>` â€” set max clean-session plan scans for `plan` (positive integer)
-- `--deep <n>` â€” add nested child-generation passes after top-level scans (non-negative integer)
+- `--scan-count <n>` — set max clean-session plan scans for `plan` (positive integer)
+- `--deep <n>` — add nested child-generation passes after top-level scans (non-negative integer)
 
 ### Listing
 
-- `--all` â€” include checked and unchecked tasks in `list` output
+- `--all` — include checked and unchecked tasks in `list` output
 
 ### Git and hooks
 
@@ -1700,8 +1700,8 @@ For `run`, source-file locks remain held for the full task lifecycle, including 
 
 `--all` (or `all <source>`) processes tasks sequentially. After each successful task, the next unchecked task is selected and run. The loop stops when:
 
-- All tasks are complete â€” exits `0`.
-- A task fails execution or verification â€” exits `1` or `2`.
+- All tasks are complete — exits `0`.
+- A task fails execution or verification — exits `1` or `2`.
 
 `--on-complete` fires after each successful task. `--on-fail` fires once on the task that caused the loop to stop.
 
@@ -1744,8 +1744,8 @@ rundown run runbook.md --clean
 
 ### Inspection and dry runs
 
-- `--dry-run` â€” select the task and render the prompt, then print what command would run and exit without executing, verifying, repairing, or editing Markdown files.
-- `--print-prompt` â€” print the fully rendered prompt and exit without executing the worker.
+- `--dry-run` — select the task and render the prompt, then print what command would run and exit without executing, verifying, repairing, or editing Markdown files.
+- `--print-prompt` — print the fully rendered prompt and exit without executing the worker.
 
 Behavior notes:
 
@@ -1780,7 +1780,7 @@ rundown plan roadmap.md --print-prompt
 
 If the selected task begins with `cli:`, `rundown` executes it directly instead of sending it to the external worker.
 
-The command runs from the directory containing the Markdown file, not the current working directory. This makes inline CLI tasks portable â€” they behave the same regardless of where `rundown` is invoked from.
+The command runs from the directory containing the Markdown file, not the current working directory. This makes inline CLI tasks portable — they behave the same regardless of where `rundown` is invoked from.
 
 Inline `cli:` commands also receive template variables in their process environment as `RUNDOWN_VAR_<UPPERCASE_KEY>` (from both `--var` and `--vars-file`).
 
@@ -1877,10 +1877,10 @@ rundown run roadmap.md --mode tui
 
 ## Exit codes
 
-- `0` â€” command completed successfully
-- `1` â€” execution error
-- `2` â€” validation failed (stderr includes the surfaced verification failure reason)
-- `3` â€” no actionable target
+- `0` — command completed successfully
+- `1` — execution error
+- `2` — validation failed (stderr includes the surfaced verification failure reason)
+- `3` — no actionable target
 
 `rundown unlock` follows the same contract:
 
