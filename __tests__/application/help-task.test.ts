@@ -138,7 +138,7 @@ describe("help-task", () => {
     });
 
     const helpTask = createHelpTask(dependencies);
-    const code = await helpTask(createOptions({ workerCommand: [] }));
+    const code = await helpTask(createOptions({ workerCommand: ["opencode", "run", "--tui"] }));
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
@@ -167,7 +167,7 @@ describe("help-task", () => {
     });
 
     const helpTask = createHelpTask(dependencies);
-    const code = await helpTask(createOptions({ workerCommand: [] }));
+    const code = await helpTask(createOptions({ workerCommand: ["opencode", "run", "--tui"] }));
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
@@ -177,6 +177,57 @@ describe("help-task", () => {
     expect(prompt.indexOf("You are running in rundown root no-argument help mode.")).toBeLessThan(
       prompt.indexOf("HELP_MARKER"),
     );
+  });
+
+  it("loads warmup/help templates from an explicit custom config dir in order", async () => {
+    const cwd = "/workspace";
+    const configDir = path.join(cwd, ".rundown-custom");
+    const { dependencies, workerExecutor } = createDependencies({ cwd, configDirPath: configDir });
+    vi.mocked(dependencies.workerConfigPort.load).mockReturnValue({
+      workers: {
+        tui: ["opencode", "run", "--tui"],
+      },
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath === path.join(configDir, "agent.md")) {
+        return "CUSTOM_AGENT_WARMUP";
+      }
+      if (templatePath === path.join(configDir, "help.md")) {
+        return "CUSTOM_HELP_TEMPLATE";
+      }
+      return null;
+    });
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({ workerCommand: [] }));
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0].prompt ?? "";
+    expect(prompt).toContain("CUSTOM_AGENT_WARMUP");
+    expect(prompt).toContain("CUSTOM_HELP_TEMPLATE");
+    expect(prompt.indexOf("CUSTOM_AGENT_WARMUP")).toBeLessThan(prompt.indexOf("CUSTOM_HELP_TEMPLATE"));
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(path.join(configDir, "agent.md"));
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(path.join(configDir, "help.md"));
+  });
+
+  it("uses built-in warmup fallback when config dir is unavailable", async () => {
+    const cwd = "/workspace";
+    const { dependencies, workerExecutor } = createDependencies({ cwd, configDirPath: null });
+    vi.mocked(dependencies.workerConfigPort.load).mockReturnValue({
+      workers: {
+        tui: ["opencode", "run", "--tui"],
+      },
+    });
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({ workerCommand: ["opencode", "run", "--tui"] }));
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(workerExecutor.runWorker).mock.calls[0]?.[0].prompt ?? "";
+    expect(prompt).toContain("You are running in rundown root no-argument help mode.");
+    expect(vi.mocked(dependencies.templateLoader.load)).not.toHaveBeenCalled();
   });
 
   it("expands cli fenced blocks in the help template before worker execution", async () => {
@@ -507,6 +558,7 @@ describe("help-task", () => {
 
 function createDependencies(options: {
   cwd: string;
+  configDirPath?: string | null;
 }): {
   dependencies: HelpTaskDependencies;
   events: ApplicationOutputEvent[];
@@ -584,10 +636,12 @@ function createDependencies(options: {
     workerConfigPort: { load: vi.fn(() => undefined) },
     traceWriter,
     cliBlockExecutor,
-    configDir: {
-      configDir: path.join(options.cwd, ".rundown"),
-      isExplicit: false,
-    },
+    configDir: options.configDirPath === null
+      ? undefined
+      : {
+        configDir: options.configDirPath ?? path.join(options.cwd, ".rundown"),
+        isExplicit: false,
+      },
     createTraceWriter: vi.fn(() => traceWriter),
     output: {
       emit: (event) => events.push(event),
