@@ -23,7 +23,7 @@ rundown migrate [action] [options] --worker <pattern>
 
 Arguments:
 
-- `[action]`: Optional migration action (`up`, `down [n]`, `snapshot`, `backlog`, `context`, `review`, or `user-experience`).
+- `[action]`: Optional migration action (`up`, `down [n]`, `snapshot`, `backlog`, `context`, `review`, `user-experience`, or `user-session`).
 
 Actions:
 
