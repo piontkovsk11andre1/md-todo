@@ -297,6 +297,7 @@ interface TestCommandOptions {
 }
 
 type TestCommandHandler = (options: TestCommandOptions) => CliActionResult;
+type WithCommandHandler = (options: { harness: string }) => CliActionResult;
 
 type ConfigMutationScope = "local" | "global";
 type ConfigReadScope = "effective" | "local" | "global";
@@ -1920,6 +1921,18 @@ export function createInitCommandAction({
 }
 
 /**
+ * Creates the `with` command action handler.
+ *
+ * The returned action forwards the selected harness to the dedicated
+ * application `withTask` use case.
+ */
+export function createWithCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (harness: string) => CliActionResult {
+  return (harness: string) => resolveWithCommandHandler(getApp())({ harness });
+}
+
+/**
  * Creates the `memory-validate` command action handler.
  *
  * The returned action maps CLI flags to the application `validateMemory` use case.
@@ -2143,6 +2156,21 @@ function resolveTestCommandHandler(appInstance: CliApp): TestCommandHandler {
   }
 
   throw new Error("The `test` command is not available in this build.");
+}
+
+/**
+ * Resolves the active with command implementation for the current app build.
+ */
+function resolveWithCommandHandler(appInstance: CliApp): WithCommandHandler {
+  const maybeWithHandler = appInstance as CliApp & {
+    withTask?: WithCommandHandler;
+  };
+
+  if (typeof maybeWithHandler.withTask === "function") {
+    return maybeWithHandler.withTask;
+  }
+
+  throw new Error("The `with` command is not available in this build.");
 }
 
 function isMigrateAction(value: string): value is MigrateAction {

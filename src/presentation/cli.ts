@@ -61,6 +61,7 @@ import {
   createConfigUnsetCommandAction,
   createWorkspaceRemoveCommandAction,
   createWorkspaceUnlinkCommandAction,
+  createWithCommandAction,
   createWorkerHealthCommandAction,
   createNextCommandAction,
   createPlanCommandAction,
@@ -951,9 +952,7 @@ program
   .description("Configure .rundown worker settings for a known external harness preset.")
   .argument("<harness>", "Harness preset name (for example: opencode)")
   .allowUnknownOption(false)
-  .action(withCliAction((harness: string) => {
-    throw new Error(`The \`with\` command is not available in this build (requested harness: ${harness}).`);
-  }));
+  .action(withCliAction(createWithCommandAction({ getApp })));
 
 program
   .command("intro")
