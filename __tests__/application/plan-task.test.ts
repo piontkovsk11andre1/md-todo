@@ -1365,6 +1365,9 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("If a directive parent suggests memory capture intent");
     expect(firstPrompt).toContain("no inherited `memory:`");
     expect(firstPrompt).toContain("split into separate TODOs when possible");
+    expect(firstPrompt).toContain("Mixed-intent split example (correct)");
+    expect(firstPrompt).toContain("- [ ] memory: research rollout constraints");
+    expect(firstPrompt).toContain("- [ ] Write rollout findings to docs/rollout-plan.md");
     expect(firstPrompt).toContain("Author new memory-capture TODOs with the canonical `memory:` prefix only");
     expect(firstPrompt).toContain("`include: <path>`");
     expect(firstPrompt).toContain("Prefix composition is supported with `, ` or `; ` separators");
@@ -2663,6 +2666,9 @@ describe("plan-task", () => {
     expect(deepPrompt).toContain("If a parent directive suggests memory capture intent");
     expect(deepPrompt).toContain("no inherited `memory:`");
     expect(deepPrompt).toContain("split into separate child TODOs when possible");
+    expect(deepPrompt).toContain("Mixed-intent child split example (correct)");
+    expect(deepPrompt).toContain("- [ ] memory: research rollout constraints");
+    expect(deepPrompt).toContain("- [ ] Write rollout findings to docs/rollout-plan.md");
     expect(deepPrompt).toContain("Author new child memory-capture TODOs with the canonical `memory:` prefix only");
   });
 

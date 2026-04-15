@@ -1176,6 +1176,7 @@ Heuristics:
 - Explicit write-target examples that must remain normal execution TODOs: \`- [ ] Write findings to docs/research-notes.md\`, \`- [ ] Research rollout risks and write findings into docs/rollout-plan.md\`.
 - If a directive parent suggests memory capture intent, still classify each child task on its own text: child tasks with explicit file-write/edit/create/update language must remain normal execution TODOs (no inherited \`memory:\`).
 - For mixed intents, split into separate TODOs when possible: a \`memory:\` capture task first, then a normal write/edit task.
+- Mixed-intent split example (correct): \`- [ ] memory: research rollout constraints\` and \`- [ ] Write rollout findings to docs/rollout-plan.md\` as separate TODOs.
 - Use directive parents when multiple adjacent tasks share the same prefix.
 - Prefer plain \`- [ ]\` items when no special behavior is needed.
 
@@ -1270,6 +1271,7 @@ Heuristics:
 - Explicit write-target child examples that must remain normal execution TODOs: \`- [ ] Write findings to docs/research-notes.md\`, \`- [ ] Research rollout risks and write findings into docs/rollout-plan.md\`.
 - If a parent directive suggests memory capture intent, still classify each child task by its own text: child tasks with explicit file-write/edit/create/update language must remain normal execution TODOs (no inherited \`memory:\`).
 - For mixed intents, split into separate child TODOs when possible: a \`memory:\` capture task first, then a normal write/edit task.
+- Mixed-intent child split example (correct): \`- [ ] memory: research rollout constraints\` and \`- [ ] Write rollout findings to docs/rollout-plan.md\` as separate child TODOs.
 - Use directive parents when multiple adjacent child tasks share the same prefix.
 - Prefer plain \`- [ ]\` child items when no special behavior is needed.
 
