@@ -422,7 +422,8 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 - **\`memory: <prompt>\`** — Capture information to source-local memory (memorize:, remember:, inventory:).
 - **\`fast: <task>\`** — Skip verification for this task (raw:, quick: are aliases).
 - **\`optional: <condition>\`** — Conditionally stop processing siblings when condition is true (preferred canonical form).
-- **\`skip: <condition>\`** — Preferred concise alias for \`optional:\` with identical behavior. Legacy aliases: end:, return:, quit:, break:.
+- **\`skip: <condition>\`** — Preferred concise alias for \`optional:\` with identical behavior.
+- **\`quit:\` / \`exit:\` / \`end:\` / \`break:\` / \`return:\`** — Terminal stop control. Empty payload is unconditional stop; non-empty payload is a yes/no condition.
 - **\`include: <file.md>\`** — Include and execute tasks from another file.
 - **\`profile=<name>\`** — Select a named worker profile for this task.
 - Prefixes compose: \`profile=fast, verify: tests pass\`

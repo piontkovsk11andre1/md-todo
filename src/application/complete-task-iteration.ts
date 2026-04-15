@@ -38,8 +38,10 @@ import { pluralize } from "./run-task-utils.js";
 import { getForCurrentValue, getForItemValues, isForLoopTaskText } from "../domain/for-loop.js";
 import {
   RUN_REASON_VERIFICATION_FAILED,
+  RUN_REASON_TERMINAL_STOP_REQUESTED,
   RUN_REASON_USAGE_LIMIT_DETECTED,
 } from "../domain/run-reasons.js";
+import type { TerminalStopSignal } from "../domain/terminal-control.js";
 import {
   WORKER_FAILURE_CLASS_TRANSPORT_UNAVAILABLE,
   WORKER_FAILURE_CLASS_USAGE_LIMIT,
@@ -148,6 +150,7 @@ export async function completeTaskIteration(params: {
   };
   forLoopCompleted?: boolean;
   forLoopItems?: string[];
+  terminalStop?: TerminalStopSignal;
   failOnCompleteHookError?: boolean;
   persistFailureAnnotation?: boolean;
   traceStatisticsConfig?: TraceStatisticsConfig;
@@ -213,6 +216,7 @@ export async function completeTaskIteration(params: {
     forLoopAdvanced,
     forLoopCompleted,
     forLoopItems,
+    terminalStop,
     failOnCompleteHookError,
     persistFailureAnnotation = true,
     traceStatisticsConfig,
@@ -535,6 +539,27 @@ export async function completeTaskIteration(params: {
     }
   }
 
+  if (terminalStop) {
+    const terminalSkipResult = skipRemainingSiblingsUsingFileSystem(task, terminalStop.reason, dependencies.fileSystem);
+    emit({
+      kind: "info",
+      message: "Terminal stop requested by " + terminalStop.requestedBy
+        + ": skipped " + terminalSkipResult.skippedSiblingCount + " "
+        + pluralize(terminalSkipResult.skippedSiblingCount, "sibling task", "sibling tasks")
+        + (terminalSkipResult.skippedDescendantCount > 0
+          ? " and " + terminalSkipResult.skippedDescendantCount + " "
+            + pluralize(terminalSkipResult.skippedDescendantCount, "descendant task", "descendant tasks")
+          : "")
+        + ".",
+    });
+    for (const skippedTaskText of terminalSkipResult.skippedTaskTexts) {
+      emit({
+        kind: "info",
+        message: "Skipped sibling: " + skippedTaskText + " (reason: " + terminalStop.reason + ")",
+      });
+    }
+  }
+
   emit({ kind: "success", message: "Task checked: " + task.text });
   emit({ kind: "group-end", status: "success" });
 
@@ -608,6 +633,15 @@ export async function completeTaskIteration(params: {
   // Persist successful completion state and telemetry.
   await finishRun(0, "completed", keepArtifacts, undefined, taskCompletionExtra);
   state.tasksCompleted++;
+  if (terminalStop?.stopRun) {
+    state.runCompleted = true;
+    return {
+      continueLoop: false,
+      exitCode: terminalStop.exitCode,
+      runFailureReason: RUN_REASON_TERMINAL_STOP_REQUESTED,
+      groupEnded: true,
+    };
+  }
   // Stop after the first completed task when not running in run-all mode.
   if (!effectiveRunAll) {
     state.runCompleted = true;

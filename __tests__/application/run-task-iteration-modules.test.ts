@@ -20,7 +20,9 @@ import type { Task } from "../../src/domain/parser.js";
 import {
   FOR_LOOP_PREFIX_ALIASES,
   MEMORY_PREFIX_ALIASES,
+  OPTIONAL_PREFIX_ALIASES,
   PARALLEL_PREFIX_ALIASES,
+  TERMINAL_PREFIX_ALIASES,
   VERIFY_PREFIX_ALIASES,
 } from "../helpers/prefix-aliases.js";
 import {
@@ -2008,7 +2010,7 @@ describe("task-execution-dispatch", () => {
   }
 
   async function dispatchControlFlowPrefix(params: {
-    prefix: "optional" | "skip" | "end" | "return" | "quit" | "break";
+    prefix: "optional" | "skip" | "end" | "exit" | "return" | "quit" | "break";
     workerRun: (prompt: unknown) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
   }) {
     const task = createTask(path.join(cwd, "tasks.md"), params.prefix + ": there is no output to process");
@@ -3424,8 +3426,8 @@ describe("task-execution-dispatch", () => {
     expect(dependencies.workerExecutor.runWorker).not.toHaveBeenCalled();
   });
 
-  it.each(["optional", "skip", "end", "return", "quit", "break"] as const)(
-    "keeps control-flow outcomes for %s: true/false/ambiguous/error",
+  it.each(OPTIONAL_PREFIX_ALIASES)(
+    "keeps optional-skip outcomes for %s: true/false/ambiguous/error",
     async (prefix) => {
       const yesOutcome = await dispatchControlFlowPrefix({
         prefix,
@@ -3480,8 +3482,77 @@ describe("task-execution-dispatch", () => {
       });
       expect(errorOutcome.result).toEqual({
         kind: "execution-failed",
-        executionFailureMessage: "Failed to evaluate end condition: worker unavailable",
-        executionFailureRunReason: "End condition worker invocation failed.",
+        executionFailureMessage: "Failed to evaluate condition: worker unavailable",
+        executionFailureRunReason: "Condition worker invocation failed.",
+        executionFailureExitCode: 1,
+      });
+      expect(errorOutcome.runWorker).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(TERMINAL_PREFIX_ALIASES)(
+    "keeps terminal-stop outcomes for %s: true/false/ambiguous/error",
+    async (prefix) => {
+      const yesOutcome = await dispatchControlFlowPrefix({
+        prefix,
+        workerRun: async () => ({ exitCode: 0, stdout: "yes", stderr: "" }),
+      });
+      expect(yesOutcome.result).toEqual({
+        kind: "ready-for-completion",
+        shouldVerify: false,
+        cliExecutionOptionsForVerification: undefined,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+        terminalStop: {
+          requestedBy: prefix,
+          mode: "conditional",
+          reason: "there is no output to process",
+          stopRun: true,
+          stopLoop: true,
+          exitCode: 0,
+        },
+        toolExpansionInsertedChildCount: undefined,
+      });
+      expect(yesOutcome.runWorker).toHaveBeenCalledTimes(1);
+
+      const noOutcome = await dispatchControlFlowPrefix({
+        prefix,
+        workerRun: async () => ({ exitCode: 0, stdout: "no", stderr: "" }),
+      });
+      expect(noOutcome.result).toEqual({
+        kind: "ready-for-completion",
+        shouldVerify: false,
+        cliExecutionOptionsForVerification: undefined,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+        toolExpansionInsertedChildCount: undefined,
+      });
+      expect(noOutcome.runWorker).toHaveBeenCalledTimes(1);
+
+      const ambiguousOutcome = await dispatchControlFlowPrefix({
+        prefix,
+        workerRun: async () => ({ exitCode: 0, stdout: "maybe", stderr: "" }),
+      });
+      expect(ambiguousOutcome.result).toEqual({
+        kind: "ready-for-completion",
+        shouldVerify: false,
+        cliExecutionOptionsForVerification: undefined,
+        verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
+        verificationFailureRunReason: "Verification failed after all repair attempts.",
+        toolExpansionInsertedChildCount: undefined,
+      });
+      expect(ambiguousOutcome.runWorker).toHaveBeenCalledTimes(1);
+
+      const errorOutcome = await dispatchControlFlowPrefix({
+        prefix,
+        workerRun: async () => {
+          throw new Error("worker unavailable");
+        },
+      });
+      expect(errorOutcome.result).toEqual({
+        kind: "execution-failed",
+        executionFailureMessage: "Failed to evaluate condition: worker unavailable",
+        executionFailureRunReason: "Condition worker invocation failed.",
         executionFailureExitCode: 1,
       });
       expect(errorOutcome.runWorker).toHaveBeenCalledTimes(1);
@@ -5181,6 +5252,7 @@ describe("complete-task-iteration", () => {
       forceRetryableFailure: true,
       groupEnded: false,
       failureMessage: "Verification failed. Task not checked.\nmissing tests",
+      runFailureReason: "verification-failed",
     });
     expect(emit).toHaveBeenCalledWith({
       kind: "error",
@@ -5290,6 +5362,7 @@ describe("complete-task-iteration", () => {
       forceRetryableFailure: true,
       groupEnded: false,
       failureMessage: "Verification failed. Task not checked.\nmissing tests",
+      runFailureReason: "verification-failed",
     });
     expect(emit).toHaveBeenCalledWith({
       kind: "warn",

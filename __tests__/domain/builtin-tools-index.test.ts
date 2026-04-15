@@ -12,21 +12,29 @@ describe("builtin tools registry", () => {
     });
   });
 
-  it("maps skip/end/return/quit/break to the canonical optional handler", () => {
+  it("keeps optional/skip on optional handler and maps terminal aliases separately", () => {
     const optional = resolveBuiltinTool("optional");
+    const skip = resolveBuiltinTool("skip");
     const end = resolveBuiltinTool("end");
-    const aliasNames = ["skip", "end", "return", "quit", "break"];
+    const exit = resolveBuiltinTool("exit");
+    const terminalAliasNames = ["end", "exit", "return", "quit", "break"];
 
     expect(optional?.kind).toBe("handler");
-    expect(end?.kind).toBe("handler");
-    expect(optional?.handler).toBe(end?.handler);
-    expect(optional?.frontmatter).toEqual(end?.frontmatter);
+    expect(skip?.kind).toBe("handler");
+    expect(skip?.handler).toBe(optional?.handler);
+    expect(skip?.frontmatter).toEqual(optional?.frontmatter);
 
-    for (const aliasName of aliasNames) {
+    expect(end?.kind).toBe("handler");
+    expect(exit?.kind).toBe("handler");
+    expect(exit?.handler).toBe(end?.handler);
+    expect(exit?.frontmatter).toEqual(end?.frontmatter);
+    expect(optional?.handler).not.toBe(end?.handler);
+
+    for (const aliasName of terminalAliasNames) {
       const alias = resolveBuiltinTool(aliasName);
       expect(alias?.kind).toBe("handler");
-      expect(alias?.handler).toBe(optional?.handler);
-      expect(alias?.frontmatter).toEqual(optional?.frontmatter);
+      expect(alias?.handler).toBe(end?.handler);
+      expect(alias?.frontmatter).toEqual(end?.frontmatter);
     }
   });
 

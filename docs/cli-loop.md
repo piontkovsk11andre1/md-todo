@@ -42,6 +42,7 @@ Behavior notes:
 - Failure handling override: with `--continue-on-error`, failed iterations are logged and the loop continues after cooldown.
 - Interrupt handling: `Ctrl+C` during cooldown exits cleanly without waiting for the full cooldown.
 - Mode support: `loop` supports `--mode wait` only (interactive modes are rejected).
+- Terminal prefixes (`quit:`/`exit:`/`end:`/`break:`/`return:`) stop the outer loop immediately after the current iteration finalizes.
 
 Exit codes:
 

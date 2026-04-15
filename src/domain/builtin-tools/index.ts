@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "../ports/tool-resolver-port.js";
-import { endHandler } from "./end.js";
+import { endHandler, terminalHandler } from "./end.js";
 import { verifyHandler } from "./verify.js";
 import { includeHandler } from "./include.js";
 import { profileHandler } from "./profile.js";
@@ -106,25 +106,31 @@ const BUILTIN_TOOLS: Record<string, ToolDefinition> = {
   end: {
     name: "end",
     kind: "handler",
-    handler: endHandler,
+    handler: terminalHandler,
+    frontmatter: { skipExecution: false, shouldVerify: false },
+  },
+  exit: {
+    name: "exit",
+    kind: "handler",
+    handler: terminalHandler,
     frontmatter: { skipExecution: false, shouldVerify: false },
   },
   return: {
     name: "return",
     kind: "handler",
-    handler: endHandler,
+    handler: terminalHandler,
     frontmatter: { skipExecution: false, shouldVerify: false },
   },
   quit: {
     name: "quit",
     kind: "handler",
-    handler: endHandler,
+    handler: terminalHandler,
     frontmatter: { skipExecution: false, shouldVerify: false },
   },
   break: {
     name: "break",
     kind: "handler",
-    handler: endHandler,
+    handler: terminalHandler,
     frontmatter: { skipExecution: false, shouldVerify: false },
   },
   profile: {

@@ -6,6 +6,7 @@ import type { WorkerExecutorPort } from "./worker-executor-port.js";
 import type { ArtifactRunContext, CommandExecutionOptions } from "./index.js";
 import type { TemplateVars } from "../template.js";
 import type { ParsedWorkerPattern } from "../worker-pattern.js";
+import type { TerminalStopSignal } from "../terminal-control.js";
 
 /**
  * Classifies how a tool participates in the prefix chain.
@@ -53,6 +54,7 @@ export interface ToolHandlerResult {
   exitCode?: number;
   failureMessage?: string;
   failureReason?: string;
+  terminalStop?: TerminalStopSignal;
 }
 
 /**

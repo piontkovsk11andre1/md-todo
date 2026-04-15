@@ -584,6 +584,7 @@ export function createLoopCommandAction({
     let succeededIterations = 0;
     let failedIterations = 0;
     let loopExitCode = 0;
+    let terminalStopRequested = false;
     let cancelActiveCooldown: (() => void) | undefined;
 
     const cancelLoopCooldownOnShutdown = () => {
@@ -638,11 +639,22 @@ export function createLoopCommandAction({
             ignoreCliBlock: sharedRuntimeOptions.ignoreCliBlock,
             cacheCliBlocks: true,
             verbose,
+            onTerminalStop: (signal) => {
+              if (signal.stopLoop) {
+                terminalStopRequested = true;
+                setLoopSignalExitCode?.(signal.exitCode);
+              }
+            },
           }));
         } finally {
           releaseLoopHeldLocks(app);
         }
         const isSuccess = iterationExitCode === 0;
+        if (terminalStopRequested) {
+          emitCliInfo(app, `Loop iteration ${iteration} requested terminal stop; ending loop.`);
+          loopExitCode = iterationExitCode;
+          break;
+        }
         const reachedIterationLimit = hasBoundedIterations && iteration >= iterations;
 
         if (!isSuccess) {

@@ -26,6 +26,7 @@ import { createTraceRunSession } from "./trace-run-session.js";
 import type { PrefixChain } from "../domain/prefix-chain.js";
 import { executeToolChain } from "./tool-execution.js";
 import { pluralize } from "./run-task-utils.js";
+import type { TerminalStopSignal } from "../domain/terminal-control.js";
 
 const INCLUDE_STACK_ENV = "RUNDOWN_INCLUDE_STACK";
 const INLINE_CLI_FAILURE_STREAM_MAX_CHARS = 12_000;
@@ -59,6 +60,7 @@ export type TaskExecutionDispatchResult =
     };
     forLoopCompleted?: boolean;
     forLoopItems?: string[];
+    terminalStop?: TerminalStopSignal;
   }
   | {
     kind: "execution-failed";
@@ -324,6 +326,7 @@ export async function dispatchTaskExecution(params: {
 
       traceRunSession.completePhase(executePhaseTrace, 0, "", "", true);
       const skipRemainingSiblingsReason = chainResult.skipRemainingSiblings?.reason;
+      const terminalStop = chainResult.terminalStop;
       if (prefixChain?.handler?.tool.name === "for" && chainResult.forLoopItems) {
         syncForLoopMetadataItemsUsingFileSystem(task, chainResult.forLoopItems, dependencies.fileSystem);
       }
@@ -340,6 +343,9 @@ export async function dispatchTaskExecution(params: {
         verificationFailureMessage: "Verification failed after all repair attempts. Task not checked.",
         verificationFailureRunReason: "Verification failed after all repair attempts.",
         skipRemainingSiblingsReason,
+        ...(terminalStop
+          ? { terminalStop }
+          : {}),
         toolExpansionInsertedChildCount: chainResult.childTaskCount > 0 ? chainResult.childTaskCount : undefined,
         ...(forLoopAdvanceResult?.advanced && forLoopAdvanceResult.current
           ? {

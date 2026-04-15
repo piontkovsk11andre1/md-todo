@@ -100,6 +100,7 @@ import {
   type WorkerHealthEntry,
 } from "../domain/worker-health.js";
 import { RUN_REASON_VERIFICATION_FAILED } from "../domain/run-reasons.js";
+import type { TerminalStopSignal } from "../domain/terminal-control.js";
 
 type ArtifactContext = ArtifactRunContext;
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -527,6 +528,7 @@ export interface RunTaskOptions {
   cacheCliBlocks?: boolean;
   verbose: boolean;
   taskTemplateOverride?: string;
+  onTerminalStop?: (signal: TerminalStopSignal) => void;
 }
 
 /**
@@ -591,6 +593,7 @@ export function createRunTaskExecution(
       workspaceLinkPath,
       isLinkedWorkspace,
       taskTemplateOverride,
+      onTerminalStop,
     } = options;
     const executionCwd = overriddenCwd ?? dependencies.workingDirectory.cwd();
     const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
@@ -1422,6 +1425,18 @@ export function createRunTaskExecution(
               const didFail = !iterationResult.continueLoop && exitCode !== 0;
               const executedWorkerCommand = iterationResult.executedWorkerCommand ?? [];
               const executedWorkerProfileName = iterationResult.executedWorkerProfileName;
+              const terminalStop = iterationResult.terminalStop;
+
+              if (terminalStop?.stopRun) {
+                onTerminalStop?.(terminalStop);
+                emit({
+                  kind: "info",
+                  message: "Terminal stop: ending run after current task (requested by "
+                    + terminalStop.requestedBy
+                    + ":).",
+                });
+                return terminalStop.exitCode;
+              }
 
               if (executedWorkerCommand.length > 0) {
                 const healthOutcomeClass: WorkerFailureClass = didFail

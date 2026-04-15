@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { endHandler } from "../../src/domain/builtin-tools/end.js";
+import { endHandler, terminalHandler } from "../../src/domain/builtin-tools/end.js";
 import type { ToolHandlerContext } from "../../src/domain/ports/tool-handler-port.js";
 
 describe("endHandler", () => {
@@ -90,10 +90,10 @@ describe("endHandler", () => {
       },
     });
     expect(runWorker).toHaveBeenCalledTimes(1);
-    expect(emit).toHaveBeenCalledWith({ kind: "info", message: "Evaluating end condition." });
+    expect(emit).toHaveBeenCalledWith({ kind: "info", message: "Evaluating optional skip condition." });
     expect(emit).toHaveBeenCalledWith({
       kind: "info",
-      message: "End condition met; skipping remaining sibling tasks.",
+      message: "Optional condition met; skipping remaining sibling tasks.",
     });
   });
 
@@ -138,11 +138,11 @@ describe("endHandler", () => {
     expect(runWorker).toHaveBeenCalledWith(expect.objectContaining({
       prompt: expect.stringContaining("Condition:\nthere is still output to process"),
       artifactPhase: "execute",
-      artifactExtra: { taskType: "end-condition-evaluation" },
+      artifactExtra: { taskType: "terminal-condition-evaluation" },
     }));
     expect(emit).toHaveBeenCalledWith({
       kind: "info",
-      message: "End condition not met; continuing execution.",
+      message: "Optional condition not met; continuing execution.",
     });
   });
 
@@ -273,7 +273,7 @@ describe("endHandler", () => {
     expect(result).toEqual({ skipExecution: true });
     expect(emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "End condition response was ambiguous; defaulting to no and continuing execution.",
+      message: "Optional condition response was ambiguous; defaulting to no and continuing execution.",
     });
   });
 
@@ -313,12 +313,133 @@ describe("endHandler", () => {
 
     expect(result).toEqual({
       exitCode: 1,
-      failureMessage: "Failed to evaluate end condition: worker unavailable",
-      failureReason: "End condition worker invocation failed.",
+      failureMessage: "Failed to evaluate condition: worker unavailable",
+      failureReason: "Condition worker invocation failed.",
     });
     expect(emit).toHaveBeenCalledWith({
       kind: "warn",
-      message: "Failed to evaluate end condition: worker unavailable",
+      message: "Failed to evaluate condition: worker unavailable",
     });
+  });
+});
+
+describe("terminalHandler", () => {
+  function createContext(overrides: Partial<ToolHandlerContext> = {}): ToolHandlerContext {
+    const runWorker = vi.fn(async () => ({ exitCode: 0, stdout: "yes", stderr: "" }));
+    const emit = vi.fn();
+
+    return {
+      task: {
+        text: "exit:",
+        file: "C:/workspace/tasks.md",
+        line: 1,
+        index: 0,
+        depth: 0,
+        checked: false,
+        subItems: [],
+        children: [],
+      } as unknown as ToolHandlerContext["task"],
+      allTasks: [],
+      payload: "",
+      source: "- [ ] exit:",
+      contextBefore: "",
+      fileSystem: {
+        readText: vi.fn(),
+        writeText: vi.fn(),
+        exists: vi.fn(),
+        mkdir: vi.fn(),
+        stat: vi.fn(),
+        readdir: vi.fn(),
+      } as unknown as ToolHandlerContext["fileSystem"],
+      pathOperations: {
+        resolve: vi.fn((value: string) => value),
+      } as unknown as ToolHandlerContext["pathOperations"],
+      emit,
+      workerExecutor: { runWorker } as unknown as ToolHandlerContext["workerExecutor"],
+      workerPattern: {
+        command: ["opencode", "run"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+      workerCommand: ["opencode", "run"],
+      mode: "wait",
+      trace: false,
+      cwd: "C:/workspace",
+      executionEnv: undefined,
+      configDir: undefined,
+      artifactContext: {
+        runId: "run-1",
+        rootDir: "C:/workspace/.rundown/runs/run-1",
+        cwd: "C:/workspace",
+        keepArtifacts: false,
+        commandName: "run",
+      },
+      keepArtifacts: false,
+      templateVars: {},
+      showAgentOutput: false,
+      ...overrides,
+    } as unknown as ToolHandlerContext;
+  }
+
+  it("treats empty payload as unconditional terminal stop", async () => {
+    const context = createContext({
+      task: { text: "exit:" } as unknown as ToolHandlerContext["task"],
+      payload: "   ",
+    });
+
+    const result = await terminalHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      terminalStop: {
+        requestedBy: "exit",
+        mode: "unconditional",
+        reason: "exit: (no condition)",
+        stopRun: true,
+        stopLoop: true,
+        exitCode: 0,
+      },
+    });
+    expect(context.workerExecutor.runWorker).not.toHaveBeenCalled();
+  });
+
+  it("uses conditional terminal stop when condition evaluates yes", async () => {
+    const context = createContext({
+      task: { text: "quit: there is no output" } as unknown as ToolHandlerContext["task"],
+      payload: "there is no output",
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "yes", stderr: "" })),
+      } as unknown as ToolHandlerContext["workerExecutor"],
+    });
+
+    const result = await terminalHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      terminalStop: {
+        requestedBy: "quit",
+        mode: "conditional",
+        reason: "there is no output",
+        stopRun: true,
+        stopLoop: true,
+        exitCode: 0,
+      },
+    });
+    expect(context.workerExecutor.runWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues when conditional terminal check evaluates no", async () => {
+    const context = createContext({
+      task: { text: "end: condition" } as unknown as ToolHandlerContext["task"],
+      payload: "condition",
+      workerExecutor: {
+        runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "no", stderr: "" })),
+      } as unknown as ToolHandlerContext["workerExecutor"],
+    });
+
+    const result = await terminalHandler(context);
+
+    expect(result).toEqual({ skipExecution: true });
   });
 });

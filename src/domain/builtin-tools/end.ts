@@ -1,5 +1,10 @@
 import type { ToolHandlerFn } from "../ports/tool-handler-port.js";
 import type { ProcessRunMode } from "../ports/process-runner.js";
+import {
+  classifyTerminalPayload,
+  resolveTerminalStopExitCode,
+  type TerminalPrefixAlias,
+} from "../terminal-control.js";
 
 function tryParseJson(raw: string): Record<string, unknown> | null {
   try {
@@ -30,9 +35,9 @@ function normalizeYesNo(raw: string): "yes" | "no" | null {
   return null;
 }
 
-function buildEndConditionPrompt(condition: string): string {
+function buildConditionPrompt(condition: string): string {
   return [
-    "You are evaluating an end-condition for a Markdown task runner.",
+    "You are evaluating a control-flow condition for a Markdown task runner.",
     "Decide whether the condition is true right now.",
     "Answer the yes/no question based only on the condition text.",
     "If the condition is ambiguous or cannot be determined, choose no.",
@@ -44,7 +49,7 @@ function buildEndConditionPrompt(condition: string): string {
   ].join("\n");
 }
 
-function parseEndConditionDecision(raw: string): "yes" | "no" | null {
+function parseConditionDecision(raw: string): "yes" | "no" | null {
   const parsed = tryParseJson(raw);
   if (parsed && typeof parsed === "object") {
     const candidate = ["decision", "answer", "verdict"]
@@ -59,6 +64,63 @@ function parseEndConditionDecision(raw: string): "yes" | "no" | null {
   }
 
   return normalizeYesNo(raw);
+}
+
+async function evaluateCondition(context: Parameters<ToolHandlerFn>[0], condition: string): Promise<{
+  ok: boolean;
+  decision?: "yes" | "no" | null;
+  exitCode?: number;
+  failureMessage?: string;
+  failureReason?: string;
+}> {
+  const evaluationPrompt = buildConditionPrompt(condition);
+
+  let runResult: Awaited<ReturnType<typeof context.workerExecutor.runWorker>>;
+  try {
+    runResult = await context.workerExecutor.runWorker({
+      workerPattern: context.workerPattern,
+      prompt: evaluationPrompt,
+      mode: context.mode as ProcessRunMode,
+      trace: context.trace,
+      cwd: context.cwd,
+      env: context.executionEnv,
+      configDir: context.configDir,
+      artifactContext: context.artifactContext,
+      artifactPhase: "execute",
+      artifactExtra: { taskType: "terminal-condition-evaluation" },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      exitCode: 1,
+      failureMessage: "Failed to evaluate condition: " + message,
+      failureReason: "Condition worker invocation failed.",
+    };
+  }
+
+  if (context.showAgentOutput) {
+    if (runResult.stdout) {
+      context.emit({ kind: "text", text: runResult.stdout });
+    }
+    if (runResult.stderr) {
+      context.emit({ kind: "stderr", text: runResult.stderr });
+    }
+  }
+
+  if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
+    return {
+      ok: false,
+      exitCode: runResult.exitCode,
+      failureMessage: "Condition worker exited with code " + runResult.exitCode + ".",
+      failureReason: "Condition worker exited with a non-zero code.",
+    };
+  }
+
+  return {
+    ok: true,
+    decision: parseConditionDecision(runResult.stdout),
+  };
 }
 
 /**
@@ -78,55 +140,20 @@ export const endHandler: ToolHandlerFn = async (context) => {
     };
   }
 
-  context.emit({ kind: "info", message: "Evaluating end condition." });
-
-  const evaluationPrompt = buildEndConditionPrompt(condition);
-
-  let runResult: Awaited<ReturnType<typeof context.workerExecutor.runWorker>>;
-  try {
-    runResult = await context.workerExecutor.runWorker({
-      workerPattern: context.workerPattern,
-      prompt: evaluationPrompt,
-      mode: context.mode as ProcessRunMode,
-      trace: context.trace,
-      cwd: context.cwd,
-      env: context.executionEnv,
-      configDir: context.configDir,
-      artifactContext: context.artifactContext,
-      artifactPhase: "execute",
-      artifactExtra: { taskType: "end-condition-evaluation" },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    context.emit({ kind: "warn", message: "Failed to evaluate end condition: " + message });
+  context.emit({ kind: "info", message: "Evaluating optional skip condition." });
+  const conditionResult = await evaluateCondition(context, condition);
+  if (!conditionResult.ok) {
+    context.emit({ kind: "warn", message: conditionResult.failureMessage ?? "Failed to evaluate optional condition." });
     return {
-      exitCode: 1,
-      failureMessage: "Failed to evaluate end condition: " + message,
-      failureReason: "End condition worker invocation failed.",
+      exitCode: conditionResult.exitCode ?? 1,
+      failureMessage: conditionResult.failureMessage,
+      failureReason: conditionResult.failureReason,
     };
   }
 
-  if (context.showAgentOutput) {
-    if (runResult.stdout) {
-      context.emit({ kind: "text", text: runResult.stdout });
-    }
-    if (runResult.stderr) {
-      context.emit({ kind: "stderr", text: runResult.stderr });
-    }
-  }
-
-  if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
-    context.emit({ kind: "warn", message: "End condition worker exited with code " + runResult.exitCode + "." });
-    return {
-      exitCode: runResult.exitCode,
-      failureMessage: "End condition worker exited with code " + runResult.exitCode + ".",
-      failureReason: "End condition worker exited with a non-zero code.",
-    };
-  }
-
-  const decision = parseEndConditionDecision(runResult.stdout);
+  const decision = conditionResult.decision;
   if (decision === "yes") {
-    context.emit({ kind: "info", message: "End condition met; skipping remaining sibling tasks." });
+    context.emit({ kind: "info", message: "Optional condition met; skipping remaining sibling tasks." });
     return {
       skipExecution: true,
       skipRemainingSiblings: {
@@ -136,7 +163,7 @@ export const endHandler: ToolHandlerFn = async (context) => {
   }
 
   if (decision === "no") {
-    context.emit({ kind: "info", message: "End condition not met; continuing execution." });
+    context.emit({ kind: "info", message: "Optional condition not met; continuing execution." });
     return {
       skipExecution: true,
     };
@@ -144,7 +171,97 @@ export const endHandler: ToolHandlerFn = async (context) => {
 
   context.emit({
     kind: "warn",
-    message: "End condition response was ambiguous; defaulting to no and continuing execution.",
+    message: "Optional condition response was ambiguous; defaulting to no and continuing execution.",
+  });
+  return {
+    skipExecution: true,
+  };
+};
+
+function resolveRequestedTerminalAlias(taskText: string): TerminalPrefixAlias {
+  const prefix = taskText.trim().split(":", 1)[0]?.trim().toLowerCase();
+  if (prefix === "quit" || prefix === "exit" || prefix === "end" || prefix === "break" || prefix === "return") {
+    return prefix;
+  }
+
+  return "end";
+}
+
+/**
+ * Built-in terminal stop handler.
+ *
+ * - Empty payload is unconditional and immediately requests graceful stop.
+ * - Non-empty payload is evaluated as a yes/no condition.
+ * - `yes` requests graceful stop, `no` continues.
+ */
+export const terminalHandler: ToolHandlerFn = async (context) => {
+  const requestedBy = resolveRequestedTerminalAlias(context.task.text);
+  const payload = classifyTerminalPayload(context.payload);
+  const gracefulExitCode = resolveTerminalStopExitCode();
+
+  if (payload.mode === "unconditional") {
+    context.emit({
+      kind: "info",
+      message: "Terminal stop requested by " + requestedBy + ":; stopping after current completion phase.",
+    });
+    return {
+      skipExecution: true,
+      terminalStop: {
+        requestedBy,
+        mode: "unconditional",
+        reason: requestedBy + ": (no condition)",
+        stopRun: true,
+        stopLoop: true,
+        exitCode: gracefulExitCode,
+      },
+    };
+  }
+
+  context.emit({
+    kind: "info",
+    message: "Evaluating terminal stop condition from " + requestedBy + ":.",
+  });
+  const conditionResult = await evaluateCondition(context, payload.condition);
+  if (!conditionResult.ok) {
+    context.emit({ kind: "warn", message: conditionResult.failureMessage ?? "Failed to evaluate terminal condition." });
+    return {
+      exitCode: conditionResult.exitCode ?? 1,
+      failureMessage: conditionResult.failureMessage,
+      failureReason: conditionResult.failureReason,
+    };
+  }
+
+  if (conditionResult.decision === "yes") {
+    context.emit({
+      kind: "info",
+      message: "Terminal condition met; stopping run/loop after current completion phase.",
+    });
+    return {
+      skipExecution: true,
+      terminalStop: {
+        requestedBy,
+        mode: "conditional",
+        reason: payload.condition,
+        stopRun: true,
+        stopLoop: true,
+        exitCode: gracefulExitCode,
+      },
+    };
+  }
+
+  if (conditionResult.decision === "no") {
+    context.emit({
+      kind: "info",
+      message: "Terminal condition not met; continuing execution.",
+    });
+    return {
+      skipExecution: true,
+    };
+  }
+
+  context.emit({
+    kind: "warn",
+    message: "Terminal condition response was ambiguous; defaulting to no and continuing execution.",
   });
   return {
     skipExecution: true,

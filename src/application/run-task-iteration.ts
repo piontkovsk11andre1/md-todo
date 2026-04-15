@@ -36,6 +36,7 @@ import type { TraceStatisticsConfig } from "../domain/worker-config.js";
 import type { WorkerFailureClass, WorkerHealthEntry } from "../domain/worker-health.js";
 import { classifyWorkerFailure } from "./worker-failure-classification.js";
 import { RUN_REASON_USAGE_LIMIT_DETECTED } from "../domain/run-reasons.js";
+import type { TerminalStopSignal } from "../domain/terminal-control.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 type ArtifactContext = ArtifactRunContext;
@@ -235,6 +236,7 @@ export async function runTaskIteration(params: {
   workerFailureClass?: WorkerFailureClass;
   executedWorkerCommand?: string[];
   executedWorkerProfileName?: string;
+  terminalStop?: TerminalStopSignal;
 }> {
   const { dependencies, emit, state, context, execution, worker, verifyConfig, completion, prompts, traceConfig, lifecycle } = params;
   const { source, fileSource, files, task } = context;
@@ -720,6 +722,7 @@ export async function runTaskIteration(params: {
     forLoopAdvanced: dispatchResult.forLoopAdvanced,
     forLoopCompleted: dispatchResult.forLoopCompleted,
     forLoopItems: dispatchResult.forLoopItems,
+    terminalStop: dispatchResult.terminalStop,
     failOnCompleteHookError: execution.forceStrippedTaskText !== undefined,
     persistFailureAnnotation: execution.persistFailureAnnotation,
     traceStatisticsConfig: completion.traceStatisticsConfig,
@@ -747,6 +750,7 @@ export async function runTaskIteration(params: {
         usageLimitDetected: dispatchResult.verificationFailureRunReason === RUN_REASON_USAGE_LIMIT_DETECTED,
         stdout: dispatchResult.executionStdout,
       }),
+    terminalStop: dispatchResult.terminalStop,
   };
 
   if (!completionResult.continueLoop && (completionResult.exitCode ?? 0) !== 0 && !groupEnded) {

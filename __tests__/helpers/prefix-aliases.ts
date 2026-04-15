@@ -3,6 +3,8 @@ export const MEMORY_PREFIX_ALIASES = ["memory", "memorize", "remember", "invento
 export const FAST_PREFIX_ALIASES = ["fast", "raw", "quick"] as const;
 export const PARALLEL_PREFIX_ALIASES = ["parallel", "concurrent", "par"] as const;
 export const FOR_LOOP_PREFIX_ALIASES = ["for", "each", "foreach"] as const;
+export const OPTIONAL_PREFIX_ALIASES = ["optional", "skip"] as const;
+export const TERMINAL_PREFIX_ALIASES = ["end", "exit", "return", "quit", "break"] as const;
 
 export interface PrefixAliasGroup<TAlias extends string> {
   canonical: TAlias;
@@ -30,10 +32,20 @@ export const PREFIX_ALIAS_GROUPS = {
     canonical: FOR_LOOP_PREFIX_ALIASES[0],
     aliases: FOR_LOOP_PREFIX_ALIASES,
   },
+  optional: {
+    canonical: OPTIONAL_PREFIX_ALIASES[0],
+    aliases: OPTIONAL_PREFIX_ALIASES,
+  },
+  terminal: {
+    canonical: TERMINAL_PREFIX_ALIASES[0],
+    aliases: TERMINAL_PREFIX_ALIASES,
+  },
 } as const satisfies {
   verify: PrefixAliasGroup<(typeof VERIFY_PREFIX_ALIASES)[number]>;
   memory: PrefixAliasGroup<(typeof MEMORY_PREFIX_ALIASES)[number]>;
   fast: PrefixAliasGroup<(typeof FAST_PREFIX_ALIASES)[number]>;
   parallel: PrefixAliasGroup<(typeof PARALLEL_PREFIX_ALIASES)[number]>;
   forLoop: PrefixAliasGroup<(typeof FOR_LOOP_PREFIX_ALIASES)[number]>;
+  optional: PrefixAliasGroup<(typeof OPTIONAL_PREFIX_ALIASES)[number]>;
+  terminal: PrefixAliasGroup<(typeof TERMINAL_PREFIX_ALIASES)[number]>;
 };

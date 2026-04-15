@@ -256,13 +256,14 @@ Built-in handler aliases:
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
 - fast execution (skip verification): `fast:`, `raw:`, `quick:`
-- conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
+- conditional sibling skip (when condition is true): `optional:`, `skip:`
+- terminal stop control: `quit:`, `exit:`, `end:`, `break:`, `return:`
 - file composition: `include:`
 - outer retry wrapper: `force:`
 
-Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise alias.
-Compatibility aliases `end:`, `return:`, `break:`, and `quit:` remain supported in v1; `quit:` is intentionally retained as a backward-compatible alias.
-All aliases resolve to the same control-flow handler and share identical semantics.
+Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise alias for sibling short-circuit behavior.
+`quit:` / `exit:` / `end:` / `break:` / `return:` are terminal-control aliases with graceful stop semantics.
+`optional:`/`skip:` behavior remains unchanged and independent from terminal stop behavior.
 
 Built-in modifier:
 

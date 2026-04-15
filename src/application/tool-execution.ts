@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../domain/ports/tool-resolver-port.js";
 import { insertSubitems } from "../domain/planner.js";
 import type { TemplateVars } from "../domain/template.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import type { TerminalStopSignal } from "../domain/terminal-control.js";
 import { pluralize } from "./run-task-utils.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -133,6 +134,7 @@ export async function executeToolChain(
       shouldVerify: result.shouldVerify ?? false,
       forLoopItems: result.forLoopItems,
       ...(result.skipRemainingSiblings ? { skipRemainingSiblings: result.skipRemainingSiblings } : {}),
+      ...(result.terminalStop ? { terminalStop: result.terminalStop } : {}),
       childFile: result.childFile,
       childTaskCount: result.childTasks?.length ?? 0,
       modifierProfile: (context as ToolHandlerContext & { modifierProfile?: string }).modifierProfile,
@@ -276,6 +278,7 @@ export type ToolChainResult =
     skipRemainingSiblings?: {
       reason: string;
     };
+    terminalStop?: TerminalStopSignal;
     childFile?: string;
     childTaskCount: number;
     modifierProfile?: string;

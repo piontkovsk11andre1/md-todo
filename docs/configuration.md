@@ -432,13 +432,14 @@ Built-in handler aliases:
 - verify-only: `verify:`, `confirm:`, `check:`
 - memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
 - fast execution (skip verification): `fast:`, `raw:`, `quick:`
-- conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
+- conditional sibling skip (when condition is true): `optional:`, `skip:`
+- terminal stop control: `quit:`, `exit:`, `end:`, `break:`, `return:`
 - include task file: `include:`
 - outer retry wrapper: `force:`
 
-Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise alias.
-Compatibility aliases `end:`, `return:`, `break:`, and `quit:` remain supported in v1; `quit:` is intentionally retained as a backward-compatible alias.
-All aliases resolve to the same handler and semantics; no alias has distinct behavior.
+Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise alias for sibling short-circuit behavior.
+`quit:` / `exit:` / `end:` / `break:` / `return:` are terminal-control aliases with graceful stop semantics.
+`optional:`/`skip:` behavior remains unchanged and independent from terminal stop behavior.
 
 Built-in modifier:
 
@@ -481,7 +482,7 @@ Template variables:
 Resolution and precedence:
 
 - Project `.js` tools in `toolDirs` are checked first and can override built-ins.
-- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` control-flow aliases, `include:`, `profile=`, `force:`).
+- Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` conditional control, terminal stop aliases `quit:`/`exit:`/`end:`/`break:`/`return:`, `include:`, `profile=`, `force:`).
 - Project `.md` tools are checked after built-ins (for non-built-in tool names).
 - Unknown prefixes do not error; they fall back to normal task execution.
 - Empty payload for handler tools is invalid and fails fast.

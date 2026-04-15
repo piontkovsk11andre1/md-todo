@@ -168,13 +168,14 @@ Built-in handler aliases:
 - Verify-only: `verify:`, `confirm:`, `check:`
 - Memory capture: `memory:`, `memorize:`, `remember:`, `inventory:`
 - Fast execution (skip verification): `fast:`, `raw:`, `quick:`
-- Conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
+- Conditional sibling skip (when condition is true): `optional:`, `skip:`
+- Terminal stop control: `quit:`, `exit:`, `end:`, `break:`, `return:`
 - Include markdown file execution: `include:`
 - Outer retry wrapper: `force:`
 
-`optional:` is the canonical control-flow prefix in v1, with `skip:` as the preferred concise alias.
-Compatibility aliases `end:`, `return:`, `break:`, and `quit:` remain supported in v1 for backward compatibility.
-All listed control-flow aliases resolve to the same handler and behavior.
+`optional:` is the canonical conditional-skip prefix in v1, with `skip:` as the preferred concise alias.
+`quit:` / `exit:` / `end:` / `break:` / `return:` are terminal-control aliases with graceful stop semantics.
+`optional:`/`skip:` behavior remains unchanged and independent from terminal stop behavior.
 
 Built-in modifier:
 
@@ -266,7 +267,7 @@ Execution behavior for `.md` tools:
 Resolution rules:
 
 - Project `.js` tools are resolved first and can override built-ins.
-- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` control-flow aliases, `include:`, `profile=`, `force:`).
+- Built-in tools are resolved next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` conditional control, terminal stop aliases `quit:`/`exit:`/`end:`/`break:`/`return:`, `include:`, `profile=`, `force:`).
 - Project `.md` tools are resolved after built-ins (for non-built-in names).
 - Tool matching is case-insensitive and checks the text before the first `:`.
 - Unknown prefixes fall back to normal `execute-and-verify` behavior.
