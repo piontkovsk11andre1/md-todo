@@ -1187,7 +1187,7 @@ Behavior:
 
 - Validates `<harness>` against known presets (case-insensitive aliases are accepted).
 - Creates `.rundown/config.json` when missing.
-- Updates preset-targeted keys (`workers.default`, `workers.tui`, `commands.discuss`, and preset-managed `workers.fallbacks`) without clobbering unrelated config.
+- Updates preset-targeted keys (`defaults.worker`, `commands.discuss.worker`, and preset-managed `commands.<name>.worker` overrides) without clobbering unrelated config.
 - Preserves other config sections (`workspace`, `trace`, run defaults, tool directories, and other command settings).
 - Prints configured keys and resolved config path.
 - Unknown harness exits non-zero with an actionable error and the supported preset list.
@@ -1206,7 +1206,7 @@ OpenCode conventions applied by `rundown with opencode`:
 
 - Deterministic commands (`run`, `plan`, `research`, `reverify`) use `opencode run` with file-first prompt transport (`$file` + `$bootstrap`).
 - Interactive discussion (`discuss`) uses base `opencode`.
-- The deterministic/interactive split is persisted via `workers.default` vs `workers.tui`/`commands.discuss`.
+- The deterministic/interactive split is persisted via `defaults.worker` plus `commands.discuss.worker`.
 
 ### `rundown config`
 

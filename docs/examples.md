@@ -35,9 +35,9 @@ rundown with opencode
 
 What this configures:
 
-1. `workers.default` for deterministic execution (`opencode run --file $file $bootstrap`),
-2. `workers.tui` for interactive sessions (`opencode`),
-3. `commands.discuss` so discussion uses interactive OpenCode,
+1. `defaults.worker` for deterministic execution (`opencode run --file $file $bootstrap`),
+2. `commands.discuss.worker` for interactive discussion sessions (`opencode`),
+3. `commands.run.worker` / `commands.plan.worker` / `commands.research.worker` / `commands.reverify.worker` for deterministic command-level overrides,
 4. while preserving unrelated `.rundown/config.json` keys.
 
 After this, worker flags are optional for standard OpenCode usage:
