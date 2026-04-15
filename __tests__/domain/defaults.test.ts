@@ -118,6 +118,8 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Explicit write-target examples that must remain normal execution TODOs");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- [ ] Write findings to docs/research-notes.md");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- [ ] Research rollout risks and write findings into docs/rollout-plan.md");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("If a directive parent suggests memory capture intent");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("no inherited `memory:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("split into separate TODOs when possible");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("\"research and write findings into X.md\"");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Author new memory-capture TODOs with the canonical `memory:` prefix only");
@@ -139,6 +141,8 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Explicit write-target child examples that must remain normal execution TODOs");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- [ ] Write findings to docs/research-notes.md");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- [ ] Research rollout risks and write findings into docs/rollout-plan.md");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("If a parent directive suggests memory capture intent");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("no inherited `memory:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("split into separate child TODOs when possible");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("\"research and write findings into X.md\"");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Author new child memory-capture TODOs with the canonical `memory:` prefix only");

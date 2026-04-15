@@ -1361,6 +1361,8 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("- [ ] Write findings to docs/research-notes.md");
     expect(firstPrompt).toContain("- [ ] Research rollout risks and write findings into docs/rollout-plan.md");
     expect(firstPrompt).toContain("research and write findings into X.md");
+    expect(firstPrompt).toContain("If a directive parent suggests memory capture intent");
+    expect(firstPrompt).toContain("no inherited `memory:`");
     expect(firstPrompt).toContain("split into separate TODOs when possible");
     expect(firstPrompt).toContain("Author new memory-capture TODOs with the canonical `memory:` prefix only");
     expect(firstPrompt).toContain("`include: <path>`");
@@ -2656,6 +2658,8 @@ describe("plan-task", () => {
     expect(deepPrompt).toContain("- [ ] Write findings to docs/research-notes.md");
     expect(deepPrompt).toContain("- [ ] Research rollout risks and write findings into docs/rollout-plan.md");
     expect(deepPrompt).toContain("research and write findings into X.md");
+    expect(deepPrompt).toContain("If a parent directive suggests memory capture intent");
+    expect(deepPrompt).toContain("no inherited `memory:`");
     expect(deepPrompt).toContain("split into separate child TODOs when possible");
     expect(deepPrompt).toContain("Author new child memory-capture TODOs with the canonical `memory:` prefix only");
   });
