@@ -5,20 +5,29 @@ Select the next unchecked task and start a discussion session for task refinemen
 Synopsis:
 
 ```bash
-rundown discuss <source> [options] -- <command>
-rundown discuss <source> [options] --worker <pattern>
+rundown discuss [source] [options] -- <command>
+rundown discuss [source] [options] --worker <pattern>
 ```
 
 `discuss` uses the same source resolution and task-selection logic as `run`, but opens a discussion-oriented worker session (default `--mode tui`) instead of executing the task implementation flow.
+
+When `--run <id|prefix|latest>` is provided, `discuss` loads a finished artifact run and opens a post-run discussion session for that run instead of selecting a new unchecked task from source Markdown.
 
 `--worker` is optional when rundown can resolve a worker for `discuss` from `.rundown/config.json`.
 
 During this session, the agent may edit the Markdown source task text to improve scope and clarity (for example rewriting task wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
 
+Arguments:
+
+| Argument | Description |
+|---|---|
+| `[source]` | Markdown file, directory, or glob to scan for the next unchecked task. Optional when using `--run`; otherwise required. |
+
 Options:
 
 | Option | Description | Default |
 |---|---|---|
+| `--run <id|prefix|latest>` | Discuss a finished artifact run by exact run id, unique run id prefix, or `latest`. | unset |
 | `--mode <tui|wait>` | Discussion worker mode. `tui` opens an interactive terminal UI; `wait` runs non-interactively. | `tui` |
 | `--sort <name-sort|none|old-first|new-first>` | Source ordering strategy before task selection. | `name-sort` |
 | `--dry-run` | Resolve task + render discuss prompt, print planned execution, and exit `0` without running worker. | off |
@@ -39,6 +48,8 @@ Examples:
 rundown discuss roadmap.md
 rundown discuss docs/
 rundown discuss tasks.md --mode wait
+rundown discuss --run latest
+rundown discuss --run run-20260319T222645632Z-04e84d73
 rundown discuss roadmap.md --print-prompt
 rundown discuss roadmap.md --dry-run
 ```
