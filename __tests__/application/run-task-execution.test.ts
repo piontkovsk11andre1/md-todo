@@ -1253,6 +1253,158 @@ describe("run-task-execution helpers", () => {
     }));
   });
 
+  it("keeps optional/skip sibling short-circuit semantics without stopping --all selection", async () => {
+    const cwd = "/workspace";
+    const firstFile = `${cwd}/tasks-a.md`;
+    const secondFile = `${cwd}/tasks-b.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [firstFile]: [
+        "- [ ] optional: there is no output to process",
+        "- [ ] sibling one",
+        "- [ ] sibling two",
+        "",
+      ].join("\n"),
+      [secondFile]: "- [ ] task in second file\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(firstFile, "optional: there is no output to process"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: (toolName) => resolveBuiltinTool(toolName),
+      listKnownToolNames: () => listBuiltinToolNames(),
+    };
+    dependencies.sourceResolver.resolveSources = vi.fn(async () => [firstFile, secondFile]);
+    dependencies.taskSelector.selectNextTask = vi.fn((files: string[]) => {
+      for (const filePath of files) {
+        const source = fileSystem.readText(filePath);
+        const next = parseTasks(source, filePath).find((candidate) => !candidate.checked);
+        if (next) {
+          return [{
+            task: next,
+            source: filePath,
+            contextBefore: "",
+          }];
+        }
+      }
+      return null;
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async ({ prompt }: { prompt: string }) => {
+      if (prompt.includes("Question: Is this condition true right now?")) {
+        return { exitCode: 0, stdout: "yes", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "{{task}}";
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, runAll: true }));
+
+    expect(code).toBe(0);
+    expect(fileSystem.readText(firstFile)).toBe([
+      "- [x] optional: there is no output to process",
+      "- [x] sibling one",
+      "  - skipped: there is no output to process",
+      "- [x] sibling two",
+      "  - skipped: there is no output to process",
+      "",
+    ].join("\n"));
+    expect(fileSystem.readText(secondFile)).toBe("- [x] task in second file\n");
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops remaining --all file selection after terminal prefix requests stop", async () => {
+    const cwd = "/workspace";
+    const firstFile = `${cwd}/tasks-a.md`;
+    const secondFile = `${cwd}/tasks-b.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [firstFile]: [
+        "- [ ] exit: there is no output to process",
+        "- [ ] sibling one",
+        "",
+      ].join("\n"),
+      [secondFile]: "- [ ] task in second file\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(firstFile, "exit: there is no output to process"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.toolResolver = {
+      resolve: (toolName) => resolveBuiltinTool(toolName),
+      listKnownToolNames: () => listBuiltinToolNames(),
+    };
+    dependencies.sourceResolver.resolveSources = vi.fn(async () => [firstFile, secondFile]);
+    dependencies.taskSelector.selectNextTask = vi.fn((files: string[]) => {
+      for (const filePath of files) {
+        const source = fileSystem.readText(filePath);
+        const next = parseTasks(source, filePath).find((candidate) => !candidate.checked);
+        if (next) {
+          return [{
+            task: next,
+            source: filePath,
+            contextBefore: "",
+          }];
+        }
+      }
+      return null;
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async ({ prompt }: { prompt: string }) => {
+      if (prompt.includes("Question: Is this condition true right now?")) {
+        return { exitCode: 0, stdout: "yes", stderr: "" };
+      }
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    });
+
+    const terminalSignals: Array<{
+      requestedBy: string;
+      mode: string;
+      stopRun: boolean;
+      stopLoop: boolean;
+      exitCode: number;
+    }> = [];
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: false,
+      runAll: true,
+      onTerminalStop: (signal) => {
+        terminalSignals.push({
+          requestedBy: signal.requestedBy,
+          mode: signal.mode,
+          stopRun: signal.stopRun,
+          stopLoop: signal.stopLoop,
+          exitCode: signal.exitCode,
+        });
+      },
+    }));
+
+    expect(code).toBe(0);
+    expect(terminalSignals).toHaveLength(1);
+    expect(terminalSignals[0]).toEqual(expect.objectContaining({
+      mode: "conditional",
+      stopRun: true,
+      stopLoop: true,
+      exitCode: 0,
+    }));
+    expect(["end", "exit"]).toContain(terminalSignals[0]?.requestedBy);
+    expect(fileSystem.readText(firstFile)).toBe([
+      "- [x] exit: there is no output to process",
+      "- [x] sibling one",
+      "  - skipped: there is no output to process",
+      "",
+    ].join("\n"));
+    expect(fileSystem.readText(secondFile)).toBe("- [ ] task in second file\n");
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(1);
+  });
+
   it("runs --on-fail hook for each failed force retry attempt", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;
