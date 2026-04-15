@@ -2,6 +2,16 @@
 
 `rundown artifacts` inspects or cleans saved runtime artifact folders under `<config-dir>/runs/`.
 
+Synopsis:
+
+```bash
+rundown artifacts [options]
+```
+
+Arguments:
+
+- None.
+
 Options:
 
 | Option | Description |

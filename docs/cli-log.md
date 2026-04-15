@@ -2,6 +2,16 @@
 
 `rundown log` shows completed run history in a compact, one-line-per-run format to help pick revert targets.
 
+Synopsis:
+
+```bash
+rundown log [options]
+```
+
+Arguments:
+
+- None.
+
 Default behavior:
 
 - Shows only runs with status `completed`.
