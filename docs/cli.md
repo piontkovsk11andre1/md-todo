@@ -125,6 +125,10 @@ See the command-focused reference: [cli-migrate.md](cli-migrate.md).
 
 See the command-focused reference: [cli-design.md](cli-design.md).
 
+### `rundown docs`
+
+See the command-focused reference: [cli-docs.md](cli-docs.md).
+
 ### `rundown run <source>`
 
 See the command-focused reference: [cli-run.md](cli-run.md).
