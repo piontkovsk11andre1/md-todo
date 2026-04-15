@@ -214,8 +214,32 @@ bun add -g @p10i/rundown
 
 - [Overview](docs/overview.md) — core model, workflow, and task lifecycle
 - [CLI](docs/cli.md) — commands, flags, and global options
+- [CLI: `intro`](docs/cli-intro.md) — get started with the CLI workflow and command map
+- [CLI: `config`](docs/cli-config.md) — inspect merged configuration and value sources
+- [CLI: `init`](docs/cli-init.md) — scaffold a new rundown workspace
+- [CLI: `call`](docs/cli-call.md) — run provider/model calls with CLI-managed context
+- [CLI: `do`](docs/cli-do.md) — execute unchecked tasks in a markdown task document
+- [CLI: `discuss`](docs/cli-discuss.md) — collaborate on plans and next actions from task files
+- [CLI: `design`](docs/cli-design.md) — manage design revisions and release snapshots
+- [CLI: `explore`](docs/cli-explore.md) — generate codebase research and findings artifacts
+- [CLI: `list`](docs/cli-list.md) — list tasks, runs, and actionable work items
+- [CLI: `next`](docs/cli-next.md) — surface the next executable task in a workflow
+- [CLI: `make`](docs/cli-make.md) — create migration/design/spec documents from templates
+- [CLI: `migrate`](docs/cli-migrate.md) — create and manage migration documents
+- [CLI: `materialize`](docs/cli-materialize.md) — materialize predicted state into workspace files
+- [CLI: `plan`](docs/cli-plan.md) — produce implementation plans from prompts and context
+- [CLI: `research`](docs/cli-research.md) — gather structured research artifacts for tasks
+- [CLI: `run`](docs/cli-run.md) — execute full rundown phases with validation and repair loops
+- [CLI: `start`](docs/cli-start.md) — bootstrap and launch a guided rundown session
+- [CLI: `test`](docs/cli-test.md) — run validation/test workflows against predicted or real state
+- [CLI: `reverify`](docs/cli-reverify.md) — re-run verification on prior runs and artifacts
+- [CLI: `revert`](docs/cli-revert.md) — revert selected rundown-generated changes safely
+- [CLI: `undo`](docs/cli-undo.md) — undo recent rundown operations and restore prior state
+- [CLI: `unlock`](docs/cli-unlock.md) — clear stale run locks and recover blocked workspaces
+- [CLI: `loop`](docs/cli-loop.md) — run iterative execution loops over task documents
 - [CLI: `with`](docs/cli-with.md) — configure and run a harness-backed agent session
 - [CLI: `query`](docs/cli-query.md) — investigate codebase questions with orchestrated workflows
+- [CLI: `worker-health`](docs/cli-worker-health.md) — check worker process status and diagnostics
 - [CLI: `memory-view`](docs/cli-memory-view.md) — inspect source-local memory artifacts and summaries
 - [CLI: `memory-validate`](docs/cli-memory-validate.md) — validate memory artifacts and optionally fix issues
 - [CLI: `memory-clean`](docs/cli-memory-clean.md) — remove orphaned/outdated memory artifacts
