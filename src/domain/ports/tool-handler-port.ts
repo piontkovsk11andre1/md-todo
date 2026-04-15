@@ -48,6 +48,14 @@ export interface ToolHandlerResult {
   skipRemainingSiblings?: {
     reason: string;
   };
+  /**
+   * Explicit terminal-control intent flags.
+   *
+   * These fields allow handlers to signal run-stop and loop-stop intent
+   * independently of sibling-skip semantics.
+   */
+  stopRun?: boolean;
+  stopLoop?: boolean;
   childTasks?: string[];
   contextModifications?: ToolContextModifications;
   childFile?: string;
