@@ -2,6 +2,9 @@ import { extractFrontmatter, type Task } from "../domain/parser.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import {
   extractProfileFromSubItems,
+  type RunAttemptScopedWorkerRoutingConfig,
+  type RunWorkerRouteConfig,
+  type RunWorkerRoutingPhase,
   resolveWorkerConfig,
   type WorkerConfig,
   type WorkerConfigCommandName,
@@ -39,6 +42,8 @@ interface ResolveWorkerForInvocationInput {
   mode?: ProcessRunMode;
   workerHealthEntries?: readonly WorkerHealthEntry[];
   evaluateWorkerHealthAtMs?: number;
+  runWorkerPhase?: RunWorkerRoutingPhase;
+  runWorkerAttempt?: number;
 }
 
 interface ResolveWorkerPatternForInvocationInput {
@@ -56,6 +61,13 @@ interface ResolveWorkerPatternForInvocationInput {
   mode?: ProcessRunMode;
   workerHealthEntries?: readonly WorkerHealthEntry[];
   evaluateWorkerHealthAtMs?: number;
+  runWorkerPhase?: RunWorkerRoutingPhase;
+  runWorkerAttempt?: number;
+}
+
+interface ResolvedPhaseRoute {
+  route: RunWorkerRouteConfig;
+  sourceDescription: string;
 }
 
 interface ResolvedWorkerCandidate {
@@ -147,9 +159,15 @@ function resolveEffectiveProfileName(
 function buildWorkerCandidates(
   primaryWorkerCommand: string[],
   input: ResolveWorkerForInvocationInput,
+  options?: {
+    includeConfiguredFallbacks?: boolean;
+    includeRuntimeFallback?: boolean;
+  },
 ): Array<Pick<ResolvedWorkerCandidate, "workerCommand" | "source" | "fallbackIndex">> {
   const candidates: Array<Pick<ResolvedWorkerCandidate, "workerCommand" | "source" | "fallbackIndex">> = [];
   const seenKeys = new Set<string>();
+  const includeConfiguredFallbacks = options?.includeConfiguredFallbacks ?? true;
+  const includeRuntimeFallback = options?.includeRuntimeFallback ?? true;
 
   const pushCandidate = (
     workerCommand: string[] | undefined,
@@ -174,11 +192,13 @@ function buildWorkerCandidates(
   };
 
   pushCandidate(primaryWorkerCommand, "primary");
-  input.workerConfig?.workers?.fallbacks?.forEach((fallbackCommand, index) => {
-    pushCandidate(fallbackCommand, "configured-fallback", index + 1);
-  });
+  if (includeConfiguredFallbacks) {
+    input.workerConfig?.workers?.fallbacks?.forEach((fallbackCommand, index) => {
+      pushCandidate(fallbackCommand, "configured-fallback", index + 1);
+    });
+  }
 
-  if (primaryWorkerCommand.length === 0) {
+  if (includeRuntimeFallback && primaryWorkerCommand.length === 0) {
     pushCandidate(input.fallbackWorkerCommand, "runtime-fallback");
   }
 
@@ -219,6 +239,92 @@ function describeConfigResolutionSource(input: ResolveWorkerForInvocationInput, 
   return undefined;
 }
 
+function normalizePositiveInteger(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function selectAttemptScopedRoute(
+  routeConfig: RunAttemptScopedWorkerRoutingConfig | undefined,
+  attempt: number | undefined,
+  sourcePrefix: string,
+): ResolvedPhaseRoute | undefined {
+  if (!routeConfig) {
+    return undefined;
+  }
+
+  const normalizedAttempt = normalizePositiveInteger(attempt);
+  for (let index = 0; index < (routeConfig.attempts?.length ?? 0); index += 1) {
+    const attemptRoute = routeConfig.attempts?.[index];
+    if (!attemptRoute) {
+      continue;
+    }
+
+    const selector = attemptRoute.selector;
+    const match = selector.attempt !== undefined
+      ? normalizedAttempt !== undefined && selector.attempt === normalizedAttempt
+      : normalizedAttempt !== undefined
+      && (selector.fromAttempt === undefined || normalizedAttempt >= selector.fromAttempt)
+      && (selector.toAttempt === undefined || normalizedAttempt <= selector.toAttempt);
+
+    if (match) {
+      return {
+        route: attemptRoute,
+        sourceDescription: `${sourcePrefix}.attempts[${index}]`,
+      };
+    }
+  }
+
+  if (routeConfig.default) {
+    return {
+      route: routeConfig.default,
+      sourceDescription: `${sourcePrefix}.default`,
+    };
+  }
+
+  return undefined;
+}
+
+function resolveRunWorkerPhaseRoute(input: ResolveWorkerForInvocationInput): ResolvedPhaseRoute | undefined {
+  const phase = input.runWorkerPhase;
+  if (!phase) {
+    return undefined;
+  }
+
+  const workerRouting = input.workerConfig?.run?.workerRouting;
+  if (!workerRouting) {
+    return undefined;
+  }
+
+  if (phase === "repair") {
+    return selectAttemptScopedRoute(workerRouting.repair, input.runWorkerAttempt, "run.workerRouting.repair");
+  }
+
+  if (phase === "resolveRepair") {
+    return selectAttemptScopedRoute(workerRouting.resolveRepair, input.runWorkerAttempt, "run.workerRouting.resolveRepair");
+  }
+
+  const route = phase === "execute"
+    ? workerRouting.execute
+    : phase === "verify"
+    ? workerRouting.verify
+    : phase === "resolve"
+    ? workerRouting.resolve
+    : workerRouting.reset;
+
+  if (!route) {
+    return undefined;
+  }
+
+  return {
+    route,
+    sourceDescription: `run.workerRouting.${phase}`,
+  };
+}
+
 /**
  * Resolves the worker command used for command execution.
  *
@@ -257,22 +363,47 @@ function resolveWorkerSelectionForInvocation(input: ResolveWorkerForInvocationIn
     ? `tools.${input.toolName}`
     : undefined;
 
-  // Resolve worker/profile configuration with CLI override precedence.
-  const resolvedWorkerCommand = resolveWorkerConfig(
-    input.workerConfig,
-    input.commandName,
-    frontmatterProfile,
-    input.task?.directiveProfile,
-    normalizeProfileName(input.modifierProfile)
-      ?? (supportsInlineTaskProfile ? input.task?.taskProfile : undefined),
-    hasCliWorkerCommand ? input.cliWorkerCommand : undefined,
-    intentCommandName,
-    input.mode,
-  );
+  const resolvedPhaseRoute = resolveRunWorkerPhaseRoute(input);
+  const hasExplicitPhaseWorker = (resolvedPhaseRoute?.route.worker?.length ?? 0) > 0;
+  const includeConfiguredFallbacks = hasExplicitPhaseWorker
+    ? resolvedPhaseRoute?.route.useFallbacks === true
+    : true;
 
-  const candidates = buildWorkerCandidates(resolvedWorkerCommand, input);
+  // Resolve worker/profile configuration with CLI override precedence.
+  const resolvedWorkerCommand = hasCliWorkerCommand
+    ? resolveWorkerConfig(
+      input.workerConfig,
+      input.commandName,
+      frontmatterProfile,
+      input.task?.directiveProfile,
+      normalizeProfileName(input.modifierProfile)
+        ?? (supportsInlineTaskProfile ? input.task?.taskProfile : undefined),
+      input.cliWorkerCommand,
+      intentCommandName,
+      input.mode,
+    )
+    : hasExplicitPhaseWorker
+    ? [...(resolvedPhaseRoute?.route.worker ?? [])]
+    : resolveWorkerConfig(
+      input.workerConfig,
+      input.commandName,
+      frontmatterProfile,
+      input.task?.directiveProfile,
+      normalizeProfileName(input.modifierProfile)
+        ?? (supportsInlineTaskProfile ? input.task?.taskProfile : undefined),
+      undefined,
+      intentCommandName,
+      input.mode,
+    );
+
+  const candidates = buildWorkerCandidates(resolvedWorkerCommand, input, {
+    includeConfiguredFallbacks,
+    includeRuntimeFallback: !hasExplicitPhaseWorker,
+  });
   const healthIndex = buildWorkerHealthIndex(input.workerHealthEntries);
-  const effectiveProfileName = resolveEffectiveProfileName(input, frontmatterProfile, supportsInlineTaskProfile);
+  const effectiveProfileName = hasExplicitPhaseWorker
+    ? undefined
+    : resolveEffectiveProfileName(input, frontmatterProfile, supportsInlineTaskProfile);
   const profileHealthEntry = effectiveProfileName
     ? healthIndex.get(buildWorkerHealthProfileKey(effectiveProfileName))
     : undefined;
@@ -288,7 +419,10 @@ function resolveWorkerSelectionForInvocation(input: ResolveWorkerForInvocationIn
     };
   });
 
-  const selectedCandidateIndex = evaluatedCandidates.findIndex((candidate) => candidate.eligibility.eligible);
+  const forcePrimarySelection = hasExplicitPhaseWorker && !includeConfiguredFallbacks;
+  const selectedCandidateIndex = forcePrimarySelection && evaluatedCandidates.length > 0
+    ? 0
+    : evaluatedCandidates.findIndex((candidate) => candidate.eligibility.eligible);
   const selectedCandidate = selectedCandidateIndex >= 0
     ? evaluatedCandidates[selectedCandidateIndex]
     : undefined;
@@ -298,11 +432,14 @@ function resolveWorkerSelectionForInvocation(input: ResolveWorkerForInvocationIn
 
   if (input.verbose && input.emit && selectedCandidate) {
     const sourceDescription = describeConfigResolutionSource(input, frontmatterProfile);
+    const resolvedSourceDescription = hasExplicitPhaseWorker
+      ? `from ${resolvedPhaseRoute?.sourceDescription}`
+      : sourceDescription;
     const selectedCommandLabel = selectedCandidate.workerCommand.join(" ");
     if (selectedCommandLabel.length > 0) {
       if (selectedCandidate.source === "primary" && !hasCliWorkerCommand) {
-        const verboseSourceDescription = sourceDescription
-          ? ` (${sourceDescription})`
+        const verboseSourceDescription = resolvedSourceDescription
+          ? ` (${resolvedSourceDescription})`
           : "";
         input.emit({
           kind: "info",
@@ -393,6 +530,8 @@ export function resolveWorkerPatternForInvocation(
     mode: input.mode,
     workerHealthEntries: input.workerHealthEntries,
     evaluateWorkerHealthAtMs: input.evaluateWorkerHealthAtMs,
+    runWorkerPhase: input.runWorkerPhase,
+    runWorkerAttempt: input.runWorkerAttempt,
   });
   const resolvedWorkerCommand = selection.workerCommand;
   const selectedProfileName = selection.effectiveProfileName;

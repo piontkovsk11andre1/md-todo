@@ -785,4 +785,159 @@ describe("resolve-worker", () => {
 
     expect(command).toEqual([]);
   });
+
+  it("resolves explicit verify phase worker from run.workerRouting", () => {
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+        run: {
+          workerRouting: {
+            verify: {
+              worker: ["verify", "worker"],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "verify",
+    });
+
+    expect(command).toEqual(["verify", "worker"]);
+  });
+
+  it("resolves attempt-scoped repair route before default route", () => {
+    const secondAttemptCommand = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+        },
+        run: {
+          workerRouting: {
+            repair: {
+              default: {
+                worker: ["repair", "default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    attempt: 2,
+                  },
+                  worker: ["repair", "attempt-2"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "repair",
+      runWorkerAttempt: 2,
+    });
+    const firstAttemptCommand = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+        },
+        run: {
+          workerRouting: {
+            repair: {
+              default: {
+                worker: ["repair", "default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    attempt: 2,
+                  },
+                  worker: ["repair", "attempt-2"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "repair",
+      runWorkerAttempt: 1,
+    });
+
+    expect(secondAttemptCommand).toEqual(["repair", "attempt-2"]);
+    expect(firstAttemptCommand).toEqual(["repair", "default"]);
+  });
+
+  it("does not use configured fallbacks for explicit phase route by default", () => {
+    const nowIso = "2026-04-12T09:32:38.339Z";
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+          fallbacks: [["fallback", "one"]],
+        },
+        run: {
+          workerRouting: {
+            resolve: {
+              worker: ["phase", "explicit"],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolve",
+      workerHealthEntries: [
+        {
+          key: buildWorkerHealthWorkerKey(["phase", "explicit"]),
+          source: "worker",
+          status: WORKER_HEALTH_STATUS_UNAVAILABLE,
+        },
+      ],
+      evaluateWorkerHealthAtMs: Date.parse(nowIso),
+    });
+
+    expect(command).toEqual(["phase", "explicit"]);
+  });
+
+  it("uses configured fallbacks for explicit phase route when useFallbacks is true", () => {
+    const nowIso = "2026-04-12T09:32:38.339Z";
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+          fallbacks: [["fallback", "one"]],
+        },
+        run: {
+          workerRouting: {
+            resolve: {
+              worker: ["phase", "explicit"],
+              useFallbacks: true,
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolve",
+      workerHealthEntries: [
+        {
+          key: buildWorkerHealthWorkerKey(["phase", "explicit"]),
+          source: "worker",
+          status: WORKER_HEALTH_STATUS_UNAVAILABLE,
+        },
+      ],
+      evaluateWorkerHealthAtMs: Date.parse(nowIso),
+    });
+
+    expect(command).toEqual(["fallback", "one"]);
+  });
 });
