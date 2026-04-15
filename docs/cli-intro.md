@@ -11,9 +11,20 @@ rundown intro
 rd intro
 ```
 
+Arguments:
+
+- None.
+
+Options:
+
+- No command-specific options.
+
 Examples:
 
 ```bash
 # Show introduction and workflow guidance
 rundown intro
+
+# Equivalent alias form
+rd intro
 ```
