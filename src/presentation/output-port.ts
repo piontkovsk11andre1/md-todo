@@ -46,7 +46,7 @@ export function setCliOutputPortTimestampProvider(provider: (() => string) | und
 }
 
 /**
- * Prefixes user-facing terminal lines with a UTC ISO-8601 timestamp.
+ * Prefixes user-facing terminal lines with a local ISO-8601 timestamp.
  */
 function withTimestamp(message: string): string {
   return `[${formatCliTimestamp(timestampProvider())}] ${message}`;

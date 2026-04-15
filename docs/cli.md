@@ -103,11 +103,11 @@ rd --help
 
 ### Terminal timestamps
 
-Human-readable CLI output uses deterministic UTC ISO-8601 timestamps where rundown emits command-level lifecycle lines.
+Human-readable CLI output uses deterministic local-time ISO-8601 timestamps (with numeric UTC offset) where rundown emits command-level lifecycle lines.
 
-- Timestamp format: bracketed UTC ISO-8601 (`[YYYY-MM-DDTHH:mm:ss.sssZ]`).
+- Timestamp format: bracketed local ISO-8601 with numeric offset (`[YYYY-MM-DDTHH:mm:ss.sss+/-HH:MM]`).
 - Presentation points: `info`, `warn`, `error`, `success`, `progress`, `group-start`, and `group-end` terminal lines.
-- Timestamp semantics align with artifact/global log timing (`startedAt`/`completedAt` and JSONL `ts`) so terminal events can be correlated directly.
+- Display timestamps are localized for operator readability; persisted artifact/global log timestamps (`startedAt`/`completedAt` and JSONL `ts`) remain UTC for machine-oriented interoperability.
 - Nested/grouped output preserves existing grouping prefixes; timestamps are additive and appear after group markers.
 - Task/detail listing payloads (`task` events) and raw worker transcript text (`text`/`stderr`) keep their existing shape.
 - Text output is human-oriented and may evolve; for machine consumers, use `--json` on supported commands.
@@ -1049,7 +1049,7 @@ Default behavior:
 
 - Shows only runs with status `completed`.
 - Orders runs newest-first (same order as saved artifacts metadata).
-- Prints one compact line per run: short run ID, absolute timestamp (UTC ISO-8601), relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
+- Prints one compact line per run: short run ID, absolute local timestamp (ISO-8601 with numeric offset), relative timestamp, status, task summary, source, command, commit SHA (if present), and revertable indicator.
 - Non-revertable entries are dimmed in terminal output.
 
 Options:

@@ -21,7 +21,8 @@ afterEach(() => {
 });
 
 describe("cliOutputPort", () => {
-  const TIMESTAMP = "2026-04-14T08:26:01.557Z";
+  const TIMESTAMP_SOURCE = "2026-04-14T08:26:01.557Z";
+  const TIMESTAMP = formatExpectedCliTimestamp(TIMESTAMP_SOURCE);
 
   function withTimestamp(line: string): string {
     return `[${TIMESTAMP}] ${line}`;
@@ -30,7 +31,7 @@ describe("cliOutputPort", () => {
   it("renders timestamps on command-level terminal events", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP_SOURCE);
     const stripColorsOnly = (value: string): string => value.replace(/\u001B\[[0-9;]*m/g, "");
 
     cliOutputPort.emit({ kind: "info", message: "info message" });
@@ -764,7 +765,7 @@ describe("cliOutputPort", () => {
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP_SOURCE);
 
     try {
       cliOutputPort.emit({ kind: "group-start", label: "Grouped output" });
@@ -870,7 +871,7 @@ describe("cliOutputPort", () => {
 
   it("still renders warnings and errors in quiet mode", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP_SOURCE);
 
     setCliOutputPortQuietMode(true);
     cliOutputPort.emit({ kind: "warn", message: "heads up" });
@@ -884,7 +885,7 @@ describe("cliOutputPort", () => {
   it("keeps quiet mode suppression for grouped command-level output with timestamps enabled", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    setCliOutputPortTimestampProvider(() => TIMESTAMP);
+    setCliOutputPortTimestampProvider(() => TIMESTAMP_SOURCE);
 
     setCliOutputPortQuietMode(true);
     cliOutputPort.emit({ kind: "group-start", label: "Suppressed group" });
@@ -897,3 +898,21 @@ describe("cliOutputPort", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });
+
+function formatExpectedCliTimestamp(value: string): string {
+  const date = new Date(value);
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absoluteMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absoluteMinutes % 60).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}${sign}${offsetHours}:${offsetRemainderMinutes}`;
+}
