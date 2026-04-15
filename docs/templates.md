@@ -13,6 +13,7 @@ Store templates in `.rundown/`:
   agent.md
   help.md
   execute.md
+  research.md
   verify.md
   repair.md
   plan.md
@@ -29,6 +30,7 @@ Store templates in `.rundown/`:
 | `.rundown/agent.md` | Warmup instructions prepended to root no-argument live help prompts |
 | `.rundown/help.md` | Instructions for no-argument live help sessions |
 | `.rundown/execute.md` | Instructions for doing the task |
+| `.rundown/research.md` | Instructions for enriching document context before planning |
 | `.rundown/verify.md` | Instructions for deciding whether the task is truly complete |
 | `.rundown/repair.md` | Instructions for fixing a failed attempt |
 | `.rundown/plan.md` | Instructions for breaking a task into nested subtasks |
