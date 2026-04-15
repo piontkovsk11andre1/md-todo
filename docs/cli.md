@@ -1674,6 +1674,7 @@ Built-in handler aliases:
 - Fast execution (skip verification): `fast:`, `raw:`, `quick:`
 - Conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
 - Include markdown file execution: `include:`
+- Outer retry wrapper: `force:`
 
 `optional:` is the canonical control-flow prefix in v1, with `skip:` as the preferred concise alias.
 Compatibility aliases `end:`, `return:`, `break:`, and `quit:` remain supported in v1 for backward compatibility.

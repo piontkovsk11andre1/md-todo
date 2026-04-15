@@ -252,6 +252,7 @@ Built-in handler aliases:
 - fast execution (skip verification): `fast:`, `raw:`, `quick:`
 - conditional control flow (skip remaining siblings when condition is true): `optional:`, `skip:`, `end:`, `return:`, `quit:`, `break:`
 - file composition: `include:`
+- outer retry wrapper: `force:`
 
 Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise alias.
 Compatibility aliases `end:`, `return:`, `break:`, and `quit:` remain supported in v1; `quit:` is intentionally retained as a backward-compatible alias.
