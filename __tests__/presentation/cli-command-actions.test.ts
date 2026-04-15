@@ -247,6 +247,48 @@ describe("createLoopCommandAction", () => {
     expect(setLoopSignalExitCode).toHaveBeenCalledWith(0);
     expect(sleepSpy).toHaveBeenCalled();
   });
+
+  it("breaks loop immediately when run task surfaces terminal stop", async () => {
+    const { action, runTask, outputEvents, setLoopSignalExitCode } = createLoopHarness(
+      vi
+        .fn<RunTaskFn>()
+        .mockImplementationOnce(async (request) => {
+          const onTerminalStop = request.onTerminalStop as ((signal: {
+            requestedBy: "exit";
+            mode: "unconditional";
+            reason: string;
+            stopRun: boolean;
+            stopLoop: boolean;
+            exitCode: number;
+          }) => void) | undefined;
+          onTerminalStop?.({
+            requestedBy: "exit",
+            mode: "unconditional",
+            reason: "terminal stop requested",
+            stopRun: true,
+            stopLoop: false,
+            exitCode: 0,
+          });
+          return 0;
+        })
+        .mockResolvedValueOnce(0),
+    );
+
+    const exitCode = await action("tasks.md", {
+      worker: "opencode run",
+      iterations: "3",
+      cooldown: "0",
+      continueOnError: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(setLoopSignalExitCode).toHaveBeenCalledWith(0);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop iteration 1 requested terminal stop; ending loop.",
+    });
+  });
 });
 
 describe("createHelpCommandAction", () => {

@@ -640,9 +640,10 @@ export function createLoopCommandAction({
             cacheCliBlocks: true,
             verbose,
             onTerminalStop: (signal) => {
-              if (signal.stopLoop) {
+              if (signal.stopRun || signal.stopLoop) {
                 terminalStopRequested = true;
-                setLoopSignalExitCode?.(signal.exitCode);
+                loopExitCode = normalizeLoopIterationExitCode(signal.exitCode);
+                setLoopSignalExitCode?.(loopExitCode);
               }
             },
           }));
@@ -652,7 +653,6 @@ export function createLoopCommandAction({
         const isSuccess = iterationExitCode === 0;
         if (terminalStopRequested) {
           emitCliInfo(app, `Loop iteration ${iteration} requested terminal stop; ending loop.`);
-          loopExitCode = iterationExitCode;
           break;
         }
         const reachedIterationLimit = hasBoundedIterations && iteration >= iterations;
