@@ -947,6 +947,15 @@ program
   .action(withCliAction(createInitCommandAction({ getApp })));
 
 program
+  .command("with")
+  .description("Configure .rundown worker settings for a known external harness preset.")
+  .argument("<harness>", "Harness preset name (for example: opencode)")
+  .allowUnknownOption(false)
+  .action(withCliAction((harness: string) => {
+    throw new Error(`The \`with\` command is not available in this build (requested harness: ${harness}).`);
+  }));
+
+program
   .command("intro")
   .description("Display an introduction to rundown — concepts, workflow, and commands.")
   .action(withCliAction(createIntroCommandAction({ version: cliVersion, getApp })));
