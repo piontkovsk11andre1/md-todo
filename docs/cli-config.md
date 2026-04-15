@@ -51,6 +51,15 @@ rundown config unset <key> [options]
 rundown config path [options]
 ```
 
+Arguments:
+
+- Vary by subcommand (`<key>`, `<value>`, or none).
+
+Options:
+
+- Subcommand-specific options are listed below.
+- Shared read/write flags are documented under `Common options`.
+
 Subcommands:
 
 | Subcommand | Description |

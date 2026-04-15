@@ -18,9 +18,17 @@ rundown call <source> [options] --worker <pattern>
 rd call <source> [options]
 ```
 
+Arguments:
+
+- `<source>`: Markdown file, directory, or glob to scan.
+
+Options:
+
+- Supports the same run-like options as `rundown run` (verification/repair, commit/hook, output, vars, lock, and worker options).
+- `--all`, `--clean`, and `--cache-cli-blocks` are always enforced by `call`; user-supplied values for those flags are ignored.
+
 Behavior notes:
 
-- Accepts the same run-like options as `run` (verification/repair, commit/hook, output, vars, lock, and worker options).
 - Explicit user-supplied values for `--all`, `--clean`, and `--cache-cli-blocks` are ignored because `call` enforces them.
 
 Examples:

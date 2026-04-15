@@ -11,6 +11,10 @@ rundown undo [options] -- <command>
 rundown undo [options] --worker <pattern>
 ```
 
+Arguments:
+
+- None.
+
 Options:
 
 | Option | Description | Default |
@@ -21,3 +25,19 @@ Options:
 | `--dry-run` | Show what would be undone without changing files. | off |
 | `--keep-artifacts` | Preserve undo run artifacts under `<config-dir>/runs/`. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
+
+Examples:
+
+```bash
+# Undo latest completed run
+rundown undo
+
+# Undo the last two completed runs
+rundown undo --last 2
+
+# Preview undo actions without changing files
+rundown undo --dry-run --run latest
+
+# Use explicit worker override
+rundown undo --worker "opencode run"
+```

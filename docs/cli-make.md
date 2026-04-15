@@ -9,6 +9,11 @@ rundown make "<seed-text>" "<markdown-file>" [options] -- <command>
 rundown make "<seed-text>" "<markdown-file>" [options] --worker <pattern>
 ```
 
+Arguments:
+
+- `<seed-text>`: Initial text used to seed the new Markdown file.
+- `<markdown-file>`: Target Markdown file to create and then process.
+
 `make` is a composition command for the authoring bootstrap flow:
 
 1. create target Markdown file,

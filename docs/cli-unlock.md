@@ -4,6 +4,20 @@ Manually remove a stale per-source lockfile (`<source-dir>/.rundown/<basename>.l
 
 `unlock` is a safety command for lock recovery. It only removes locks that are not owned by a currently running process.
 
+Synopsis:
+
+```bash
+rundown unlock <source>
+```
+
+Arguments:
+
+- `<source>`: Markdown source file used to resolve the lock path.
+
+Options:
+
+- None.
+
 Path resolution:
 
 - `unlock <source>` resolves the lockfile at `<source-dir>/.rundown/<basename>.lock` (source-relative lock path).

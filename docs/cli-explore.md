@@ -14,6 +14,10 @@ rundown explore <markdown-file> [options] -- <command>
 rundown explore <markdown-file> [options] --worker <pattern>
 ```
 
+Arguments:
+
+- `<markdown-file>`: Existing Markdown document to enrich and plan.
+
 Usage example:
 
 ```bash

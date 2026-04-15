@@ -13,6 +13,10 @@ rundown migrate [action] [options] -- <command>
 rundown migrate [action] [options] --worker <pattern>
 ```
 
+Arguments:
+
+- `[action]`: Optional migration action (`up`, `down [n]`, `snapshot`, `backlog`, `context`, `review`, or `user-experience`).
+
 Actions:
 
 - omitted: generate next migration
@@ -76,3 +80,19 @@ Linked workspace example (resolved roots):
   - design -> `/Users/alex/platform-core/design`
   - specs -> `/Users/alex/client-a/checks/specs`
   - migrations -> `/Users/alex/platform-core/migrations`
+
+Examples:
+
+```bash
+# Generate next migration proposal
+rundown migrate
+
+# Execute migration tasks
+rundown migrate up
+
+# Create a snapshot satellite artifact
+rundown migrate snapshot
+
+# Undo last two completed runs through migrate alias
+rundown migrate down 2
+```

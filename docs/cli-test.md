@@ -13,6 +13,10 @@ rundown test [action] [options] -- <command>
 rundown test [action] [options] --worker <pattern>
 ```
 
+Arguments:
+
+- `[action]`: Optional action (`new <assertion>` or omitted to verify all specs).
+
 Actions:
 
 - omitted: verify all specs in the specs directory
@@ -39,3 +43,19 @@ Harness/environment hints:
 - `RUNDOWN_TEST_FUTURE_TARGET` = migration target when `--future` is used
 - `RUNDOWN_TEST_INCLUDED_DIRECTORIES` = JSON array of included directories
 - `RUNDOWN_TEST_EXCLUDED_DIRECTORIES` = JSON array of excluded directories
+
+Examples:
+
+```bash
+# Verify all specs in materialized mode
+rundown test
+
+# Verify prediction at latest target
+rundown test --future
+
+# Verify prediction up to migration 7
+rundown test --future 7
+
+# Create a new assertion spec and run it immediately
+rundown test new "API returns 200 for health endpoint" --run
+```

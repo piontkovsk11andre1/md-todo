@@ -29,7 +29,7 @@ Behavior notes:
 - When worker options are passed, `config.json` is generated with a `workers` object (commands are tokenized by whitespace).
 - With `--gitignore`, `.rundown` is appended only when not already present.
 
-Example:
+Examples:
 
 ```bash
 rundown init

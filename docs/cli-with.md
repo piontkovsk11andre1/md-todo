@@ -14,6 +14,10 @@ Arguments:
 
 - `<harness>`: preset name or supported alias (case-insensitive).
 
+Options:
+
+- None.
+
 Supported harness presets:
 
 - `opencode`

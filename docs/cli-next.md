@@ -28,7 +28,7 @@ Output semantics:
 - If no Markdown files match `<source>`, `next` reports no matching files and exits with no-work status.
 - If files match but no runnable unchecked task exists, `next` reports that no unchecked tasks were found and exits with no-work status.
 
-Example:
+Examples:
 
 ```bash
 rundown next docs/

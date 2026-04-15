@@ -10,6 +10,10 @@ Synopsis:
 rundown worker-health [options]
 ```
 
+Arguments:
+
+- None.
+
 Options:
 
 | Option | Description | Default |

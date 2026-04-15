@@ -4,6 +4,35 @@
 
 Use `rundown design ...` as the canonical command family for all new scripts and documentation.
 
+Synopsis:
+
+```bash
+rundown docs <subcommand> [options]
+```
+
+Arguments:
+
+- `<subcommand>`: One of `release`, `publish`, `diff [target]`, or `save`.
+
+Options:
+
+- `release` and `publish` accept `--dir <path>`, `--workspace <dir>`, and `--label <text>`.
+- `diff [target]` accepts `[target]`, `--dir <path>`, `--workspace <dir>`, `--from <rev|current>`, and `--to <rev|current>`.
+- `save` is removed and accepts no runtime options.
+
+Examples:
+
+```bash
+# Deprecated alias for design release
+rundown docs release --label "snapshot"
+
+# Deprecated alias for design release
+rundown docs publish
+
+# Deprecated alias for design diff
+rundown docs diff preview
+```
+
 ## `rundown docs release`
 
 Deprecated alias for `rundown design release`.
@@ -59,6 +88,11 @@ Migration guidance:
 
 - Preferred: use `rundown design release`.
 - Transitional fallback: `rundown docs publish` remains available as a deprecated alias.
+
+See also:
+
+- Canonical command docs: [cli-design.md](cli-design.md).
+- Top-level CLI index: [cli.md](cli.md).
 
 Examples:
 

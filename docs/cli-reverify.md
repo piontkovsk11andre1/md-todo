@@ -10,6 +10,17 @@ Use this when you want a deterministic confidence check against an exact histori
 
 `--worker` is optional when rundown can resolve a worker for `reverify` from `.rundown/config.json`.
 
+Synopsis:
+
+```bash
+rundown reverify [options] -- <command>
+rundown reverify [options] --worker <pattern>
+```
+
+Arguments:
+
+- None.
+
 Options:
 
 | Option | Description |

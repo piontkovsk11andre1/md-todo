@@ -18,6 +18,11 @@ rundown do "<seed-text>" "<markdown-file>" [options] -- <command>
 rundown do "<seed-text>" "<markdown-file>" [options] --worker <pattern>
 ```
 
+Arguments:
+
+- `<seed-text>`: Initial text used to seed the new Markdown file.
+- `<markdown-file>`: Output Markdown file to create and execute.
+
 Options:
 
 - Supports `make`-phase options for bootstrap (`--scan-count`, `--dry-run`, `--print-prompt`, `--vars-file`, `--var`, `--worker`, etc.).

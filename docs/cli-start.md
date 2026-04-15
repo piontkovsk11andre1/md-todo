@@ -51,6 +51,10 @@ rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir 
 rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
 ```
 
+Arguments:
+
+- `<description>`: Initial project intent used to seed starter artifacts.
+
 Options:
 
 | Option | Description | Default |

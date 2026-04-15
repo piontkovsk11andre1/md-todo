@@ -33,7 +33,7 @@ Output semantics:
 - If no Markdown files match `<source>`, `list` reports no matching files and exits with no-work status.
 - If files match but no tasks satisfy the current filter, `list` reports that no tasks were found and exits with no-work status.
 
-Example:
+Examples:
 
 ```bash
 rundown list .

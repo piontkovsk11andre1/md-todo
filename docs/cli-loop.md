@@ -12,6 +12,10 @@ rundown loop <source> [options] --worker <pattern>
 rd loop <source> [options]
 ```
 
+Arguments:
+
+- `<source>`: Markdown file, directory, or glob to scan.
+
 Options:
 
 | Option | Description | Default |

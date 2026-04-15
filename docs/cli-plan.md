@@ -13,6 +13,17 @@ rundown plan docs/spec.md --scan-count 3
 
 When `--deep <n>` is set, `plan` then runs `n` additional nested passes after top-level scan convergence. Each deep pass targets current leaf TODO items (parents with no checkbox children) and asks the planner for child `- [ ]` items only.
 
+Synopsis:
+
+```bash
+rundown plan <markdown-file> [options] -- <command>
+rundown plan <markdown-file> [options] --worker <pattern>
+```
+
+Arguments:
+
+- `<markdown-file>`: Markdown document to synthesize TODO items for.
+
 Input rules:
 
 - Exactly one file path is required.

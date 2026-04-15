@@ -4,6 +4,16 @@ Undo previously completed tasks by reverting the git commit recorded in saved ru
 
 By default, `revert` targets the latest completed+committed run in the current repository (`--run latest`) and uses `--method revert`.
 
+Synopsis:
+
+```bash
+rundown revert [options]
+```
+
+Arguments:
+
+- None.
+
 Revertable run requirements:
 
 - The original run status is `completed`.

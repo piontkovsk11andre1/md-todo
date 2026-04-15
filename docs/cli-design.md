@@ -16,6 +16,10 @@ Synopsis:
 rundown design release [options]
 ```
 
+Arguments:
+
+- None.
+
 Compatibility note:
 
 - `rundown design release` is the canonical snapshot command.
@@ -30,6 +34,16 @@ Options:
 | `--dir <path>` | Migration directory to operate on (used to resolve project root). | `./migrations` |
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
 | `--label <text>` | Optional label stored in revision sidecar metadata. | unset |
+
+Examples:
+
+```bash
+# Create next immutable design revision snapshot
+rundown design release --label "snapshot"
+
+# Use explicit workspace for linked/multi-workspace resolution
+rundown design release --workspace ../platform-core
+```
 
 ## `rundown design diff [target]`
 
@@ -58,6 +72,10 @@ Synopsis:
 rundown design diff [target] [options]
 ```
 
+Arguments:
+
+- `[target]`: Optional shorthand target (`current` or `preview`).
+
 Options:
 
 | Option | Description | Default |
@@ -66,6 +84,19 @@ Options:
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
 | `--from <rev|current>` | Explicit source selector (use with `--to`). | unset |
 | `--to <rev|current>` | Explicit destination selector (use with `--from`; must be `current` in this build). | unset |
+
+Examples:
+
+```bash
+# Summary diff against current draft
+rundown design diff
+
+# Preview diff with source reference listing
+rundown design diff preview
+
+# Explicit selector form
+rundown design diff --from rev.2 --to current
+```
 
 ## `rundown docs` (deprecated alias)
 

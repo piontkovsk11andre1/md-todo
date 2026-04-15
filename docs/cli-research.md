@@ -9,6 +9,17 @@ Enrich a single Markdown document with context and structure before planning.
 3. `rundown plan <markdown-file>` appends actionable TODOs,
 4. `rundown run <source>` executes tasks.
 
+Synopsis:
+
+```bash
+rundown research <markdown-file> [options] -- <command>
+rundown research <markdown-file> [options] --worker <pattern>
+```
+
+Arguments:
+
+- `<markdown-file>`: Markdown document to enrich.
+
 ## Input rules
 
 - Exactly one file path is required.
