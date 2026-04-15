@@ -71,6 +71,8 @@ Each instruction is wrapped in a loop, with configurable retries, so imperfect e
 execute -> verify -> repair -> verify -> repair -> ... -> resolve -> repair -> stop or reset
 ```
 
+You can switch models on `verify -> repair` layer, using strongest on the last `repair` or `resolve`.
+
 ### Extensible tooling
 
 `rundown` supports a flexible, extensible tool set:
