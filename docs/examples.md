@@ -27,6 +27,26 @@ What happens:
 5. runs repair attempts if configured,
 6. and only then marks the task complete.
 
+## 1b. One-command OpenCode onboarding with `with`
+
+```bash
+rundown with opencode
+```
+
+What this configures:
+
+1. `workers.default` for deterministic execution (`opencode run --file $file $bootstrap`),
+2. `workers.tui` for interactive sessions (`opencode`),
+3. `commands.discuss` so discussion uses interactive OpenCode,
+4. while preserving unrelated `.rundown/config.json` keys.
+
+After this, worker flags are optional for standard OpenCode usage:
+
+```bash
+rundown run roadmap.md
+rundown discuss roadmap.md
+```
+
 ## 2. PowerShell-safe worker usage
 
 ```powershell
