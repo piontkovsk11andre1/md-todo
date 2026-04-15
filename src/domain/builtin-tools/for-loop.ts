@@ -12,10 +12,10 @@ function buildForLoopResearchPrompt(payload: string, source: string, contextBefo
   return [
     "You are a full-scale research agent preparing concrete loop items for a for-each task.",
     "Investigate the repository context and derive specific actionable items.",
-    "Return a Markdown bullet list only.",
-    "Each bullet must be one item and should start with `for-item:`.",
-    "Example: `- for-item: item 1`.",
-    "Preserve discovery order and avoid duplicates.",
+    "Return one item per line.",
+    "Markdown bullets and ordered-list lines are allowed.",
+    "Do not include the literal `for-item:` prefix unless it is part of the value.",
+    "Preserve discovery order.",
     "If no items are found, return an empty response.",
     "Do not include commentary.",
     "",
@@ -85,21 +85,6 @@ function extractForLoopItemsFromOutput(output: string): string[] {
   }
 
   return parsed;
-}
-
-function dedupeItems(items: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const deduped: string[] = [];
-
-  for (const item of items) {
-    if (seen.has(item)) {
-      continue;
-    }
-    seen.add(item);
-    deduped.push(item);
-  }
-
-  return deduped;
 }
 
 /**
@@ -177,12 +162,12 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
       };
     }
 
-    bakedItems = dedupeItems(extractForLoopItemsFromOutput(researchOutput));
+    bakedItems = extractForLoopItemsFromOutput(researchOutput);
     itemSource = "research";
   }
 
   if (bakedItems.length === 0) {
-    context.emit({ kind: "warn", message: "For loop resolved zero unique items; completing without iteration." });
+    context.emit({ kind: "warn", message: "For loop resolved zero items; completing without iteration." });
     return {
       skipExecution: true,
       shouldVerify: false,
@@ -195,7 +180,7 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
 
   context.emit({
     kind: "info",
-    message: "For loop baked " + bakedItems.length + " unique items from " + itemSource + ": " + bakedItems.join(", "),
+    message: "For loop baked " + bakedItems.length + " items from " + itemSource + ": " + bakedItems.join(", "),
   });
   context.emit({ kind: "info", message: "For loop current item: " + (existingCurrent ?? bakedItems[0] ?? "") });
 

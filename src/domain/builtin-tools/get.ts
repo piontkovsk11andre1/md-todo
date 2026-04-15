@@ -7,8 +7,6 @@ const GET_MODE_PREFIX_PATTERN = /^get-mode\s*:\s*(.*)$/i;
 const GET_POLICY_PREFIX_PATTERN = /^get-policy\s*:\s*(.*)$/i;
 const GET_EMPTY_MODE_PREFIX_PATTERN = /^get-empty\s*:\s*(.*)$/i;
 const GET_EMPTY_POLICY_PREFIX_PATTERN = /^get-empty-policy\s*:\s*(.*)$/i;
-const GET_RESULT_SAFE_INLINE_CODE_PATTERN = /[:`*_{}\[\]()#+!|~<>\\]/;
-
 const GET_EMPTY_RESULT_MARKER = "(empty)";
 
 type GetRerunPolicy = "reuse" | "refresh";
@@ -29,10 +27,11 @@ function buildExtractionPrompt(query: string, context: ToolHandlerContext): stri
   return [
     "You are a full-scale research agent resolving a task query against the current project.",
     "Investigate the repository context thoroughly before answering.",
-    "Return JSON only.",
-    "Use the format: {\"results\":[\"name 1\",\"name 2\"]}.",
+    "Return one extracted item per line.",
+    "Markdown bullets and ordered-list lines are allowed.",
     "Preserve discovery order.",
-    "If no results are found, return {\"results\":[]}.",
+    "Do not include the literal `get-result:` prefix unless it is part of the value.",
+    "If no results are found, return an empty response.",
     "Do not include commentary.",
     "",
     "Task:",
@@ -67,15 +66,7 @@ function renderGetResultValue(value: string): string {
     return value;
   }
 
-  if (!GET_RESULT_SAFE_INLINE_CODE_PATTERN.test(value)) {
-    return value;
-  }
-
-  const tickRuns = value.match(/`+/g) ?? [];
-  const maxTickRunLength = tickRuns.reduce((max, run) => Math.max(max, run.length), 0);
-  const fence = "`".repeat(Math.max(1, maxTickRunLength + 1));
-  const padded = value.startsWith("`") || value.endsWith("`") ? ` ${value} ` : value;
-  return `${fence}${padded}${fence}`;
+  return value.replace(/([\\`*_\[\]<>])/g, "\\$1");
 }
 
 function findExistingResults(subItems: readonly { text: string }[]): string[] {
@@ -187,7 +178,7 @@ function tryParseJsonResults(raw: string): string[] | null {
           .filter((value) => value.length > 0);
       }
 
-      return [];
+      return null;
     }
   } catch {
     // Fall through to plain-text parsing.
@@ -229,19 +220,6 @@ function extractResults(raw: string): string[] {
   }
 
   return parseTextResults(raw);
-}
-
-function applyDuplicateAndOrderingPolicy(results: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  for (const result of results) {
-    if (seen.has(result)) {
-      continue;
-    }
-    seen.add(result);
-    normalized.push(result);
-  }
-  return normalized;
 }
 
 function emitOutcome(
@@ -418,7 +396,7 @@ export const getHandler: ToolHandlerFn = async (context) => {
     };
   }
 
-  const extractedResults = applyDuplicateAndOrderingPolicy(extractResults(runResult.stdout));
+  const extractedResults = extractResults(runResult.stdout);
   if (extractedResults.length === 0) {
     if (emptyResultPolicyResolution.policy === "fail") {
       emitOutcome(

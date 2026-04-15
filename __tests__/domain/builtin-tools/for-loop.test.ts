@@ -122,11 +122,11 @@ describe("builtin-tools/for-loop", () => {
       "for-item: Omg",
     ]);
     const runWorkerCall = (context.workerExecutor.runWorker as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-    expect(runWorkerCall?.prompt ?? "").toContain("Return a Markdown bullet list only.");
-    expect(runWorkerCall?.prompt ?? "").toContain("Each bullet must be one item and should start with `for-item:`.");
+    expect(runWorkerCall?.prompt ?? "").toContain("Return one item per line.");
+    expect(runWorkerCall?.prompt ?? "").toContain("Do not include the literal `for-item:` prefix unless it is part of the value.");
     expect(context.emit).toHaveBeenCalledWith({
       kind: "info",
-      message: "For loop baked 3 unique items from research: This, That, Omg",
+      message: "For loop baked 3 items from research: This, That, Omg",
     });
     expect(context.emit).toHaveBeenCalledWith({
       kind: "info",
@@ -156,7 +156,7 @@ describe("builtin-tools/for-loop", () => {
     expect(context.workerExecutor.runWorker).not.toHaveBeenCalled();
   });
 
-  it("deduplicates payload items while preserving first-seen order", async () => {
+  it("preserves payload item order and duplicates", async () => {
     const context = createContext({
       payload: "This, That, This, Omg, That",
     });
@@ -166,7 +166,9 @@ describe("builtin-tools/for-loop", () => {
     expect(result.childTasks).toEqual([
       "for-item: This",
       "for-item: That",
+      "for-item: This",
       "for-item: Omg",
+      "for-item: That",
     ]);
   });
 
@@ -214,7 +216,7 @@ describe("builtin-tools/for-loop", () => {
     ]);
   });
 
-  it("deduplicates existing for-item metadata values", async () => {
+  it("preserves duplicate existing for-item metadata values", async () => {
     const context = createContext({
       task: {
         ...createContext().task,
@@ -231,7 +233,56 @@ describe("builtin-tools/for-loop", () => {
 
     expect(result.childTasks).toEqual([
       "for-item: Existing A",
+      "for-item: Existing A",
       "for-item: Existing B",
+    ]);
+  });
+
+  it("parses mixed prefixed and unprefixed ordered-list variants", async () => {
+    const context = createContext({
+      payload: "Ignored",
+      workerExecutor: {
+        ...createContext().workerExecutor,
+        runWorker: vi.fn(async () => ({
+          exitCode: 0,
+          stdout: [
+            "1. for-item: Alpha",
+            "2) Beta",
+            "3. Gamma",
+            "4) for-item: Delta",
+          ].join("\n"),
+          stderr: "",
+        })),
+      },
+    });
+
+    const result = await forLoopHandler(context);
+
+    expect(result.childTasks).toEqual([
+      "for-item: Alpha",
+      "for-item: Beta",
+      "for-item: Gamma",
+      "for-item: Delta",
+    ]);
+  });
+
+  it("strips only the first for-item prefix token and preserves later colons", async () => {
+    const context = createContext({
+      payload: "Ignored",
+      workerExecutor: {
+        ...createContext().workerExecutor,
+        runWorker: vi.fn(async () => ({
+          exitCode: 0,
+          stdout: "- for-item: key: value",
+          stderr: "",
+        })),
+      },
+    });
+
+    const result = await forLoopHandler(context);
+
+    expect(result.childTasks).toEqual([
+      "for-item: key: value",
     ]);
   });
 

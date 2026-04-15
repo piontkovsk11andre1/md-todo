@@ -231,7 +231,7 @@ describe("builtin-tools/get getHandler", () => {
     });
   });
 
-  it("deduplicates extracted values while preserving first discovery order", async () => {
+  it("preserves extracted value order and duplicates", async () => {
     const source = "- [ ] get: All current names of this and that\n";
     const { context, writeText } = createContext({
       source,
@@ -253,7 +253,9 @@ describe("builtin-tools/get getHandler", () => {
       "- [ ] get: All current names of this and that\n"
       + "  - get-result: This\n"
       + "  - get-result: That\n"
-      + "  - get-result: Another\n",
+      + "  - get-result: This\n"
+      + "  - get-result: Another\n"
+      + "  - get-result: That\n",
     );
   });
 
@@ -292,7 +294,7 @@ describe("builtin-tools/get getHandler", () => {
     );
   });
 
-  it("wraps markdown-significant get-result values so parsed sub-items round-trip", async () => {
+  it("escapes markdown-significant get-result values so parsed sub-items round-trip", async () => {
     const source = "- [ ] get: All current names of this and that\n";
     const { context, writeText } = createContext({
       source,
@@ -312,7 +314,7 @@ describe("builtin-tools/get getHandler", () => {
     const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
     expect(writtenSource).toBe(
       "- [ ] get: All current names of this and that\n"
-      + "  - get-result: `core: [parser]*module*`\n",
+      + "  - get-result: core: \\[parser\\]\\*module\\*\n",
     );
 
     const reparsed = parseTasks(writtenSource, "C:/workspace/todo.md")[0];
@@ -320,7 +322,7 @@ describe("builtin-tools/get getHandler", () => {
     expect(reparsed?.children).toEqual([]);
   });
 
-  it("uses larger code fences when get-result values contain backticks", async () => {
+  it("escapes backticks when get-result values contain backticks", async () => {
     const source = "- [ ] get: All current names of this and that\n";
     const { context, writeText } = createContext({
       source,
@@ -340,8 +342,70 @@ describe("builtin-tools/get getHandler", () => {
     const writtenSource = writeText.mock.calls[0]?.[1] ?? "";
     expect(writtenSource).toBe(
       "- [ ] get: All current names of this and that\n"
-      + "  - get-result: ``name with `tick` and : colon``\n",
+      + "  - get-result: name with \\`tick\\` and : colon\n",
     );
+  });
+
+  it("parses mixed line-style output without requiring get-result prefix", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: [
+          "- Alpha",
+          "2) Beta",
+          "Gamma",
+          "- get-result: Delta",
+        ].join("\n"),
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    expect(writeText.mock.calls[0]?.[1] ?? "").toBe([
+      "- [ ] get: All current names of this and that",
+      "  - get-result: Alpha",
+      "  - get-result: Beta",
+      "  - get-result: Gamma",
+      "  - get-result: Delta",
+      "",
+    ].join("\n"));
+  });
+
+  it("falls back to line parsing for wrong-shape JSON and preserves mixed prefixed lines", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, writeText } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: [
+          "{\"unexpected\":[\"shape\"]}",
+          "get-result: X",
+          "Y",
+        ].join("\n"),
+        stderr: "",
+      })),
+    });
+
+    const result = await getHandler(context);
+
+    expect(result).toEqual({
+      skipExecution: true,
+      shouldVerify: false,
+    });
+    expect(writeText.mock.calls[0]?.[1] ?? "").toBe([
+      "- [ ] get: All current names of this and that",
+      "  - get-result: {\"unexpected\":\\[\"shape\"\\]}",
+      "  - get-result: X",
+      "  - get-result: Y",
+      "",
+    ].join("\n"));
   });
 
   it("persists an explicit empty marker when extraction succeeds but returns no values", async () => {

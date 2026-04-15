@@ -46,20 +46,9 @@ export function unescapeForLoopMetadataValue(value: string): string {
 }
 
 export function normalizeForLoopItemValues(values: readonly string[]): string[] {
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-
-  for (const value of values) {
-    const item = value.trim();
-    if (item.length === 0 || seen.has(item)) {
-      continue;
-    }
-
-    seen.add(item);
-    normalized.push(item);
-  }
-
-  return normalized;
+  return values
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 }
 
 export function getForItemValues(subItems: readonly SubItem[]): string[] {
