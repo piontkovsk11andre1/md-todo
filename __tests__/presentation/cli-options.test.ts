@@ -714,6 +714,41 @@ describe("CLI run option normalization", () => {
     expect(call.keepArtifacts).toBe(true);
   });
 
+  it("accepts separator-passed worker commands for materialize", async () => {
+    const runTask = vi.fn(async () => 0);
+    const call = await invokeRunAndCaptureCall([
+      "materialize",
+      "tasks.md",
+      "--",
+      "opencode",
+      "run",
+      "--model",
+      "gpt-5.3-codex",
+    ], runTask);
+
+    expect(call.source).toBe("tasks.md");
+    expect(call.workerCommand).toEqual(["opencode", "run", "--model", "gpt-5.3-codex"]);
+    expect(call.runAll).toBe(true);
+    expect(call.commitAfterComplete).toBe(true);
+    expect(call.keepArtifacts).toBe(true);
+  });
+
+  it("shows run-like options in materialize help text", async () => {
+    const runTask = vi.fn(async () => 0);
+    const result = await invokeRunAndCaptureHelpOutput([
+      "materialize",
+      "--help",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+
+    const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--verify Run verification after task execution (default)");
+    expect(compactHelpOutput).toContain("--mode <mode> Runner execution mode: wait, tui, detached");
+    expect(compactHelpOutput).toContain("--worker <pattern> Optional worker pattern override (alternative to -- <command>)");
+    expect(compactHelpOutput).toContain("--revertable Shorthand for --commit --keep-artifacts");
+  });
+
   it("parses all with --worker echo and enables runAll", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
