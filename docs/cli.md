@@ -129,6 +129,12 @@ See the command-focused reference: [cli-design.md](cli-design.md).
 
 See the command-focused reference: [cli-run.md](cli-run.md).
 
+### `rundown all <source>`
+
+Shorthand for `rundown run <source> --all`.
+
+See the command-focused reference: [cli-run.md](cli-run.md).
+
 ### `rundown call <source>`
 
 See the command-focused reference: [cli-call.md](cli-call.md).
