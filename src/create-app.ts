@@ -57,6 +57,7 @@ import {
   type ConfigSetOptions,
   type ConfigUnsetOptions,
 } from "./application/config-mutation.js";
+import { createWithTask, type WithTaskOptions } from "./application/with-task.js";
 import {
   createWorkspaceRemoveTask,
   createWorkspaceUnlinkTask,
@@ -164,6 +165,7 @@ export type App = {
   configPath: (options: ConfigPathOptions) => number;
   configSet: (options: ConfigSetOptions) => number;
   configUnset: (options: ConfigUnsetOptions) => number;
+  withTask: (options: WithTaskOptions) => number;
   workspaceUnlinkTask: (options: WorkspaceUnlinkOptions) => Promise<number>;
   workspaceRemoveTask: (options: WorkspaceRemoveOptions) => Promise<number>;
   emitOutput?: (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
@@ -695,6 +697,11 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       output: ports.output,
     }),
+    withTask: (ports) => createWithTask({
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
     workspaceUnlinkTask: (ports) => createWorkspaceUnlinkTask({
       output: ports.output,
       fileSystem: ports.fileSystem,
@@ -759,6 +766,7 @@ function createAppFromFactories(
   const configPath = factories.configPath(ports);
   const configSet = factories.configSet(ports);
   const configUnset = factories.configUnset(ports);
+  const withTask = factories.withTask(ports);
   const workspaceUnlinkTask = factories.workspaceUnlinkTask(ports);
   const workspaceRemoveTask = factories.workspaceRemoveTask(ports);
   const inFlightRunTasks = new Set<Promise<number>>();
@@ -801,6 +809,7 @@ function createAppFromFactories(
     configPath,
     configSet,
     configUnset,
+    withTask,
     workspaceUnlinkTask,
     workspaceRemoveTask,
     emitOutput: (event) => {

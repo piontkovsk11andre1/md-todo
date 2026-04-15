@@ -7,6 +7,7 @@ import {
 } from "../../src/domain/exit-codes.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.js";
 import {
+  createWithCommandAction,
   createDesignDiffCommandAction,
   createDesignReleaseCommandAction,
   createDocsDiffCommandAction,
@@ -477,6 +478,22 @@ describe("createWorkerHealthCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(viewWorkerHealthStatus).toHaveBeenCalledTimes(1);
     expect(viewWorkerHealthStatus).toHaveBeenCalledWith({ json: true });
+  });
+});
+
+describe("createWithCommandAction", () => {
+  it("forwards harness argument to withTask", () => {
+    const withTask = vi.fn(() => 0);
+    const app = { withTask } as unknown as CliApp;
+    const action = createWithCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = action("opencode");
+
+    expect(exitCode).toBe(0);
+    expect(withTask).toHaveBeenCalledTimes(1);
+    expect(withTask).toHaveBeenCalledWith({ harness: "opencode" });
   });
 });
 
