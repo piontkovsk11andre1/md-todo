@@ -1941,6 +1941,65 @@ describe("run-task-execution helpers", () => {
     }));
   });
 
+  it("keeps reset worker deterministic without fallback inheritance", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "verification failure with deterministic reset"),
+      fileSystem: createInMemoryFileSystem({ [taskFile]: "- [ ] verification failure with deterministic reset\n" }),
+      gitClient: createGitClientMock(),
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+          fallbacks: [["fallback", "worker"]],
+        },
+        healthPolicy: {
+          maxFailoverAttemptsPerTask: 0,
+        },
+        run: {
+          workerRouting: {
+            reset: {
+              worker: ["reset", "worker"],
+            },
+          },
+        },
+      },
+    });
+
+    dependencies.workerExecutor.runWorker = vi
+      .fn()
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "ok", stderr: "" })
+      .mockResolvedValueOnce({ exitCode: null, stdout: "", stderr: "connection reset by peer" });
+    dependencies.taskVerification.verify = vi
+      .fn()
+      .mockResolvedValueOnce({ valid: false, formatWarning: undefined });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      verify: true,
+      noRepair: true,
+      workerCommand: [],
+    }));
+
+    expect(code).toBe(1);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      workerPattern: expect.objectContaining({ command: ["default", "worker"] }),
+    }));
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      workerPattern: expect.objectContaining({ command: ["reset", "worker"] }),
+    }));
+    expect(vi.mocked(dependencies.workerExecutor.runWorker).mock.calls.some((call) => {
+      const invocation = call[0] as { workerPattern?: { command?: string[] } };
+      return invocation.workerPattern?.command?.join(" ") === "fallback worker";
+    })).toBe(false);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "error",
+      message: expect.stringContaining("Failover exhausted: per-task failover attempt limit reached"),
+    }));
+  });
+
   it("fails semantic reset with actionable guidance when git repository metadata is unavailable", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;

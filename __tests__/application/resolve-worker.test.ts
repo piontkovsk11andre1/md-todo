@@ -1007,4 +1007,128 @@ describe("resolve-worker", () => {
 
     expect(command).toEqual(["fallback", "one"]);
   });
+
+  it("keeps legacy fallback behavior when run.workerRouting is absent", () => {
+    const nowIso = "2026-04-12T09:32:38.339Z";
+    const command = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+          fallbacks: [["fallback", "one"]],
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolveRepair",
+      runWorkerAttempt: 2,
+      workerHealthEntries: [
+        {
+          key: buildWorkerHealthWorkerKey(["default", "worker"]),
+          source: "worker",
+          status: WORKER_HEALTH_STATUS_UNAVAILABLE,
+        },
+      ],
+      evaluateWorkerHealthAtMs: Date.parse(nowIso),
+    });
+
+    expect(command).toEqual(["fallback", "one"]);
+  });
+
+  it("matches attempt-range selectors for resolveRepair escalation", () => {
+    const firstAttemptCommand = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+        },
+        run: {
+          workerRouting: {
+            resolveRepair: {
+              default: {
+                worker: ["resolve-repair", "default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    fromAttempt: 2,
+                    toAttempt: 3,
+                  },
+                  worker: ["resolve-repair", "strong"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolveRepair",
+      runWorkerAttempt: 1,
+    });
+    const secondAttemptCommand = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+        },
+        run: {
+          workerRouting: {
+            resolveRepair: {
+              default: {
+                worker: ["resolve-repair", "default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    fromAttempt: 2,
+                    toAttempt: 3,
+                  },
+                  worker: ["resolve-repair", "strong"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolveRepair",
+      runWorkerAttempt: 2,
+    });
+    const fourthAttemptCommand = resolveWorkerForInvocation({
+      commandName: "run",
+      workerConfig: {
+        workers: {
+          default: ["default", "worker"],
+        },
+        run: {
+          workerRouting: {
+            resolveRepair: {
+              default: {
+                worker: ["resolve-repair", "default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    fromAttempt: 2,
+                    toAttempt: 3,
+                  },
+                  worker: ["resolve-repair", "strong"],
+                },
+              ],
+            },
+          },
+        },
+      },
+      source: "- [ ] task\n",
+      cliWorkerCommand: [],
+      runWorkerPhase: "resolveRepair",
+      runWorkerAttempt: 4,
+    });
+
+    expect(firstAttemptCommand).toEqual(["resolve-repair", "default"]);
+    expect(secondAttemptCommand).toEqual(["resolve-repair", "strong"]);
+    expect(fourthAttemptCommand).toEqual(["resolve-repair", "default"]);
+  });
 });
