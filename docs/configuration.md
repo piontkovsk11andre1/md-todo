@@ -259,12 +259,18 @@ rundown config list --scope effective --show-source --json
 rundown config path --scope global
 ```
 
-## Worker and workerArgs merging
+## Worker and workerArgs resolution
 
-`worker` and `workerArgs` are merged across layers.
+`worker` and `workerArgs` do not use the same rule at every stage.
 
-- `worker` is replaced by higher-priority layers when provided.
-- `workerArgs` are appended in cascade order.
+Config-layer merge (`built-in` -> `global` -> `local`):
+
+- both `worker` and `workerArgs` are arrays, so they use replace semantics when a higher layer provides the key.
+
+Worker resolution cascade (defaults/command/profile/task/CLI precedence):
+
+- `worker` uses replace semantics (highest-priority provided value wins),
+- `workerArgs` use append semantics in cascade order.
 
 Example:
 
