@@ -135,9 +135,9 @@ See the command-focused reference: [cli-docs.md](cli-docs.md).
 
 See the command-focused reference: [cli-run.md](cli-run.md).
 
-### `rundown all <source>`
+### `rundown all <source>` (legacy alias)
 
-Shorthand for `rundown run <source> --all`.
+Compatibility alias that is rewritten to `rundown run <source> --all` before command parsing.
 
 See the command-focused reference: [cli-all.md](cli-all.md).
 
