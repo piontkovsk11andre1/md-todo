@@ -14,6 +14,7 @@ export interface HarnessPresetPayload {
   workers: {
     default: string[];
     tui?: string[];
+    fallbacks?: string[][];
   };
   commands?: {
     discuss?: string[];
@@ -153,6 +154,11 @@ function cloneHarnessPresetPayload(payload: HarnessPresetPayload): HarnessPreset
     workers: {
       default: [...payload.workers.default],
       ...(payload.workers.tui ? { tui: [...payload.workers.tui] } : {}),
+      ...(payload.workers.fallbacks
+        ? {
+          fallbacks: payload.workers.fallbacks.map((command) => [...command]),
+        }
+        : {}),
     },
     ...(payload.commands
       ? {

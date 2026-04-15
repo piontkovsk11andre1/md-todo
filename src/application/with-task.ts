@@ -26,6 +26,10 @@ function formatWorkerCommand(command: readonly string[]): string {
   return JSON.stringify(command);
 }
 
+function hasPresetFallbackPolicy(presetPayload: { workers: { fallbacks?: string[][] } }): boolean {
+  return Object.hasOwn(presetPayload.workers, "fallbacks");
+}
+
 /**
  * Creates the `with` command use case.
  *
@@ -80,8 +84,24 @@ export function createWithTask(
         keyPath: "commands.discuss",
       });
 
+    const fallbackResult = hasPresetFallbackPolicy(presetPayload)
+      ? (presetPayload.workers.fallbacks && presetPayload.workers.fallbacks.length > 0
+        ? dependencies.workerConfigPort.setValue(configDirPath, {
+          scope: "local",
+          keyPath: "workers.fallbacks",
+          value: presetPayload.workers.fallbacks,
+        })
+        : dependencies.workerConfigPort.unsetValue(configDirPath, {
+          scope: "local",
+          keyPath: "workers.fallbacks",
+        }))
+      : undefined;
+
     const configPath = defaultResult.configPath;
-    const changed = defaultResult.changed || tuiResult.changed || discussResult.changed;
+    const changed = defaultResult.changed
+      || tuiResult.changed
+      || discussResult.changed
+      || fallbackResult?.changed === true;
 
     emit({
       kind: changed ? "success" : "info",
@@ -105,6 +125,14 @@ export function createWithTask(
       message: presetPayload.commands?.discuss
         ? `Configured commands.discuss = ${formatWorkerCommand(presetPayload.commands.discuss)}`
         : "Removed commands.discuss",
+    });
+    emit({
+      kind: "info",
+      message: hasPresetFallbackPolicy(presetPayload)
+        ? (presetPayload.workers.fallbacks && presetPayload.workers.fallbacks.length > 0
+          ? `Configured workers.fallbacks = ${JSON.stringify(presetPayload.workers.fallbacks)}`
+          : "Removed workers.fallbacks")
+        : "Preserved workers.fallbacks",
     });
 
     return EXIT_CODE_SUCCESS;
