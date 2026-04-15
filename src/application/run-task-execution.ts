@@ -374,6 +374,83 @@ async function restoreLatestRetryBoundaryGitState(params: {
   await params.gitClient.run(["stash", "apply", params.checkpoint.stashHash], params.cwd);
 }
 
+async function captureSemanticResetGitCycleMetadata(params: {
+  gitClient: GitClient;
+  cwd: string;
+  configDir: ConfigDirResult | undefined;
+  pathOperations: PathOperationsPort;
+  taskFile: string;
+  taskLine: number;
+}): Promise<{ cycleHead: string; baselineStashHash: string | null } | { errorMessage: string }> {
+  const {
+    gitClient,
+    cwd,
+    configDir,
+    pathOperations,
+    taskFile,
+    taskLine,
+  } = params;
+  const inGitRepo = await isGitRepoWithGitClient(gitClient, cwd);
+  if (!inGitRepo) {
+    return {
+      errorMessage: "Semantic reset requires a git repository so rundown can safely restore the failed cycle. "
+        + "Initialize git for this workspace and retry, or remove run.workerRouting.reset to keep current stop-on-failure behavior.",
+    };
+  }
+
+  const cycleHead = (await gitClient.run(["rev-parse", "HEAD"], cwd)).trim();
+  if (cycleHead.length === 0) {
+    return {
+      errorMessage: "Semantic reset could not capture a pre-cycle commit reference (git rev-parse HEAD returned empty). "
+        + "Retry with --keep-artifacts so the failed cycle stays auditable and check repository health before retrying.",
+    };
+  }
+
+  const isClean = await isWorkingDirectoryClean(gitClient, cwd, configDir, pathOperations);
+  const baselineStashHashRaw = isClean
+    ? null
+    : (await gitClient.run([
+      "stash",
+      "create",
+      "rundown semantic-reset-baseline " + taskFile + ":" + taskLine + " " + new Date().toISOString(),
+    ], cwd)).trim();
+  const baselineStashHash = baselineStashHashRaw && baselineStashHashRaw.length > 0
+    ? baselineStashHashRaw
+    : null;
+  if (!isClean && baselineStashHash === null) {
+    return {
+      errorMessage: "Semantic reset could not capture baseline dirty-state metadata for this cycle. "
+        + "Retry with --keep-artifacts and a clean repository, or run `rundown revert --run latest --method reset` after manual cleanup.",
+    };
+  }
+
+  return {
+    cycleHead,
+    baselineStashHash,
+  };
+}
+
+async function restoreGitStateForSemanticReset(params: {
+  gitClient: GitClient;
+  cwd: string;
+  cycleHead: string;
+  baselineStashHash: string | null;
+}): Promise<void> {
+  const {
+    gitClient,
+    cwd,
+    cycleHead,
+    baselineStashHash,
+  } = params;
+
+  await gitClient.run(["reset", "--hard", cycleHead], cwd);
+  await gitClient.run(["clean", "-fd"], cwd);
+
+  if (typeof baselineStashHash === "string" && baselineStashHash.length > 0) {
+    await gitClient.run(["stash", "apply", baselineStashHash], cwd);
+  }
+}
+
 /**
  * Dependency bundle required to construct the `run` command execution flow.
  */
@@ -1070,6 +1147,9 @@ export function createRunTaskExecution(
             const retryBoundaryGitCheckpoints: RetryBoundaryGitCheckpoint[] = [];
             let retryBoundaryBaselineStashHash: string | null = null;
             let retryBoundaryBaselineCaptured = false;
+            let semanticResetCycleHead: string | null = null;
+            let semanticResetBaselineStashHash: string | null = null;
+            let semanticResetPreflightErrorMessage: string | null = null;
 
             const maybePreserveGitStateForRetryBoundary = async (
               reason: RetryBoundaryGitCheckpoint["reason"],
@@ -1168,6 +1248,34 @@ export function createRunTaskExecution(
             while (attempt < maxTaskAttempts) {
               attempt++;
               const isFinalAttempt = attempt >= maxTaskAttempts;
+
+              if (
+                hasSemanticResetRoute
+                && !usingSemanticResetRoute
+                && attempt === 1
+                && semanticResetCycleHead === null
+                && semanticResetPreflightErrorMessage === null
+              ) {
+                try {
+                  const semanticResetGitCycleMetadata = await captureSemanticResetGitCycleMetadata({
+                    gitClient: dependencies.gitClient,
+                    cwd: executionCwd,
+                    configDir: dependencies.configDir,
+                    pathOperations: dependencies.pathOperations,
+                    taskFile: selectedTaskResult.task.file,
+                    taskLine: selectedTaskResult.task.line,
+                  });
+                  if ("errorMessage" in semanticResetGitCycleMetadata) {
+                    semanticResetPreflightErrorMessage = semanticResetGitCycleMetadata.errorMessage;
+                  } else {
+                    semanticResetCycleHead = semanticResetGitCycleMetadata.cycleHead;
+                    semanticResetBaselineStashHash = semanticResetGitCycleMetadata.baselineStashHash;
+                  }
+                } catch (error) {
+                  semanticResetPreflightErrorMessage = "Semantic reset failed while capturing cycle git metadata: "
+                    + String(error);
+                }
+              }
 
               if (attempt > 1 && initialForceExtraction.isForce) {
                 const refreshedSelection = dependencies.taskSelector.selectTaskByLocation(
@@ -1405,6 +1513,23 @@ export function createRunTaskExecution(
                   return exitCode;
                 }
 
+                if (semanticResetPreflightErrorMessage) {
+                  emit({ kind: "error", message: semanticResetPreflightErrorMessage });
+                  await maybeRestoreGitStateAfterTerminalFailure();
+                  return exitCode;
+                }
+
+                const semanticResetRunId = state.artifactContext?.runId;
+                if (typeof semanticResetRunId !== "string" || semanticResetRunId.trim().length === 0) {
+                  emit({
+                    kind: "error",
+                    message: "Semantic reset requires failed-cycle run metadata, but the run id is unavailable. "
+                      + "Retry with --keep-artifacts and ensure run metadata is writable before retrying.",
+                  });
+                  await maybeRestoreGitStateAfterTerminalFailure();
+                  return exitCode;
+                }
+
                 taskSemanticResetAttemptsUsed++;
                 runSemanticResetAttemptsUsed++;
                 usingSemanticResetRoute = true;
@@ -1419,6 +1544,33 @@ export function createRunTaskExecution(
                     + runSemanticResetAttemptsUsed
                     + ").",
                 });
+                if (!semanticResetCycleHead) {
+                  emit({
+                    kind: "error",
+                    message: "Semantic reset failed: missing pre-cycle commit metadata. "
+                      + "Retry with --keep-artifacts so failed-cycle metadata is retained and ensure git history is available.",
+                  });
+                  await maybeRestoreGitStateAfterTerminalFailure();
+                  return exitCode;
+                }
+
+                try {
+                  await restoreGitStateForSemanticReset({
+                    gitClient: dependencies.gitClient,
+                    cwd: executionCwd,
+                    cycleHead: semanticResetCycleHead,
+                    baselineStashHash: semanticResetBaselineStashHash,
+                  });
+                } catch (error) {
+                  emit({
+                    kind: "error",
+                    message: "Semantic reset failed while restoring git state for retry: "
+                      + String(error)
+                      + " Retry with --keep-artifacts for auditability, then inspect `.rundown/runs` and run `rundown revert --run latest --method reset` if manual recovery is needed.",
+                  });
+                  await maybeRestoreGitStateAfterTerminalFailure();
+                  return exitCode;
+                }
                 const semanticResetRetryBoundaryPreserveExitCode = await maybePreserveGitStateForRetryBoundary("semantic-reset");
                 if (semanticResetRetryBoundaryPreserveExitCode !== null) {
                   return semanticResetRetryBoundaryPreserveExitCode;
@@ -1426,6 +1578,8 @@ export function createRunTaskExecution(
                 attempt--;
                 runFailed = false;
                 state.runCompleted = false;
+                semanticResetCycleHead = null;
+                semanticResetBaselineStashHash = null;
                 dependencies.verificationStore.remove(selectedTaskResult.task);
                 state.deferredCommitContext = null;
                 resetArtifacts();
