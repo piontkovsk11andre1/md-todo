@@ -441,6 +441,13 @@ Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise 
 `quit:` / `exit:` / `end:` / `break:` / `return:` are terminal-control aliases with graceful stop semantics.
 `optional:`/`skip:` behavior remains unchanged and independent from terminal stop behavior.
 
+Control semantics split:
+
+- `optional:` / `skip:` evaluate conditions for sibling-scope short-circuit only.
+- `quit:` / `exit:` / `end:` / `break:` / `return:` are terminal run-stop controls. Empty payload is valid and stops unconditionally; non-empty payload stops only when the yes/no condition evaluates `true`.
+- Terminal stop is not an `optional`/`skip` alias and does not change sibling-skip semantics.
+- In `loop` mode, terminal stop intent takes precedence over `--continue-on-error` and exits the outer loop after current iteration finalization.
+
 Built-in modifier:
 
 - `profile=`
@@ -485,7 +492,7 @@ Resolution and precedence:
 - Built-in tools are checked next (`verify:`/`confirm:`/`check:`, memory aliases, fast/raw/quick aliases, `optional:`/`skip:` conditional control, terminal stop aliases `quit:`/`exit:`/`end:`/`break:`/`return:`, `include:`, `profile=`, `force:`).
 - Project `.md` tools are checked after built-ins (for non-built-in tool names).
 - Unknown prefixes do not error; they fall back to normal task execution.
-- Empty payload for handler tools is invalid and fails fast.
+- Empty payload is invalid for handler tools that require payload (for example `verify:`, `memory:`, `fast:`, `optional:`/`skip:`, `include:`). Terminal stop aliases (`quit:`/`exit:`/`end:`/`break:`/`return:`) allow empty payload for unconditional stop.
 
 Intent precedence notes:
 

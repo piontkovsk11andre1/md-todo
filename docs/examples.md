@@ -417,6 +417,18 @@ What happens:
 7. `optional:` / `skip:` are conditional sibling-skip prefixes; `quit:` / `exit:` / `end:` / `break:` / `return:` are terminal stop-control prefixes.
 8. Unknown prefixes are treated as normal task text and do not fail resolution.
 
+Terminal-stop examples:
+
+```md
+- [ ] exit:
+- [ ] return: release branch already merged
+- [ ] optional: docs already published
+```
+
+- `exit:` stops unconditionally.
+- `return: ...` stops only when the condition evaluates true.
+- `optional: ...` keeps sibling-skip behavior only; it does not stop full run/loop.
+
 ## 21. Release design revisions and diff before migration
 
 Use `rundown design` when you want to manage design-document revisions directly.

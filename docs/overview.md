@@ -265,6 +265,13 @@ Decision: `optional:` is canonical in v1, with `skip:` as the preferred concise 
 `quit:` / `exit:` / `end:` / `break:` / `return:` are terminal-control aliases with graceful stop semantics.
 `optional:`/`skip:` behavior remains unchanged and independent from terminal stop behavior.
 
+Control semantics split:
+
+- `optional:` / `skip:` evaluate a yes/no condition and only short-circuit remaining siblings in the same parent scope when true.
+- `quit:` / `exit:` / `end:` / `break:` / `return:` are run-stop signals. Empty payload is allowed and means unconditional stop. Non-empty payload is evaluated as yes/no and stops only on `true`.
+- In normal `run` flow, terminal stop prevents scheduling any remaining work after the current task lifecycle finalizes.
+- In `loop` flow, terminal stop exits the outer loop immediately after the current iteration finalizes.
+
 Built-in modifier:
 
 - `profile=`

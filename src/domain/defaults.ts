@@ -421,9 +421,10 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 - **\`verify: <assertion>\`** — Verify-only task (confirm:, check: are aliases).
 - **\`memory: <prompt>\`** — Capture information to source-local memory (memorize:, remember:, inventory:).
 - **\`fast: <task>\`** — Skip verification for this task (raw:, quick: are aliases).
-- **\`optional: <condition>\`** — Conditionally stop processing siblings when condition is true (preferred canonical form).
-- **\`skip: <condition>\`** — Preferred concise alias for \`optional:\` with identical behavior.
-- **\`quit:\` / \`exit:\` / \`end:\` / \`break:\` / \`return:\`** — Terminal stop control. Empty payload is unconditional stop; non-empty payload is a yes/no condition.
+- **\`optional: <condition>\`** — Conditional sibling short-circuit only. When true, skip remaining siblings/descendants in the same parent scope; otherwise continue. This behavior is unchanged.
+- **\`skip: <condition>\`** — Preferred concise alias for \`optional:\` with identical sibling-skip behavior.
+- **\`quit:\` / \`exit:\` / \`end:\` / \`break:\` / \`return:\`** — Terminal stop control. Empty payload is allowed and means unconditional stop. Non-empty payload is evaluated as yes/no; true emits terminal stop, false continues.
+- Terminal stop behavior differs by flow: in normal \`run\`, remaining work is not scheduled after current lifecycle finalization; in \`loop\`, the outer loop exits immediately after the current iteration finalizes.
 - **\`include: <file.md>\`** — Include and execute tasks from another file.
 - **\`profile=<name>\`** — Select a named worker profile for this task.
 - Prefixes compose: \`profile=fast, verify: tests pass\`
