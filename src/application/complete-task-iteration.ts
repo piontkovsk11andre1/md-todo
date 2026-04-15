@@ -389,39 +389,42 @@ export async function completeTaskIteration(params: {
     }
   }
 
-  {
-    const latestSource = dependencies.fileSystem.readText(task.file);
-    const latestTasks = parseTasks(latestSource, task.file);
-    const latestTask = latestTasks.find((candidate) => candidate.line === task.line && candidate.index === task.index)
-      ?? latestTasks.find((candidate) => candidate.line === task.line);
-    const isParallelGroupTask = latestTask
-      ? latestTask.intent === "parallel-group"
-        || isParallelGroupTaskText(latestTask.text, dependencies.toolResolver)
-      : task.intent === "parallel-group"
-        || isParallelGroupTaskText(task.text, dependencies.toolResolver);
+  const latestSource = dependencies.fileSystem.readText(task.file);
+  const latestTasks = parseTasks(latestSource, task.file);
+  const latestTask = latestTasks.find((candidate) => candidate.line === task.line && candidate.index === task.index)
+    ?? latestTasks.find((candidate) => candidate.line === task.line);
 
-    if (isParallelGroupTask && latestTask && hasUncheckedDescendants(latestTask, latestTasks, { useChildren: true })) {
-      const message = "Parallel-group parent cannot auto-complete while unchecked descendants remain.";
-      emit({ kind: "error", message });
-      await afterTaskFailed(
-        dependencies,
-        task,
-        sourceText,
-        onFailCommand,
-        hideHookOutput,
-        extraTemplateVars,
-      );
-      return {
-        continueLoop: false,
-        forceRetryableFailure: false,
-        failureMessage: message,
-        exitCode: await failRun(1, "failed", message, 1),
-        groupEnded: false,
-      };
-    }
+  const isParallelGroupTask = latestTask
+    ? latestTask.intent === "parallel-group"
+      || isParallelGroupTaskText(latestTask.text, dependencies.toolResolver)
+    : task.intent === "parallel-group"
+      || isParallelGroupTaskText(task.text, dependencies.toolResolver);
+
+  if (isParallelGroupTask && latestTask && hasUncheckedDescendants(latestTask, latestTasks, { useChildren: true })) {
+    const message = "Parallel-group parent cannot auto-complete while unchecked descendants remain.";
+    emit({ kind: "error", message });
+    await afterTaskFailed(
+      dependencies,
+      task,
+      sourceText,
+      onFailCommand,
+      hideHookOutput,
+      extraTemplateVars,
+    );
+    return {
+      continueLoop: false,
+      forceRetryableFailure: false,
+      failureMessage: message,
+      exitCode: await failRun(1, "failed", message, 1),
+      groupEnded: false,
+    };
   }
 
-  const isLoopTask = isForLoopTaskText(task.text);
+  const latestTaskText = latestTask?.text;
+  const isLoopTask = forLoopAdvanced !== undefined
+    || forLoopCompleted === true
+    || isForLoopTaskText(task.text)
+    || (latestTaskText !== undefined && isForLoopTaskText(latestTaskText));
   if (isLoopTask) {
     const completedLoopItem = getForCurrentValue(task.subItems);
     const loopItemCount = forLoopItems?.length ?? getForItemValues(task.subItems).length;
