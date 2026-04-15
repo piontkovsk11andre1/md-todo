@@ -955,8 +955,14 @@ export function createRunTaskExecution(
         return count + uncheckedTasks;
       }, 0);
 
-      let totalTasks = countUncheckedTasks();
+      const refreshTotalTasks = (): number => {
+        totalTasks = currentTaskIndex + countUncheckedTasks();
+        return totalTasks;
+      };
+
+      let totalTasks = 0;
       let currentTaskIndex = 0;
+      refreshTotalTasks();
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -1156,7 +1162,6 @@ export function createRunTaskExecution(
               const isFinalAttempt = attempt >= maxTaskAttempts;
 
               if (attempt > 1 && initialForceExtraction.isForce) {
-                totalTasks = countUncheckedTasks();
                 const refreshedSelection = dependencies.taskSelector.selectTaskByLocation(
                   forceTaskIdentity.filePath,
                   forceTaskIdentity.line,
@@ -1206,6 +1211,7 @@ export function createRunTaskExecution(
                 : failRun;
 
               // Execute one full task iteration and inspect control-flow instructions.
+              refreshTotalTasks();
               const suppressPerChildCommit = commitAfterComplete
                 && commitMode === "per-task"
                 && hasParallelGroupAncestor(selectedTaskResult.task);

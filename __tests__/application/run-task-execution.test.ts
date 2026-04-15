@@ -1055,6 +1055,65 @@ describe("run-task-execution helpers", () => {
     }));
   });
 
+  it("refreshes group counter total before selecting the next task after dynamic insertion", async () => {
+    const cwd = "/workspace";
+    const taskFile = `${cwd}/tasks.md`;
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] first task\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "first task"),
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.taskSelector.selectNextTask = vi.fn(() => {
+      const source = fileSystem.readText(taskFile);
+      const next = parseTasks(source, taskFile).find((task) => !task.checked);
+      if (!next) {
+        return null;
+      }
+      return [{
+        task: next,
+        source: "tasks.md",
+        contextBefore: "",
+      }];
+    });
+
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "{{task}}";
+      }
+      return null;
+    };
+
+    let executionCount = 0;
+    dependencies.workerExecutor.runWorker = vi.fn(async ({ prompt }: { prompt: string }) => {
+      executionCount += 1;
+      if (executionCount === 1 && prompt === "first task") {
+        fileSystem.writeText(taskFile, "- [ ] first task\n- [ ] second task\n");
+      }
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    });
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({ verify: false, runAll: true }));
+
+    expect(code).toBe(0);
+    expect(dependencies.workerExecutor.runWorker).toHaveBeenCalledTimes(2);
+    const groupStartEvents = events.filter((event) => event.kind === "group-start");
+    expect(groupStartEvents).toHaveLength(2);
+    expect(groupStartEvents[0]).toEqual(expect.objectContaining({
+      kind: "group-start",
+      counter: expect.objectContaining({ current: 1, total: 1 }),
+    }));
+    expect(groupStartEvents[1]).toEqual(expect.objectContaining({
+      kind: "group-start",
+      counter: expect.objectContaining({ current: 2, total: 2 }),
+    }));
+  });
+
   it("treats a force task as completed when it is already checked before retry", async () => {
     const cwd = "/workspace";
     const taskFile = `${cwd}/tasks.md`;
