@@ -548,7 +548,7 @@ Options:
 | `--var <key=value>` | Inject template variables (repeatable). | none |
 | `--ignore-cli-block` | Skip `cli` fenced-block command execution during prompt expansion. | off |
 | `--cli-block-timeout <ms>` | Per-command timeout for `cli` fenced-block execution (`0` disables timeout). | `30000` |
-| `--show-agent-output` | Show worker stdout/stderr for execute/verify/plan stages (output is hidden by default). | off |
+| `--show-agent-output` | Show discussion worker stdout/stderr transcript output during the discuss session (hidden by default). | off |
 | `--force-unlock` | Remove stale source lockfile before acquiring discuss lock. Active locks held by live processes are not removed. | off |
 | `--worker <pattern>` | Worker pattern override (preferred on PowerShell). | unset |
 
