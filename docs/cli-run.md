@@ -22,6 +22,8 @@ Options:
 
 - `--all`: Process runnable tasks sequentially until completion or first failure.
 - `--show-agent-output`: Show worker-derived `text`/`stderr` transcript output for supported stages.
+- `--commit`: Create a git commit after successful completion (task-scoped by default).
+- `--commit-mode <per-task|file-done>`: Control commit timing for `--commit` (default `per-task`). `file-done` defers to one final commit for effective run-all flows.
 - `--redo`: Re-run previously completed tasks before continuing normal task selection.
 - `--reset-after`: Reset completion state after processing so tasks can be run again.
 - `--clean`: Clear prior run bookkeeping before starting execution.
@@ -39,6 +41,8 @@ rundown run roadmap.md --reset-after
 rundown run roadmap.md --clean
 rundown all roadmap.md
 rundown run tasks.md --show-agent-output
+rundown run docs/ --commit
+rundown run docs/ --all --commit --commit-mode file-done
 ```
 
 PowerShell-safe form:
