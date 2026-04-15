@@ -1354,7 +1354,12 @@ describe("plan-task", () => {
     expect(firstPrompt).toContain("`verify:` skips execution and runs only the verification phase");
     expect(firstPrompt).toContain("`fast:` executes the task but skips the verification phase entirely");
     expect(firstPrompt).toContain("`profile=<name>`");
-    expect(firstPrompt).toContain("`memory:` for tasks that should capture reusable context");
+    expect(firstPrompt).toContain("`memory:` for research/context-capture tasks that gather reusable context for later steps");
+    expect(firstPrompt).toContain("there is no explicit target file write/edit/create in that task");
+    expect(firstPrompt).toContain("Do NOT use `memory:` when the task asks to write/edit/create/update any file");
+    expect(firstPrompt).toContain("research and write findings into X.md");
+    expect(firstPrompt).toContain("split into separate TODOs when possible");
+    expect(firstPrompt).toContain("Author new memory-capture TODOs with the canonical `memory:` prefix only");
     expect(firstPrompt).toContain("`include: <path>`");
     expect(firstPrompt).toContain("Prefix composition is supported with `, ` or `; ` separators");
   });
@@ -2642,6 +2647,11 @@ describe("plan-task", () => {
     expect(deepPrompt).toContain("Optional append guidance (advisory)");
     expect(deepPrompt).toContain("Prefer prerequisite discovery before implementation tasks.");
     expect(deepPrompt).toContain("Prefer final verification and handoff checks when applicable.");
+    expect(deepPrompt).toContain("there is no explicit target file write/edit/create in that child task");
+    expect(deepPrompt).toContain("Do NOT use `memory:` when the child task asks to write/edit/create/update any file");
+    expect(deepPrompt).toContain("research and write findings into X.md");
+    expect(deepPrompt).toContain("split into separate child TODOs when possible");
+    expect(deepPrompt).toContain("Author new child memory-capture TODOs with the canonical `memory:` prefix only");
   });
 
   it("runs deep passes after scan convergence and inserts child TODO items", async () => {

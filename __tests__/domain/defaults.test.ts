@@ -113,6 +113,14 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`include: <path>`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("there is no explicit target file write/edit/create in that task");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("Do NOT use `memory:` when the task asks to write/edit/create/update any file");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("split into separate TODOs when possible");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("\"research and write findings into X.md\"");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("Author new memory-capture TODOs with the canonical `memory:` prefix only");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`remember:`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`memorize:`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`inventory:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked items");
 
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("## Rundown feature reference for deep planning");
@@ -126,6 +134,11 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("there is no explicit target file write/edit/create in that child task");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Do NOT use `memory:` when the child task asks to write/edit/create/update any file");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("split into separate child TODOs when possible");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("\"research and write findings into X.md\"");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Author new child memory-capture TODOs with the canonical `memory:` prefix only");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`remember:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memorize:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`inventory:`");
   });
 
   it("maps sample prompts to rundown workflows and preserves migration + fallback guidance in help template", () => {
