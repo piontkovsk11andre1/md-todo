@@ -351,8 +351,10 @@ export function createReverifyTask(
           throw error;
         }
       }
-      // Reuse original worker command when no stronger override is provided.
-      const resolvedWorker = resolveWorkerPatternForInvocation({
+      const resolveReverifyPhaseWorker = (resolveInput: {
+        phase: "verify" | "repair" | "resolve" | "resolveRepair";
+        attempt?: number;
+      }): ReturnType<typeof resolveWorkerPatternForInvocation> => resolveWorkerPatternForInvocation({
         commandName: "reverify",
         workerConfig: loadedWorkerConfig,
         source: taskContext.source,
@@ -361,9 +363,17 @@ export function createReverifyTask(
         fallbackWorkerCommand: selectedRun.workerCommand,
         emit,
         mode: "wait",
+        runWorkerPhase: resolveInput.phase,
+        runWorkerAttempt: resolveInput.attempt,
       });
-      const effectiveWorkerCommand = resolvedWorker.workerCommand;
-      const effectiveWorkerPattern = resolvedWorker.workerPattern;
+      // Reverify runs verification first, so resolve the baseline command from verify phase routing.
+      const verifyPhaseWorker = resolveReverifyPhaseWorker({ phase: "verify", attempt: 1 });
+      const effectiveWorkerCommand = verifyPhaseWorker.workerCommand;
+      const effectiveWorkerPattern = verifyPhaseWorker.workerPattern;
+      const resolveVerifyRepairWorkerPattern = (resolveInput: {
+        phase: "verify" | "repair" | "resolve" | "resolveRepair";
+        attempt?: number;
+      }): ParsedWorkerPattern => resolveReverifyPhaseWorker(resolveInput).workerPattern;
 
       // Print prompt mode stops before any worker invocation or artifact writes.
       if (printPrompt) {
@@ -517,6 +527,7 @@ export function createReverifyTask(
           repairTemplate: expandedRepairPrompt,
           resolveTemplate: resolvedResolveTemplate,
           workerPattern: effectiveWorkerPattern,
+          resolveWorkerPattern: resolveVerifyRepairWorkerPattern,
           configDir: dependencies.configDir?.configDir,
           maxRepairAttempts: runBehavior.maxRepairAttempts,
           maxResolveRepairAttempts: runBehavior.maxResolveRepairAttempts,
