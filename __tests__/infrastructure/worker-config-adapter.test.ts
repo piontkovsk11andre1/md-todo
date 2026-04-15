@@ -721,6 +721,299 @@ describe("createWorkerConfigAdapter", () => {
     );
   });
 
+  it("loads run.workerRouting with phase and attempt-scoped routes", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            verify: {
+              worker: ["opencode", "run", "--model", "verify-model"],
+            },
+            repair: {
+              default: {
+                worker: ["opencode", "run", "--model", "repair-default"],
+                useFallbacks: true,
+              },
+              attempts: [
+                {
+                  selector: {
+                    attempt: 2,
+                  },
+                  worker: ["opencode", "run", "--model", "repair-strong"],
+                },
+              ],
+            },
+            resolveRepair: {
+              attempts: [
+                {
+                  selector: {
+                    fromAttempt: 2,
+                    toAttempt: 4,
+                  },
+                  worker: ["opencode", "run", "--model", "resolve-repair-strong"],
+                  useFallbacks: false,
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      run: {
+        workerRouting: {
+          verify: {
+            worker: ["opencode", "run", "--model", "verify-model"],
+            useFallbacks: undefined,
+          },
+          repair: {
+            default: {
+              worker: ["opencode", "run", "--model", "repair-default"],
+              useFallbacks: true,
+            },
+            attempts: [
+              {
+                selector: {
+                  attempt: 2,
+                },
+                worker: ["opencode", "run", "--model", "repair-strong"],
+                useFallbacks: undefined,
+              },
+            ],
+          },
+          resolveRepair: {
+            attempts: [
+              {
+                selector: {
+                  fromAttempt: 2,
+                  toAttempt: 4,
+                },
+                worker: ["opencode", "run", "--model", "resolve-repair-strong"],
+                useFallbacks: false,
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("merges run.workerRouting and preserves array replace semantics", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            verify: {
+              worker: ["opencode", "run", "--model", "local-verify"],
+            },
+            repair: {
+              attempts: [
+                {
+                  selector: {
+                    attempt: 3,
+                  },
+                  worker: ["opencode", "run", "--model", "local-repair-3"],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            execute: {
+              worker: ["opencode", "run", "--model", "global-execute"],
+            },
+            verify: {
+              worker: ["opencode", "run", "--model", "global-verify"],
+            },
+            repair: {
+              default: {
+                worker: ["opencode", "run", "--model", "global-repair-default"],
+              },
+              attempts: [
+                {
+                  selector: {
+                    attempt: 1,
+                  },
+                  worker: ["opencode", "run", "--model", "global-repair-1"],
+                },
+                {
+                  selector: {
+                    fromAttempt: 2,
+                  },
+                  worker: ["opencode", "run", "--model", "global-repair-2plus"],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      run: {
+        workerRouting: {
+          execute: {
+            worker: ["opencode", "run", "--model", "global-execute"],
+            useFallbacks: undefined,
+          },
+          verify: {
+            worker: ["opencode", "run", "--model", "local-verify"],
+            useFallbacks: undefined,
+          },
+          repair: {
+            default: {
+              worker: ["opencode", "run", "--model", "global-repair-default"],
+              useFallbacks: undefined,
+            },
+            attempts: [
+              {
+                selector: {
+                  attempt: 3,
+                },
+                worker: ["opencode", "run", "--model", "local-repair-3"],
+                useFallbacks: undefined,
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
+  it("rejects unknown run.workerRouting phases", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            verifyAgain: {
+              worker: ["opencode", "run"],
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at run.workerRouting.verifyAgain: unknown phase. Allowed: execute, verify, repair, resolve, resolveRepair, reset.`,
+    );
+  });
+
+  it("rejects run.workerRouting routes with missing worker commands", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            verify: {
+              useFallbacks: true,
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at run.workerRouting.verify.worker: expected string array.`,
+    );
+  });
+
+  it("rejects invalid run.workerRouting attempt selector shapes", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            repair: {
+              attempts: [
+                {
+                  selector: {
+                    attempt: 2,
+                    fromAttempt: 2,
+                  },
+                  worker: ["opencode", "run", "--model", "repair-strong"],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at run.workerRouting.repair.attempts[0].selector: cannot combine attempt with fromAttempt/toAttempt.`,
+    );
+  });
+
+  it("rejects run.workerRouting attempt selectors where fromAttempt is greater than toAttempt", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        run: {
+          workerRouting: {
+            resolveRepair: {
+              attempts: [
+                {
+                  selector: {
+                    fromAttempt: 5,
+                    toAttempt: 3,
+                  },
+                  worker: ["opencode", "run", "--model", "resolve-repair"],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at run.workerRouting.resolveRepair.attempts[0].selector: fromAttempt cannot be greater than toAttempt.`,
+    );
+  });
+
   it("uses replace semantics for arrays and map entries during layering", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
