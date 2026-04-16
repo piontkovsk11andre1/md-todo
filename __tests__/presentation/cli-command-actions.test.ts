@@ -353,11 +353,11 @@ describe("createHelpCommandAction", () => {
 
     const action = createHelpCommandAction({
       getApp: () => app,
-      getWorkerFromSeparator: () => ["opencode", "run", "-c"],
+      getWorkerFromSeparator: () => ["opencode", "run"],
       outputHelp,
       cliVersion: "1.2.3",
       isInteractiveTerminal: () => true,
-      getInvocationArgv: () => ["-c", "--", "opencode", "run", "-c"],
+      getInvocationArgv: () => ["-c", "--", "opencode", "run"],
     });
 
     const exitCode = await action();
@@ -368,6 +368,33 @@ describe("createHelpCommandAction", () => {
       continueSession: true,
       workerPattern: expect.objectContaining({
         command: ["opencode", "run", "--continue"],
+      }),
+    }));
+    expect(outputHelp).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate continuation passed through separator worker args", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["opencode", "run", "-c", "--profile", "fast"],
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => true,
+      getInvocationArgv: () => ["--continue", "--", "opencode", "run", "-c", "--profile", "fast"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(0);
+    expect(helpTask).toHaveBeenCalledTimes(1);
+    expect(helpTask).toHaveBeenCalledWith(expect.objectContaining({
+      continueSession: true,
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run", "-c", "--profile", "fast"],
       }),
     }));
     expect(outputHelp).not.toHaveBeenCalled();

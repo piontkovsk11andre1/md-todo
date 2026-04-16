@@ -58,8 +58,11 @@ function isContinueFlagToken(token: string): boolean {
 }
 
 function appendCanonicalContinueFlag(workerCommand: string[]): string[] {
-  const filteredWorkerCommand = workerCommand.filter((token) => !isContinueFlagToken(token));
-  return [...filteredWorkerCommand, "--continue"];
+  if (workerCommand.some((token) => isContinueFlagToken(token))) {
+    return [...workerCommand];
+  }
+
+  return [...workerCommand, "--continue"];
 }
 
 export function createHelpTask(

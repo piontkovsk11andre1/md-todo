@@ -90,6 +90,24 @@ describe("help-task", () => {
     }));
   });
 
+  it("preserves existing continuation flag ordering when already present", async () => {
+    const cwd = "/workspace";
+    const { dependencies, workerExecutor } = createDependencies({ cwd });
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({
+      workerCommand: ["opencode", "run", "-c", "--profile", "fast"],
+      continueSession: true,
+    }));
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledWith(expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run", "-c", "--profile", "fast"],
+      }),
+    }));
+  });
+
   it("renders help template with cli vars, command index, and docs context", async () => {
     const cwd = "/workspace";
     const docsDir = path.join(cwd, "docs");
