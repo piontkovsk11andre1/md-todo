@@ -759,6 +759,33 @@ describe("bootstrap seed prefix resolution", () => {
     }
   });
 
+  it("keeps raw seed text when profile modifier has no applicable handler", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-make-seed-profile-only-"));
+    const targetFile = path.join(tempRoot, "migrations", "seed.md");
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const app = { researchTask, planTask } as unknown as CliApp;
+    const action = createMakeCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      makeModes: ["wait"],
+    });
+
+    try {
+      const seedText = "profile=fast";
+      const exitCode = await action(seedText, targetFile, {});
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(targetFile, "utf8")).toBe(seedText);
+      expect(researchTask).toHaveBeenCalledTimes(1);
+      expect(planTask).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("reuses the same seed-prefix bootstrap behavior in do", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-seed-prefix-"));
     const configDir = path.join(tempRoot, ".rundown");
