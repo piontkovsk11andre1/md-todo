@@ -126,7 +126,7 @@ Heuristics:
 
 Output contract requirements for agentic tasks:
 
-- For \`get:\` {{inlineTaskSubject}}, make the requested stdout format explicit in task text: one discovered value per line, with no bullets/numbering/JSON, and without a literal \`get-result:\` prefix. The runtime writes canonical \`get-result:\` sub-items.
+- For \`get:\` {{inlineTaskSubject}}, make the requested stdout format explicit in task text: one discovered value per line in discovery order, with no bullets/numbering/JSON, and without a literal \`get-result:\` prefix. Require an empty response when nothing is found (no commentary). The runtime writes canonical \`get-result:\` sub-items.
 - For \`loop:\` {{inlineTaskSubject}} that mixes iterative discovery with durable context capture, use this bounded child pattern so outputs stay reusable across passes:
 
   \`- [ ] loop: audit rollout blockers until no new blockers appear\`
@@ -1336,6 +1336,7 @@ Rules:
 - Append new child items after the last existing child under the parent. Do not insert between existing children.
 - Do not reword, rephrase, or rewrite the descriptive text of any existing child item.
 - You may fix prefixes on existing unchecked items: normalize aliases to canonical form (e.g. \`check:\` → \`verify:\`), add a missing prefix when the task clearly needs one, or remove an incorrect prefix.
+- Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked child items (for example repeated \`fast:\`/\`verify:\` wrappers or stacked identical prefixes introduced by prior planning passes).
 - Do not change any \`- [ ]\` item to \`- [x]\`.
 - Do not remove or move any existing child item (checked or unchecked).
 - Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.

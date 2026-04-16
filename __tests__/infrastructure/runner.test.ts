@@ -429,7 +429,7 @@ describe("runWorker", () => {
       cwd: workspace,
     });
 
-    expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    expect(result).toEqual({ exitCode: 0, stdout: "", stderr: "", timedOut: false });
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
       [expect.stringMatching(/\.rundown[\\/]runs[\\/]run-.*[\\/]01-worker[\\/]prompt\.md$/)],
@@ -557,6 +557,7 @@ describe("runWorker", () => {
       exitCode: 0,
       stdout: "hello tui\n",
       stderr: "warn tui\n",
+      timedOut: false,
     });
     expect(spawnMock).toHaveBeenCalledWith(
       "opencode",
@@ -617,6 +618,7 @@ describe("runWorker", () => {
         mode: "wait",
         cwd: workspace,
         timeoutMs: 50,
+        keepArtifacts: true,
       });
 
       await vi.advanceTimersByTimeAsync(50);
@@ -626,6 +628,20 @@ describe("runWorker", () => {
       expect(child.kill).toHaveBeenCalledWith("SIGTERM");
       expect(result.exitCode).toBe(124);
       expect(result.stderr).toBe("Worker process timed out after 50ms.");
+      expect(result.timedOut).toBe(true);
+
+      const runsDir = path.join(workspace, ".rundown", "runs");
+      const [runDirName] = fs.readdirSync(runsDir);
+      const phaseMetadataPath = path.join(runsDir, runDirName!, "01-worker", "metadata.json");
+      const phaseMetadata = JSON.parse(fs.readFileSync(phaseMetadataPath, "utf-8")) as {
+        notes?: string;
+        extra?: Record<string, unknown>;
+      };
+
+      expect(phaseMetadata.notes).toBe(
+        "Worker execution timed out after 50ms and was terminated with SIGTERM.",
+      );
+      expect(phaseMetadata.extra).toEqual({ timedOut: true, timeoutMs: 50 });
     } finally {
       vi.useRealTimers();
     }
@@ -667,6 +683,7 @@ describe("runWorker", () => {
         exitCode: 124,
         stdout: "",
         stderr: "Worker process timed out after 25ms.",
+        timedOut: true,
       });
     } finally {
       vi.useRealTimers();

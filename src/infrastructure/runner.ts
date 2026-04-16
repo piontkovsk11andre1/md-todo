@@ -81,6 +81,8 @@ export interface RunnerResult {
    * In detached mode or non-capturing TUI mode this is intentionally empty.
    */
   stderr: string;
+  /** True when execution exceeded configured timeout and was terminated. */
+  timedOut?: boolean;
 }
 
 /**
@@ -149,11 +151,14 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
       options.env,
     );
     const outputCaptured = options.captureOutput ?? mode === "wait";
+    const timeoutMs = normalizeTimeoutMs(options.timeoutMs);
     completeRuntimePhase(phase, {
       exitCode: result.exitCode,
       stdout: result.stdout,
       stderr: result.stderr,
       outputCaptured,
+      notes: buildTimeoutOutcomeNotes(phase.metadata.notes, result.timedOut === true, timeoutMs),
+      extra: result.timedOut === true ? { timedOut: true, timeoutMs } : undefined,
     });
     return result;
   } catch (error) {
@@ -269,6 +274,7 @@ function executeCommand(
               exitCode: 124,
               stdout: stdoutText,
               stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
+              timedOut: true,
             });
             return;
           }
@@ -277,6 +283,7 @@ function executeCommand(
             exitCode: code,
             stdout: stdoutText,
             stderr: stderrText,
+            timedOut: false,
           });
         });
         child.on("error", (error) => {
@@ -316,11 +323,12 @@ function executeCommand(
             exitCode: 124,
             stdout: "",
             stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
+            timedOut: true,
           });
           return;
         }
 
-        resolve({ exitCode: code, stdout: "", stderr: "" });
+        resolve({ exitCode: code, stdout: "", stderr: "", timedOut: false });
       });
       child.on("error", (error) => {
         if (settled) {
@@ -342,7 +350,7 @@ function executeCommand(
         env: env ? { ...process.env, ...env } : process.env,
       });
       child.unref();
-      resolve({ exitCode: null, stdout: "", stderr: "" });
+      resolve({ exitCode: null, stdout: "", stderr: "", timedOut: false });
       return;
     }
 
@@ -380,6 +388,7 @@ function executeCommand(
           exitCode: 124,
           stdout: stdoutText,
           stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
+          timedOut: true,
         });
         return;
       }
@@ -388,6 +397,7 @@ function executeCommand(
         exitCode: code,
         stdout: stdoutText,
         stderr: stderrText,
+        timedOut: false,
       });
     });
 
@@ -435,6 +445,19 @@ function clearWorkerTimeout(timeoutHandle: NodeJS.Timeout | null): void {
 
 function buildTimeoutFailureStderr(timeoutMs: number): string {
   return `Worker process timed out after ${timeoutMs}ms.`;
+}
+
+function buildTimeoutOutcomeNotes(
+  existingNotes: string | undefined,
+  timedOut: boolean,
+  timeoutMs: number,
+): string | undefined {
+  if (!timedOut || timeoutMs <= 0) {
+    return undefined;
+  }
+
+  const timeoutNote = `Worker execution timed out after ${timeoutMs}ms and was terminated with SIGTERM.`;
+  return existingNotes ? `${existingNotes} ${timeoutNote}` : timeoutNote;
 }
 
 /**

@@ -139,7 +139,9 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked items");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Output contract requirements for agentic tasks");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("one discovered value per line");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("in discovery order");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("without a literal `get-result:` prefix");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("empty response when nothing is found (no commentary)");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("that mixes iterative discovery with durable context capture");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`- [ ] loop: audit rollout blockers until no new blockers appear`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line (plain text, no bullets)`");
@@ -179,9 +181,12 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`remember:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memorize:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`inventory:`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked child items");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Output contract requirements for agentic tasks");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("one discovered value per line");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("in discovery order");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("without a literal `get-result:` prefix");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("empty response when nothing is found (no commentary)");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("that mixes iterative discovery with durable context capture");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`- [ ] loop: audit rollout blockers until no new blockers appear`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line (plain text, no bullets)`");
