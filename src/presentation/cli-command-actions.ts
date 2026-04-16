@@ -41,6 +41,8 @@ import {
   parseWorkerPattern,
   type ParsedWorkerPattern,
 } from "../domain/worker-pattern.js";
+import { parsePrefixChain, type PrefixChain } from "../domain/prefix-chain.js";
+import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { CliApp } from "./cli-app-init.js";
 import type {
   QueryCommandInvocationOptions,
@@ -48,6 +50,11 @@ import type {
 } from "./cli-invocation-types.js";
 import { resolveInvocationWorkspaceContext } from "./invocation-workspace-context.js";
 import { getAgentsTemplate } from "../domain/agents-template.js";
+import {
+  createNodeFileSystem,
+  createNodePathOperationsAdapter,
+  createToolResolverAdapter,
+} from "../infrastructure/adapters/index.js";
 import type {
   WithTaskConfiguredKeyResult,
   WithTaskResult,
@@ -1692,8 +1699,9 @@ async function runMakeBootstrapPhases({
   verbose,
 }: RunMakeBootstrapPhasesOptions): Promise<number> {
   const sharedWorkerPattern = sharedRuntimeOptions.workerPattern;
+  const resolvedSeedText = resolveBootstrapSeedText(seedText, sharedRuntimeOptions.configDirOption);
 
-  createSeedMarkdownFile(targetMarkdownFile, seedText);
+  createSeedMarkdownFile(targetMarkdownFile, resolvedSeedText);
 
   emitCliInfo(app, "Make phase 1/2: research");
 
@@ -2007,6 +2015,103 @@ export function createUnlockCommandAction({
 }: Pick<WorkerActionDependencies, "getApp">): (source: string) => CliActionResult {
   // Unlock requests are direct pass-through operations.
   return (source: string) => getApp().unlockTask({ source });
+}
+
+const BOOTSTRAP_APPLICABLE_MODIFIERS = new Set(["profile"]);
+
+function resolveBootstrapSeedText(seedText: string, configDirOption: string | undefined): string {
+  const rawSeedText = seedText;
+  if (rawSeedText.trim().length === 0) {
+    return rawSeedText;
+  }
+
+  const pathOperations = createNodePathOperationsAdapter();
+  const explicitConfigDir = configDirOption
+    ? {
+      configDir: pathOperations.resolve(process.cwd(), configDirOption),
+      isExplicit: true,
+    }
+    : undefined;
+  const configDir = explicitConfigDir ?? resolveConfigDirForInvocation();
+
+  const toolResolver = createToolResolverAdapter({
+    fileSystem: createNodeFileSystem(),
+    pathOperations,
+    configDir,
+  });
+
+  let prefixChain: PrefixChain;
+  try {
+    prefixChain = parsePrefixChain(rawSeedText, toolResolver);
+  } catch {
+    return rawSeedText;
+  }
+
+  if (!isBootstrapApplicablePrefixChain(prefixChain)) {
+    return rawSeedText;
+  }
+
+  const rendered = renderBootstrapSeedTemplate(prefixChain, rawSeedText);
+  return rendered ?? rawSeedText;
+}
+
+function isBootstrapApplicablePrefixChain(prefixChain: PrefixChain): boolean {
+  if (!prefixChain.handler) {
+    return false;
+  }
+
+  for (const modifier of prefixChain.modifiers) {
+    if (!BOOTSTRAP_APPLICABLE_MODIFIERS.has(modifier.tool.name.toLowerCase())) {
+      return false;
+    }
+  }
+
+  const handlerTool = prefixChain.handler.tool;
+  if (handlerTool.kind !== "handler") {
+    return false;
+  }
+
+  return typeof handlerTool.template === "string";
+}
+
+function renderBootstrapSeedTemplate(prefixChain: PrefixChain, rawSeedText: string): string | undefined {
+  const handler = prefixChain.handler;
+  if (!handler || typeof handler.tool.template !== "string") {
+    return undefined;
+  }
+
+  const profile = resolveBootstrapProfile(prefixChain);
+  const templateVars: TemplateVars = {
+    task: rawSeedText,
+    payload: handler.payload,
+    file: "",
+    context: "",
+    taskIndex: 0,
+    taskLine: 1,
+    source: rawSeedText,
+    profile,
+    seed: rawSeedText,
+  };
+
+  try {
+    return renderTemplate(handler.tool.template, templateVars);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveBootstrapProfile(prefixChain: PrefixChain): string | undefined {
+  let profile: string | undefined;
+  for (const modifier of prefixChain.modifiers) {
+    if (modifier.tool.name.toLowerCase() === "profile") {
+      const candidate = modifier.payload.trim();
+      if (candidate.length > 0) {
+        profile = candidate;
+      }
+    }
+  }
+
+  return profile;
 }
 
 /**
