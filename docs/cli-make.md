@@ -1,6 +1,7 @@
 # CLI: `make`
 
 Create a new Markdown file from seed text, then run `research` followed by `plan` on that same file.
+Use `--skip-research` (or alias `--raw`) to bypass phase 1 and start from planning.
 
 ## Global option: `--config-dir <path>`
 
@@ -26,13 +27,19 @@ Arguments:
 
 1. create target Markdown file,
 2. write `seed-text` as the initial file body,
-3. run `research` on that file,
+3. run `research` on that file (optional when skip mode is enabled),
 4. run `plan` on that file.
+
+When skip mode is enabled (`--skip-research` or `--raw`), `make` emits skip-phase messaging and runs:
+
+1. create target Markdown file,
+2. write `seed-text` as the initial file body,
+3. run `plan` on that file.
 
 Execution is sequential and fail-fast:
 
 - If file creation fails, `research` and `plan` do not run.
-- If `research` fails, `plan` does not run.
+- If `research` runs and fails, `plan` does not run.
 - If `plan` fails, `make` exits non-zero and preserves generated artifacts per normal command behavior.
 
 Input rules:
@@ -48,6 +55,7 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--mode <mode>` | Make execution mode. Only `wait` is supported for deterministic non-interactive chaining. | `wait` |
+| `--skip-research`, `--raw` | Skip phase 1 research and start directly from planning after seed creation. | off |
 | `--scan-count <n>` | Maximum clean-session scan iterations cap for the `plan` phase. Must be a safe positive integer. Omit for convergence-driven planning (no user-set scan cap). | unset |
 | `--force-unlock` | Remove stale source lockfiles before each phase lock acquisition. Active locks held by live processes are not removed. | off |
 | `--dry-run` | Render phase prompts + execution intent and exit without running workers. | off |
@@ -71,6 +79,12 @@ Examples:
 ```bash
 # One-step authoring bootstrap: create -> research -> plan
 rundown make "please do something" "8. Do something.md"
+
+# Skip research and start from planning
+rundown make --skip-research "please do something" "8. Do something.md"
+
+# Compatibility alias for skip-research
+rundown make --raw "please do something" "8. Do something.md"
 
 # Use .markdown extension
 rundown make "Draft migration plan" "docs/migration.markdown"
