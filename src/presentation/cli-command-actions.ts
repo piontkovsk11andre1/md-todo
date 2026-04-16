@@ -1619,6 +1619,7 @@ export function createMakeCommandAction({
     const {
       workspaceRuntimeOptions,
       mode,
+      skipResearch,
       sharedRuntimeOptions,
       dryRun,
       printPrompt,
@@ -1633,6 +1634,7 @@ export function createMakeCommandAction({
       targetMarkdownFile,
       workspaceRuntimeOptions,
       mode,
+      skipResearch,
       sharedRuntimeOptions,
       dryRun,
       printPrompt,
@@ -1649,6 +1651,7 @@ interface RunMakeBootstrapPhasesOptions {
   targetMarkdownFile: string;
   workspaceRuntimeOptions: WorkerWorkspaceRuntimeOptions;
   mode: ProcessRunMode;
+  skipResearch: boolean;
   sharedRuntimeOptions: ReturnType<typeof resolveSharedWorkerRuntimeOptions>;
   dryRun: boolean;
   printPrompt: boolean;
@@ -1693,6 +1696,7 @@ async function runMakeBootstrapPhases({
   targetMarkdownFile,
   workspaceRuntimeOptions,
   mode,
+  skipResearch,
   sharedRuntimeOptions,
   dryRun,
   printPrompt,
@@ -1704,6 +1708,31 @@ async function runMakeBootstrapPhases({
   const resolvedSeedText = resolveBootstrapSeedText(seedText, sharedRuntimeOptions.configDirOption);
 
   createSeedMarkdownFile(targetMarkdownFile, resolvedSeedText);
+
+  if (skipResearch) {
+    emitCliInfo(app, "Make skip: phase 1/2 research (--skip-research); starting from plan");
+    emitCliInfo(app, "Make phase 2/2: plan");
+
+    return normalizeMakePhaseExitCode(await app.planTask({
+      source: targetMarkdownFile,
+      ...workspaceRuntimeOptions,
+      scanCount,
+      maxItems,
+      mode,
+      workerPattern: sharedWorkerPattern,
+      showAgentOutput: sharedRuntimeOptions.showAgentOutput,
+      dryRun,
+      printPrompt,
+      keepArtifacts: sharedRuntimeOptions.keepArtifacts,
+      trace: sharedRuntimeOptions.trace,
+      forceUnlock: sharedRuntimeOptions.forceUnlock,
+      ignoreCliBlock: sharedRuntimeOptions.ignoreCliBlock,
+      cliBlockTimeoutMs: sharedRuntimeOptions.cliBlockTimeoutMs,
+      varsFileOption: sharedRuntimeOptions.varsFileOption,
+      cliTemplateVarArgs: sharedRuntimeOptions.cliTemplateVarArgs,
+      verbose,
+    }));
+  }
 
   emitCliInfo(app, "Make phase 1/2: research");
 
@@ -1779,6 +1808,7 @@ export function createDoCommandAction({
     const {
       workspaceRuntimeOptions,
       mode,
+      skipResearch,
       sharedRuntimeOptions,
       dryRun,
       printPrompt,
@@ -1831,6 +1861,7 @@ export function createDoCommandAction({
       targetMarkdownFile,
       workspaceRuntimeOptions,
       mode,
+      skipResearch,
       sharedRuntimeOptions,
       dryRun,
       printPrompt,
