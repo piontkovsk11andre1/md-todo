@@ -14,6 +14,9 @@ Store templates in `.rundown/`:
   help.md
   execute.md
   research.md
+  research-verify.md
+  research-repair.md
+  research-resolve.md
   verify.md
   repair.md
   resolve.md
@@ -29,6 +32,15 @@ Store templates in `.rundown/`:
   test-future.md
   test-verify.md
   migrate.md
+  migrate-ux.md
+  migrate-context.md
+  migrate-snapshot.md
+  migrate-backlog.md
+  migrate-review.md
+  query-seed.md
+  query-execute.md
+  query-stream-execute.md
+  query-aggregate.md
   vars.json
 ```
 
@@ -40,6 +52,9 @@ Store templates in `.rundown/`:
 | `.rundown/help.md` | Instructions for no-argument live help sessions |
 | `.rundown/execute.md` | Instructions for doing the task |
 | `.rundown/research.md` | Instructions for enriching document context before planning |
+| `.rundown/research-verify.md` | Instructions for validating research-phase output quality and completeness |
+| `.rundown/research-repair.md` | Instructions for repairing research output after failed research verification |
+| `.rundown/research-resolve.md` | Instructions for diagnosis and guidance after repeated failed research repairs |
 | `.rundown/verify.md` | Instructions for deciding whether the task is truly complete |
 | `.rundown/repair.md` | Instructions for fixing a failed attempt |
 | `.rundown/resolve.md` | Instructions for diagnosis and guidance before resolve-informed repair retries |
@@ -55,6 +70,15 @@ Store templates in `.rundown/`:
 | `.rundown/trace.md` | Instructions for trace-context enrichment output used by preview, plan, and execution flows |
 | `.rundown/undo.md` | Instructions for preparing and applying rollback prompts in `rundown undo` |
 | `.rundown/migrate.md` | Instructions for migration generation in `rundown migrate` |
+| `.rundown/migrate-ux.md` | UX and interaction instructions for migration flows in `rundown migrate` |
+| `.rundown/migrate-context.md` | Instructions for building incremental migration context in `rundown migrate` |
+| `.rundown/migrate-snapshot.md` | Instructions for capturing current migration state in `rundown migrate` |
+| `.rundown/migrate-backlog.md` | Instructions for extracting migration backlog and technical debt in `rundown migrate` |
+| `.rundown/migrate-review.md` | Instructions for migration review against design and context in `rundown migrate` |
+| `.rundown/query-seed.md` | Instructions for seed extraction and decomposition in `rundown query` |
+| `.rundown/query-execute.md` | Instructions for non-stream query execution in `rundown query` |
+| `.rundown/query-stream-execute.md` | Instructions for streamed query execution in `rundown query --stream` |
+| `.rundown/query-aggregate.md` | Instructions for final aggregation and synthesis in `rundown query` |
 
 ## Planner guidance files (optional)
 

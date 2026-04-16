@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
+  DEFAULT_QUERY_EXECUTION_TEMPLATE,
+  DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_REPAIR_TEMPLATE,
   DEFAULT_RESEARCH_VERIFY_TEMPLATE,
   DEFAULT_RESOLVE_TEMPLATE,
@@ -138,13 +140,13 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`inventory:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked items");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("Output contract requirements for agentic tasks");
-    expect(DEFAULT_PLAN_TEMPLATE).toContain("one discovered value per line");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("one discovered value per line in discovery order using either plain text lines or one-item-per-line Markdown list items");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("in discovery order");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("without a literal `get-result:` prefix");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("empty response when nothing is found (no commentary)");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("that mixes iterative discovery with durable context capture");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`- [ ] loop: audit rollout blockers until no new blockers appear`");
-    expect(DEFAULT_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line (plain text, no bullets)`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line using plain lines or Markdown list items (bullets or numbering; no JSON)`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`  - [ ] memory: capture blocker trends that should influence the next pass`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`  - [ ] end: stop when two consecutive passes produce no new blockers`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("explicit terminal stop condition via an `end:` step");
@@ -184,16 +186,32 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked child items");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("If child plan coverage is already sufficient, leave the file unchanged.");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Output contract requirements for agentic tasks");
-    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("one discovered value per line");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("one discovered value per line in discovery order using either plain text lines or one-item-per-line Markdown list items");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("in discovery order");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("without a literal `get-result:` prefix");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("empty response when nothing is found (no commentary)");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("that mixes iterative discovery with durable context capture");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`- [ ] loop: audit rollout blockers until no new blockers appear`");
-    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line (plain text, no bullets)`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`  - [ ] get: list one blocker per line using plain lines or Markdown list items (bullets or numbering; no JSON)`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`  - [ ] memory: capture blocker trends that should influence the next pass`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`  - [ ] end: stop when two consecutive passes produce no new blockers`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("explicit terminal stop condition via an `end:` step");
+  });
+
+  it("enforces deterministic query execution output contracts", () => {
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("## Output contract (strict)");
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("Output extracted items only.");
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("Emit exactly one extracted item per line.");
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("Preserve discovery order.");
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("Do not add commentary, headings, labels, code fences, or JSON.");
+    expect(DEFAULT_QUERY_EXECUTION_TEMPLATE).toContain("If no items are found, write an empty file.");
+
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("## Output contract (strict)");
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("Output extracted items only.");
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("Emit exactly one extracted item per line.");
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("Preserve discovery order.");
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("Do not add commentary, headings, labels, code fences, or JSON.");
+    expect(DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE).toContain("If no items are found, print nothing.");
   });
 
   it("keeps memory-vs-write classification fixtures consistent in plan and deep-plan templates", () => {
@@ -290,7 +308,7 @@ describe("default prompt templates", () => {
     expect(DEFAULT_HELP_TEMPLATE).toContain("Fallback mode for non-rundown questions");
     expect(DEFAULT_HELP_TEMPLATE).toContain("answer directly as a normal assistant");
 
-    expect(DEFAULT_HELP_TEMPLATE).toContain("Author new tasks with canonical prefixes only: `verify:`, `memory:`, and `fast:`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("Author new tasks with canonical prefixes only: `verify:`, `memory:`, `fast:`, `get:`, and `loop:`.");
     expect(DEFAULT_HELP_TEMPLATE).toContain("Treat alias prefixes (`check:`, `confirm:`, `quick:`, `raw:`, `memorize:`, `remember:`, `inventory:`) as legacy compatibility forms and normalize them to canonical names when encountered.");
 
     expect(DEFAULT_HELP_TEMPLATE).toContain("Customizable templates:");

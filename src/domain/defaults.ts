@@ -126,11 +126,11 @@ Heuristics:
 
 Output contract requirements for agentic tasks:
 
-- For \`get:\` {{inlineTaskSubject}}, make the requested stdout format explicit in task text: one discovered value per line in discovery order, with no bullets/numbering/JSON, and without a literal \`get-result:\` prefix. Require an empty response when nothing is found (no commentary). The runtime writes canonical \`get-result:\` sub-items.
+- For \`get:\` {{inlineTaskSubject}}, make the requested stdout format explicit in task text: one discovered value per line in discovery order using either plain text lines or one-item-per-line Markdown list items (bullets or ordered numbering; no JSON), and without a literal \`get-result:\` prefix. Require an empty response when nothing is found (no commentary). The runtime writes canonical \`get-result:\` sub-items.
 - For \`loop:\` {{inlineTaskSubject}} that mixes iterative discovery with durable context capture, use this bounded child pattern so outputs stay reusable across passes:
 
   \`- [ ] loop: audit rollout blockers until no new blockers appear\`
-  \`  - [ ] get: list one blocker per line (plain text, no bullets)\`
+  \`  - [ ] get: list one blocker per line using plain lines or Markdown list items (bullets or numbering; no JSON)\`
   \`  - [ ] memory: capture blocker trends that should influence the next pass\`
   \`  - [ ] end: stop when two consecutive passes produce no new blockers\`
 
@@ -1289,6 +1289,32 @@ Rules:
 `;
 
 /**
+ * Default planner prepend guidance template created by `rundown init`.
+ *
+ * Advisory-only guidance consumed by plan/deep-plan templates.
+ */
+export const DEFAULT_PLAN_PREPEND_TEMPLATE = `\
+When planning implementation work, front-load discovery when facts are uncertain.
+
+- Prefer early \`get:\` tasks for concrete inventory and constraints that downstream TODOs depend on.
+- Prefer early \`memory:\` tasks for reusable context capture that should persist across execution steps.
+- For iterative unknowns, use \`loop:\` with explicit \`end:\` stop conditions.
+`;
+
+/**
+ * Default planner append guidance template created by `rundown init`.
+ *
+ * Advisory-only guidance consumed by plan/deep-plan templates.
+ */
+export const DEFAULT_PLAN_APPEND_TEMPLATE = `\
+When planning implementation work, close with confidence-building completion tasks.
+
+- Use \`fast:\` for small mechanical edits where per-item verification is unnecessary.
+- Use \`verify:\` tasks near the end for stack-appropriate validation of changed behavior.
+- End multi-step changes with a clear integration or handoff check before task completion.
+`;
+
+/**
  * Default deep-plan prompt template used to directly edit missing child TODO
  * items for a single parent task.
  */
@@ -1626,12 +1652,13 @@ Write your findings to this file and do not print the findings to stdout:
 
 \`{{workdir}}/step-{{taskIndex}}.md\`
 
-The file must be Markdown and should include:
+## Output contract (strict)
 
-1. A short title for the step
-2. Key findings with concrete evidence (files, symbols, behaviors)
-3. Open questions or uncertainty, if any
-4. A concise conclusion for this step
+- Output extracted items only.
+- Emit exactly one extracted item per line.
+- Preserve discovery order.
+- Do not add commentary, headings, labels, code fences, or JSON.
+- If no items are found, write an empty file.
 `;
 
 /**
@@ -1654,12 +1681,13 @@ You are executing one step of a query investigation plan.
 Investigate the task and print findings directly to stdout in Markdown.
 Do not write step output files in this mode.
 
-Include:
+## Output contract (strict)
 
-1. A short title for the step
-2. Key findings with concrete evidence (files, symbols, behaviors)
-3. Open questions or uncertainty, if any
-4. A concise conclusion for this step
+- Output extracted items only.
+- Emit exactly one extracted item per line.
+- Preserve discovery order.
+- Do not add commentary, headings, labels, code fences, or JSON.
+- If no items are found, print nothing.
 `;
 
 /**

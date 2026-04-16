@@ -167,6 +167,7 @@ describe("builtin-tools/get getHandler", () => {
     expect(runWorker).toHaveBeenCalledTimes(1);
     const runWorkerPrompt = runWorker.mock.calls[0]?.[0]?.prompt ?? "";
     expect(runWorkerPrompt).toContain("You are a full-scale research agent resolving a task query against the current project.");
+    expect(runWorkerPrompt).toContain("Do not wrap output in code fences.");
     expect(runWorkerPrompt).toContain("Task:");
     expect(runWorkerPrompt).toContain("get: All current names of this and that");
     expect(runWorkerPrompt).toContain("Full source document:");
