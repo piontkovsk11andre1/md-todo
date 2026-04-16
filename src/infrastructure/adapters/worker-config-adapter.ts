@@ -415,6 +415,14 @@ function validateNonNegativeNumber(value: unknown, keyPath: string): number {
   return value;
 }
 
+function validateNonNegativeInteger(value: unknown, keyPath: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected non-negative integer.`);
+  }
+
+  return value;
+}
+
 function validatePositiveInteger(value: unknown, keyPath: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new Error(`Invalid worker config at ${keyPath}: expected positive integer.`);
@@ -537,11 +545,15 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
   }
 
   const workers = value.workers;
+  const workerTimeoutMs = value.workerTimeoutMs;
   const commands = value.commands;
   const profiles = value.profiles;
 
   return {
     workers: workers === undefined ? undefined : validateWorkers(workers, "workers"),
+    workerTimeoutMs: workerTimeoutMs === undefined
+      ? undefined
+      : validateNonNegativeInteger(workerTimeoutMs, "workerTimeoutMs"),
     commands: commands === undefined ? undefined : validateCommandProfiles(commands, "commands"),
     profiles: profiles === undefined ? undefined : validateProfileMap(profiles, "profiles"),
     traceStatistics: value.traceStatistics === undefined
@@ -976,6 +988,7 @@ function mergeWorkerConfig(
 
   return {
     workers: mergeWorkers(base?.workers, override?.workers),
+    workerTimeoutMs: override?.workerTimeoutMs ?? base?.workerTimeoutMs,
     commands: mergeCommandProfiles(base?.commands, override?.commands),
     profiles: mergeProfileMaps(base?.profiles, override?.profiles),
     traceStatistics: override?.traceStatistics !== undefined
@@ -993,6 +1006,7 @@ function applyBuiltInDefaults(config: WorkerConfig | undefined): WorkerConfig | 
 
   return {
     workers: cloneWorkers(config.workers),
+    workerTimeoutMs: config.workerTimeoutMs,
     commands: cloneWorkerCommandProfiles(config.commands),
     profiles: cloneCommandProfiles(config.profiles),
     traceStatistics: config.traceStatistics

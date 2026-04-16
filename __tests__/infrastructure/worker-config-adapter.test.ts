@@ -460,6 +460,79 @@ describe("createWorkerConfigAdapter", () => {
     });
   });
 
+  it("loads workerTimeoutMs when configured", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workerTimeoutMs: 2500,
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workerTimeoutMs: 2500,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+    });
+  });
+
+  it("merges workerTimeoutMs with local override semantics", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workerTimeoutMs: 500,
+      }),
+    );
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        workerTimeoutMs: 2_000,
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.readValue?.(configDir, "global", "workerTimeoutMs")).toBe(2_000);
+    expect(adapter.readValue?.(configDir, "local", "workerTimeoutMs")).toBe(500);
+    expect(adapter.readValue?.(configDir, "effective", "workerTimeoutMs")).toBe(500);
+  });
+
+  it("supports workerTimeoutMs dotted-path set and unset", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(configDir, "{}\n");
+
+    const adapter = createWorkerConfigAdapter();
+    expect(adapter.setValue?.(configDir, {
+      scope: "local",
+      keyPath: "workerTimeoutMs",
+      value: 0,
+    })).toEqual({
+      configPath: path.join(configDir, "config.json"),
+      changed: true,
+    });
+
+    expect(adapter.readValue?.(configDir, "local", "workerTimeoutMs")).toBe(0);
+    expect(adapter.listValues?.(configDir, "local")).toEqual({
+      workerTimeoutMs: 0,
+    });
+
+    expect(adapter.unsetValue?.(configDir, {
+      scope: "local",
+      keyPath: "workerTimeoutMs",
+    })).toEqual({
+      configPath: path.join(configDir, "config.json"),
+      changed: true,
+    });
+
+    expect(adapter.readValue?.(configDir, "local", "workerTimeoutMs")).toBeUndefined();
+  });
+
   it("merges global defaults with local overrides", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
@@ -718,6 +791,22 @@ describe("createWorkerConfigAdapter", () => {
 
     expect(() => adapter.load(configDir)).toThrow(
       `Invalid worker config at "${configPath}": Invalid worker config at run.commitMode: expected one of per-task, file-done.`,
+    );
+  });
+
+  it("rejects non-integer workerTimeoutMs values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        workerTimeoutMs: 2500.5,
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at workerTimeoutMs: expected non-negative integer.`,
     );
   });
 

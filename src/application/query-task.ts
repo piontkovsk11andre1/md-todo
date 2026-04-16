@@ -1,7 +1,6 @@
 import {
   DEFAULT_QUERY_EXECUTION_TEMPLATE,
   DEFAULT_QUERY_SEED_TEMPLATE,
-  DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
   DEFAULT_QUERY_AGGREGATION_TEMPLATE,
   DEFAULT_QUERY_YN_SEED_TEMPLATE,
@@ -212,6 +211,7 @@ export function createQueryTask(
       const executionTemplate = selectQueryExecutionTemplate(
         fileMode,
         projectTemplates?.queryExecute,
+        projectTemplates?.queryStreamExecute,
       );
       const runCode = await dependencies.runTask({
         source: queryDocumentPath,
@@ -304,14 +304,20 @@ function selectQuerySeedTemplate(format: QueryOutputFormat, projectSeedTemplate?
   return DEFAULT_QUERY_SEED_TEMPLATE;
 }
 
-function selectQueryExecutionTemplate(fileMode: boolean, projectExecutionTemplate?: string): string {
+function selectQueryExecutionTemplate(
+  fileMode: boolean,
+  projectExecutionTemplate?: string,
+  projectStreamExecutionTemplate?: string,
+): string {
   if (isCustomQueryTemplate(projectExecutionTemplate, DEFAULT_QUERY_EXECUTION_TEMPLATE)) {
     return projectExecutionTemplate;
   }
 
-  return fileMode
-    ? DEFAULT_QUERY_EXECUTION_TEMPLATE
-    : DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE;
+  if (fileMode) {
+    return DEFAULT_QUERY_EXECUTION_TEMPLATE;
+  }
+
+  return projectStreamExecutionTemplate ?? projectExecutionTemplate ?? DEFAULT_QUERY_EXECUTION_TEMPLATE;
 }
 
 function applyAggregationTemplateOverride(options: {

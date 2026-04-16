@@ -7,6 +7,7 @@ import {
   DEFAULT_PLAN_TEMPLATE,
   DEFAULT_QUERY_AGGREGATION_TEMPLATE,
   DEFAULT_QUERY_EXECUTION_TEMPLATE,
+  DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_RESEARCH_REPAIR_TEMPLATE,
   DEFAULT_RESEARCH_RESOLVE_TEMPLATE,
   DEFAULT_RESEARCH_VERIFY_TEMPLATE,
@@ -48,6 +49,7 @@ export interface ProjectTemplates {
   trace: string;
   querySeed: string;
   queryExecute: string;
+  queryStreamExecute: string;
   queryAggregate: string;
 }
 
@@ -82,6 +84,7 @@ export function loadProjectTemplatesFromPorts(
       trace: DEFAULT_TRACE_TEMPLATE,
       querySeed: DEFAULT_QUERY_SEED_TEMPLATE,
       queryExecute: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+      queryStreamExecute: DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
       queryAggregate: DEFAULT_QUERY_AGGREGATION_TEMPLATE,
     };
   }
@@ -125,6 +128,9 @@ export function loadProjectTemplatesFromPorts(
     queryExecute:
       templateLoader.load(pathOperations.join(dir, "query-execute.md")) ??
       DEFAULT_QUERY_EXECUTION_TEMPLATE,
+    queryStreamExecute:
+      templateLoader.load(pathOperations.join(dir, "query-stream-execute.md")) ??
+      DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
     queryAggregate:
       templateLoader.load(pathOperations.join(dir, "query-aggregate.md")) ??
       DEFAULT_QUERY_AGGREGATION_TEMPLATE,
