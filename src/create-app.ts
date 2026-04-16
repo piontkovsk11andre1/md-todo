@@ -418,6 +418,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     templateLoader: ports.templateLoader,
     workingDirectory: ports.workingDirectory,
     pathOperations: ports.pathOperations,
+    workerConfigPort: ports.workerConfigPort,
     configDir: ports.configDir,
     output: ports.output,
   });
@@ -432,6 +433,8 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
 
   const testSpecsUseCase = (ports: AppPorts) => createTestSpecs({
     workerExecutor: ports.workerExecutor,
+    workerConfigPort: ports.workerConfigPort,
+    configDir: ports.configDir,
     fileSystem: ports.fileSystem,
     templateLoader: ports.templateLoader,
     output: ports.output,

@@ -67,6 +67,7 @@ export function createHelpTask(
 
     try {
       let resolvedWorkerCommand: string[] = [];
+      let workerTimeoutMs: number | undefined;
       let resolvedWorkerPattern: ParsedWorkerPattern = {
         command: [],
         usesBootstrap: false,
@@ -78,6 +79,7 @@ export function createHelpTask(
         const loadedWorkerConfig = dependencies.configDir?.configDir
           ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
           : undefined;
+        workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
         const resolvedWorker = resolveWorkerPatternForInvocation({
           commandName: "help",
           workerConfig: loadedWorkerConfig,
@@ -195,6 +197,7 @@ export function createHelpTask(
         captureOutput: options.keepArtifacts,
         cwd,
         configDir: dependencies.configDir?.configDir,
+        timeoutMs: workerTimeoutMs,
         artifactContext: activeArtifactContext,
         artifactPhase: "worker",
         artifactPhaseLabel: "help",

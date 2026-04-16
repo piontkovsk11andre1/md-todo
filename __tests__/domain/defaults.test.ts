@@ -278,6 +278,9 @@ describe("default prompt templates", () => {
     expect(DEFAULT_HELP_TEMPLATE).toContain("Fallback mode for non-rundown questions");
     expect(DEFAULT_HELP_TEMPLATE).toContain("answer directly as a normal assistant");
 
+    expect(DEFAULT_HELP_TEMPLATE).toContain("Author new tasks with canonical prefixes only: `verify:`, `memory:`, and `fast:`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("Treat alias prefixes (`check:`, `confirm:`, `quick:`, `raw:`, `memorize:`, `remember:`, `inventory:`) as legacy compatibility forms and normalize them to canonical names when encountered.");
+
     expect(DEFAULT_HELP_TEMPLATE).toContain("Customizable templates:");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`agent.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`deep-plan.md`");

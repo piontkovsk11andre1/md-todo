@@ -578,6 +578,7 @@ export function createResearchTask(
         });
         const resolvedWorkerCommand = resolvedWorker.workerCommand;
         const resolvedWorkerPattern = resolvedWorker.workerPattern;
+        const workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
 
         if (resolvedWorkerCommand.length === 0) {
           const message = "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.";
@@ -636,6 +637,7 @@ export function createResearchTask(
           cwd,
           env: rundownVarEnv,
           configDir: dependencies.configDir?.configDir,
+          timeoutMs: workerTimeoutMs,
           artifactContext,
           artifactPhase: "execute",
           artifactExtra: {
@@ -800,6 +802,7 @@ export function createResearchTask(
               cwd,
               env: repairOptions.executionEnv,
               configDir: repairOptions.configDir,
+              timeoutMs: workerTimeoutMs,
               artifactContext: repairOptions.artifactContext,
               artifactPhase: "repair",
               artifactExtra: {

@@ -15,6 +15,7 @@ import type {
   PathOperationsPort,
   TemplateLoader,
   TraceWriterPort,
+  WorkerConfigPort,
   WorkerExecutorPort,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
@@ -51,6 +52,7 @@ export interface TraceOnlyEnrichmentDependencies {
   pathOperations: PathOperationsPort;
   templateLoader: TemplateLoader;
   workerExecutor: WorkerExecutorPort;
+  workerConfigPort: WorkerConfigPort;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactRunContext) => TraceWriterPort;
   emit: ApplicationOutputPort["emit"];
 }
@@ -182,6 +184,9 @@ export async function runTraceOnlyEnrichment(
   const nowIso = (): string => new Date().toISOString();
   const sequence = phaseArtifacts.length + 1;
   const phaseStartedAtMs = Date.now();
+  const workerTimeoutMs = dependencies.configDir?.configDir
+    ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)?.workerTimeoutMs
+    : undefined;
 
   dependencies.emit({ kind: "info", message: "Trace-only enrichment for run: " + selectedRun.runId });
 
@@ -206,6 +211,7 @@ export async function runTraceOnlyEnrichment(
       trace: false,
       cwd,
       configDir: dependencies.configDir?.configDir,
+      timeoutMs: workerTimeoutMs,
     });
 
     // Persist completion and output-volume metrics for the synthetic phase.

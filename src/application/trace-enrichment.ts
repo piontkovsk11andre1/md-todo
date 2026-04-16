@@ -48,6 +48,7 @@ export async function runTraceEnrichment(params: {
     RunTaskDependencies,
     "fileSystem" | "pathOperations" | "workerExecutor" | "workingDirectory" | "configDir"
   >;
+  workerTimeoutMs?: number;
   emit: EmitFn;
 }): Promise<void> {
   const {
@@ -57,6 +58,7 @@ export async function runTraceEnrichment(params: {
     traceRunSession,
     traceEnrichmentContext,
     dependencies,
+    workerTimeoutMs,
     emit,
   } = params;
 
@@ -122,6 +124,7 @@ export async function runTraceEnrichment(params: {
       trace: false,
       cwd: dependencies.workingDirectory.cwd(),
       configDir: dependencies.configDir?.configDir,
+      timeoutMs: workerTimeoutMs,
       artifactContext,
       artifactPhase: "worker",
       artifactExtra: {

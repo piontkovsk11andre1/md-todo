@@ -428,6 +428,7 @@ export function createDiscussTask(
       });
       const resolvedWorkerCommand = resolvedWorker.workerCommand;
       const resolvedWorkerPattern = resolvedWorker.workerPattern;
+      const workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
       const templates = loadProjectTemplatesFromPorts(
         dependencies.configDir,
         dependencies.templateLoader,
@@ -608,6 +609,7 @@ export function createDiscussTask(
           cwd,
           env: rundownVarEnv,
           configDir: dependencies.configDir?.configDir,
+          timeoutMs: workerTimeoutMs,
           artifactContext,
           artifactPhase: "discuss",
         });

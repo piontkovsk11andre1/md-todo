@@ -653,6 +653,7 @@ export function createRunTaskExecution(
         pathOperations: dependencies.pathOperations,
         templateLoader: dependencies.templateLoader,
         workerExecutor: dependencies.workerExecutor,
+        workerConfigPort: dependencies.workerConfigPort,
         createTraceWriter: dependencies.createTraceWriter,
         emit,
       }, {
@@ -848,6 +849,7 @@ export function createRunTaskExecution(
         traceRunSession,
         traceEnrichmentContext: state.traceEnrichmentContext,
         dependencies,
+        workerTimeoutMs: loadedWorkerConfig?.workerTimeoutMs,
         emit,
       });
       traceRunSession.emitDeferredEvents();

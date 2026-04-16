@@ -605,6 +605,7 @@ export async function runTaskIteration(params: {
     resolvedWorkerPattern,
     trace: execution.trace,
     cwd: prompts.cwd,
+    workerTimeoutMs: worker.loadedWorkerConfig?.workerTimeoutMs,
     executionEnv: prompts.executionEnv,
     cliExecutionOptionsWithVerificationTemplateFailureAbort:
       preparedPrompts.cliExecutionOptionsWithVerificationTemplateFailureAbort,

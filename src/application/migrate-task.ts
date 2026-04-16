@@ -195,6 +195,7 @@ export function createMigrateTask(
     const loadedWorkerConfig = dependencies.fileSystem.exists(configDir)
       ? dependencies.workerConfigPort.load(configDir)
       : undefined;
+    const workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
     const resolvedWorker = resolveWorkerPatternForInvocation({
       commandName: "migrate",
       workerConfig: loadedWorkerConfig,
@@ -231,6 +232,7 @@ export function createMigrateTask(
         migrationsDir,
         workspaceRoot,
         slugWorkerPattern,
+        workerTimeoutMs,
         artifactContext: undefined,
         showAgentOutput: Boolean(options.showAgentOutput),
       });
@@ -319,11 +321,12 @@ export function createMigrateTask(
            workspaceDirectories,
            workspacePlacement,
            workspacePaths,
-           workerPattern: resolvedWorker.workerPattern,
-           slugWorkerPattern,
-           artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+            workerPattern: resolvedWorker.workerPattern,
+            slugWorkerPattern,
+            workerTimeoutMs,
+            artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "snapshot") {
         await generateSatellite({
@@ -338,10 +341,11 @@ export function createMigrateTask(
            templateFile: "migrate-snapshot.md",
            defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
            satelliteType: "snapshot",
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+           workerPattern: resolvedWorker.workerPattern,
+           workerTimeoutMs,
+           artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "backlog") {
         await generateSatellite({
@@ -356,10 +360,11 @@ export function createMigrateTask(
            templateFile: "migrate-backlog.md",
            defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
            satelliteType: "backlog",
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+           workerPattern: resolvedWorker.workerPattern,
+           workerTimeoutMs,
+           artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "context") {
         await generateSatellite({
@@ -374,10 +379,11 @@ export function createMigrateTask(
            templateFile: "migrate-context.md",
            defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
            satelliteType: "context",
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+           workerPattern: resolvedWorker.workerPattern,
+           workerTimeoutMs,
+           artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "review") {
         await generateSatellite({
@@ -392,10 +398,11 @@ export function createMigrateTask(
            templateFile: "migrate-review.md",
            defaultTemplate: DEFAULT_MIGRATE_REVIEW_TEMPLATE,
            satelliteType: "review",
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+           workerPattern: resolvedWorker.workerPattern,
+           workerTimeoutMs,
+           artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "user-experience") {
         await generateSatellite({
@@ -410,10 +417,11 @@ export function createMigrateTask(
            templateFile: "migrate-ux.md",
            defaultTemplate: DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
            satelliteType: "user-experience",
-          workerPattern: resolvedWorker.workerPattern,
-          artifactContext,
-          confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+           workerPattern: resolvedWorker.workerPattern,
+           workerTimeoutMs,
+           artifactContext,
+           confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       } else if (action === "user-session") {
         await runUserSession({
@@ -424,11 +432,12 @@ export function createMigrateTask(
            workspaceRoot,
            workspaceDirectories,
            workspacePlacement,
-           workspacePaths,
-           workerPattern: resolvedWorker.workerPattern,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-          showAgentOutput: Boolean(options.showAgentOutput),
+            workspacePaths,
+            workerPattern: resolvedWorker.workerPattern,
+            workerTimeoutMs,
+            artifactContext,
+            confirm: Boolean(options.confirm),
+           showAgentOutput: Boolean(options.showAgentOutput),
         });
       }
 
@@ -462,10 +471,19 @@ async function reconcilePendingMigrationPredictions(input: {
   migrationsDir: string;
   workspaceRoot: string;
   slugWorkerPattern: ParsedWorkerPattern;
+  workerTimeoutMs?: number;
   artifactContext: ReturnType<ArtifactStore["createContext"]> | undefined;
   showAgentOutput: boolean;
 }): Promise<void> {
-  const { dependencies, migrationsDir, workspaceRoot, slugWorkerPattern, artifactContext, showAgentOutput } = input;
+  const {
+    dependencies,
+    migrationsDir,
+    workspaceRoot,
+    slugWorkerPattern,
+    workerTimeoutMs,
+    artifactContext,
+    showAgentOutput,
+  } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
   const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir, workspaceRoot);
   const baseline = loadPredictionBaseline(dependencies.fileSystem, migrationsDir);
@@ -501,6 +519,7 @@ async function reconcilePendingMigrationPredictions(input: {
           prompt,
           mode: "wait",
           cwd: workspaceRoot,
+          timeoutMs: workerTimeoutMs,
           artifactContext,
           artifactPhase: "worker",
           artifactPhaseLabel: "migrate-up-reconciliation",
@@ -717,6 +736,7 @@ async function runUserSession(input: {
   workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
@@ -731,6 +751,7 @@ async function runUserSession(input: {
     workspacePaths,
     workerPattern,
     artifactContext,
+    workerTimeoutMs,
     confirm,
     showAgentOutput,
   } = input;
@@ -747,6 +768,7 @@ async function runUserSession(input: {
     mode: "tui",
     captureOutput: true,
     cwd: workspaceRoot,
+    timeoutMs: workerTimeoutMs,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-user-session-discuss",
@@ -765,6 +787,7 @@ async function runUserSession(input: {
     }),
     mode: "wait",
     cwd: workspaceRoot,
+    timeoutMs: workerTimeoutMs,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-user-session-summary",
@@ -806,6 +829,7 @@ async function runUserSession(input: {
     defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
     satelliteType: "backlog",
     workerPattern,
+    workerTimeoutMs,
     artifactContext,
     confirm,
     showAgentOutput,
@@ -896,6 +920,7 @@ async function generateNextMigration(input: {
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
@@ -911,6 +936,7 @@ async function generateNextMigration(input: {
     workerPattern,
     slugWorkerPattern,
     artifactContext,
+    workerTimeoutMs,
     confirm,
     showAgentOutput,
   } = input;
@@ -937,6 +963,7 @@ async function generateNextMigration(input: {
     prompt,
     mode: "wait",
     cwd: workspaceRoot,
+    timeoutMs: workerTimeoutMs,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-next",
@@ -998,6 +1025,7 @@ async function generateNextMigration(input: {
     defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
     satelliteType: "context",
     workerPattern,
+    workerTimeoutMs,
     artifactContext,
     confirm,
     showAgentOutput,
@@ -1039,6 +1067,7 @@ async function generateSatellite(input: {
   satelliteType: SatelliteType;
   workerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
   confirm: boolean;
   showAgentOutput: boolean;
 }): Promise<void> {
@@ -1056,6 +1085,7 @@ async function generateSatellite(input: {
     satelliteType,
     workerPattern,
     artifactContext,
+    workerTimeoutMs,
     confirm,
     showAgentOutput,
   } = input;
@@ -1083,6 +1113,7 @@ async function generateSatellite(input: {
     prompt,
     mode: "wait",
     cwd: workspaceRoot,
+    timeoutMs: workerTimeoutMs,
     artifactContext,
     artifactPhase: "worker",
     artifactPhaseLabel: "migrate-" + satelliteType,

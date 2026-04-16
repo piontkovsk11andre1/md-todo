@@ -225,6 +225,41 @@ describe("query-task", () => {
     expect(outputJson).toContain("## Step 1: Evidence");
   });
 
+  it("uses query-stream-execute override for stream mode only", async () => {
+    const queryStreamExecuteOverride = "Custom stream execute for {{task}} in {{dir}}";
+    const { dependencies, runTask } = createDependencies({
+      cwd: "/workspace",
+      templateOverrides: {
+        "query-stream-execute.md": queryStreamExecuteOverride,
+      },
+    });
+    const queryTask = createQueryTask(dependencies);
+
+    await queryTask(createOptions({
+      format: "markdown",
+      output: undefined,
+      showAgentOutput: false,
+    }));
+
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskTemplateOverride: queryStreamExecuteOverride,
+      showAgentOutput: true,
+    }));
+
+    vi.mocked(runTask).mockClear();
+
+    await queryTask(createOptions({
+      format: "json",
+      output: undefined,
+      showAgentOutput: false,
+    }));
+
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskTemplateOverride: DEFAULT_QUERY_EXECUTION_TEMPLATE,
+      showAgentOutput: false,
+    }));
+  });
+
   it("selects seed template by format (default vs yn vs success-error)", async () => {
     const cases: Array<{
       format: QueryTaskOptions["format"];

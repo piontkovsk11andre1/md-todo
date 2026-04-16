@@ -343,6 +343,7 @@ export function createPlanTask(
       });
       const resolvedWorkerCommand = resolvedWorker.workerCommand;
       const resolvedWorkerPattern = resolvedWorker.workerPattern;
+      const workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
       emit({
         kind: "info",
         message: "Planning document: " + source,
@@ -826,6 +827,7 @@ export function createPlanTask(
               cwd,
               env: rundownVarEnv,
               configDir: dependencies.configDir?.configDir,
+              timeoutMs: workerTimeoutMs,
               artifactContext,
               artifactPhase: "plan",
               artifactPhaseLabel: buildPlanScanPhaseLabel(scanIndex, scanStrategy),
@@ -1053,6 +1055,7 @@ export function createPlanTask(
                 cwd,
                 env: rundownVarEnv,
                 configDir: dependencies.configDir?.configDir,
+                timeoutMs: workerTimeoutMs,
                 artifactContext,
                 artifactPhase: "plan",
                 artifactPhaseLabel: buildPlanDeepPhaseLabel(deepPass, deepTaskIndex + 1),

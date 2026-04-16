@@ -18,6 +18,7 @@ Store templates in `.rundown/`:
   repair.md
   resolve.md
   plan.md
+  deep-plan.md
   plan-prepend.md
   plan-append.md
   discuss.md
@@ -43,6 +44,7 @@ Store templates in `.rundown/`:
 | `.rundown/repair.md` | Instructions for fixing a failed attempt |
 | `.rundown/resolve.md` | Instructions for diagnosis and guidance before resolve-informed repair retries |
 | `.rundown/plan.md` | Instructions for breaking a task into nested subtasks |
+| `.rundown/deep-plan.md` | Instructions for recursively expanding generated subtasks during deep planning |
 | `.rundown/plan-prepend.md` | Optional advisory guidance for what should appear near the beginning of generated plan tasks |
 | `.rundown/plan-append.md` | Optional advisory guidance for what should appear near the end of generated plan tasks |
 | `.rundown/discuss.md` | Instructions for interactive task refinement before execution |

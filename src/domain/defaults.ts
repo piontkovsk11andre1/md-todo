@@ -534,10 +534,13 @@ If \`.rundown/config.json\` has a default worker configured, \`--worker\` and \`
 
 ### Task prefixes (in Markdown checkboxes)
 
+Author new tasks with canonical prefixes only: \`verify:\`, \`memory:\`, \`fast:\`, \`get:\`, and \`loop:\`.
+Treat alias prefixes (\`check:\`, \`confirm:\`, \`quick:\`, \`raw:\`, \`memorize:\`, \`remember:\`, \`inventory:\`) as legacy compatibility forms and normalize them to canonical names when encountered.
+
 - **\`cli: <command>\`** — Execute shell command directly instead of using a worker.
-- **\`verify: <assertion>\`** — Verify-only task (confirm:, check: are aliases).
-- **\`memory: <prompt>\`** — Capture information to source-local memory (memorize:, remember:, inventory:).
-- **\`fast: <task>\`** — Skip verification for this task (raw:, quick: are aliases).
+- **\`verify: <assertion>\`** — Verify-only task.
+- **\`memory: <prompt>\`** — Capture information to source-local memory.
+- **\`fast: <task>\`** — Skip verification for this task.
 - **\`get: <prompt>\`** — Run focused fact-finding and persist results as canonical \`get-result:\` sub-items under the task.
 - **\`loop: <task>\`** — Repeat the scoped task flow until an explicit stop signal (for example an \`end:\` condition) is emitted.
 - **\`optional: <condition>\`** — Conditional sibling short-circuit only. When true, skip remaining siblings/descendants in the same parent scope; otherwise continue. This behavior is unchanged.

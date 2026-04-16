@@ -14,8 +14,10 @@ import {
 } from "../domain/exit-codes.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type {
+  ConfigDirResult,
   FileSystem,
   TemplateLoader,
+  WorkerConfigPort,
   WorkerExecutorPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -63,6 +65,8 @@ interface SatelliteAtMigration {
 
 export interface TestSpecsDependencies {
   workerExecutor: WorkerExecutorPort;
+  workerConfigPort: WorkerConfigPort;
+  configDir: ConfigDirResult | undefined;
   fileSystem: FileSystem;
   templateLoader: TemplateLoader;
   output: ApplicationOutputPort;
@@ -85,6 +89,9 @@ export function createTestSpecs(
 
   return async function testSpecs(options: TestSpecsOptions): Promise<number> {
     const invocationDir = process.cwd();
+    const workerTimeoutMs = dependencies.configDir?.configDir
+      ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)?.workerTimeoutMs
+      : undefined;
     const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
     const workspaceDirectories = resolvePredictionWorkspaceDirectories({
       fileSystem: dependencies.fileSystem,
@@ -138,6 +145,7 @@ export function createTestSpecs(
         future: options.future,
         predictionDirectoryContext,
         workerPattern: options.workerPattern,
+        workerTimeoutMs,
         showAgentOutput: options.showAgentOutput,
       });
     }
@@ -167,6 +175,7 @@ export function createTestSpecs(
       future: options.future,
       predictionDirectoryContext,
       workerPattern: options.workerPattern,
+      workerTimeoutMs,
       showAgentOutput: options.showAgentOutput,
     });
   };
@@ -179,10 +188,19 @@ export function createTestSpecs(
       future: true | number | undefined;
       predictionDirectoryContext: PredictionDirectoryContext;
       workerPattern: ParsedWorkerPattern;
+      workerTimeoutMs?: number;
       showAgentOutput?: boolean;
     },
   ): Promise<number> {
-    const { cwd, invocationRoot, future, predictionDirectoryContext, workerPattern, showAgentOutput } = options;
+    const {
+      cwd,
+      invocationRoot,
+      future,
+      predictionDirectoryContext,
+      workerPattern,
+      workerTimeoutMs,
+      showAgentOutput,
+    } = options;
 
     const verifyTemplate = loadTestVerifyTemplate(dependencies.templateLoader, cwd, future !== undefined);
     const testContext = buildTestContext(
@@ -233,6 +251,7 @@ export function createTestSpecs(
         prompt,
         mode: "wait",
         cwd: executionCwd,
+        timeoutMs: workerTimeoutMs,
         env: {
           RUNDOWN_TEST_MODE: testContext.mode,
           RUNDOWN_TEST_FUTURE_TARGET: testContext.futureTarget,
