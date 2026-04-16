@@ -223,6 +223,8 @@ bun add -g @p10i/rundown
 - [CLI: `init`](docs/cli-init.md) — scaffold a new rundown workspace
 - [CLI: `call`](docs/cli-call.md) — run provider/model calls with CLI-managed context
 - [CLI: `do`](docs/cli-do.md) — execute unchecked tasks in a markdown task document
+- [CLI: `all`](docs/cli-all.md) — execute all tasks across a file or directory
+- [CLI: `docs`](docs/cli-docs.md) — generate or update design documentation
 - [CLI: `discuss`](docs/cli-discuss.md) — collaborate on plans and next actions from task files
 - [CLI: `design`](docs/cli-design.md) — manage design revisions and release snapshots
 - [CLI: `explore`](docs/cli-explore.md) — generate codebase research and findings artifacts
