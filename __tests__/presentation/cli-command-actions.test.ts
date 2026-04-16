@@ -639,6 +639,33 @@ describe("createQueryCommandAction", () => {
 });
 
 describe("bootstrap seed prefix resolution", () => {
+  it("keeps plain non-prefixed seed text unchanged in make", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-make-seed-plain-"));
+    const targetFile = path.join(tempRoot, "migrations", "seed.md");
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const app = { researchTask, planTask } as unknown as CliApp;
+    const action = createMakeCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      makeModes: ["wait"],
+    });
+
+    try {
+      const seedText = "Capture migration scope and acceptance criteria";
+      const exitCode = await action(seedText, targetFile, {});
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(targetFile, "utf8")).toBe(seedText);
+      expect(researchTask).toHaveBeenCalledTimes(1);
+      expect(planTask).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("expands bootstrap-applicable template tool prefixes in make seed text", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-make-seed-prefix-"));
     const configDir = path.join(tempRoot, ".rundown");
@@ -875,6 +902,36 @@ describe("bootstrap seed prefix resolution", () => {
 
       expect(exitCode).toBe(0);
       expect(fs.readFileSync(targetFile, "utf8")).toBe("# Do\n\nExecute release rollout\n");
+      expect(researchTask).toHaveBeenCalledTimes(1);
+      expect(planTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledTimes(1);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps plain non-prefixed seed text unchanged in do", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-seed-plain-"));
+    const targetFile = path.join(tempRoot, "migrations", "seed.md");
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const app = { researchTask, planTask, runTask } as unknown as CliApp;
+    const action = createDoCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      makeModes: ["wait"],
+      getInvocationArgv: () => ["do"],
+    });
+
+    try {
+      const seedText = "Run rollout preparation checklist";
+      const exitCode = await action(seedText, targetFile, {});
+
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(targetFile, "utf8")).toBe(seedText);
       expect(researchTask).toHaveBeenCalledTimes(1);
       expect(planTask).toHaveBeenCalledTimes(1);
       expect(runTask).toHaveBeenCalledTimes(1);
