@@ -1221,6 +1221,8 @@ Edit the source Markdown file directly to improve child plan coverage for the pa
 
 Review \`{{file}}\` and add missing unchecked child TODO items under this parent task.
 
+Never invent child TODO items based on examples, sample output, or hypothetical scenarios found in the document. Child TODO items must address the actual work described by the parent task and document context — not illustrative content. If you cannot determine the real workload from the parent task and document context, do not add any items.
+
 ## Optional planning guidance (advisory)
 
 Optional prepend guidance (advisory):
@@ -1417,6 +1419,10 @@ ${DEFAULT_TEMPLATE_VARS_SECTION}
 
 {{executionStdout}}
 
+## Previous verification verdict
+
+{{verificationResult}}
+
 ## Last validation error
 
 {{lastValidationError}}
@@ -1425,6 +1431,9 @@ ${DEFAULT_TEMPLATE_VARS_SECTION}
 
 Repair the research output so it satisfies verification.
 
+Use the verifier failure reason as the authoritative target for this retry.
+Address that failure directly while preserving all required safety constraints.
+
 Produce a complete corrected Markdown document that:
 
 - Preserves checkbox states for existing tasks.
@@ -1432,6 +1441,9 @@ Produce a complete corrected Markdown document that:
 - Preserves original intent semantically.
 - Keeps the document useful for planning.
 - Improves enrichment quality where missing.
+
+Retry enrichment quality and structure; do not fall back to stripping context.
+Do not relax or bypass safety constraints to make verification pass.
 
 Return the full corrected Markdown document and nothing else.
 {{traceInstructions}}
