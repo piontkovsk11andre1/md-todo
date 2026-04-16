@@ -2,6 +2,7 @@ import { computeChildIndent } from "../planner.js";
 import type { ToolHandlerContext, ToolHandlerFn } from "../ports/tool-handler-port.js";
 import type { ProcessRunMode } from "../ports/process-runner.js";
 import { escapeExtractionMetadataValue } from "../metadata-escape.js";
+import { buildResearchOutputPromptContract } from "./research-output-prompt.js";
 
 const GET_RESULT_PREFIX_PATTERN = /^get-result\s*:\s*(.*)$/i;
 const GET_MODE_PREFIX_PATTERN = /^get-mode\s*:\s*(.*)$/i;
@@ -25,15 +26,16 @@ interface OpenFence {
 }
 
 function buildExtractionPrompt(query: string, context: ToolHandlerContext): string {
+  const outputContract = buildResearchOutputPromptContract({
+    itemLabel: "extracted item",
+    metadataPrefix: "get-result:",
+    emptyConditionLabel: "results are found",
+  });
+
   return [
     "You are a full-scale research agent resolving a task query against the current project.",
     "Investigate the repository context thoroughly before answering.",
-    "Return one extracted item per line.",
-    "Markdown bullets and ordered-list lines are allowed.",
-    "Preserve discovery order.",
-    "Do not include the literal `get-result:` prefix unless it is part of the value.",
-    "If no results are found, return an empty response.",
-    "Do not include commentary.",
+    ...outputContract,
     "",
     "Task:",
     context.task.text,

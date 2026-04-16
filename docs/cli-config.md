@@ -95,6 +95,14 @@ Behavior notes:
 - `get` exits non-zero when key is missing in selected scope.
 - `list --scope effective --show-source` includes per-key attribution where practical.
 
+Worker timeout key (`workerTimeoutMs`):
+
+- optional top-level key that sets worker total-runtime timeout in milliseconds.
+- value must be a non-negative integer (`0`, `1`, `2`, ...).
+- omitted/unset means no worker timeout is enforced.
+- `0` explicitly disables timeout enforcement.
+- timeout failure stderr is deterministic: `Worker process timed out after <N>ms.`
+
 Examples:
 
 ```bash
@@ -110,8 +118,17 @@ rundown config set workers.default '["opencode","run","--file","$file","$bootstr
 # Set user-level global command override
 rundown config set commands.plan '["opencode","run","--file","$file","$bootstrap","--model","gpt-5.3-codex"]' --type json --scope global
 
+# Set project-local worker timeout to 2 minutes
+rundown config set workerTimeoutMs 120000 --type number --scope local
+
+# Disable worker timeout explicitly
+rundown config set workerTimeoutMs 0 --type number --scope local
+
 # Remove a local command override so global/default can apply
 rundown config unset commands.plan --scope local
+
+# Remove local worker timeout to inherit global/unset behavior
+rundown config unset workerTimeoutMs --scope local
 
 # List merged config with attribution
 rundown config list --scope effective --show-source --json

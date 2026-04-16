@@ -7,6 +7,7 @@ import {
   hasForLoopCheckboxChildren,
   resolveForLoopItems,
 } from "../for-loop.js";
+import { buildResearchOutputPromptContract } from "./research-output-prompt.js";
 
 interface OpenFence {
   char: "`" | "~";
@@ -14,15 +15,16 @@ interface OpenFence {
 }
 
 function buildForLoopResearchPrompt(payload: string, source: string, contextBefore: string, taskText: string): string {
+  const outputContract = buildResearchOutputPromptContract({
+    itemLabel: "item",
+    metadataPrefix: "for-item:",
+    emptyConditionLabel: "items are found",
+  });
+
   return [
     "You are a full-scale research agent preparing concrete loop items for a for-each task.",
     "Investigate the repository context and derive specific actionable items.",
-    "Return one item per line.",
-    "Markdown bullets and ordered-list lines are allowed.",
-    "Do not include the literal `for-item:` prefix unless it is part of the value.",
-    "Preserve discovery order.",
-    "If no items are found, return an empty response.",
-    "Do not include commentary.",
+    ...outputContract,
     "",
     "Loop task:",
     taskText,

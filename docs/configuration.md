@@ -37,6 +37,7 @@ Example:
     "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
     "tui": ["opencode"]
   },
+  "workerTimeoutMs": 120000,
   "commands": {
     "plan": ["opencode", "run", "--file", "$file", "$bootstrap", "--model", "opus-4.6"],
     "discuss": ["opencode"],
@@ -63,6 +64,7 @@ All command arrays and arg arrays must be JSON arrays of strings.
     "tui": ["string", "..."],
     "fallbacks": [["string", "..."]]
   },
+  "workerTimeoutMs": 120000,
   "commands": {
     "<commandName>": ["string", "..."]
   },
@@ -118,11 +120,34 @@ Section behavior:
 - `workers.default`: global baseline worker command for non-TUI executions.
 - `workers.tui`: baseline worker command used when execution mode is TUI.
 - `workers.fallbacks`: ordered fallback worker commands for worker failover.
+- `workerTimeoutMs`: optional total-runtime timeout for worker processes (milliseconds).
 - `commands.<name>`: command-specific worker override (for example `plan`, `verify`, or `memory`).
 - `commands.tools.<toolName>`: command-specific override for one tool-expansion prefix task (for example `tools.post-on-gitea`).
 - `profiles.<name>`: named reusable worker command overrides selected from frontmatter, directives, or prefix modifiers.
 - `run.workerRouting.*`: phase-scoped worker routing for `run` and `reverify` verify/repair lifecycle stages.
 - `traceStatistics`: controls optional inline trace summary lines written below completed checkbox tasks.
+
+## Worker timeout
+
+`workerTimeoutMs` controls a total-runtime timeout for worker execution.
+
+Validation:
+
+- must be a non-negative integer number of milliseconds.
+- invalid values fail config loading with a path-specific validation error.
+
+Behavior:
+
+- timeout starts when the worker process is spawned.
+- if the worker is still running after `workerTimeoutMs`, rundown sends `SIGTERM` and marks execution as failed.
+- timeout failures surface deterministic stderr text: `Worker process timed out after <N>ms.`
+- timeout applies to worker executions in `wait` mode and `tui` mode.
+- detached mode is unaffected because rundown returns immediately after dispatch.
+
+Defaults:
+
+- if `workerTimeoutMs` is omitted (unset), no worker timeout is enforced (backward-compatible behavior).
+- `workerTimeoutMs: 0` explicitly disables timeout enforcement.
 
 ## Run phase worker routing
 
