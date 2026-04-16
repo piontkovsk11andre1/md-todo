@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkerConfigAdapter } from "../../src/infrastructure/adapters/worker-config-adapter.js";
 
 const tempDirs: string[] = [];
@@ -13,6 +13,14 @@ afterEach(() => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }
+
+  vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-worker-config-home-"));
+  tempDirs.push(isolatedHome);
+  vi.spyOn(os, "homedir").mockReturnValue(isolatedHome);
 });
 
 function makeTempConfigDir(): string {

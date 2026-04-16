@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { loadTemplateVarsFileMock, openDirectoryMock } = vi.hoisted(() => ({
   loadTemplateVarsFileMock: vi.fn(() => ({ branch: "main" })),
@@ -19,6 +19,25 @@ vi.mock("../../../src/infrastructure/open-directory.js", () => ({
 import { createFsTemplateVarsLoaderAdapter } from "../../../src/infrastructure/adapters/fs-template-vars-loader-adapter.js";
 import { createDirectoryOpenerAdapter } from "../../../src/infrastructure/adapters/directory-opener-adapter.js";
 import { createWorkerConfigAdapter } from "../../../src/infrastructure/adapters/worker-config-adapter.js";
+
+const tempDirs: string[] = [];
+
+beforeEach(() => {
+  const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-extra-adapters-home-"));
+  tempDirs.push(isolatedHome);
+  vi.spyOn(os, "homedir").mockReturnValue(isolatedHome);
+});
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  vi.restoreAllMocks();
+});
 
 describe("extra infrastructure adapters", () => {
   it("template vars loader adapter delegates to loadTemplateVarsFile", () => {
