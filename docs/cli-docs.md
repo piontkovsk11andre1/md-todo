@@ -1,8 +1,8 @@
-# CLI: `docs` (deprecated alias)
+# CLI: `docs` (alias for `design`)
 
-`rundown docs` remains available as a compatibility alias for design revision commands during migration.
+`rundown docs` is available as an alias for the `rundown design` command family.
 
-Use `rundown design ...` as the canonical command family for all new scripts and documentation.
+Both command names are fully supported; `rundown design` is the canonical form used throughout the documentation.
 
 ## Global option: `--config-dir <path>`
 
@@ -31,71 +31,53 @@ Options:
 Examples:
 
 ```bash
-# Deprecated alias for design release
+# Alias for design release
 rundown docs release --label "snapshot"
 
-# Deprecated alias for design release
+# Alias for design publish
 rundown docs publish
 
-# Deprecated alias for design diff
+# Alias for design diff
 rundown docs diff preview
 ```
 
 ## `rundown docs release`
 
-Deprecated alias for `rundown design release`.
+Alias for `rundown design release`.
 
 Behavior:
 
-- Prints a deprecation warning: `rundown docs release is deprecated; use rundown design release`.
-- Executes the same release flow as `rundown design release` after warning.
+- Executes the same release flow as `rundown design release`.
 - Accepts the same options as `design release` (`--dir`, `--workspace`, `--label`).
-
-Migration guidance:
-
-- Replace `rundown docs release` with `rundown design release`.
 
 ## `rundown docs publish`
 
-Deprecated alias for `rundown design release`.
+Alias for `rundown design release`.
 
 Behavior:
 
-- Prints a deprecation warning: `rundown docs publish is deprecated; use rundown design release`.
-- Executes the same release flow as `rundown design release` after warning.
+- Executes the same release flow as `rundown design release`.
 - Accepts the same options as `design release` (`--dir`, `--workspace`, `--label`).
-
-Migration guidance:
-
-- Replace `rundown docs publish` with `rundown design release`.
 
 ## `rundown docs diff [target]`
 
-Deprecated alias for `rundown design diff [target]`.
+Alias for `rundown design diff [target]`.
 
 Behavior:
 
-- Prints a deprecation warning: `rundown docs diff is deprecated; use rundown design diff`.
-- Executes the same diff flow as `rundown design diff` after warning.
+- Executes the same diff flow as `rundown design diff`.
 - Accepts the same argument/options as `design diff` (`[target]`, `--dir`, `--workspace`, `--from`, `--to`).
-
-Migration guidance:
-
-- Replace `rundown docs diff ...` with `rundown design diff ...`.
 
 ## `rundown docs save`
 
-Removed alias.
+Removed subcommand.
 
 Behavior:
 
 - Fails with an actionable error.
 - Does not execute any release operation.
 
-Migration guidance:
-
-- Preferred: use `rundown design release`.
-- Transitional fallback: `rundown docs publish` remains available as a deprecated alias.
+Use `rundown design release` or `rundown docs publish` instead.
 
 See also:
 
@@ -105,9 +87,15 @@ See also:
 Examples:
 
 ```bash
-# Canonical replacement for legacy docs release/publish
+# Canonical form
 rundown design release
 
-# Canonical replacement for legacy docs diff
+# Equivalent alias
+rundown docs release
+
+# Canonical diff
 rundown design diff preview
+
+# Equivalent alias
+rundown docs diff preview
 ```
