@@ -277,6 +277,20 @@ describe("default prompt templates", () => {
 
     expect(DEFAULT_HELP_TEMPLATE).toContain("Fallback mode for non-rundown questions");
     expect(DEFAULT_HELP_TEMPLATE).toContain("answer directly as a normal assistant");
+
+    expect(DEFAULT_HELP_TEMPLATE).toContain("Customizable templates:");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`agent.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`deep-plan.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`discuss-finished.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`research-verify.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`research-repair.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`research-resolve.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`undo.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`test-verify.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`test-future.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`test-materialized.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`migrate*.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`query-*.md`");
   });
 
   it("keeps research verification template deterministic and outcome-oriented", () => {

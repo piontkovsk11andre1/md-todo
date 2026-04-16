@@ -162,6 +162,9 @@ export interface RunDefaultsConfig {
 export interface WorkerConfig {
   // Named worker commands: default, tui, and fallback list.
   workers?: WorkersConfig;
+  // Optional worker execution timeout in milliseconds.
+  // Must be a non-negative integer; 0 disables timeout enforcement.
+  workerTimeoutMs?: number;
   // Per-command overrides keyed by command name.
   commands?: WorkerCommandProfiles;
   // Named reusable profiles referenced by directive or file metadata.

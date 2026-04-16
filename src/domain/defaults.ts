@@ -560,7 +560,7 @@ Layered worker resolution (lowest to highest priority):
 
 ### Templates (\`.rundown/*.md\`)
 
-Customizable templates: \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`discuss.md\`, \`research.md\`, \`help.md\`. Built-in defaults are used when files are absent.
+Customizable templates: \`agent.md\`, \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`deep-plan.md\`, \`discuss.md\`, \`discuss-finished.md\`, \`research.md\`, \`research-verify.md\`, \`research-repair.md\`, \`research-resolve.md\`, \`trace.md\`, \`undo.md\`, \`test-verify.md\`, \`test-future.md\`, \`test-materialized.md\`, \`help.md\`, \`migrate*.md\`, \`query-*.md\`. Built-in defaults are used when files are absent.
 
 ### Fallback mode for non-rundown questions
 
