@@ -85,7 +85,7 @@ Always use the canonical prefix name. Do not use aliases (\`check:\`, \`confirm:
 
 You can apply prefixes in either form:
 
-- Inline on a checkbox {{inlineTaskSubject}}, for example \`- [ ] verify: all unit tests pass\`.
+- Inline on a checkbox {{inlineTaskSubject}}, for example \`- [ ] verify: {{inlineVerifyExample}}\`.
 - As a directive parent that applies to child checkbox items, for example:
 
   \`- verify:\`
@@ -102,11 +102,11 @@ Heuristics:
 - Use \`verify:\` only when the {{inlineTaskSubject}} checks existing state without doing work. If the task creates, writes, or modifies anything, it is NOT a verify task.
 - Use \`fast:\` when the {{inlineTaskSubject}} is a small mechanical edit that does not warrant its own verification pass.
 {{optionalFastGroupingHeuristic}}
-- Use \`get:\` when {{getHeuristicTaskSubject}} needs one-pass discovery whose results should be persisted for downstream {{getDownstream}}.
+- Use \`get:\` when {{getHeuristicTaskSubject}} needs one-pass discovery whose results should be persisted for {{getPersistenceTarget}}.
 - Use \`loop:\` when {{loopHeuristicTaskSubject}} is inherently iterative and needs repeated passes until a clear stop condition.
 - Use \`profile=\` when {{profileHeuristicTaskSubject}} complexity or cost/speed trade-offs suggest a non-default worker.
-- Use \`memory:\` when the {{memoryHeuristicTaskSubject}} objective is research/inventory/constraints/reference capture for later tasks and there is no explicit target file write/edit/create in that {{memoryHeuristicTaskSubject}}.
-- Do NOT use \`memory:\` when the {{memoryHeuristicTaskSubject}} asks to write/edit/create/update any file or persistent document artifact (including "prepare notes section in this doc" or "research and write findings into X.md"). These must remain normal execution TODOs.
+- {{memoryHeuristicLine}}
+- {{nonMemoryHeuristicLine}}
 - Explicit write-target{{explicitWriteHeuristicSuffix}} examples that must remain normal execution TODOs: \`- [ ] Write findings to docs/research-notes.md\`, \`- [ ] Research rollout risks and write findings into docs/rollout-plan.md\`.
 - If a {{directiveHeuristicParentSubject}} suggests memory capture intent, still classify each child task {{directiveHeuristicClassifier}}: child tasks with explicit file-write/edit/create/update language must remain normal execution TODOs (no inherited \`memory:\`).
 - For mixed intents, split into separate {{splitTaskSubject}} when possible: a \`memory:\` capture task first, then a normal write/edit task.
@@ -139,11 +139,18 @@ function buildPlanningFeatureReferenceSection(deep: boolean): string {
     ["{{taskTextSubject}}", deep ? "child task text" : "task text"],
     ["{{includeSubject}}", deep ? "child subtasks to" : "subtasks to"],
     ["{{inlineTaskSubject}}", deep ? "child task" : "task"],
+    ["{{inlineVerifyExample}}", deep ? "all unit tests pass" : "all tests pass"],
     ["{{optionalFastGroupingHeuristic}}", optionalFastGroupingHeuristic],
     ["{{getHeuristicTaskSubject}}", deep ? "a child task" : "the task"],
     ["{{loopHeuristicTaskSubject}}", deep ? "a child task" : "the task"],
+    ["{{getPersistenceTarget}}", deep ? "downstream child tasks" : "downstream tasks"],
     ["{{profileHeuristicTaskSubject}}", deep ? "child task" : "task"],
-    ["{{memoryHeuristicTaskSubject}}", deep ? "child task" : "task"],
+    ["{{memoryHeuristicLine}}", deep
+      ? "Use `memory:` when the child task objective is research/inventory/constraints/reference capture for later tasks and there is no explicit target file write/edit/create in that child task."
+      : "Use `memory:` when the objective is research/inventory/constraints/reference capture for later tasks and there is no explicit target file write/edit/create in that task."],
+    ["{{nonMemoryHeuristicLine}}", deep
+      ? "Do NOT use `memory:` when the child task asks to write/edit/create/update any file or persistent document artifact (including \"prepare notes section in this doc\" or \"research and write findings into X.md\"). These must remain normal execution TODOs."
+      : "Do NOT use `memory:` when the task asks to write/edit/create/update any file or persistent document artifact (including \"prepare notes section in this doc\" or \"research and write findings into X.md\"). These must remain normal execution TODOs."],
     ["{{explicitWriteHeuristicSuffix}}", deep ? " child" : ""],
     ["{{directiveHeuristicParentSubject}}", deep ? "parent directive" : "directive parent"],
     ["{{directiveHeuristicClassifier}}", deep ? "by its own text" : "on its own text"],
