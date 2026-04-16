@@ -381,18 +381,8 @@ export function createPlanTask(
       );
       const planTemplate = templates.plan;
       const deepPlanTemplate = templates.deepPlan ?? DEFAULT_DEEP_PLAN_TEMPLATE;
-      const planPrependGuidance = loadOptionalPlannerGuidance({
-        configDir: dependencies.configDir?.configDir,
-        fileName: "plan-prepend.md",
-        fileSystem: dependencies.fileSystem,
-        pathOperations: dependencies.pathOperations,
-      });
-      const planAppendGuidance = loadOptionalPlannerGuidance({
-        configDir: dependencies.configDir?.configDir,
-        fileName: "plan-append.md",
-        fileSystem: dependencies.fileSystem,
-        pathOperations: dependencies.pathOperations,
-      });
+      const planPrependGuidance = templates.planPrepend;
+      const planAppendGuidance = templates.planAppend;
 
       const planPromptDocumentContext = buildPlanPromptDocumentContext(source);
       const scanStrategy = resolvePlanScanStrategy(scanCount);
@@ -1500,25 +1490,6 @@ function buildPlanDeepPrompt(options: {
   }
 
   return `${renderedTemplate}\n\n## Deep Pass Context\n\n${deepContextParts.join("\n")}\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
-}
-
-function loadOptionalPlannerGuidance(options: {
-  configDir: string | undefined;
-  fileName: "plan-prepend.md" | "plan-append.md";
-  fileSystem: FileSystem;
-  pathOperations: PathOperationsPort;
-}): string {
-  if (!options.configDir) {
-    return "";
-  }
-
-  const guidancePath = options.pathOperations.join(options.configDir, options.fileName);
-  try {
-    const guidance = options.fileSystem.readText(guidancePath);
-    return guidance.trim().length === 0 ? "" : guidance;
-  } catch {
-    return "";
-  }
 }
 
 /**

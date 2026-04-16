@@ -10892,6 +10892,49 @@ describe.sequential("CLI integration", () => {
     expect(longResult.code).toBe(0);
     expect(longResult.errors).toEqual([]);
     expect(longResult.stdoutWrites.join("\n")).toContain("Usage: rundown");
+
+    const duplicateResult = await withTerminalTty(false, () => runCli(["-c", "--continue"], workspace));
+    expect(duplicateResult.code).toBe(0);
+    expect(duplicateResult.errors).toEqual([]);
+    expect(duplicateResult.stdoutWrites.join("\n")).toContain("Usage: rundown");
+  });
+
+  it("root interactive help forwards continuation once when both root flags and separator continue are provided", async () => {
+    const workspace = makeTempWorkspace();
+    const spawnMock = vi.fn().mockImplementation(() => {
+      const child = new EventEmitter() as EventEmitter & { unref: () => void };
+      child.unref = vi.fn();
+      process.nextTick(() => {
+        child.emit("close", 0);
+      });
+      return child;
+    });
+
+    vi.doMock("cross-spawn", () => ({
+      default: spawnMock,
+    }));
+
+    const result = await withTerminalTty(true, () => runCli([
+      "-c",
+      "--continue",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+      "-c",
+    ], workspace));
+
+    vi.doUnmock("cross-spawn");
+
+    expect(result.code).toBe(0);
+    expectCanonicalRootWelcome(result.logs);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { stdio?: string }];
+    expect(cmd).toBe("node");
+    expect(options.stdio).toBe("inherit");
+    const continuationArgs = args.filter((token) => token === "-c" || token === "--continue");
+    expect(continuationArgs).toEqual(["-c"]);
+    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
   });
 
   it("root invocation launches live help session in interactive terminals when a help worker is configured", async () => {

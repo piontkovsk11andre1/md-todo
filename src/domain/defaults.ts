@@ -127,7 +127,8 @@ Prefix decision table (choose the closest matching intent):
 Heuristics:
 
 - Use \`verify:\` only when the {{inlineTaskSubject}} checks existing state without doing work. If the task creates, writes, or modifies anything, it is NOT a verify task.
-- Use \`fast:\` when the {{inlineTaskSubject}} is a small mechanical edit that does not warrant its own verification pass.
+- For low-risk small mechanical edits, you MUST classify the {{inlineTaskSubject}} as \`fast:\` (inline or directive parent) instead of leaving it plain/unprefixed.
+- Reserve \`verify:\` for behavior/state validation checks. Do not use \`verify:\` as a replacement label for mechanical edit steps.
 {{optionalFastGroupingHeuristic}}
 - Use \`get:\` when {{getHeuristicTaskSubject}} needs one-pass discovery whose results should be persisted for {{getPersistenceTarget}}.
 - Use \`loop:\` when {{loopHeuristicTaskSubject}} is inherently iterative and needs repeated passes until a clear stop condition.
