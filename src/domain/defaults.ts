@@ -81,7 +81,7 @@ Do not wrap output in code fences.
 Use one item per line; do not use JSON or nested structures.
 Do not include the literal \`{{metadataPrefix}}\` prefix unless it is part of the value.
 Preserve discovery order.
-If no {{emptyConditionLabel}}, return an empty response.
+If no {{emptyConditionLabel}}, return an exactly empty response (no lines, no blank lines, no whitespace-only output).
 Do not include commentary.
 `;
 
@@ -144,11 +144,11 @@ Heuristics:
 
 Output contract requirements for agentic tasks:
 
-- For \`get:\` {{inlineTaskSubject}}, make the requested stdout format explicit in task text: one discovered value per line in discovery order using either plain text lines or one-item-per-line Markdown list items (bullets or ordered numbering; no JSON), and without a literal \`get-result:\` prefix. Require an empty response when nothing is found (no commentary). The runtime writes canonical \`get-result:\` sub-items.
+- For every newly authored \`get:\` {{inlineTaskSubject}}, include this canonical inline output contract sentence in task text: \`Output one item per line using plain lines or Markdown list items (bulleted or numbered only, no JSON). If none are found, output exactly nothing.\` Keep discovery-order wording explicit when relevant, and avoid a literal \`get-result:\` prefix in output instructions because the runtime writes canonical \`get-result:\` sub-items.
 - For \`loop:\` {{inlineTaskSubject}} that mixes iterative discovery with durable context capture, use this bounded child pattern so outputs stay reusable across passes:
 
   \`- [ ] loop: audit rollout blockers until no new blockers appear\`
-  \`  - [ ] get: list one blocker per line using plain lines or Markdown list items (bullets or numbering; no JSON)\`
+  \`  - [ ] get: list one blocker per line. Output one item per line using plain lines or Markdown list items (bulleted or numbered only, no JSON). If none are found, output exactly nothing.\`
   \`  - [ ] memory: capture blocker trends that should influence the next pass\`
   \`  - [ ] end: stop when two consecutive passes produce no new blockers\`
 
@@ -1340,6 +1340,7 @@ When planning implementation work, close with confidence-building completion tas
 
 - Use \`fast:\` for small mechanical edits where per-item verification is unnecessary.
 - Use \`verify:\` tasks near the end for stack-appropriate validation of changed behavior.
+- When \`get:\` or \`loop:\` work uncovers reusable constraints, finish with a \`memory:\` capture task before final \`fast:\`/\`verify:\` closure.
 - End multi-step changes with a clear integration or handoff check before task completion.
 `;
 
