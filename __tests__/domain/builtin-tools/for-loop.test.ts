@@ -125,6 +125,7 @@ describe("builtin-tools/for-loop", () => {
     ]);
     const runWorkerCall = (context.workerExecutor.runWorker as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(runWorkerCall?.prompt ?? "").toContain("Return one item per line.");
+    expect(runWorkerCall?.prompt ?? "").toContain("Allowed line formats: plain lines, markdown bullet lines, or markdown ordered-list lines. Do not return JSON.");
     expect(runWorkerCall?.prompt ?? "").toContain("Do not include the literal `for-item:` prefix unless it is part of the value.");
     expect(context.emit).toHaveBeenCalledWith({
       kind: "info",

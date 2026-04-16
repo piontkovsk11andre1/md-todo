@@ -182,6 +182,7 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memorize:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`inventory:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Remove obviously wrong duplicate directive groups/prefix wrappers and duplicate inline prefixes on unchecked child items");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("If child plan coverage is already sufficient, leave the file unchanged.");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Output contract requirements for agentic tasks");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("one discovered value per line");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("in discovery order");

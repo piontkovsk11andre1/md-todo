@@ -585,6 +585,101 @@ describe("runWorker", () => {
     stderrWriteSpy.mockRestore();
   });
 
+  it("does not enforce timeout when timeoutMs is unset", async () => {
+    vi.useFakeTimers();
+
+    try {
+      spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+        const child = new EventEmitter() as EventEmitter & {
+          stdout: EventEmitter;
+          stderr: EventEmitter;
+          kill: (signal?: NodeJS.Signals) => boolean;
+        };
+
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.kill = vi.fn(() => true);
+
+        setTimeout(() => {
+          child.emit("close", 0);
+        }, 100);
+
+        return child;
+      });
+
+      const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+      const resultPromise = runWorker({
+        command: ["node", "worker.js"],
+        prompt: "unset timeout prompt",
+        mode: "wait",
+        cwd: workspace,
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      const result = await resultPromise;
+
+      const child = spawnMock.mock.results[0]?.value as { kill: (signal?: NodeJS.Signals) => boolean };
+      expect(child.kill).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not enforce timeout when timeoutMs is zero", async () => {
+    vi.useFakeTimers();
+
+    try {
+      spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+        const child = new EventEmitter() as EventEmitter & {
+          stdout: EventEmitter;
+          stderr: EventEmitter;
+          kill: (signal?: NodeJS.Signals) => boolean;
+        };
+
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.kill = vi.fn(() => true);
+
+        setTimeout(() => {
+          child.emit("close", 0);
+        }, 100);
+
+        return child;
+      });
+
+      const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+      const resultPromise = runWorker({
+        command: ["node", "worker.js"],
+        prompt: "disabled timeout prompt",
+        mode: "wait",
+        cwd: workspace,
+        timeoutMs: 0,
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      const result = await resultPromise;
+
+      const child = spawnMock.mock.results[0]?.value as { kill: (signal?: NodeJS.Signals) => boolean };
+      expect(child.kill).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns deterministic timeout stderr in wait mode", async () => {
     vi.useFakeTimers();
 

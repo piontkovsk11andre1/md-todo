@@ -1340,6 +1340,7 @@ Rules:
 - Do not change any \`- [ ]\` item to \`- [x]\`.
 - Do not remove or move any existing child item (checked or unchecked).
 - Do not output a proposed list on stdout; apply edits to \`{{file}}\` directly.
+- If child plan coverage is already sufficient, leave the file unchanged.
 {{traceInstructions}}
 `;
 

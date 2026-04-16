@@ -480,6 +480,26 @@ describe("createWorkerConfigAdapter", () => {
     });
   });
 
+  it("loads workerTimeoutMs when explicitly disabled with zero", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        workerTimeoutMs: 0,
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workerTimeoutMs: 0,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+    });
+  });
+
   it("merges workerTimeoutMs with local override semantics", () => {
     const configDir = makeTempConfigDir();
     writeConfig(
@@ -800,6 +820,22 @@ describe("createWorkerConfigAdapter", () => {
       configDir,
       JSON.stringify({
         workerTimeoutMs: 2500.5,
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at workerTimeoutMs: expected non-negative integer.`,
+    );
+  });
+
+  it("rejects negative workerTimeoutMs values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        workerTimeoutMs: -1,
       }),
     );
 

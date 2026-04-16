@@ -7,7 +7,7 @@ interface ResearchOutputPromptContractOptions {
 export function buildResearchOutputPromptContract(options: ResearchOutputPromptContractOptions): string[] {
   return [
     `Return one ${options.itemLabel} per line.`,
-    "Use plain text lines only: no bullets, no numbering, and no JSON.",
+    "Allowed line formats: plain lines, markdown bullet lines, or markdown ordered-list lines. Do not return JSON.",
     `Do not include the literal \`${options.metadataPrefix}\` prefix unless it is part of the value.`,
     "Preserve discovery order.",
     `If no ${options.emptyConditionLabel}, return an empty response.`,
