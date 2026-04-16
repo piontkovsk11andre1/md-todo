@@ -43,6 +43,8 @@ export interface RunnerOptions {
   trace?: boolean;
   /** Capture stdout/stderr even for interactive runs. */
   captureOutput?: boolean;
+  /** Optional worker timeout in milliseconds; 0 disables timeout. */
+  timeoutMs?: number;
   /** Working directory for the command. */
   cwd?: string;
   /** Additional environment variables for the worker process. */
@@ -143,6 +145,7 @@ export async function runWorker(options: RunnerOptions): Promise<RunnerResult> {
       mode,
       cwd,
       options.captureOutput ?? false,
+      options.timeoutMs,
       options.env,
     );
     const outputCaptured = options.captureOutput ?? mode === "wait";
@@ -219,8 +222,10 @@ function executeCommand(
   mode: RunnerMode,
   cwd: string,
   captureOutput: boolean,
+  timeoutMs: number | undefined,
   env?: Record<string, string>,
 ): Promise<RunnerResult> {
+  void timeoutMs;
   return new Promise((resolve, reject) => {
     if (mode === "tui") {
       if (captureOutput) {

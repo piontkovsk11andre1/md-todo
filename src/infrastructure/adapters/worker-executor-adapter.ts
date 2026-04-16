@@ -25,6 +25,7 @@ export function createWorkerExecutorAdapter(): WorkerExecutorPort {
         mode: options.mode,
         trace: options.trace,
         captureOutput: options.captureOutput,
+        timeoutMs: options.timeoutMs,
         cwd: options.cwd,
         env: options.env,
         configDir: options.configDir,
