@@ -1660,6 +1660,7 @@ interface RunMakeBootstrapPhasesOptions {
 interface ParsedMakeBootstrapCliOptions {
   workspaceRuntimeOptions: WorkerWorkspaceRuntimeOptions;
   mode: ProcessRunMode;
+  skipResearch: boolean;
   sharedRuntimeOptions: ReturnType<typeof resolveSharedWorkerRuntimeOptions>;
   dryRun: boolean;
   printPrompt: boolean;
@@ -1676,6 +1677,7 @@ function parseMakeBootstrapCliOptions(
   return {
     workspaceRuntimeOptions: resolveWorkerWorkspaceRuntimeOptions(),
     mode: parseRunnerMode(opts.mode as string | undefined, makeModes),
+    skipResearch: Boolean((opts.skipResearch as boolean | undefined) || (opts.raw as boolean | undefined)),
     sharedRuntimeOptions: resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator),
     dryRun: Boolean(opts.dryRun as boolean | undefined),
     printPrompt: Boolean(opts.printPrompt as boolean | undefined),
