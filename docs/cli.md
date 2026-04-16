@@ -2,7 +2,7 @@
 
 `rundown` and `rd` are both supported executable names. `rd` is a strict alias of `rundown` (same entrypoint, commands, flags, output, and exit codes). Examples below use `rundown` as the canonical form unless noted.
 
-## Global option
+## Global options
 
 `--config-dir <path>` is available on every command.
 
