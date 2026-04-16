@@ -232,6 +232,8 @@ export interface VerifyOptions {
   templateVars?: ExtraTemplateVars;
   executionEnv?: Record<string, string>;
   artifactContext?: RuntimeArtifactsContext;
+  artifactPhaseLabel?: string;
+  artifactExtra?: Record<string, unknown>;
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
   cliExpansionEnabled?: boolean;
@@ -279,6 +281,7 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
       artifactPhaseLabel: "cli-verify-template",
       artifactExtra: {
         promptType: "verify-template",
+        ...(options.artifactExtra ?? {}),
         ...(options.cliExecutionOptions?.artifactExtra ?? {}),
       },
     }
@@ -306,6 +309,8 @@ export async function verify(options: VerifyOptions): Promise<VerifyResult> {
     configDir: options.configDir,
     artifactContext: options.artifactContext,
     artifactPhase: "verify",
+    artifactPhaseLabel: options.artifactPhaseLabel,
+    artifactExtra: options.artifactExtra,
     env: options.executionEnv,
   });
 

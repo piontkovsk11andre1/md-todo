@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_AGENT_TEMPLATE,
+  DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
@@ -37,6 +38,7 @@ describe("project-templates", () => {
       repair: DEFAULT_REPAIR_TEMPLATE,
       resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      deepPlan: DEFAULT_DEEP_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       researchVerify: DEFAULT_RESEARCH_VERIFY_TEMPLATE,
       researchRepair: DEFAULT_RESEARCH_REPAIR_TEMPLATE,
@@ -82,6 +84,7 @@ describe("project-templates", () => {
       repair: DEFAULT_REPAIR_TEMPLATE,
       resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      deepPlan: DEFAULT_DEEP_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       researchVerify: DEFAULT_RESEARCH_VERIFY_TEMPLATE,
       researchRepair: DEFAULT_RESEARCH_REPAIR_TEMPLATE,
@@ -99,6 +102,7 @@ describe("project-templates", () => {
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research-repair.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research-resolve.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "resolve.md"));
+    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "deep-plan.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "trace.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-seed.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-execute.md"));

@@ -373,12 +373,13 @@ export function createPlanTask(
       }
 
       // Render the plan prompt template with the current document context.
-      const planTemplate = loadProjectTemplatesFromPorts(
+      const templates = loadProjectTemplatesFromPorts(
         dependencies.configDir,
         dependencies.templateLoader,
         dependencies.pathOperations,
-      ).plan;
-      const deepPlanTemplate = DEFAULT_DEEP_PLAN_TEMPLATE;
+      );
+      const planTemplate = templates.plan;
+      const deepPlanTemplate = templates.deepPlan ?? DEFAULT_DEEP_PLAN_TEMPLATE;
       const planPrependGuidance = loadOptionalPlannerGuidance({
         configDir: dependencies.configDir?.configDir,
         fileName: "plan-prepend.md",

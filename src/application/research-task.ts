@@ -637,8 +637,10 @@ export function createResearchTask(
           env: rundownVarEnv,
           configDir: dependencies.configDir?.configDir,
           artifactContext,
-          artifactPhase: "worker",
-          artifactPhaseLabel: "research",
+          artifactPhase: "execute",
+          artifactExtra: {
+            workflow: "research",
+          },
         });
 
         if (verbose) {
@@ -669,6 +671,9 @@ export function createResearchTask(
 
         let latestCandidate = runResult.stdout;
         const removedTodosAcrossAttempts: string[] = [];
+        let verificationAttemptNumber = 0;
+        let repairAttemptNumber = 0;
+        let resolveAttemptNumber = 0;
         const verifyRepairTask = createResearchVerificationTask(source, sourceDocument);
         const verifyCliExecutionOptions = withTemplateCliFailureAbort(
           cliExecutionOptions,
@@ -696,6 +701,7 @@ export function createResearchTask(
           templateVars?: Record<string, unknown>;
           executionEnv?: Record<string, string>;
           artifactContext?: unknown;
+          artifactExtra?: Record<string, unknown>;
           cliBlockExecutor?: CommandExecutor;
           cliExecutionOptions?: { timeoutMs?: number; env?: Record<string, string> };
           cliExpansionEnabled?: boolean;
@@ -725,6 +731,12 @@ export function createResearchTask(
           const verificationResult = await dependencies.taskVerification.verify({
             ...params,
             mode: params.mode ?? "wait",
+            artifactPhaseLabel: "verify",
+            artifactExtra: {
+              workflow: "research",
+              attempt: ++verificationAttemptNumber,
+              ...(params.artifactExtra ?? {}),
+            },
             templateVars: {
               ...(params.templateVars ?? {}),
               executionStdout: latestCandidate,
@@ -790,6 +802,10 @@ export function createResearchTask(
               configDir: repairOptions.configDir,
               artifactContext: repairOptions.artifactContext,
               artifactPhase: "repair",
+              artifactExtra: {
+                workflow: "research",
+                attempt: ++repairAttemptNumber,
+              },
             });
             repairOptions.onWorkerOutput?.(repairRunResult.stdout, repairRunResult.stderr);
 
@@ -822,6 +838,10 @@ export function createResearchTask(
               },
               executionEnv: repairOptions.executionEnv,
               artifactContext: repairOptions.artifactContext,
+              artifactExtra: {
+                repaired: true,
+                repairAttempt: repairAttemptNumber,
+              },
               cliBlockExecutor: repairOptions.cliBlockExecutor,
               cliExecutionOptions: repairOptions.cliExecutionOptions,
               cliExpansionEnabled: repairOptions.cliExpansionEnabled,
@@ -838,6 +858,11 @@ export function createResearchTask(
             ? async (resolveOptions: TaskResolveOptions): Promise<TaskResolveResult> =>
               await dependencies.taskRepair.resolve!({
                 ...resolveOptions,
+                artifactPhaseLabel: "resolve",
+                artifactExtra: {
+                  workflow: "research",
+                  attempt: ++resolveAttemptNumber,
+                },
                 templateVars: {
                   ...(resolveOptions.templateVars ?? {}),
                   executionStdout: latestCandidate,

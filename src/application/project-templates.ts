@@ -1,5 +1,6 @@
 import {
   DEFAULT_AGENT_TEMPLATE,
+  DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
@@ -39,6 +40,7 @@ export interface ProjectTemplates {
   repair: string;
   resolve: string;
   plan: string;
+  deepPlan?: string;
   research: string;
   researchVerify: string;
   researchRepair: string;
@@ -72,6 +74,7 @@ export function loadProjectTemplatesFromPorts(
       repair: DEFAULT_REPAIR_TEMPLATE,
       resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
+      deepPlan: DEFAULT_DEEP_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       researchVerify: DEFAULT_RESEARCH_VERIFY_TEMPLATE,
       researchRepair: DEFAULT_RESEARCH_REPAIR_TEMPLATE,
@@ -104,6 +107,7 @@ export function loadProjectTemplatesFromPorts(
     repair: templateLoader.load(pathOperations.join(dir, "repair.md")) ?? DEFAULT_REPAIR_TEMPLATE,
     resolve: templateLoader.load(pathOperations.join(dir, "resolve.md")) ?? DEFAULT_RESOLVE_TEMPLATE,
     plan: templateLoader.load(pathOperations.join(dir, "plan.md")) ?? DEFAULT_PLAN_TEMPLATE,
+    deepPlan: templateLoader.load(pathOperations.join(dir, "deep-plan.md")) ?? DEFAULT_DEEP_PLAN_TEMPLATE,
     research: templateLoader.load(pathOperations.join(dir, "research.md")) ?? DEFAULT_RESEARCH_TEMPLATE,
     researchVerify:
       templateLoader.load(pathOperations.join(dir, "research-verify.md")) ??

@@ -40,6 +40,14 @@ export interface TaskRepairOptions {
   executionEnv?: Record<string, string>;
   /** Optional artifact payload provided as additional repair context. */
   artifactContext?: unknown;
+  /** Optional artifact phase label used for repair artifact directory naming. */
+  artifactPhaseLabel?: string;
+  /** Optional additional metadata attached to repair phase artifacts. */
+  artifactExtra?: Record<string, unknown>;
+  /** Optional artifact phase label used for verification artifact directory naming. */
+  verificationArtifactPhaseLabel?: string;
+  /** Optional additional metadata attached to verification phase artifacts. */
+  verificationArtifactExtra?: Record<string, unknown>;
   /** Optional CLI block executor used for command expansion workflows. */
   cliBlockExecutor?: CommandExecutor;
   /** Optional execution options passed to CLI command invocations. */
@@ -86,6 +94,8 @@ export interface TaskResolveOptions {
   templateVars?: Record<string, unknown>;
   executionEnv?: Record<string, string>;
   artifactContext?: unknown;
+  artifactPhaseLabel?: string;
+  artifactExtra?: Record<string, unknown>;
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
   cliExpansionEnabled?: boolean;

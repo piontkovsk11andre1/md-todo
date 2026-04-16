@@ -240,6 +240,45 @@ describe("plan-task", () => {
     expect(prompt).toContain("Env: prod");
   });
 
+  it("renders custom deep-plan templates with vars from deep-plan.md", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\n- [ ] Leaf parent\n",
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("/deep-plan.md") || filePath.endsWith("\\deep-plan.md")) {
+        return [
+          "# Custom Deep Plan Prompt",
+          "Parent={{parentTask}}",
+          "Line={{parentTaskLine}}",
+          "Depth={{parentTaskDepth}}",
+        ].join("\n");
+      }
+      return null;
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true, deep: 1 }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.templateLoader.load)).toHaveBeenCalledWith(
+      expect.stringMatching(/\.rundown[\\/]deep-plan\.md$/),
+    );
+    const deepPrompt = events
+      .filter((event): event is Extract<ApplicationOutputEvent, { kind: "text" }> => event.kind === "text")
+      .find((event) => event.text.includes("# Custom Deep Plan Prompt"))?.text ?? "";
+    expect(deepPrompt).toContain("# Custom Deep Plan Prompt");
+    expect(deepPrompt).toContain("Parent=Leaf parent");
+    expect(deepPrompt).toContain("Line=2");
+    expect(deepPrompt).toContain("Depth=0");
+  });
+
   it("renders a fallback scanCount template value in unlimited mode", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
@@ -2067,8 +2106,8 @@ describe("plan-task", () => {
     const modifiedContent = [
       "# Roadmap",
       "",
-      "- [ ] Fix the critical bug",
       "- [ ] Add tests",
+      "- [ ] Fix the critical bug",
       "",
     ].join("\n");
     expect(fileSystem.readText(markdownFile)).toBe(modifiedContent);
@@ -2162,8 +2201,8 @@ describe("plan-task", () => {
     const firstScanEdit = [
       "# Roadmap",
       "",
-      "- [ ] Fix the critical bug",
       "- [ ] Add tests",
+      "- [ ] Fix the critical bug",
       "- [ ] Add regression tests",
       "- [ ] Update release notes",
       "",

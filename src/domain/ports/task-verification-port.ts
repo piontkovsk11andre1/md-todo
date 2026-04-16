@@ -36,6 +36,10 @@ export interface TaskVerificationOptions {
   executionEnv?: Record<string, string>;
   // Opaque artifact context forwarded to the verification implementation.
   artifactContext?: unknown;
+  // Optional artifact phase label used for runtime artifact directory naming.
+  artifactPhaseLabel?: string;
+  // Optional additional metadata attached to verification phase artifacts.
+  artifactExtra?: Record<string, unknown>;
   // Optional executor used to run embedded CLI blocks.
   cliBlockExecutor?: CommandExecutor;
   // Optional execution options applied when running CLI block commands.

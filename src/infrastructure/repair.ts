@@ -52,6 +52,14 @@ export interface RepairOptions {
   executionEnv?: Record<string, string>;
   /** Runtime artifact context used to capture phase outputs. */
   artifactContext?: RuntimeArtifactsContext;
+  /** Optional artifact phase label used for repair artifact directory naming. */
+  artifactPhaseLabel?: string;
+  /** Optional additional metadata attached to repair phase artifacts. */
+  artifactExtra?: Record<string, unknown>;
+  /** Optional artifact phase label used for verification artifact directory naming. */
+  verificationArtifactPhaseLabel?: string;
+  /** Optional additional metadata attached to verification phase artifacts. */
+  verificationArtifactExtra?: Record<string, unknown>;
   /** Optional executor used when expanding CLI blocks in prompts. */
   cliBlockExecutor?: CommandExecutor;
   /** Options forwarded to CLI block execution during prompt expansion. */
@@ -101,6 +109,8 @@ export interface ResolveOptions {
   templateVars?: ExtraTemplateVars;
   executionEnv?: Record<string, string>;
   artifactContext?: RuntimeArtifactsContext;
+  artifactPhaseLabel?: string;
+  artifactExtra?: Record<string, unknown>;
   cliBlockExecutor?: CommandExecutor;
   cliExecutionOptions?: CommandExecutionOptions;
   cliExpansionEnabled?: boolean;
@@ -180,7 +190,11 @@ export async function resolve(options: ResolveOptions): Promise<ResolveResult> {
     configDir: options.configDir,
     artifactContext: options.artifactContext,
     artifactPhase: "resolve",
-    artifactExtra: { promptType: "resolve" },
+    artifactPhaseLabel: options.artifactPhaseLabel,
+    artifactExtra: {
+      promptType: "resolve",
+      ...(options.artifactExtra ?? {}),
+    },
   });
 
   options.onWorkerOutput?.(runResult.stdout, runResult.stderr);
@@ -260,7 +274,11 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       configDir: options.configDir,
       artifactContext: options.artifactContext,
       artifactPhase: "repair",
-      artifactExtra: { attempt: attempts },
+      artifactPhaseLabel: options.artifactPhaseLabel,
+      artifactExtra: {
+        attempt: attempts,
+        ...(options.artifactExtra ?? {}),
+      },
     });
     repairStdout = runResult.stdout;
     options.onWorkerOutput?.(repairStdout, runResult.stderr);
@@ -280,6 +298,8 @@ export async function repair(options: RepairOptions): Promise<RepairResult> {
       templateVars: options.templateVars,
       executionEnv: options.executionEnv,
       artifactContext: options.artifactContext,
+      artifactPhaseLabel: options.verificationArtifactPhaseLabel,
+      artifactExtra: options.verificationArtifactExtra,
       cliBlockExecutor: options.cliBlockExecutor,
       cliExecutionOptions: options.cliExecutionOptions,
       cliExpansionEnabled: options.cliExpansionEnabled,

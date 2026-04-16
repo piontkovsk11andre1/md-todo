@@ -1,6 +1,7 @@
 import {
   DEFAULT_AGENT_TEMPLATE,
   DEFAULT_CONFIG_CONTENT,
+  DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
@@ -144,6 +145,7 @@ export function createInitProject(
     write("repair.md", DEFAULT_REPAIR_TEMPLATE);
     write("resolve.md", DEFAULT_RESOLVE_TEMPLATE);
     write("plan.md", DEFAULT_PLAN_TEMPLATE);
+    write("deep-plan.md", DEFAULT_DEEP_PLAN_TEMPLATE);
     write("research.md", DEFAULT_RESEARCH_TEMPLATE);
     write("research-verify.md", DEFAULT_RESEARCH_VERIFY_TEMPLATE);
     write("research-repair.md", DEFAULT_RESEARCH_REPAIR_TEMPLATE);

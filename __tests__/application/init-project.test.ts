@@ -50,6 +50,10 @@ describe("init-project", () => {
       expect.any(String),
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.rundown/deep-plan.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/.rundown/research-verify.md",
       expect.any(String),
     );
@@ -158,6 +162,10 @@ describe("init-project", () => {
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/config/.rundown-custom/resolve.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/config/.rundown-custom/deep-plan.md",
       expect.any(String),
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
