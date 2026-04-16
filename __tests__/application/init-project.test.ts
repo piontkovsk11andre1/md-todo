@@ -74,6 +74,10 @@ describe("init-project", () => {
       expect.any(String),
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/.rundown/research-output-contract.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/.rundown/test-verify.md",
       expect.any(String),
     );
@@ -198,6 +202,10 @@ describe("init-project", () => {
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/config/.rundown-custom/research-resolve.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
+      "/workspace/config/.rundown-custom/research-output-contract.md",
       expect.any(String),
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(

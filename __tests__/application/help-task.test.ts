@@ -67,6 +67,29 @@ describe("help-task", () => {
     );
   });
 
+  it("appends canonical --continue to resolved help worker command when requested", async () => {
+    const cwd = "/workspace";
+    const { dependencies, workerExecutor } = createDependencies({ cwd });
+    vi.mocked(dependencies.workerConfigPort.load).mockReturnValue({
+      workers: {
+        tui: ["opencode", "run"],
+      },
+    });
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({
+      workerCommand: [],
+      continueSession: true,
+    }));
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledWith(expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run", "--continue"],
+      }),
+    }));
+  });
+
   it("renders help template with cli vars, command index, and docs context", async () => {
     const cwd = "/workspace";
     const docsDir = path.join(cwd, "docs");

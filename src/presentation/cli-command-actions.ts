@@ -124,6 +124,39 @@ function hasCliFlag(argv: string[], optionName: string): boolean {
   return false;
 }
 
+function hasShortCliFlag(argv: string[], shortFlag: string): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      break;
+    }
+
+    if (!token.startsWith("-") || token.startsWith("--") || token.length <= 2) {
+      continue;
+    }
+
+    const flagSegment = token.slice(1).split("=", 1)[0] ?? "";
+    if (/^[A-Za-z]+$/.test(flagSegment) && flagSegment.includes(shortFlag)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasRootContinueFlag(argv: string[]): boolean {
+  return hasCliOption(argv, "--continue") || hasCliFlag(argv, "-c") || hasShortCliFlag(argv, "c");
+}
+
+function isContinueFlagToken(token: string): boolean {
+  return token === "-c" || token === "--continue" || token.startsWith("--continue=");
+}
+
+function appendCanonicalContinueFlag(workerCommand: string[]): string[] {
+  const filteredWorkerCommand = workerCommand.filter((token) => !isContinueFlagToken(token));
+  return [...filteredWorkerCommand, "--continue"];
+}
+
 function loadRunDefaultsFromConfig(invocationArgv: string[]): RunDefaultsConfig | undefined {
   const configDir = resolveConfigDirForInvocation(invocationArgv)?.configDir;
   if (!configDir) {
@@ -165,6 +198,7 @@ export function createHelpCommandAction({
 }: HelpActionDependencies): () => CliActionResult {
   return async () => {
     const invocationArgv = getInvocationArgv?.() ?? process.argv.slice(2);
+    const continueSession = hasRootContinueFlag(invocationArgv);
     if (resolveInvocationCommand(invocationArgv) !== "rundown") {
       outputHelp();
       return EXIT_CODE_SUCCESS;
@@ -181,11 +215,19 @@ export function createHelpCommandAction({
     }
 
     try {
+      const workerFromSeparator = getWorkerFromSeparator();
+      const workerPattern = resolveWorkerPattern(
+        continueSession && Array.isArray(workerFromSeparator)
+          ? appendCanonicalContinueFlag(workerFromSeparator)
+          : undefined,
+        getWorkerFromSeparator,
+      );
       const exitCode = await getApp().helpTask({
-        workerPattern: resolveWorkerPattern(undefined, getWorkerFromSeparator),
+        workerPattern,
         keepArtifacts: false,
         trace: hasTraceFlag(invocationArgv),
         cliVersion,
+        continueSession,
       });
 
       if (exitCode === EXIT_CODE_NO_WORK) {

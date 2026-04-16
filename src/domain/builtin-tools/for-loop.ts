@@ -14,11 +14,21 @@ interface OpenFence {
   length: number;
 }
 
-function buildForLoopResearchPrompt(payload: string, source: string, contextBefore: string, taskText: string): string {
+function buildForLoopResearchPrompt(
+  payload: string,
+  source: string,
+  contextBefore: string,
+  taskText: string,
+  context: Pick<Parameters<ToolHandlerFn>[0], "configDir" | "fileSystem" | "pathOperations">,
+): string {
   const outputContract = buildResearchOutputPromptContract({
     itemLabel: "item",
     metadataPrefix: "for-item:",
     emptyConditionLabel: "items are found",
+  }, {
+    configDir: context.configDir,
+    fileSystem: context.fileSystem,
+    pathOperations: context.pathOperations,
   });
 
   return [
@@ -138,7 +148,17 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
   } else {
     let researchOutput = "";
     try {
-      const prompt = buildForLoopResearchPrompt(payload, context.source, context.contextBefore, context.task.text);
+      const prompt = buildForLoopResearchPrompt(
+        payload,
+        context.source,
+        context.contextBefore,
+        context.task.text,
+        {
+          configDir: context.configDir,
+          fileSystem: context.fileSystem,
+          pathOperations: context.pathOperations,
+        },
+      );
       const runResult = await context.workerExecutor.runWorker({
         workerPattern: context.workerPattern,
         prompt,

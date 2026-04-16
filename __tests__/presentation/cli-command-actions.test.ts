@@ -346,6 +346,33 @@ describe("createHelpCommandAction", () => {
     expect(outputHelp).not.toHaveBeenCalled();
   });
 
+  it("forwards root continuation flag as canonical --continue worker arg", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["opencode", "run", "-c"],
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => true,
+      getInvocationArgv: () => ["-c", "--", "opencode", "run", "-c"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(0);
+    expect(helpTask).toHaveBeenCalledTimes(1);
+    expect(helpTask).toHaveBeenCalledWith(expect.objectContaining({
+      continueSession: true,
+      workerPattern: expect.objectContaining({
+        command: ["opencode", "run", "--continue"],
+      }),
+    }));
+    expect(outputHelp).not.toHaveBeenCalled();
+  });
+
   it("falls back to static help when terminal is non-interactive", async () => {
     const helpTask = vi.fn(async () => 0);
     const app = { helpTask } as unknown as CliApp;

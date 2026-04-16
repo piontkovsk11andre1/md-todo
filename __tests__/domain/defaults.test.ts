@@ -318,6 +318,7 @@ describe("default prompt templates", () => {
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-verify.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-repair.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-resolve.md`");
+    expect(DEFAULT_HELP_TEMPLATE).toContain("`research-output-contract.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`undo.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`test-verify.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`test-future.md`");

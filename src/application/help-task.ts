@@ -50,6 +50,16 @@ export interface HelpTaskOptions {
   keepArtifacts: boolean;
   trace: boolean;
   cliVersion: string;
+  continueSession?: boolean;
+}
+
+function isContinueFlagToken(token: string): boolean {
+  return token === "-c" || token === "--continue" || token.startsWith("--continue=");
+}
+
+function appendCanonicalContinueFlag(workerCommand: string[]): string[] {
+  const filteredWorkerCommand = workerCommand.filter((token) => !isContinueFlagToken(token));
+  return [...filteredWorkerCommand, "--continue"];
 }
 
 export function createHelpTask(
@@ -90,6 +100,13 @@ export function createHelpTask(
         });
         resolvedWorkerCommand = resolvedWorker.workerCommand;
         resolvedWorkerPattern = resolvedWorker.workerPattern;
+        if (options.continueSession) {
+          resolvedWorkerCommand = appendCanonicalContinueFlag(resolvedWorkerCommand);
+          resolvedWorkerPattern = {
+            ...resolvedWorkerPattern,
+            command: appendCanonicalContinueFlag(resolvedWorkerPattern.command),
+          };
+        }
       } catch (error) {
         emit({
           kind: "info",

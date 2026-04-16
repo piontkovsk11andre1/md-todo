@@ -138,6 +138,34 @@ describe("builtin-tools/for-loop", () => {
     });
   });
 
+  it("loads research output contract from .rundown template when configured", async () => {
+    const context = createContext({
+      configDir: "/workspace/.rundown",
+      fileSystem: {
+        ...createContext().fileSystem,
+        exists: vi.fn((targetPath: string) => targetPath === "/workspace/.rundown/research-output-contract.md"),
+        readText: vi.fn((targetPath: string) => {
+          if (targetPath === "/workspace/.rundown/research-output-contract.md") {
+            return [
+              "- Custom line for {{itemLabel}}",
+              "- Prefix token {{metadataPrefix}}",
+              "- Empty rule {{emptyConditionLabel}}",
+            ].join("\n");
+          }
+          return "";
+        }),
+      },
+    });
+
+    await forLoopHandler(context);
+
+    const runWorkerCall = (context.workerExecutor.runWorker as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const prompt = runWorkerCall?.prompt ?? "";
+    expect(prompt).toContain("Custom line for item");
+    expect(prompt).toContain("Prefix token for-item:");
+    expect(prompt).toContain("Empty rule items are found");
+  });
+
   it("reuses existing for-item metadata when present", async () => {
     const context = createContext({
       task: {

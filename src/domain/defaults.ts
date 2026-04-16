@@ -68,6 +68,22 @@ export const DEFAULT_TEMPLATE_VARS_SECTION = `\
 {{userVariables}}
 `;
 
+/**
+ * Default research output contract template used by built-in research tools.
+ *
+ * This template is rendered with: `itemLabel`, `metadataPrefix`, and
+ * `emptyConditionLabel`.
+ */
+export const DEFAULT_RESEARCH_OUTPUT_CONTRACT_TEMPLATE = `\
+Return one {{itemLabel}} per line using plain lines or Markdown list items (bulleted/numbered).
+Do not wrap output in code fences.
+Use one item per line; do not use JSON or nested structures.
+Do not include the literal \`{{metadataPrefix}}\` prefix unless it is part of the value.
+Preserve discovery order.
+If no {{emptyConditionLabel}}, return an empty response.
+Do not include commentary.
+`;
+
 const DEFAULT_PLANNING_FEATURE_REFERENCE_SHARED_FRAGMENT = `\
 Use built-in prefixes when they improve execution quality{{qualitySuffix}}:
 
@@ -573,7 +589,7 @@ Layered worker resolution (lowest to highest priority):
 
 ### Templates (\`.rundown/*.md\`)
 
-Customizable templates: \`agent.md\`, \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`deep-plan.md\`, \`discuss.md\`, \`discuss-finished.md\`, \`research.md\`, \`research-verify.md\`, \`research-repair.md\`, \`research-resolve.md\`, \`trace.md\`, \`undo.md\`, \`test-verify.md\`, \`test-future.md\`, \`test-materialized.md\`, \`help.md\`, \`migrate*.md\`, \`query-*.md\`. Built-in defaults are used when files are absent.
+Customizable templates: \`agent.md\`, \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`deep-plan.md\`, \`discuss.md\`, \`discuss-finished.md\`, \`research.md\`, \`research-verify.md\`, \`research-repair.md\`, \`research-resolve.md\`, \`research-output-contract.md\`, \`trace.md\`, \`undo.md\`, \`test-verify.md\`, \`test-future.md\`, \`test-materialized.md\`, \`help.md\`, \`migrate*.md\`, \`query-*.md\`. Built-in defaults are used when files are absent.
 
 ### Fallback mode for non-rundown questions
 

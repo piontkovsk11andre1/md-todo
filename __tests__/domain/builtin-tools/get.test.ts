@@ -167,6 +167,7 @@ describe("builtin-tools/get getHandler", () => {
     expect(runWorker).toHaveBeenCalledTimes(1);
     const runWorkerPrompt = runWorker.mock.calls[0]?.[0]?.prompt ?? "";
     expect(runWorkerPrompt).toContain("You are a full-scale research agent resolving a task query against the current project.");
+    expect(runWorkerPrompt).toContain("Return one extracted item per line using plain lines or Markdown list items (bulleted/numbered).");
     expect(runWorkerPrompt).toContain("Do not wrap output in code fences.");
     expect(runWorkerPrompt).toContain("Task:");
     expect(runWorkerPrompt).toContain("get: All current names of this and that");
@@ -230,6 +231,38 @@ describe("builtin-tools/get getHandler", () => {
       kind: "info",
       message: "Get outcome: generated; result-count=2; rerun-policy=reuse.",
     });
+  });
+
+  it("loads research output contract from .rundown template when configured", async () => {
+    const source = "- [ ] get: All current names of this and that\n";
+    const { context, runWorker } = createContext({
+      source,
+      runWorker: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "- Alpha",
+        stderr: "",
+      })),
+    });
+
+    context.configDir = "C:/workspace/.rundown";
+    context.fileSystem.exists = vi.fn((targetPath: string) => targetPath === "C:/workspace/.rundown/research-output-contract.md");
+    context.fileSystem.readText = vi.fn((targetPath: string) => {
+      if (targetPath === "C:/workspace/.rundown/research-output-contract.md") {
+        return [
+          "- One {{itemLabel}} each line",
+          "- Prefix literal: `{{metadataPrefix}}`",
+          "- Empty when {{emptyConditionLabel}}",
+        ].join("\n");
+      }
+      return source;
+    });
+
+    await getHandler(context);
+
+    const runWorkerPrompt = runWorker.mock.calls[0]?.[0]?.prompt ?? "";
+    expect(runWorkerPrompt).toContain("One extracted item each line");
+    expect(runWorkerPrompt).toContain("Prefix literal: `get-result:`");
+    expect(runWorkerPrompt).toContain("Empty when results are found");
   });
 
   it("preserves extracted value order and duplicates", async () => {
