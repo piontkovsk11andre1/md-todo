@@ -268,7 +268,7 @@ function executeCommand(
             resolve({
               exitCode: 124,
               stdout: stdoutText,
-              stderr: withTimeoutMessage(stderrText, normalizedTimeoutMs),
+              stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
             });
             return;
           }
@@ -315,7 +315,7 @@ function executeCommand(
           resolve({
             exitCode: 124,
             stdout: "",
-            stderr: withTimeoutMessage("", normalizedTimeoutMs),
+            stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
           });
           return;
         }
@@ -379,7 +379,7 @@ function executeCommand(
         resolve({
           exitCode: 124,
           stdout: stdoutText,
-          stderr: withTimeoutMessage(stderrText, normalizedTimeoutMs),
+          stderr: buildTimeoutFailureStderr(normalizedTimeoutMs),
         });
         return;
       }
@@ -433,13 +433,8 @@ function clearWorkerTimeout(timeoutHandle: NodeJS.Timeout | null): void {
   clearTimeout(timeoutHandle);
 }
 
-function withTimeoutMessage(stderrText: string, timeoutMs: number): string {
-  const timeoutMessage = `Worker process timed out after ${timeoutMs}ms.`;
-  if (stderrText.length === 0) {
-    return timeoutMessage;
-  }
-
-  return `${stderrText}${stderrText.endsWith("\n") ? "" : "\n"}${timeoutMessage}`;
+function buildTimeoutFailureStderr(timeoutMs: number): string {
+  return `Worker process timed out after ${timeoutMs}ms.`;
 }
 
 /**

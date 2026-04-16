@@ -97,6 +97,16 @@ Prefix composition is supported with \`, \` or \`; \` separators when combining 
 - \`- [ ] profile=fast, verify: release checks pass\`
 - \`- [ ] profile=complex; memory: record migration constraints\`
 
+Prefix decision table (choose the closest matching intent):
+
+| Task intent | Preferred prefix | Why |
+| --- | --- | --- |
+| Discover concrete facts for downstream tasks | \`get:\` | One-pass discovery with durable \`get-result:\` capture. |
+| Capture reusable context for later tasks (no file write/edit target) | \`memory:\` | Persists reference context without creating/updating files. |
+| Apply a small mechanical change | \`fast:\` | Executes quickly and skips per-task verification overhead. |
+| Assert current state only (no edits) | \`verify:\` | Runs verification without execution work. |
+| Repeat work until an explicit stop condition | \`loop:\` | Bounded iterative workflow with deterministic completion. |
+
 Heuristics:
 
 - Use \`verify:\` only when the {{inlineTaskSubject}} checks existing state without doing work. If the task creates, writes, or modifies anything, it is NOT a verify task.

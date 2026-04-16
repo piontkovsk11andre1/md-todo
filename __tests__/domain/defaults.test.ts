@@ -114,6 +114,9 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`profile=<name>`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`memory:`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("`include: <path>`");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("Prefix decision table (choose the closest matching intent)");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("Discover concrete facts for downstream tasks");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("Repeat work until an explicit stop condition");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
     expect(DEFAULT_PLAN_TEMPLATE).toContain("there is no explicit target file write/edit/create in that task");
@@ -152,6 +155,9 @@ describe("default prompt templates", () => {
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`profile=<name>`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`memory:`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("`include: <path>`");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Prefix decision table (choose the closest matching intent)");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Capture reusable context for later tasks (no file write/edit target)");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Apply a small mechanical change");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=fast, verify: release checks pass`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("- `- [ ] profile=complex; memory: record migration constraints`");
     expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("Never invent child TODO items based on examples, sample output, or hypothetical scenarios found in the document.");

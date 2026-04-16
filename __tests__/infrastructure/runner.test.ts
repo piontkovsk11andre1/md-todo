@@ -584,7 +584,7 @@ describe("runWorker", () => {
     stderrWriteSpy.mockRestore();
   });
 
-  it("returns timeout failure with appended stderr in wait mode", async () => {
+  it("returns deterministic timeout stderr in wait mode", async () => {
     vi.useFakeTimers();
 
     try {
@@ -625,7 +625,7 @@ describe("runWorker", () => {
       const child = spawnMock.mock.results[0]?.value as { kill: (signal?: NodeJS.Signals) => boolean };
       expect(child.kill).toHaveBeenCalledWith("SIGTERM");
       expect(result.exitCode).toBe(124);
-      expect(result.stderr).toBe("stuck worker output\nWorker process timed out after 50ms.");
+      expect(result.stderr).toBe("Worker process timed out after 50ms.");
     } finally {
       vi.useRealTimers();
     }
