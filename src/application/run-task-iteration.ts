@@ -338,7 +338,7 @@ export async function runTaskIteration(params: {
     ? prefixChain
     : parsePrefixChain(taskForExecution.text, dependencies.toolResolver);
   const taskForLifecycle = execution.forceStrippedTaskText === undefined
-    ? (hasResolvedPrefixChain ? task : taskForExecution)
+    ? taskForExecution
     : task;
 
   const modifierProfile = extractPrefixModifierProfile(executionPrefixChain);

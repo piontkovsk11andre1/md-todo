@@ -10,15 +10,16 @@ Scope model:
 
 Global path conventions:
 
-- Linux: `$XDG_CONFIG_HOME/rundown/config.json` (fallback: `~/.config/rundown/config.json`)
-- macOS: `~/Library/Application Support/rundown/config.json` (discovery also checks `$XDG_CONFIG_HOME/rundown/config.json` then `~/.config/rundown/config.json`)
-- Windows: `%APPDATA%\rundown\config.json` (discovery also checks `%LOCALAPPDATA%\rundown\config.json`, `%USERPROFILE%\AppData\Roaming\rundown\config.json`, then `~/.config/rundown/config.json`)
+- Linux: `~/.config/rundown/config.json`
+- macOS: `~/Library/Application Support/rundown/config.json`
+- Windows: `~\AppData\Roaming\rundown\config.json`
 
 Discovery behavior:
 
 - `config path --scope global` prints the canonical path for the current platform.
-- Global/effective reads use deterministic ordered discovery and load the first existing file.
+- Global/effective reads check the canonical global path only.
 - If no global file exists, global scope is treated as empty.
+- If home-directory resolution is unavailable, global scope is treated as empty.
 
 Layer merge semantics (`global` -> `local`):
 

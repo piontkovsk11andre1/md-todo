@@ -19,9 +19,9 @@ Local path: `<config-dir>/config.json` (typically `.rundown/config.json`).
 
 Global path (user-level defaults):
 
-- Linux: `$XDG_CONFIG_HOME/rundown/config.json` (fallback: `~/.config/rundown/config.json`)
-- macOS: `~/Library/Application Support/rundown/config.json` (discovery also checks XDG and `~/.config`)
-- Windows: `%APPDATA%\rundown\config.json` (discovery also checks `%LOCALAPPDATA%`, `%USERPROFILE%\AppData\Roaming`, then `~/.config`)
+- Linux: `~/.config/rundown/config.json`
+- macOS: `~/Library/Application Support/rundown/config.json`
+- Windows: `~\AppData\Roaming\rundown\config.json`
 
 Global config is optional. If no global file exists, rundown behaves as before and uses local config only.
 
@@ -294,24 +294,21 @@ Scope selection:
 - `--scope local`: `<config-dir>/config.json`.
 - `--scope global`: user-level defaults shared across rundown workspaces.
 
-Global config path strategy (canonical write target + discovery fallbacks):
+Global config path strategy (single canonical path derived from home directory):
 
 - Linux:
-  - canonical: `$XDG_CONFIG_HOME/rundown/config.json`
-  - fallback when `XDG_CONFIG_HOME` is unset: `~/.config/rundown/config.json`
+  - canonical: `~/.config/rundown/config.json`
 - macOS:
   - canonical: `~/Library/Application Support/rundown/config.json`
-  - discovery fallback order: `$XDG_CONFIG_HOME/rundown/config.json` -> `~/.config/rundown/config.json`
 - Windows:
-  - canonical: `%APPDATA%\rundown\config.json`
-  - discovery fallback order: `%LOCALAPPDATA%\rundown\config.json` -> `%USERPROFILE%\AppData\Roaming\rundown\config.json` -> `~/.config/rundown/config.json`
+  - canonical: `~\AppData\Roaming\rundown\config.json`
 
 Discovery rules:
 
 - `config path --scope global` reports the canonical path for the current platform.
-- Read operations for global/effective scope probe canonical first, then fallbacks in deterministic order.
-- The first existing file in that ordered list is loaded.
+- Read operations for global/effective scope read the canonical path when it exists.
 - If no global file exists, global scope is treated as empty (backward compatible behavior).
+- If home-directory resolution is unavailable, global scope is treated as empty.
 - Invalid global config fails fast with a path-specific parse/validation error; local config is not modified.
 
 Layer merge semantics (`global` -> `local`):

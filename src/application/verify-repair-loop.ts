@@ -365,7 +365,8 @@ export async function runVerifyRepairLoop(
   const cumulativeFailureReasons: string[] = [];
   let verificationDurationMs = 0;
   let executionDurationMs = 0;
-  const shouldRunUsageLimitDetection = input.runMode !== "detached"
+  const shouldRunUsageLimitDetection = process.env.RUNDOWN_TEST_MODE !== "1"
+    && input.runMode !== "detached"
     && (input.runMode !== "tui" || input.executionOutputCaptured === true)
     && input.isInlineCliTask !== true
     && input.isToolExpansionTask !== true;

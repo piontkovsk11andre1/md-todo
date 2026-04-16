@@ -43,7 +43,7 @@ export interface UndoTaskDependencies {
   templateLoader: TemplateLoader;
   workingDirectory: WorkingDirectoryPort;
   pathOperations: PathOperationsPort;
-  workerConfigPort: WorkerConfigPort;
+  workerConfigPort?: WorkerConfigPort;
   configDir?: ConfigDirResult;
   output: ApplicationOutputPort;
 }
@@ -87,7 +87,7 @@ export function createUndoTask(
     const cwd = dependencies.workingDirectory.cwd();
     const configDirPath = dependencies.configDir?.configDir;
     const workerTimeoutMs = configDirPath
-      ? dependencies.workerConfigPort.load(configDirPath)?.workerTimeoutMs
+      ? dependencies.workerConfigPort?.load(configDirPath)?.workerTimeoutMs
       : undefined;
     const targetRuns = resolveTargetRuns(dependencies.artifactStore, configDirPath, {
       runId,

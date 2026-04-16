@@ -13,7 +13,6 @@ export interface GlobalConfigPathResolution {
 
 interface ResolveGlobalConfigPathOptions {
   readonly platform?: NodeJS.Platform;
-  readonly env?: NodeJS.ProcessEnv;
   readonly homedir?: string;
   readonly fileExists?: (filePath: string) => boolean;
 }
@@ -35,68 +34,45 @@ function toConfigFilePathForPlatform(configRoot: string, platform: NodeJS.Platfo
   return path.posix.join(configRoot, GLOBAL_CONFIG_DIR_NAME, GLOBAL_CONFIG_FILE_NAME);
 }
 
-function pushCandidate(candidates: string[], candidate: string | undefined): void {
-  const normalized = normalizeNonEmptyPath(candidate);
-  if (!normalized) {
-    return;
-  }
-
-  if (!candidates.includes(normalized)) {
-    candidates.push(normalized);
+function resolveHomeDir(input: string | undefined): string | undefined {
+  try {
+    return normalizeNonEmptyPath(input ?? os.homedir());
+  } catch {
+    return undefined;
   }
 }
 
+function resolveGlobalConfigCandidate(platform: NodeJS.Platform, homedir: string | undefined): string | undefined {
+  if (!homedir) {
+    return undefined;
+  }
+
+  if (platform === "win32") {
+    return toConfigFilePathForPlatform(path.win32.join(homedir, "AppData", "Roaming"), platform);
+  }
+
+  if (platform === "darwin") {
+    return toConfigFilePathForPlatform(path.posix.join(homedir, "Library", "Application Support"), platform);
+  }
+
+  return toConfigFilePathForPlatform(path.posix.join(homedir, ".config"), platform);
+}
+
 /**
- * Resolves ordered user-level global config discovery candidates and picks a
- * canonical write location for the current platform.
+ * Resolves the user-level global config path derived from the home directory.
+ *
+ * The canonical path is platform-specific and discovery checks that path only.
  */
 export function resolveGlobalConfigPath(
   options: ResolveGlobalConfigPathOptions = {},
 ): GlobalConfigPathResolution {
   const platform = options.platform ?? process.platform;
-  const env = options.env ?? process.env;
-  const homedir = normalizeNonEmptyPath(options.homedir ?? os.homedir());
+  const homedir = resolveHomeDir(options.homedir);
   const fileExists = options.fileExists ?? ((filePath: string) => fs.existsSync(filePath));
 
-  const candidates: string[] = [];
-
-  if (platform === "win32") {
-    pushCandidate(candidates, normalizeNonEmptyPath(env.APPDATA)
-      ? toConfigFilePathForPlatform(env.APPDATA as string, platform)
-      : undefined);
-    pushCandidate(candidates, normalizeNonEmptyPath(env.LOCALAPPDATA)
-      ? toConfigFilePathForPlatform(env.LOCALAPPDATA as string, platform)
-      : undefined);
-    pushCandidate(candidates, homedir
-      ? toConfigFilePathForPlatform(path.win32.join(homedir, "AppData", "Roaming"), platform)
-      : undefined);
-    pushCandidate(candidates, normalizeNonEmptyPath(env.USERPROFILE)
-      ? toConfigFilePathForPlatform(path.win32.join(env.USERPROFILE as string, "AppData", "Roaming"), platform)
-      : undefined);
-    pushCandidate(candidates, homedir
-      ? toConfigFilePathForPlatform(path.win32.join(homedir, ".config"), platform)
-      : undefined);
-  } else if (platform === "darwin") {
-    pushCandidate(candidates, homedir
-      ? toConfigFilePathForPlatform(path.posix.join(homedir, "Library", "Application Support"), platform)
-      : undefined);
-    pushCandidate(candidates, normalizeNonEmptyPath(env.XDG_CONFIG_HOME)
-      ? toConfigFilePathForPlatform(env.XDG_CONFIG_HOME as string, platform)
-      : undefined);
-    pushCandidate(candidates, homedir
-      ? toConfigFilePathForPlatform(path.posix.join(homedir, ".config"), platform)
-      : undefined);
-  } else {
-    pushCandidate(candidates, normalizeNonEmptyPath(env.XDG_CONFIG_HOME)
-      ? toConfigFilePathForPlatform(env.XDG_CONFIG_HOME as string, platform)
-      : undefined);
-    pushCandidate(candidates, homedir
-      ? toConfigFilePathForPlatform(path.posix.join(homedir, ".config"), platform)
-      : undefined);
-  }
-
-  const canonicalPath = candidates[0];
-  const discoveredPath = candidates.find((candidate) => fileExists(candidate));
+  const canonicalPath = resolveGlobalConfigCandidate(platform, homedir);
+  const discoveredPath = canonicalPath && fileExists(canonicalPath) ? canonicalPath : undefined;
+  const candidates = canonicalPath ? [canonicalPath] : [];
 
   return {
     canonicalPath,

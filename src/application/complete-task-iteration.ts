@@ -496,6 +496,12 @@ export async function completeTaskIteration(params: {
             + pluralize(loopItemCount, "item", "items")
             + "; marking parent task complete.",
         });
+      } else {
+        // Loop handler ran but could not advance or complete — children still
+        // pending.  Continue so the runner selects child tasks next.
+        state.tasksCompleted++;
+        resetArtifacts();
+        return { continueLoop: true, groupEnded: false };
       }
     }
   }

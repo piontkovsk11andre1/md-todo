@@ -116,6 +116,10 @@ describe("createConfigDirAdapter", () => {
     const deepDir = path.join(tempDir, "nested", "project");
     fs.mkdirSync(deepDir, { recursive: true });
 
+    // Keep this assertion independent from host machine state (for example a
+    // real ~/.rundown/config.json).
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+
     const adapter = createConfigDirAdapter();
     const result = adapter.resolve(deepDir);
 

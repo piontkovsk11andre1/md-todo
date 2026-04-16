@@ -142,9 +142,12 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
   let bakedItems: string[];
   let itemSource: "metadata" | "payload" | "research";
   const metadataItems = resolveForLoopItems(context.task.subItems, payload);
+  const payloadFallbackItems = metadataItems.source === "payload"
+    ? metadataItems.items
+    : [];
   if (metadataItems.source === "metadata" && metadataItems.items.length > 0) {
     bakedItems = metadataItems.items;
-    itemSource = "metadata";
+    itemSource = metadataItems.source;
   } else {
     let researchOutput = "";
     try {
@@ -201,10 +204,14 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
 
     bakedItems = extractForLoopItemsFromOutput(researchOutput);
     itemSource = "research";
+    if (bakedItems.length === 0 && payloadFallbackItems.length > 0) {
+      bakedItems = payloadFallbackItems;
+      itemSource = "payload";
+    }
   }
 
   if (bakedItems.length === 0) {
-    context.emit({ kind: "warn", message: "For loop resolved zero items; completing without iteration." });
+    context.emit({ kind: "info", message: "For loop resolved zero items; completing without iteration." });
     return {
       skipExecution: true,
       shouldVerify: false,

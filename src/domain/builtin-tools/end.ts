@@ -37,7 +37,7 @@ function normalizeYesNo(raw: string): "yes" | "no" | null {
 
 function buildConditionPrompt(condition: string): string {
   return [
-    "You are evaluating a control-flow condition for a Markdown task runner.",
+    "You are evaluating an end-condition for a Markdown task runner.",
     "Decide whether the condition is true right now.",
     "Answer the yes/no question based only on the condition text.",
     "If the condition is ambiguous or cannot be determined, choose no.",
@@ -112,8 +112,8 @@ async function evaluateCondition(context: Parameters<ToolHandlerFn>[0], conditio
     return {
       ok: false,
       exitCode: runResult.exitCode,
-      failureMessage: "Condition worker exited with code " + runResult.exitCode + ".",
-      failureReason: "Condition worker exited with a non-zero code.",
+      failureMessage: "End condition worker exited with code " + runResult.exitCode + ".",
+      failureReason: "End condition worker exited with a non-zero code.",
     };
   }
 

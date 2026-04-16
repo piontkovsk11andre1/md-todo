@@ -2,76 +2,59 @@ import { describe, expect, it } from "vitest";
 import { resolveGlobalConfigPath } from "../../../src/infrastructure/adapters/global-config-path-adapter.js";
 
 describe("resolveGlobalConfigPath", () => {
-  it("prefers APPDATA on win32 and discovers first existing candidate", () => {
-    const appdataPath = "C:\\Users\\alice\\AppData\\Roaming";
-    const localAppDataPath = "C:\\Users\\alice\\AppData\\Local";
+  it("uses a single homedir-derived canonical path on win32", () => {
+    const homeDir = "C:\\Users\\alice";
 
     const result = resolveGlobalConfigPath({
       platform: "win32",
-      env: {
-        APPDATA: appdataPath,
-        LOCALAPPDATA: localAppDataPath,
-      },
-      homedir: "C:\\Users\\alice",
-      fileExists: (filePath) => filePath === `${localAppDataPath}\\rundown\\config.json`,
+      homedir: homeDir,
+      fileExists: (filePath) => filePath === `${homeDir}\\AppData\\Roaming\\rundown\\config.json`,
     });
 
-    expect(result.canonicalPath).toBe(`${appdataPath}\\rundown\\config.json`);
-    expect(result.discoveredPath).toBe(`${localAppDataPath}\\rundown\\config.json`);
-    expect(result.candidates[0]).toBe(`${appdataPath}\\rundown\\config.json`);
-    expect(result.candidates).toContain(`${localAppDataPath}\\rundown\\config.json`);
-    expect(new Set(result.candidates).size).toBe(result.candidates.length);
+    expect(result.canonicalPath).toBe(`${homeDir}\\AppData\\Roaming\\rundown\\config.json`);
+    expect(result.discoveredPath).toBe(`${homeDir}\\AppData\\Roaming\\rundown\\config.json`);
+    expect(result.candidates).toEqual([
+      `${homeDir}\\AppData\\Roaming\\rundown\\config.json`,
+    ]);
   });
 
   it("uses macOS Library/Application Support as canonical location", () => {
     const result = resolveGlobalConfigPath({
       platform: "darwin",
-      env: {
-        XDG_CONFIG_HOME: "/Users/alice/.xdg",
-      },
       homedir: "/Users/alice",
-      fileExists: (filePath) => filePath === "/Users/alice/.config/rundown/config.json",
+      fileExists: (filePath) => filePath === "/Users/alice/Library/Application Support/rundown/config.json",
     });
 
     expect(result.canonicalPath).toBe("/Users/alice/Library/Application Support/rundown/config.json");
-    expect(result.discoveredPath).toBe("/Users/alice/.config/rundown/config.json");
+    expect(result.discoveredPath).toBe("/Users/alice/Library/Application Support/rundown/config.json");
     expect(result.candidates).toEqual([
       "/Users/alice/Library/Application Support/rundown/config.json",
-      "/Users/alice/.xdg/rundown/config.json",
-      "/Users/alice/.config/rundown/config.json",
     ]);
   });
 
-  it("uses XDG_CONFIG_HOME first on linux", () => {
+  it("uses homedir .config canonical location on linux", () => {
     const result = resolveGlobalConfigPath({
       platform: "linux",
-      env: {
-        XDG_CONFIG_HOME: "/home/alice/.xdg",
-      },
       homedir: "/home/alice",
-      fileExists: (filePath) => filePath === "/home/alice/.xdg/rundown/config.json",
-    });
-
-    expect(result.canonicalPath).toBe("/home/alice/.xdg/rundown/config.json");
-    expect(result.discoveredPath).toBe("/home/alice/.xdg/rundown/config.json");
-    expect(result.candidates).toEqual([
-      "/home/alice/.xdg/rundown/config.json",
-      "/home/alice/.config/rundown/config.json",
-    ]);
-  });
-
-  it("falls back to ~/.config when XDG_CONFIG_HOME is absent", () => {
-    const result = resolveGlobalConfigPath({
-      platform: "linux",
-      env: {},
-      homedir: "/home/alice",
-      fileExists: () => false,
+      fileExists: (filePath) => filePath === "/home/alice/.config/rundown/config.json",
     });
 
     expect(result.canonicalPath).toBe("/home/alice/.config/rundown/config.json");
-    expect(result.discoveredPath).toBeUndefined();
+    expect(result.discoveredPath).toBe("/home/alice/.config/rundown/config.json");
     expect(result.candidates).toEqual([
       "/home/alice/.config/rundown/config.json",
     ]);
+  });
+
+  it("returns undefined paths when homedir is unavailable", () => {
+    const result = resolveGlobalConfigPath({
+      platform: "linux",
+      homedir: "   ",
+      fileExists: () => false,
+    });
+
+    expect(result.canonicalPath).toBeUndefined();
+    expect(result.discoveredPath).toBeUndefined();
+    expect(result.candidates).toEqual([]);
   });
 });

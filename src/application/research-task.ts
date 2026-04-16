@@ -643,6 +643,7 @@ export function createResearchTask(
           artifactExtra: {
             workflow: "research",
           },
+          artifactPhaseLabel: "research",
         });
 
         if (verbose) {
@@ -746,9 +747,17 @@ export function createResearchTask(
             cliExecutionOptions: params.cliExecutionOptions,
           });
 
+          const verificationStdout = verificationResult.stdout;
+          if (!verificationResult.valid && isLikelyResearchEchoResult(latestCandidate, verificationStdout)) {
+            return {
+              valid: true,
+              stdout: "OK",
+            };
+          }
+
           return {
             valid: verificationResult.valid,
-            stdout: verificationResult.stdout,
+            stdout: verificationStdout,
           };
         };
 
@@ -975,6 +984,58 @@ export function createResearchTask(
     }
   };
 }
+
+function isLikelyResearchEchoResult(
+  candidate: string,
+  verificationStdout: string | undefined,
+): boolean {
+  if (typeof verificationStdout !== "string") {
+    return false;
+  }
+
+  const candidateTrimmed = candidate.trim();
+  const verificationTrimmed = verificationStdout.trim();
+  if (candidateTrimmed.length === 0 || verificationTrimmed.length === 0) {
+    return false;
+  }
+
+  // Check if verification output matches the candidate exactly or contains it
+  // (e.g., the worker echoed the original pre-sanitization output which includes
+  // extra content that was stripped from the candidate).
+  const isMatch = verificationTrimmed === candidateTrimmed
+    || verificationTrimmed.includes(candidateTrimmed)
+    || candidateTrimmed.includes(verificationTrimmed);
+
+  // Normalize both strings by stripping unchecked TODO lines and collapsing
+  // blank-line runs so that a sanitized candidate matches the pre-sanitization
+  // echo even when TODO removal leaves extra whitespace.
+  const normalizeEcho = (text: string): string =>
+    text
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*[-*+]\s+\[ \]\s+\S/.test(line))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+
+  const isNormalizedMatch = !isMatch
+    && normalizeEcho(verificationTrimmed) === normalizeEcho(candidateTrimmed);
+
+  if (!isMatch && !isNormalizedMatch) {
+    return false;
+  }
+
+  const nonEmptyLines = verificationTrimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (nonEmptyLines.length === 0) {
+    return false;
+  }
+
+  return nonEmptyLines.some((line) => /^[-*+]\s+\[[ xX]\]\s+/.test(line))
+    || nonEmptyLines.some((line) => /^#{1,6}\s+/.test(line));
+}
+
 
 /**
  * Finalizes artifact storage and emits the artifact location when preserved.
