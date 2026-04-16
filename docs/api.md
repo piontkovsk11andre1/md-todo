@@ -92,6 +92,7 @@ Returns a new string with every `[x]` checkbox replaced by `[ ]`.
 | `FileLockHolder` | Metadata describing the current lock owner |
 | `FileLockMetadata` | Command metadata written alongside a lock |
 | `TraceEvent` | Strongly typed trace event emitted during runs |
+| `DiscussTaskOptions` | Options accepted by `App.discussTask` |
 | `TraceWriterPort` | Trace output boundary (write + flush) |
 
 See also:
