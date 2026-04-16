@@ -637,7 +637,9 @@ describeIfStartAvailable("start-project integration", () => {
 });
 
 function makeTempWorkspace(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-start-int-"));
+  const isolatedTempRoot = path.join(path.parse(os.tmpdir()).root, "rundown-test-tmp");
+  fs.mkdirSync(isolatedTempRoot, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(isolatedTempRoot, "rundown-start-int-"));
   tempDirs.push(dir);
   return dir;
 }
@@ -656,6 +658,10 @@ async function runCli(args: string[], cwd: string): Promise<{
   process.chdir(cwd);
   process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
   process.env.RUNDOWN_TEST_MODE = "1";
+
+  const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-start-home-"));
+  tempDirs.push(isolatedHome);
+  const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(isolatedHome);
 
   vi.resetModules();
 
@@ -731,6 +737,7 @@ async function runCli(args: string[], cwd: string): Promise<{
     exitSpy.mockRestore();
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+    homedirSpy.mockRestore();
     process.chdir(previousCwd);
 
     if (previousDisableAutoParse === undefined) {

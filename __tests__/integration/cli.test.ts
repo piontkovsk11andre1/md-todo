@@ -25,9 +25,23 @@ afterEach(() => {
 });
 
 function makeTempWorkspace(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-int-"));
+  const isolatedTempRoot = path.join(path.parse(os.tmpdir()).root, "rundown-test-tmp");
+  fs.mkdirSync(isolatedTempRoot, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(isolatedTempRoot, "rundown-cli-int-"));
   tempDirs.push(dir);
   return dir;
+}
+
+function globalConfigPathForHome(homeDir: string): string {
+  if (process.platform === "win32") {
+    return path.join(homeDir, "AppData", "Roaming", "rundown", "config.json");
+  }
+
+  if (process.platform === "darwin") {
+    return path.join(homeDir, "Library", "Application Support", "rundown", "config.json");
+  }
+
+  return path.join(homeDir, ".config", "rundown", "config.json");
 }
 
 const ANSI_ESCAPE_PATTERN = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g;
@@ -159,7 +173,9 @@ function normalizeLegacyWorkerPatternArgs(args: string[]): string[] {
   return normalized;
 }
 
-async function runCli(args: string[], cwd: string): Promise<{
+async function runCli(args: string[], cwd: string, options?: {
+  preserveHome?: boolean;
+}): Promise<{
   code: number;
   logs: string[];
   errors: string[];
@@ -181,6 +197,12 @@ async function runCli(args: string[], cwd: string): Promise<{
   process.chdir(cwd);
   process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
   process.env.RUNDOWN_TEST_MODE = "1";
+
+  const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-home-"));
+  tempDirs.push(isolatedHome);
+  const homedirSpy = options?.preserveHome
+    ? null
+    : vi.spyOn(os, "homedir").mockReturnValue(isolatedHome);
 
   vi.resetModules();
 
@@ -275,6 +297,7 @@ async function runCli(args: string[], cwd: string): Promise<{
     exitSpy.mockRestore();
     stdoutSpy.mockRestore();
     stderrSpy.mockRestore();
+    homedirSpy?.mockRestore();
     process.argv = previousArgv;
     process.chdir(previousCwd);
 
@@ -570,13 +593,11 @@ describe.sequential("CLI integration", () => {
   it("run discovers global config defaults when local config is absent", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Write docs\n", "utf-8");
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-global-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-global-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, JSON.stringify({
         workers: {
@@ -588,16 +609,12 @@ describe.sequential("CLI integration", () => {
         "run",
         "roadmap.md",
         "--dry-run",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(0);
       expect(result.logs.some((line) => line.includes("Dry run — would run: opencode run --model global-default"))).toBe(true);
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -611,13 +628,11 @@ describe.sequential("CLI integration", () => {
       },
     }, null, 2), "utf-8");
 
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-local-overrides-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-local-overrides-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, JSON.stringify({
         workers: {
@@ -629,17 +644,13 @@ describe.sequential("CLI integration", () => {
         "run",
         "roadmap.md",
         "--dry-run",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(0);
       expect(result.logs.some((line) => line.includes("Dry run — would run: opencode run --model local-default"))).toBe(true);
       expect(result.logs.some((line) => line.includes("--model global-default"))).toBe(false);
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -653,13 +664,11 @@ describe.sequential("CLI integration", () => {
       },
     }, null, 2), "utf-8");
 
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-override-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-run-override-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, JSON.stringify({
         workers: {
@@ -673,18 +682,14 @@ describe.sequential("CLI integration", () => {
         "--dry-run",
         "--worker",
         "custom-agent --mode cli",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(0);
       expect(result.logs.some((line) => line.includes("Dry run — would run: custom-agent --mode cli"))).toBe(true);
       expect(result.logs.some((line) => line.includes("--model local-default"))).toBe(false);
       expect(result.logs.some((line) => line.includes("--model global-default"))).toBe(false);
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -13927,14 +13932,13 @@ describe.sequential("CLI integration", () => {
       },
     }, null, 2) + "\n", "utf-8");
 
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-get-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-get-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      fs.mkdirSync(path.join(appDataDir, "rundown"), { recursive: true });
-      fs.writeFileSync(path.join(appDataDir, "rundown", "config.json"), JSON.stringify({
+      const globalConfigPath = globalConfigPathForHome(homeDir);
+      fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
+      fs.writeFileSync(globalConfigPath, JSON.stringify({
         workers: {
           default: ["opencode", "run", "--model", "global"],
         },
@@ -13947,7 +13951,7 @@ describe.sequential("CLI integration", () => {
         "--scope",
         "effective",
         "--json",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(0);
       const parsed = JSON.parse(result.logs.map(stripAnsi).join("\n"));
@@ -13956,11 +13960,7 @@ describe.sequential("CLI integration", () => {
         value: ["opencode", "run", "--model", "local"],
       });
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -13973,14 +13973,12 @@ describe.sequential("CLI integration", () => {
       },
     }, null, 2) + "\n", "utf-8");
 
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-list-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-config-list-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      fs.mkdirSync(path.join(appDataDir, "rundown"), { recursive: true });
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
+      fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, JSON.stringify({
         workers: {
           default: ["opencode", "run", "--model", "global-default"],
@@ -13993,7 +13991,7 @@ describe.sequential("CLI integration", () => {
         "--scope",
         "global",
         "--json",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(listResult.code).toBe(0);
       const listPayload = JSON.parse(listResult.logs.map(stripAnsi).join("\n"));
@@ -14011,7 +14009,7 @@ describe.sequential("CLI integration", () => {
         "path",
         "--scope",
         "global",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(pathResult.code).toBe(0);
       const pathPayload = JSON.parse(pathResult.logs.map(stripAnsi).join("\n"));
@@ -14020,11 +14018,7 @@ describe.sequential("CLI integration", () => {
         path: globalConfigPath,
       });
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -14052,11 +14046,9 @@ describe.sequential("CLI integration", () => {
 
   it("config set writes global scoped values to user-level config", async () => {
     const workspace = makeTempWorkspace();
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-global-config-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-global-config-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
       const result = await runCli([
         "config",
@@ -14067,10 +14059,10 @@ describe.sequential("CLI integration", () => {
         "json",
         "--scope",
         "global",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(0);
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
       expect(fs.existsSync(globalConfigPath)).toBe(true);
       expect(JSON.parse(fs.readFileSync(globalConfigPath, "utf-8"))).toEqual({
         workers: {
@@ -14079,11 +14071,7 @@ describe.sequential("CLI integration", () => {
       });
       expect(result.logs.some((line) => stripAnsi(line).includes("Updated global config: workers.default"))).toBe(true);
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
@@ -14114,13 +14102,11 @@ describe.sequential("CLI integration", () => {
   it("config set fails with actionable guidance when global config JSON is malformed", async () => {
     const workspace = makeTempWorkspace();
 
-    const appDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-malformed-global-"));
-    tempDirs.push(appDataDir);
-    const previousAppData = process.env.APPDATA;
-
-    process.env.APPDATA = appDataDir;
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-cli-malformed-global-home-"));
+    tempDirs.push(homeDir);
+    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(homeDir);
     try {
-      const globalConfigPath = path.join(appDataDir, "rundown", "config.json");
+      const globalConfigPath = globalConfigPathForHome(homeDir);
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, "{not valid json", "utf-8");
 
@@ -14133,18 +14119,14 @@ describe.sequential("CLI integration", () => {
         "json",
         "--scope",
         "global",
-      ], workspace);
+      ], workspace, { preserveHome: true });
 
       expect(result.code).toBe(1);
       expect(result.errors.some((line) => stripAnsi(line).includes("Failed to parse global worker config at"))).toBe(true);
       expect(result.errors.some((line) => stripAnsi(line).includes("Repair guidance:"))).toBe(true);
       expect(result.errors.some((line) => stripAnsi(line).includes("rundown config set"))).toBe(true);
     } finally {
-      if (previousAppData === undefined) {
-        delete process.env.APPDATA;
-      } else {
-        process.env.APPDATA = previousAppData;
-      }
+      homedirSpy.mockRestore();
     }
   });
 
