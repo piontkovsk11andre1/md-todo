@@ -225,7 +225,8 @@ function executeCommand(
   timeoutMs: number | undefined,
   env?: Record<string, string>,
 ): Promise<RunnerResult> {
-  void timeoutMs;
+  const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+
   return new Promise((resolve, reject) => {
     if (mode === "tui") {
       if (captureOutput) {
@@ -238,6 +239,12 @@ function executeCommand(
 
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
+        let timedOut = false;
+        let settled = false;
+
+        const timeoutHandle = startWorkerTimeout(child, normalizedTimeoutMs, () => {
+          timedOut = true;
+        });
 
         child.stdout?.on("data", (chunk: Buffer) => {
           stdout.push(chunk);
@@ -249,13 +256,37 @@ function executeCommand(
         });
 
         child.on("close", (code: number | null) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearWorkerTimeout(timeoutHandle);
+
+          const stdoutText = Buffer.concat(stdout).toString("utf-8");
+          const stderrText = Buffer.concat(stderr).toString("utf-8");
+          if (timedOut && normalizedTimeoutMs > 0) {
+            resolve({
+              exitCode: 124,
+              stdout: stdoutText,
+              stderr: withTimeoutMessage(stderrText, normalizedTimeoutMs),
+            });
+            return;
+          }
+
           resolve({
             exitCode: code,
-            stdout: Buffer.concat(stdout).toString("utf-8"),
-            stderr: Buffer.concat(stderr).toString("utf-8"),
+            stdout: stdoutText,
+            stderr: stderrText,
           });
         });
-        child.on("error", reject);
+        child.on("error", (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearWorkerTimeout(timeoutHandle);
+          reject(error);
+        });
         return;
       }
 
@@ -266,11 +297,39 @@ function executeCommand(
         shell: false,
         env: env ? { ...process.env, ...env } : process.env,
       });
+      let timedOut = false;
+      let settled = false;
+
+      const timeoutHandle = startWorkerTimeout(child, normalizedTimeoutMs, () => {
+        timedOut = true;
+      });
 
       child.on("close", (code: number | null) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearWorkerTimeout(timeoutHandle);
+
+        if (timedOut && normalizedTimeoutMs > 0) {
+          resolve({
+            exitCode: 124,
+            stdout: "",
+            stderr: withTimeoutMessage("", normalizedTimeoutMs),
+          });
+          return;
+        }
+
         resolve({ exitCode: code, stdout: "", stderr: "" });
       });
-      child.on("error", reject);
+      child.on("error", (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearWorkerTimeout(timeoutHandle);
+        reject(error);
+      });
       return;
     }
 
@@ -297,20 +356,90 @@ function executeCommand(
 
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let timedOut = false;
+    let settled = false;
+
+    const timeoutHandle = startWorkerTimeout(child, normalizedTimeoutMs, () => {
+      timedOut = true;
+    });
 
     child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
 
     child.on("close", (code: number | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearWorkerTimeout(timeoutHandle);
+
+      const stdoutText = Buffer.concat(stdout).toString("utf-8");
+      const stderrText = Buffer.concat(stderr).toString("utf-8");
+      if (timedOut && normalizedTimeoutMs > 0) {
+        resolve({
+          exitCode: 124,
+          stdout: stdoutText,
+          stderr: withTimeoutMessage(stderrText, normalizedTimeoutMs),
+        });
+        return;
+      }
+
       resolve({
         exitCode: code,
-        stdout: Buffer.concat(stdout).toString("utf-8"),
-        stderr: Buffer.concat(stderr).toString("utf-8"),
+        stdout: stdoutText,
+        stderr: stderrText,
       });
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearWorkerTimeout(timeoutHandle);
+      reject(error);
+    });
   });
+}
+
+function normalizeTimeoutMs(timeoutMs: number | undefined): number {
+  if (typeof timeoutMs !== "number" || timeoutMs <= 0) {
+    return 0;
+  }
+
+  return Math.floor(timeoutMs);
+}
+
+function startWorkerTimeout(
+  child: ReturnType<typeof spawn>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): NodeJS.Timeout | null {
+  if (timeoutMs === 0) {
+    return null;
+  }
+
+  return setTimeout(() => {
+    onTimeout();
+    child.kill("SIGTERM");
+  }, timeoutMs);
+}
+
+function clearWorkerTimeout(timeoutHandle: NodeJS.Timeout | null): void {
+  if (!timeoutHandle) {
+    return;
+  }
+
+  clearTimeout(timeoutHandle);
+}
+
+function withTimeoutMessage(stderrText: string, timeoutMs: number): string {
+  const timeoutMessage = `Worker process timed out after ${timeoutMs}ms.`;
+  if (stderrText.length === 0) {
+    return timeoutMessage;
+  }
+
+  return `${stderrText}${stderrText.endsWith("\n") ? "" : "\n"}${timeoutMessage}`;
 }
 
 /**

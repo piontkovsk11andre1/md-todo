@@ -584,6 +584,95 @@ describe("runWorker", () => {
     stderrWriteSpy.mockRestore();
   });
 
+  it("returns timeout failure with appended stderr in wait mode", async () => {
+    vi.useFakeTimers();
+
+    try {
+      spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+        const child = new EventEmitter() as EventEmitter & {
+          stdout: EventEmitter;
+          stderr: EventEmitter;
+          kill: (signal?: NodeJS.Signals) => boolean;
+        };
+
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.kill = vi.fn(() => {
+          child.emit("close", null);
+          return true;
+        });
+
+        queueMicrotask(() => {
+          child.stderr.emit("data", Buffer.from("stuck worker output"));
+        });
+
+        return child;
+      });
+
+      const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+      const resultPromise = runWorker({
+        command: ["node", "worker.js"],
+        prompt: "timeout prompt",
+        mode: "wait",
+        cwd: workspace,
+        timeoutMs: 50,
+      });
+
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await resultPromise;
+
+      const child = spawnMock.mock.results[0]?.value as { kill: (signal?: NodeJS.Signals) => boolean };
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(result.exitCode).toBe(124);
+      expect(result.stderr).toBe("stuck worker output\nWorker process timed out after 50ms.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns timeout failure in tui inherit mode", async () => {
+    vi.useFakeTimers();
+
+    try {
+      spawnMock.mockImplementation((_cmd: string, _args: string[]) => {
+        const child = new EventEmitter() as EventEmitter & {
+          kill: (signal?: NodeJS.Signals) => boolean;
+        };
+
+        child.kill = vi.fn(() => {
+          child.emit("close", null);
+          return true;
+        });
+
+        return child;
+      });
+
+      const { runWorker } = await import("../../src/infrastructure/runner.js");
+
+      const resultPromise = runWorker({
+        command: ["opencode"],
+        prompt: "interactive timeout",
+        mode: "tui",
+        cwd: workspace,
+        timeoutMs: 25,
+      });
+
+      await vi.advanceTimersByTimeAsync(25);
+      const result = await resultPromise;
+
+      const child = spawnMock.mock.results[0]?.value as { kill: (signal?: NodeJS.Signals) => boolean };
+      expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+      expect(result).toEqual({
+        exitCode: 124,
+        stdout: "",
+        stderr: "Worker process timed out after 25ms.",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("documents raw passthrough behavior in tui capture metadata", async () => {
     spawnMock.mockImplementation((_cmd: string, _args: string[], _options: Record<string, unknown>) => {
       const child = new EventEmitter() as EventEmitter & {
