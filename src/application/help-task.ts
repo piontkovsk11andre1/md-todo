@@ -103,7 +103,7 @@ export function createHelpTask(
         });
         resolvedWorkerCommand = resolvedWorker.workerCommand;
         resolvedWorkerPattern = resolvedWorker.workerPattern;
-        if (options.continueSession) {
+        if (options.continueSession && resolvedWorkerCommand.length > 0) {
           resolvedWorkerCommand = appendCanonicalContinueFlag(resolvedWorkerCommand);
           resolvedWorkerPattern = {
             ...resolvedWorkerPattern,

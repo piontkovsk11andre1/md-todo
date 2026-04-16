@@ -383,6 +383,25 @@ describe("help-task", () => {
     });
   });
 
+  it("keeps no-worker fallback messaging unchanged when continuation is requested", async () => {
+    const cwd = "/workspace";
+    const { dependencies, workerExecutor, events } = createDependencies({ cwd });
+    vi.mocked(dependencies.workerConfigPort.load).mockReturnValue(undefined);
+
+    const helpTask = createHelpTask(dependencies);
+    const code = await helpTask(createOptions({
+      workerCommand: [],
+      continueSession: true,
+    }));
+
+    expect(code).toBe(EXIT_CODE_NO_WORK);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "No interactive help worker is configured. Falling back to static help output.",
+    });
+  });
+
   it("returns no-work with info message when worker resolution throws", async () => {
     const cwd = "/workspace";
     const { dependencies, workerExecutor, events } = createDependencies({ cwd });
