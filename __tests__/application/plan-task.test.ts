@@ -26,6 +26,8 @@ describe("plan-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt mode: standard (--loop disabled)."))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planner template:") && event.message.includes("plan.md"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("Document source is intentionally omitted for plan scans"))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes(markdownFile))).toBe(true);
     expect(events.some((event) => event.kind === "text" && event.text.includes("## Phase"))).toBe(true);
@@ -306,6 +308,8 @@ describe("plan-task", () => {
     }));
 
     expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Prompt mode: loop (--loop enabled)."))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Planner template:") && event.message.includes("plan-loop.md"))).toBe(true);
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
     expect(prompt).toContain("# Loop Plan Prompt");
     expect(prompt).toContain("loop-task=Roadmap");
@@ -762,8 +766,29 @@ describe("plan-task", () => {
     expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
     expect(events.some((event) => event.kind === "info" && event.message.includes("Planning document:"))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — prompt mode: standard (--loop disabled)."))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — planner template:") && event.message.includes("plan.md"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("No existing TODO items found in document"))).toBe(true);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(true);
+  });
+
+  it("reports loop-mode prompt metadata in dry-run", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events, workerExecutor, artifactStore } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, dryRun: true, loop: true }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — prompt mode: loop (--loop enabled)."))).toBe(true);
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run — planner template:") && event.message.includes("plan-loop.md"))).toBe(true);
   });
 
   it("dry-run skips cli block expansion and reports skipped block count", async () => {

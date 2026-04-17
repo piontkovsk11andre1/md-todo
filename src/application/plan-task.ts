@@ -381,7 +381,11 @@ export function createPlanTask(
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
+      const planTemplateFileName = loop ? "plan-loop.md" : "plan.md";
       const planTemplate = loop ? templates.planLoop : templates.plan;
+      const selectedPlanTemplatePath = dependencies.configDir
+        ? dependencies.pathOperations.join(dependencies.configDir.configDir, planTemplateFileName)
+        : undefined;
       const deepPlanTemplate = templates.deepPlan ?? DEFAULT_DEEP_PLAN_TEMPLATE;
       const planPrependGuidance = loadOptionalPlannerGuidance({
         configDir: dependencies.configDir,
@@ -464,6 +468,12 @@ export function createPlanTask(
 
       // Print mode returns rendered scan/deep prompts without invoking workers.
       if (printPrompt) {
+        emitPlanPromptSelectionInfo({
+          emit,
+          loop,
+          selectedTemplatePath: selectedPlanTemplatePath,
+          dryRun: false,
+        });
         emit({
           kind: "text",
           text: buildPlanScanPrompt(
@@ -514,6 +524,12 @@ export function createPlanTask(
 
       // Dry run reports planned execution details and exits successfully.
       if (dryRun) {
+        emitPlanPromptSelectionInfo({
+          emit,
+          loop,
+          selectedTemplatePath: selectedPlanTemplatePath,
+          dryRun: true,
+        });
         if (dryRunSuppressesCliExpansion && !ignoreCliBlock) {
           emit({
             kind: "info",
@@ -1386,6 +1402,35 @@ function buildPlanScanPrompt(
  */
 function buildPlanPromptDocumentContext(sourcePath: string): string {
   return `Document source is intentionally omitted for plan scans. Read and edit the file directly at: ${sourcePath}`;
+}
+
+/**
+ * Emits planner prompt mode and template-selection details for preview paths.
+ */
+function emitPlanPromptSelectionInfo(options: {
+  emit: ApplicationOutputPort["emit"];
+  loop: boolean;
+  selectedTemplatePath: string | undefined;
+  dryRun: boolean;
+}): void {
+  const modeLabel = options.loop
+    ? "loop (--loop enabled)"
+    : "standard (--loop disabled)";
+  const modeMessage = options.dryRun
+    ? "Dry run — prompt mode: " + modeLabel + "."
+    : "Prompt mode: " + modeLabel + ".";
+  options.emit({ kind: "info", message: modeMessage });
+
+  const templatePathMessage = options.selectedTemplatePath
+    ? options.selectedTemplatePath
+    : "built-in default template (no .rundown config directory resolved)";
+  const templateBehaviorSuffix = options.loop
+    ? "loop planner template with deterministic `get:` + `for:` + `end:` guidance"
+    : "standard planner template";
+  const templateMessage = options.dryRun
+    ? "Dry run — planner template: " + templatePathMessage + " (" + templateBehaviorSuffix + ")."
+    : "Planner template: " + templatePathMessage + " (" + templateBehaviorSuffix + ").";
+  options.emit({ kind: "info", message: templateMessage });
 }
 
 /**
