@@ -874,6 +874,20 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--revertable Shorthand for --commit --keep-artifacts");
   });
 
+  it("shows skip-research make options in help text", async () => {
+    const runTask = vi.fn(async () => 0);
+    const result = await invokeRunAndCaptureHelpOutput([
+      "make",
+      "--help",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+
+    const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--skip-research, --raw Skip phase 1 research and start from planning");
+    expect(compactHelpOutput).toContain("--mode <mode> Make mode: wait");
+  });
+
   it("parses all with --worker echo and enables runAll", async () => {
     const runTask = vi.fn(async () => 0);
     const call = await invokeRunAndCaptureCall([
@@ -3108,6 +3122,35 @@ describe("CLI plan and utility command normalization", () => {
           command: ["opencode", "run", "--model", "gpt-5"],
         }),
       }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("make --raw alias bypasses research and runs plan directly", async () => {
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-make-raw-skip-"));
+    const markdownFile = path.join(tempRoot, "8. Do something.md");
+
+    try {
+      const result = await invokeMakeAndCaptureCalls([
+        "make",
+        "please do something",
+        markdownFile,
+        "--raw",
+        "--worker",
+        "opencode",
+        "run",
+      ], researchTask, planTask);
+
+      expect(result.exitCode).toBe(0);
+      expect(researchTask).not.toHaveBeenCalled();
+      expect(planTask).toHaveBeenCalledTimes(1);
+      expect(planTask).toHaveBeenCalledWith(expect.objectContaining({
+        source: markdownFile,
+      }));
+      expect(fs.readFileSync(markdownFile, "utf8")).toBe("please do something");
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
