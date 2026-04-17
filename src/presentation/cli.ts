@@ -231,6 +231,7 @@ const loopCommand = program
   .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
   .option("--cooldown <seconds>", "Cooldown delay in seconds between iterations", "5")
   .option("--iterations <n>", "Stop after N iterations (default: unlimited)")
+  .option("--time-limit <seconds>", "Stop loop after total runtime limit in seconds")
   .option("--continue-on-error", "Continue loop after iteration failure", false)
   .configureHelp({ showGlobalOptions: true });
 
