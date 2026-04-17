@@ -183,6 +183,7 @@ export interface PlanTaskCommandOptions {
   scanCount?: number;
   maxItems?: number;
   deep?: number;
+  loop?: boolean;
   mode: PlanTaskUseCaseOptions["mode"];
   workerPattern: PlanTaskUseCaseOptions["workerPattern"];
   showAgentOutput: boolean;

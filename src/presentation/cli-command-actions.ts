@@ -46,6 +46,7 @@ import { parsePrefixChain, type PrefixChain } from "../domain/prefix-chain.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { CliApp } from "./cli-app-init.js";
 import type {
+  PlanCommandInvocationOptions,
   QueryCommandInvocationOptions,
   ResearchCommandInvocationOptions,
 } from "./cli-invocation-types.js";
@@ -1062,16 +1063,17 @@ export function createPlanCommandAction({
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
+    const loop = Boolean(opts.loop as boolean | undefined);
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const verbose = resolveVerboseOption(opts);
 
-    // Trigger planning in the app layer with a normalized payload.
-    return getApp().planTask({
+    const request: PlanCommandInvocationOptions = {
       source: markdownFile,
       ...workerWorkspaceRuntimeOptions,
       scanCount,
       maxItems,
       deep,
+      loop,
       mode,
       workerPattern,
       showAgentOutput,
@@ -1085,7 +1087,10 @@ export function createPlanCommandAction({
       varsFileOption,
       cliTemplateVarArgs,
       verbose,
-    });
+    };
+
+    // Trigger planning in the app layer with a normalized payload.
+    return getApp().planTask(request);
   };
 }
 

@@ -166,6 +166,7 @@ export interface PlanTaskOptions {
   scanCount?: number;
   maxItems?: number;
   deep?: number;
+  loop?: boolean;
   mode: RunnerMode;
   workerPattern: ParsedWorkerPattern;
   showAgentOutput: boolean;

@@ -73,6 +73,18 @@ export interface ResearchCommandInvocationOptions extends WorkerCommandInvocatio
 }
 
 /**
+ * Normalized invocation payload for the `plan` command.
+ */
+export interface PlanCommandInvocationOptions extends WorkerCommandInvocationOptions {
+  source: string;
+  scanCount?: number;
+  maxItems?: number;
+  deep?: number;
+  loop: boolean;
+  verbose?: boolean;
+}
+
+/**
  * Normalized invocation payload for the `query` command.
  */
 export interface QueryCommandInvocationOptions extends WorkerCommandInvocationOptions {

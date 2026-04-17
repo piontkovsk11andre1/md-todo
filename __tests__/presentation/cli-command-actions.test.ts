@@ -22,6 +22,7 @@ import {
   createMigrateCommandAction,
   createMaterializeCommandAction,
   createMakeCommandAction,
+  createPlanCommandAction,
   createQueryCommandAction,
   createReverifyCommandAction,
   createRunCommandAction,
@@ -634,6 +635,72 @@ describe("createQueryCommandAction", () => {
       skipResearch: true,
       mode: "wait",
       cliTemplateVarArgs: ["custom=value"],
+    }));
+  });
+});
+
+describe("createPlanCommandAction", () => {
+  it("forwards --loop and normalized options to planTask", async () => {
+    const planTask = vi.fn(async () => 0);
+    const app = { planTask } as unknown as CliApp;
+    const action = createPlanCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      plannerModes: ["wait"],
+    });
+
+    const exitCode = await action(["roadmap.md"], {
+      loop: true,
+      scanCount: "4",
+      maxItems: "7",
+      deep: "2",
+      mode: "wait",
+      dryRun: false,
+      printPrompt: false,
+      keepArtifacts: false,
+      trace: false,
+      forceUnlock: false,
+      ignoreCliBlock: false,
+      var: ["foo=bar"],
+    });
+
+    expect(exitCode).toBe(0);
+    expect(planTask).toHaveBeenCalledTimes(1);
+    expect(planTask).toHaveBeenCalledWith(expect.objectContaining({
+      source: "roadmap.md",
+      scanCount: 4,
+      maxItems: 7,
+      deep: 2,
+      loop: true,
+      mode: "wait",
+      cliTemplateVarArgs: ["foo=bar"],
+    }));
+  });
+
+  it("defaults loop mode to false when --loop is omitted", async () => {
+    const planTask = vi.fn(async () => 0);
+    const app = { planTask } as unknown as CliApp;
+    const action = createPlanCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      plannerModes: ["wait"],
+    });
+
+    const exitCode = await action(["roadmap.md"], {
+      mode: "wait",
+      dryRun: false,
+      printPrompt: false,
+      keepArtifacts: false,
+      trace: false,
+      forceUnlock: false,
+      ignoreCliBlock: false,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(planTask).toHaveBeenCalledTimes(1);
+    expect(planTask).toHaveBeenCalledWith(expect.objectContaining({
+      source: "roadmap.md",
+      loop: false,
     }));
   });
 });
