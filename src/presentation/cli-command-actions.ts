@@ -636,7 +636,9 @@ export function createLoopCommandAction({
     const rounds = parseRounds(opts.rounds as string | undefined);
     const verbose = resolveVerboseOption(opts);
     const iterations = parseLoopIterations(opts.iterations as string | undefined);
-    parseLoopTimeLimitSeconds(opts.timeLimit as string | undefined);
+    const timeLimitSeconds = parseLoopTimeLimitSeconds(opts.timeLimit as string | undefined);
+    const timeLimitMs = typeof timeLimitSeconds === "number" ? timeLimitSeconds * 1000 : undefined;
+    const loopStartMs = Date.now();
     const cooldownSeconds = parseLoopCooldownSeconds(opts.cooldown as string | undefined);
     const cooldownMs = cooldownSeconds * 1000;
     const continueOnError = Boolean(opts.continueOnError as boolean | undefined);
@@ -658,6 +660,15 @@ export function createLoopCommandAction({
     try {
 
       while (!hasBoundedIterations || iteration < iterations) {
+        if (typeof timeLimitMs === "number" && Date.now() - loopStartMs >= timeLimitMs) {
+          const elapsedSeconds = Math.floor((Date.now() - loopStartMs) / 1000);
+          emitCliInfo(
+            app,
+            `Loop time limit reached before iteration ${iteration + 1}; elapsed=${elapsedSeconds}s, limit=${timeLimitSeconds}s.`,
+          );
+          break;
+        }
+
         iteration += 1;
         emitCliInfo(app, `Loop iteration ${iteration} starting...`);
 

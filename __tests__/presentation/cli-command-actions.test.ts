@@ -124,6 +124,56 @@ describe("createLoopCommandAction", () => {
     }));
   });
 
+  it("stops before starting the next iteration when time budget is exhausted", async () => {
+    const nowValues = [0, 0, 2000, 2000];
+    let nowIndex = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 0);
+
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const exitCode = await action("tasks.md", {
+      worker: "opencode run",
+      cooldown: "0",
+      timeLimit: "1",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop time limit reached before iteration 2; elapsed=2s, limit=1s.",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=1, succeeded=1, failed=0.",
+    });
+  });
+
+  it("stops immediately when time budget is already exhausted before first iteration", async () => {
+    const nowValues = [0, 2000, 2000];
+    let nowIndex = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 0);
+
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const exitCode = await action("tasks.md", {
+      worker: "opencode run",
+      cooldown: "0",
+      timeLimit: "1",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).not.toHaveBeenCalled();
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop time limit reached before iteration 1; elapsed=2s, limit=1s.",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=0, succeeded=0, failed=0.",
+    });
+  });
+
   it("waits for the configured cooldown between iterations", async () => {
     vi.useFakeTimers();
     const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
