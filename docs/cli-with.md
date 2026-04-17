@@ -44,8 +44,10 @@ Behavior:
 - Preserves other config sections (`workspace`, `trace`, run defaults, tool directories, and other command settings).
 - Writes to local config scope only (`<config-dir>/config.json`); global config is not modified.
 - If resolved preset values are already present, reports no-op semantics and avoids rewrite noise.
+- On interactive terminals, if `workers.tui` is configured by the applied mapping, `with` immediately launches a TUI `discuss` session after printing configuration results.
+- If terminal interactivity is unavailable or no `workers.tui` mapping is configured, `with` exits after configuration output.
 - Prints configured keys and resolved config path.
-- Unknown harness exits non-zero with an actionable error and the supported preset list.
+- Unknown harnesses use an interactive custom-mapping flow (deterministic worker prompt, optional interactive/discuss prompt) and then persist the chosen local mapping.
 
 Examples:
 

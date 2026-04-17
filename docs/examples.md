@@ -39,6 +39,11 @@ What this configures:
 2. `workers.tui` and `commands.discuss` for interactive discussion sessions (`opencode`),
 3. while preserving unrelated `.rundown/config.json` keys.
 
+What happens right after configuration:
+
+1. In interactive terminals, `rundown with opencode` immediately starts a TUI `discuss` session.
+2. If stdin/stdout is non-interactive (for example CI), it prints config results and exits without launching TUI.
+
 Persisted local config fragment:
 
 ```json

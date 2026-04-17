@@ -48,6 +48,7 @@ Fast onboarding option:
 
 - Alias inputs like `OpenCode` and `open-code` normalize to the same persisted arrays.
 - Re-running `rundown with opencode` is idempotent and reports no-op when no targeted key changes are needed.
+- In interactive terminals, `rundown with <harness>` immediately launches TUI `discuss` when the configured mapping sets `workers.tui`; non-interactive invocations skip this launch.
 
 Example:
 
