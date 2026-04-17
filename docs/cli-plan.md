@@ -45,6 +45,7 @@ Options:
 | `--scan-count <n>` | Maximum clean-session scan iterations cap. Must be a safe positive integer. Omit for convergence-driven planning (no user-set scan cap). | unset |
 | `--max-items <n>` | Maximum total TODO items allowed in the document after each scan merge. Planning stops once this cap is reached. Must be a safe non-negative integer. | unset |
 | `--deep <n>` | Additional nested planning passes after top-level scans. Must be a safe non-negative integer (`0` disables deep passes). | `0` |
+| `--loop` | Switch planner prompting to loop mode using `.rundown/plan-loop.md` (built-in fallback when missing). | off |
 | `--mode <mode>` | Planner execution mode. Currently only `wait` is supported. | `wait` |
 | `--force-unlock` | Remove stale source lockfile before acquiring the planner lock. Active locks held by live processes are not removed. | off |
 | `--dry-run` | Render plan prompt + execution intent and exit without running the worker. | off |
@@ -84,6 +85,17 @@ Deep pass semantics (`--deep`):
 - Deep planning converges early when a pass has no candidate leaf tasks or when no child TODO lines are added.
 - `--print-prompt` and `--dry-run` include deep-pass behavior preview when `--deep > 0`.
 
+Loop planning semantics (`--loop`):
+
+- `--loop` changes prompt/template selection from `.rundown/plan.md` to `.rundown/plan-loop.md`.
+- Loop mode keeps the same add-only planner guardrails as standard plan scans.
+- Loop mode guidance favors bounded iterative workflows with explicit:
+  - `get:` discovery of an iterable value/item set,
+  - `end:` deterministic stop conditions (for example: no values found, no new items, or bounded pass count),
+  - `for:` per-item implementation/verification child tasks derived from source task context.
+- `--print-prompt` and `--dry-run` report loop prompt mode and selected template behavior.
+- `--loop` only affects planning prompt composition; commit behavior for execution remains controlled by execution commands such as `run`/`loop` via `--commit`.
+
 Artifacts and audit expectations:
 
 - Scan phases are recorded with deterministic labels (`plan-scan-01`, `plan-scan-02`, ...).
@@ -111,6 +123,15 @@ rundown plan docs/spec.md --scan-count 3 --deep 1
 
 # Add two nested layers (children, then grandchildren)
 rundown plan docs/spec.md --scan-count 3 --deep 2
+
+# Generate loop-oriented TODOs using the loop planning template
+rundown plan docs/spec.md --loop
+
+# Preview loop planning prompt/template selection without running worker
+rundown plan docs/spec.md --loop --print-prompt
+
+# Dry-run loop planning with bounded scans
+rundown plan docs/spec.md --loop --scan-count 2 --dry-run
 
 # PowerShell-safe worker form
 rundown plan docs/spec.md --scan-count 2
