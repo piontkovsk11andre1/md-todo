@@ -1,11 +1,172 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import { createAddCommandAction, createMakeCommandAction } from "../../../src/presentation/cli-command-actions.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ApplicationOutputEvent } from "../../../src/domain/ports/output-port.js";
+import {
+  createAddCommandAction,
+  createLoopCommandAction,
+  createMakeCommandAction,
+} from "../../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../../src/presentation/cli-app-init.js";
 
 type CliOpts = Record<string, string | string[] | boolean>;
+
+type RunTaskRequest = Record<string, unknown>;
+type RunTaskFn = (request: RunTaskRequest) => Promise<number>;
+
+interface LoopHarness {
+  action: ReturnType<typeof createLoopCommandAction>;
+  runTask: ReturnType<typeof vi.fn<RunTaskFn>>;
+  outputEvents: ApplicationOutputEvent[];
+}
+
+function createLoopHarness(runTaskImpl: RunTaskFn = async () => 0): LoopHarness {
+  const outputEvents: ApplicationOutputEvent[] = [];
+  const runTask = vi.fn<RunTaskFn>(runTaskImpl);
+  const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>((event) => {
+    outputEvents.push(event);
+  });
+  const app = {
+    runTask,
+    emitOutput,
+    releaseAllLocks: vi.fn(),
+  } as unknown as CliApp;
+
+  const action = createLoopCommandAction({
+    getApp: () => app,
+    getWorkerFromSeparator: () => undefined,
+    runnerModes: ["wait"],
+  });
+
+  return {
+    action,
+    runTask,
+    outputEvents,
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe("createLoopCommandAction", () => {
+  it("stops during cooldown when global time limit is reached", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const completion = Promise.resolve(action("tasks.md", {
+      cooldown: "5",
+      iterations: "2",
+      timeLimit: "1",
+    }));
+
+    await Promise.resolve();
+    expect(runTask).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const exitCode = await completion;
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop completed: time limit reached (elapsed=1s, limit=1s).",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=1, succeeded=1, failed=0.",
+    });
+  });
+
+  it("stops before launching next iteration when budget is exhausted", async () => {
+    const nowValues = [0, 0, 2000, 2000];
+    let nowIndex = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 0);
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const exitCode = await action("tasks.md", {
+      cooldown: "0",
+      timeLimit: "1",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop completed: time limit reached (elapsed=2s, limit=1s).",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=1, succeeded=1, failed=0.",
+    });
+  });
+
+  it("still honors --iterations when it is reached before timeout", async () => {
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const exitCode = await action("tasks.md", {
+      cooldown: "0",
+      iterations: "2",
+      timeLimit: "60",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(2);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop iteration 2 completed - reached iteration limit; stopping.",
+    });
+    expect(outputEvents).not.toContainEqual({
+      kind: "info",
+      message: "Loop completed: time limit reached (elapsed=0s, limit=60s).",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=2, succeeded=2, failed=0.",
+    });
+  });
+
+  it("respects time limit with --continue-on-error enabled", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { action, runTask, outputEvents } = createLoopHarness(
+      vi
+        .fn<RunTaskFn>()
+        .mockResolvedValueOnce(2)
+        .mockResolvedValueOnce(0),
+    );
+
+    const completion = Promise.resolve(action("tasks.md", {
+      cooldown: "5",
+      continueOnError: true,
+      timeLimit: "1",
+    }));
+
+    await Promise.resolve();
+    expect(runTask).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const exitCode = await completion;
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(outputEvents).toContainEqual({
+      kind: "warn",
+      message: "Loop iteration 1 failed with exit code 2; cooling down for 5s before retry.",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop completed: time limit reached (elapsed=1s, limit=1s).",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=1, succeeded=0, failed=1.",
+    });
+  });
+});
 
 describe("createMakeCommandAction", () => {
   it("runs research and plan by default", async () => {
