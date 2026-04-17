@@ -650,6 +650,7 @@ program
     "Additional nested planning depth passes after top-level scans (default: 0)",
     String(DEFAULT_PLAN_DEEP),
   )
+  .option("--loop", "Use the loop-planning template (.rundown/plan-loop.md)", false)
   .option("--mode <mode>", "Planner mode: wait", "wait")
   .option("--dry-run", "Show what would be planned without executing", false)
   .option("--print-prompt", "Print the rendered plan prompt and exit", false)

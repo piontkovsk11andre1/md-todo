@@ -11330,7 +11330,7 @@ describe.sequential("CLI integration", () => {
   });
 
 
-  it("plan --help shows --force-unlock, scan-count, and deep defaults", async () => {
+  it("plan --help shows --force-unlock, scan-count, deep defaults, and loop mode", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli(["plan", "roadmap.md", "--help"], workspace);
@@ -11343,6 +11343,8 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Max clean-session TODO coverage scans (omit for convergence-driven unlimited mode)");
     expect(compactHelpOutput).toContain("--deep <n>");
     expect(compactHelpOutput).toContain("Additional nested planning depth passes after top-level scans (default: 0)");
+    expect(compactHelpOutput).toContain("--loop");
+    expect(compactHelpOutput).toContain("Use the loop-planning template (.rundown/plan-loop.md)");
   });
 
   it("start --help documents linked workspace behavior", async () => {
