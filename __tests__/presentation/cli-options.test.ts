@@ -1162,6 +1162,31 @@ describe("CLI run option normalization", () => {
     expect(cancellableSleep).toHaveBeenNthCalledWith(2, 1000);
   });
 
+  it("loop exits during cooldown when --time-limit is reached", async () => {
+    const runTask = vi.fn(async () => 0);
+    const events = await invokeLoopAndCaptureOutputEvents([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "5",
+      "--time-limit",
+      "1",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    const infoMessages = events
+      .filter((event) => event.kind === "info")
+      .map((event) => event.message);
+
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(infoMessages).toContain("Loop time limit reached during cooldown before iteration 2; elapsed=1s, limit=1s.");
+    expect(infoMessages).toContain("Loop summary: total iterations=1, succeeded=1, failed=0.");
+  });
+
   it("loop exits with code 0 on SIGINT during cooldown", async () => {
     const runTask = vi.fn(async () => 0);
     const cancellableSleep = vi.fn(() => {

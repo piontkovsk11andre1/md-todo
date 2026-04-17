@@ -754,6 +754,8 @@ export function createLoopCommandAction({
               app,
               cooldownSeconds,
               nextIteration: iteration + 1,
+              loopStartMs,
+              timeLimitMs,
               onInterrupt: (signal) => {
                 if (signal === "SIGINT") {
                   setLoopSignalExitCode?.(0);
@@ -764,6 +766,14 @@ export function createLoopCommandAction({
               },
             });
             if (cooldownInterruptedBy === "SIGINT") {
+              break;
+            }
+            if (cooldownInterruptedBy === "TIME_LIMIT") {
+              const elapsedSeconds = Math.floor((Date.now() - loopStartMs) / 1000);
+              emitCliInfo(
+                app,
+                `Loop time limit reached during cooldown before iteration ${iteration + 1}; elapsed=${elapsedSeconds}s, limit=${timeLimitSeconds}s.`,
+              );
               break;
             }
           } else {
@@ -788,6 +798,8 @@ export function createLoopCommandAction({
             app,
             cooldownSeconds,
             nextIteration: iteration + 1,
+            loopStartMs,
+            timeLimitMs,
             onInterrupt: (signal) => {
               if (signal === "SIGINT") {
                 setLoopSignalExitCode?.(0);
@@ -798,6 +810,14 @@ export function createLoopCommandAction({
             },
           });
           if (cooldownInterruptedBy === "SIGINT") {
+            break;
+          }
+          if (cooldownInterruptedBy === "TIME_LIMIT") {
+            const elapsedSeconds = Math.floor((Date.now() - loopStartMs) / 1000);
+            emitCliInfo(
+              app,
+              `Loop time limit reached during cooldown before iteration ${iteration + 1}; elapsed=${elapsedSeconds}s, limit=${timeLimitSeconds}s.`,
+            );
             break;
           }
         } else {
@@ -2114,19 +2134,26 @@ interface LoopCooldownCountdownOptions {
   app: CliApp;
   cooldownSeconds: number;
   nextIteration: number;
+  loopStartMs?: number;
+  timeLimitMs?: number;
   onInterrupt?: (signal: NodeJS.Signals) => void;
   setActiveCooldownCanceller?: (cancel: (() => void) | undefined) => void;
 }
+
+type LoopCooldownInterrupt = NodeJS.Signals | "TIME_LIMIT";
 
 async function emitLoopCooldownCountdown({
   app,
   cooldownSeconds,
   nextIteration,
+  loopStartMs,
+  timeLimitMs,
   onInterrupt,
   setActiveCooldownCanceller,
-}: LoopCooldownCountdownOptions): Promise<NodeJS.Signals | undefined> {
-  let interruptedBySignal: NodeJS.Signals | undefined;
+}: LoopCooldownCountdownOptions): Promise<LoopCooldownInterrupt | undefined> {
+  let interruptedBySignal: LoopCooldownInterrupt | undefined;
   let activeSleep: ReturnType<typeof cancellableSleep> | undefined;
+  const hasTimeLimit = typeof timeLimitMs === "number" && typeof loopStartMs === "number";
 
   const interruptCooldown = (signal: NodeJS.Signals) => {
     interruptedBySignal = signal;
@@ -2148,13 +2175,28 @@ async function emitLoopCooldownCountdown({
     if (interruptedBySignal) {
       break;
     }
+
+    if (hasTimeLimit && Date.now() - loopStartMs >= timeLimitMs) {
+      interruptedBySignal = "TIME_LIMIT";
+      break;
+    }
+
     const shouldEmitTick = remainingSeconds === cooldownSeconds
       || remainingSeconds < 10
       || remainingSeconds % 10 === 0;
     if (shouldEmitTick) {
       emitCliInfo(app, `Loop cooldown: ${remainingSeconds}s remaining before iteration ${nextIteration}.`);
     }
-    activeSleep = cancellableSleep(1000);
+
+    const sleepDurationMs = hasTimeLimit
+      ? Math.min(1000, Math.max(0, timeLimitMs - (Date.now() - loopStartMs)))
+      : 1000;
+    if (sleepDurationMs <= 0) {
+      interruptedBySignal = "TIME_LIMIT";
+      break;
+    }
+
+    activeSleep = cancellableSleep(sleepDurationMs);
     setActiveCooldownCanceller?.(() => {
       activeSleep?.cancel();
     });

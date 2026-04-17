@@ -257,6 +257,36 @@ describe("createLoopCommandAction", () => {
     ]);
   });
 
+  it("stops during cooldown when global time limit is reached", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { action, runTask, outputEvents } = createLoopHarness(async () => 0);
+
+    const completion = Promise.resolve(action("tasks.md", {
+      worker: "opencode run",
+      iterations: "2",
+      cooldown: "5",
+      timeLimit: "1",
+    }));
+
+    await Promise.resolve();
+    expect(runTask).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const exitCode = await completion;
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop time limit reached during cooldown before iteration 2; elapsed=1s, limit=1s.",
+    });
+    expect(outputEvents).toContainEqual({
+      kind: "info",
+      message: "Loop summary: total iterations=1, succeeded=1, failed=0.",
+    });
+  });
+
   it("continues on failed iterations when --continue-on-error is enabled", async () => {
     const { action, runTask, outputEvents } = createLoopHarness(
       vi
