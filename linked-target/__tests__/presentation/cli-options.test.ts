@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS } from "../../../src/domain/ports/command-executor.js";
-import { createPlanCommandAction } from "../../../src/presentation/cli-command-actions.js";
+import { createLoopCommandAction, createPlanCommandAction } from "../../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../../src/presentation/cli-app-init.js";
 
 type CliOpts = Record<string, string | string[] | boolean>;
@@ -11,6 +11,24 @@ function createPlanAction(planTask: ReturnType<typeof vi.fn>) {
     getApp: () => app,
     getWorkerFromSeparator: () => undefined,
     plannerModes: ["wait"],
+  });
+}
+
+function createLoopAction(
+  runTask: ReturnType<typeof vi.fn>,
+  getInvocationArgv: () => string[],
+) {
+  const app = {
+    runTask,
+    emitOutput: vi.fn(),
+    releaseAllLocks: vi.fn(),
+  } as unknown as CliApp;
+
+  return createLoopCommandAction({
+    getApp: () => app,
+    getWorkerFromSeparator: () => undefined,
+    runnerModes: ["wait"],
+    getInvocationArgv,
   });
 }
 
@@ -106,6 +124,66 @@ describe("plan CLI option forwarding", () => {
       loop: false,
       deep: 0,
       cliBlockTimeoutMs: DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS,
+    }));
+  });
+});
+
+describe("loop CLI commit option forwarding", () => {
+  it("forwards explicit --commit options to loop iterations", async () => {
+    const runTask = vi.fn(async () => 0);
+    const action = createLoopAction(
+      runTask,
+      () => [
+        "loop",
+        "tasks.md",
+        "--commit",
+        "--commit-message",
+        "loop: {{task}}",
+        "--commit-mode",
+        "file-done",
+      ],
+    );
+
+    const exitCode = await action("tasks.md", {
+      iterations: "1",
+      cooldown: "0",
+      commit: true,
+      commitMessage: "loop: {{task}}",
+      commitMode: "file-done",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      source: "tasks.md",
+      commitAfterComplete: true,
+      commitMessageTemplate: "loop: {{task}}",
+      commitMode: "file-done",
+      runAll: true,
+      clean: true,
+      redo: true,
+      resetAfter: true,
+      cacheCliBlocks: true,
+    }));
+  });
+
+  it("defaults commit behavior to disabled when --commit is omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+    const action = createLoopAction(
+      runTask,
+      () => ["loop", "tasks.md"],
+    );
+
+    await action("tasks.md", {
+      iterations: "1",
+      cooldown: "0",
+    });
+
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      source: "tasks.md",
+      commitAfterComplete: false,
+      commitMode: "per-task",
     }));
   });
 });

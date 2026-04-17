@@ -1012,6 +1012,36 @@ describe("CLI run option normalization", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("loop forwards --commit options to each iteration", async () => {
+    const runTask = vi.fn(async () => 0);
+    const calls = await invokeLoopAndCaptureRunCalls([
+      "loop",
+      "tasks.md",
+      "--iterations",
+      "2",
+      "--cooldown",
+      "0",
+      "--commit",
+      "--commit-message",
+      "loop: {{task}}",
+      "--commit-mode",
+      "file-done",
+      "--worker",
+      "opencode",
+      "run",
+    ], runTask);
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call).toMatchObject({
+        commitAfterComplete: true,
+        commitMessageTemplate: "loop: {{task}}",
+        commitMode: "file-done",
+        runAll: true,
+      });
+    }
+  });
+
   it("loop releases held locks after each iteration before cooldown", async () => {
     const runTask = vi.fn(async () => 0);
     const releaseAllLocks = vi.fn();

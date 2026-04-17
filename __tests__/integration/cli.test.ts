@@ -6225,6 +6225,9 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--cooldown <seconds> Cooldown delay in seconds between iterations");
     expect(compactHelpOutput).toContain("--iterations <n> Stop after N iterations (default: unlimited)");
     expect(compactHelpOutput).toContain("--continue-on-error Continue loop after iteration failure");
+    expect(compactHelpOutput).toContain("--commit Auto-commit checked task file after successful completion");
+    expect(compactHelpOutput).toContain("--commit-message <template> Commit message template (supports {{task}} and {{file}})");
+    expect(compactHelpOutput).toContain("--commit-mode <mode> Commit timing for --commit: per-task (default) or file-done (effective run-all via --all/all/--redo/--clean)");
     expect(compactHelpOutput).toContain("--worker <pattern> Optional worker pattern override (alternative to -- <command>)");
     expect(compactHelpOutput).toContain("--no-verify Disable verification after task execution");
   });

@@ -34,6 +34,12 @@ Options:
 
 `loop` also accepts all run-like options (`--verify`, `--repair-attempts`, `--commit`, `--worker`, `--trace`, etc.), which are forwarded to each inner `call` iteration.
 
+Commit-specific forwarding is supported in loop mode too:
+
+- `--commit` enables auto-commit after successful iteration completion.
+- `--commit-message <template>` forwards custom commit message templating to each iteration.
+- `--commit-mode <mode>` is respected per iteration; because `loop` enforces clean all-task passes, both `per-task` and `file-done` remain valid.
+
 Behavior notes:
 
 - Infinite mode (default): if `--iterations` is omitted, `loop` runs until interrupted.
