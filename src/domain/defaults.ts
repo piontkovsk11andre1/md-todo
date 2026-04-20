@@ -1560,7 +1560,7 @@ Guidelines:
 - Treat managed design docs as first-class context when present:
   - \`design/current/**\`
   - \`design/rev.*/**\`
-  Fall back to legacy \`docs/current/**\`, \`docs/rev.*/**\`, and root \`Design.md\` only when canonical design paths are unavailable.
+  Fall back to legacy \`docs/current/**\`, \`docs/rev.*/**\`, and root \`Design.md\` only as compatibility-only paths when canonical design paths are unavailable.
 - Surface design constraints, edge cases, and compatibility considerations.
 - Propose document structure: add section headings, acceptance criteria
   outlines, scope/out-of-scope boundaries, and integration notes.

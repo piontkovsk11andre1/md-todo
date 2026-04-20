@@ -42,7 +42,7 @@ Directory override rules:
 - Workspace targets must be distinct and non-nested (no duplicates or parent/child overlaps).
 - Invalid values fail fast with actionable CLI errors that name the offending option.
 
-Compatibility note: legacy `docs/current/Design.md` and root `Design.md` are still read as fallbacks when `design/current/` is not available.
+Compatibility note: legacy `docs/current/Design.md` and root `Design.md` are still read only as compatibility-only fallbacks when `design/current/` is not available.
 
 ## Global option: `--config-dir <path>`
 

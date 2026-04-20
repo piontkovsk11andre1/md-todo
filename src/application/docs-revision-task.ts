@@ -277,7 +277,7 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
       + canonicalCurrentDir
       + ". Create "
       + designWorkspaceDir
-      + "/current/Target.md (preferred), or use legacy docs/current/Design.md, before using revision commands.",
+      + "/current/Target.md (preferred), or use legacy docs/current/Design.md only as a compatibility-only fallback, before using revision commands.",
   };
 }
 

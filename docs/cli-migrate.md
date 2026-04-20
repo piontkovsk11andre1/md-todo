@@ -4,7 +4,7 @@ Generate and manage prediction migrations.
 
 Without an action, `migrate` generates the next migration proposal based on design and migration context.
 
-Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/rev.*/**`) as context sources, and falls back to legacy `docs/current/**`, `docs/rev.*/**`, and root `Design.md` for older projects.
+Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/rev.*/**`) as context sources, and falls back to legacy `docs/current/**`, `docs/rev.*/**`, and root `Design.md` only as compatibility-only paths for older projects.
 
 ## Global option: `--config-dir <path>`
 

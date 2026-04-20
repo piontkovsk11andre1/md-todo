@@ -478,7 +478,7 @@ What happens:
 
 1. `design release` snapshots `design/current/` into `design/rev.N/` with monotonic revision numbering.
 2. `rev.0` is the explicit baseline snapshot when present; if no lower revision exists for a selected target (including `rev.1` as first discovered revision), diff semantics are `nothing -> target`.
-3. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable as compatibility fallback sources.
+3. Legacy `docs/current/Design.md` and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
 4. If there is no byte-level change from the latest revision, release is a no-op.
 5. `design diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
 6. Diff output is deterministic and suitable for both human review and migration context.

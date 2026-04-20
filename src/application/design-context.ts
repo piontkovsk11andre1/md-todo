@@ -177,7 +177,7 @@ export function resolveDesignContext(
       + "/current/"
       + CANONICAL_PRIMARY_FILE
       + " (preferred), "
-      + "or fall back to docs/current/Design.md and root Design.md for legacy projects.",
+      + "or use legacy docs/current/Design.md and root Design.md only as compatibility-only fallbacks for legacy projects.",
   };
 }
 

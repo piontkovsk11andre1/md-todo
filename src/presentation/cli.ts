@@ -373,7 +373,7 @@ program
       "Design workflow:",
       "  - Active draft edits live in design/current/ (default primary file: design/current/Target.md)",
       "  - Historical snapshots are stored under design/rev.N/ as immutable revisions",
-      "  - Legacy docs/current/Design.md and root Design.md remain supported as compatibility fallbacks",
+      "  - Legacy docs/current/Design.md and root Design.md remain supported only as compatibility-only fallbacks",
       "",
       "Linked workspace behavior:",
       "  - When started from a linked directory, start writes link metadata in both target and source workspaces",
@@ -414,7 +414,7 @@ migrateCommand.addHelpText(
   [
     "",
     "Revision-aware behavior:",
-    "  - Reads design context from design/current/** first (falls back to docs/current/** and root Design.md)",
+    "  - Reads design context from design/current/** first (legacy docs/current/** and root Design.md are compatibility-only fallbacks)",
     "  - Migration generation includes revision diff context from previous revision vs current draft",
     "",
     "Linked workspace selection:",
