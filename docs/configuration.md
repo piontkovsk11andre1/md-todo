@@ -172,6 +172,8 @@ Section behavior:
 - `mode: "cooldown"` marks `transport_unavailable` failures as `cooling_down` and retries after a probe delay.
 - `probeCooldownSeconds` defaults to `300` seconds when `mode` is `cooldown`.
 - `mode: "manual"` keeps the previous sticky behavior, marking workers `unavailable` until you reset health state.
+- At `runTask` startup, rundown emits warning lines for persisted `cooling_down` and `unavailable` worker entries so blocked workers are visible before task execution begins.
+- If all worker candidates are currently `cooling_down`, worker-required commands wait for the nearest `cooldownUntil`, retry selection once, then fail with a health-blocked error if no worker becomes eligible.
 
 ## Worker timeout
 

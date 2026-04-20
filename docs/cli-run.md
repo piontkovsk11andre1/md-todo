@@ -140,3 +140,8 @@ Agent output notes (`run --show-agent-output`):
 - Still visible: rundown lifecycle/status messages (`info`, `warn`, `error`, `success`, `task`).
 - Still visible: hook output from `--on-complete` and `--on-fail` (intentionally out of scope for this option).
 - Artifacts/traces still capture output for audit/debug; terminal suppression does not disable persistence.
+
+Worker health behavior:
+
+- At startup, `run` emits warnings for worker entries currently marked `cooling_down` or `unavailable`.
+- If every candidate worker is `cooling_down`, `run` waits until the nearest cooldown expires, retries selection once, and then fails if no worker is eligible.
