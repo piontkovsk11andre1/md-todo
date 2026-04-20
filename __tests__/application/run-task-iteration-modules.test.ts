@@ -2326,7 +2326,7 @@ describe("run-task-iteration", () => {
     expect(events.some((event) => event.kind === "info" && event.message.includes("All workers cooling down. Waiting"))).toBe(true);
     expect(events).toContainEqual(expect.objectContaining({
       kind: "error",
-      message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
+      message: "No worker command available: all configured workers are blocked by health policy. Use `rundown worker-health` to inspect status or delete `.rundown/worker-health.json` to reset.",
     }));
   });
 });

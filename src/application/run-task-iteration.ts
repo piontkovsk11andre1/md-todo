@@ -46,6 +46,8 @@ type ArtifactContext = ArtifactRunContext;
 const INLINE_CLI_PREFIX = /^cli:\s*/i;
 const WORKER_COOLDOWN_WAIT_CAP_MS = 300_000;
 const INTERRUPTED_EXIT_CODE = 130;
+const NO_WORKER_CONFIGURED_MESSAGE = "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.";
+const ALL_WORKERS_BLOCKED_MESSAGE = "No worker command available: all configured workers are blocked by health policy. Use `rundown worker-health` to inspect status or delete `.rundown/worker-health.json` to reset.";
 
 interface CoolingDownCandidate {
   workerLabel: string;
@@ -623,7 +625,10 @@ export async function runTaskIteration(params: {
   }
 
   if (missingWorkerCommand) {
-    const message = "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.";
+    const hasConfiguredCandidates = workerSelectionSnapshot.candidates.length > 0;
+    const message = hasConfiguredCandidates
+      ? ALL_WORKERS_BLOCKED_MESSAGE
+      : NO_WORKER_CONFIGURED_MESSAGE;
     emit({
       kind: "error",
       message,
