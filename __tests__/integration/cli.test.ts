@@ -11002,6 +11002,29 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("No unchecked tasks found"))).toBe(true);
   });
 
+  it("run --all without locale.json keeps legacy English output", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] cli: echo done\n", "utf-8");
+
+    expect(fs.existsSync(path.join(workspace, ".rundown", "locale.json"))).toBe(false);
+
+    const runResult = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--all",
+    ], workspace);
+
+    expect(runResult.code).toBe(3);
+    const runInfoLine = runResult.logs.find((line) => stripCliTimestampPrefix(stripAnsi(line)).includes("No unchecked tasks found."));
+    expect(stripCliTimestampPrefix(stripAnsi(runInfoLine ?? ""))).toBe("ℹ No unchecked tasks found.");
+
+    const initResult = await runCli(["init"], workspace);
+    expect(initResult.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "locale.json"))).toBe(false);
+    expect(initResult.logs.map(stripAnsi)).toEqual(expectedInitSuccessLines(".rundown"));
+  });
+
   it("run --all emits translated no-unchecked-tasks message from locale.json", async () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] cli: echo done\n", "utf-8");
