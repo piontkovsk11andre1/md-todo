@@ -1326,6 +1326,26 @@ Requirements:
 `;
 
 /**
+ * Default localization messages template used to translate CLI message catalog values.
+ */
+export const DEFAULT_LOCALIZE_MESSAGES_TEMPLATE = `\
+You are translating a rundown CLI message catalog into {{language}}.
+
+Return valid JSON only. Do not wrap in code fences. Do not include commentary.
+
+The input catalog JSON is:
+
+{{catalog}}
+
+Rules:
+- Translate values only (right-hand side strings).
+- Do not add, remove, or rename any keys.
+- Preserve all {{placeholder}} tokens in values exactly as written.
+- Keep punctuation and escape sequences valid for JSON string values.
+- If a value has no natural translation in {{language}}, keep the original English value.
+`;
+
+/**
  * Default plan-phase prompt template used to propose missing additive TODO items.
  */
 export const DEFAULT_PLAN_TEMPLATE = `\
