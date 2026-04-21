@@ -40,14 +40,13 @@ import type { WorkerFailureClass, WorkerHealthEntry } from "../domain/worker-hea
 import { classifyWorkerFailure } from "./worker-failure-classification.js";
 import { RUN_REASON_USAGE_LIMIT_DETECTED } from "../domain/run-reasons.js";
 import type { TerminalStopSignal } from "../domain/terminal-control.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 type ArtifactContext = ArtifactRunContext;
 const INLINE_CLI_PREFIX = /^cli:\s*/i;
 const WORKER_COOLDOWN_WAIT_CAP_MS = 300_000;
 const INTERRUPTED_EXIT_CODE = 130;
-const NO_WORKER_CONFIGURED_MESSAGE = "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.";
-const ALL_WORKERS_BLOCKED_MESSAGE = "No worker command available: all configured workers are blocked by health policy. Use `rundown worker-health` to inspect status or delete `.rundown/worker-health.json` to reset.";
 
 interface CoolingDownCandidate {
   workerLabel: string;
@@ -362,6 +361,7 @@ export async function runTaskIteration(params: {
   terminalStop?: TerminalStopSignal;
 }> {
   const { dependencies, emit, state, context, execution, worker, verifyConfig, completion, prompts, traceConfig, lifecycle } = params;
+  const localeMessages: LocaleMessages = dependencies.localeMessages ?? {};
   const { source, fileSource, files, task } = context;
   const taskTextForExecution = execution.forceStrippedTaskText ?? task.text;
   const initialTaskForIntent = taskTextForExecution === task.text
@@ -400,7 +400,10 @@ export async function runTaskIteration(params: {
   });
 
   if (execution.verbose) {
-    emit({ kind: "info", message: "Next task: " + formatTaskLabel(task) });
+    emit({
+      kind: "info",
+      message: msg("task.next-verbose", { label: formatTaskLabel(task) }, localeMessages),
+    });
   }
 
   let groupEnded = false;
@@ -422,7 +425,7 @@ export async function runTaskIteration(params: {
   try {
 
   if (taskIntentDecision.intent === "memory-capture" && taskIntentDecision.hasEmptyPayload) {
-    const message = "Memory capture task requires payload text after the prefix (memory:, memorize:, remember:, inventory:).";
+    const message = msg("task.memory-missing-payload", {}, localeMessages);
     emit({
       kind: "error",
       message,
@@ -432,7 +435,7 @@ export async function runTaskIteration(params: {
   }
 
   if (taskIntentDecision.intent === "tool-expansion" && taskIntentDecision.hasEmptyPayload) {
-    const message = "Tool task requires payload text after the prefix (<tool-name>:).";
+    const message = msg("task.tool-missing-payload", {}, localeMessages);
     emit({
       kind: "error",
       message,
@@ -442,7 +445,7 @@ export async function runTaskIteration(params: {
   }
 
   if (taskIntentDecision.intent === "fast-execution" && taskIntentDecision.hasEmptyPayload) {
-    const message = "Fast task has no payload text; skipping.";
+    const message = msg("task.fast-no-payload", {}, localeMessages);
     emit({
       kind: "warn",
       message,
@@ -588,16 +591,17 @@ export async function runTaskIteration(params: {
       const waitSeconds = Math.ceil(waitMs / 1000);
       emit({
         kind: "info",
-        message: "All workers cooling down. Waiting "
-          + waitSeconds
-          + "s for \""
-          + nearestCoolingDownCandidate.workerLabel
-          + "\" to become eligible...",
+        message: msg("task.workers-cooling-wait", {
+          seconds: String(waitSeconds),
+          workerLabel: nearestCoolingDownCandidate.workerLabel,
+        }, localeMessages),
       });
 
       const waitResult = await waitForWorkerCooldown(waitMs);
       if (waitResult.interruptedBy) {
-        const interruptedMessage = "Worker cooldown wait interrupted by " + waitResult.interruptedBy + ".";
+        const interruptedMessage = msg("task.cooldown-interrupted", {
+          reason: waitResult.interruptedBy,
+        }, localeMessages);
         emit({
           kind: "warn",
           message: interruptedMessage,
@@ -628,8 +632,8 @@ export async function runTaskIteration(params: {
   if (missingWorkerCommand) {
     const hasConfiguredCandidates = workerSelectionSnapshot.candidates.length > 0;
     const message = hasConfiguredCandidates
-      ? ALL_WORKERS_BLOCKED_MESSAGE
-      : NO_WORKER_CONFIGURED_MESSAGE;
+      ? msg("task.all-workers-blocked", {}, localeMessages)
+      : msg("task.no-worker-configured", {}, localeMessages);
     emit({
       kind: "error",
       message,
@@ -752,7 +756,7 @@ export async function runTaskIteration(params: {
 
   // Execution paths require a concrete artifact context for logging and storage.
   if (!state.artifactContext) {
-    const message = "Artifact context was not initialized before task execution.";
+    const message = msg("task.artifact-not-initialized", {}, localeMessages);
     emit({ kind: "error", message });
     emitGroupFailure(message);
     await afterTaskFailed(
@@ -783,11 +787,17 @@ export async function runTaskIteration(params: {
   };
 
   if (onlyVerify) {
-    emit({ kind: "info", message: "Execution phase skipped; entering verification phase." });
+    emit({
+      kind: "info",
+      message: msg("task.execution-phase-skipped", {}, localeMessages),
+    });
   }
 
   if (execution.verbose) {
-    emit({ kind: "info", message: "Starting execute phase..." });
+    emit({
+      kind: "info",
+      message: msg("task.execution-phase-starting", {}, localeMessages),
+    });
   }
 
   // Dispatch the task and receive a structured result for completion routing.
@@ -865,7 +875,10 @@ export async function runTaskIteration(params: {
 
   // Detached runs intentionally skip immediate verification and checkbox updates.
   if (dispatchResult.kind === "detached") {
-    emit({ kind: "info", message: "Detached mode — skipping immediate verification and leaving the task unchecked." });
+    emit({
+      kind: "info",
+      message: msg("task.detached-skip-verify", {}, localeMessages),
+    });
     emitGroupSuccess();
     return {
       continueLoop: false,
@@ -878,9 +891,15 @@ export async function runTaskIteration(params: {
 
   if (execution.verbose) {
     if (dispatchResult.shouldVerify) {
-      emit({ kind: "info", message: "Execute phase finished; starting verify/repair phase..." });
+      emit({
+        kind: "info",
+        message: msg("task.execution-phase-done", {}, localeMessages),
+      });
     } else {
-      emit({ kind: "info", message: "Execute phase finished; verification is disabled for this task." });
+      emit({
+        kind: "info",
+        message: msg("task.execution-phase-done-no-verify", {}, localeMessages),
+      });
     }
   }
 
