@@ -1,4 +1,4 @@
-import { classifyTaskIntent, type TaskIntentDecision } from "../domain/task-intent.js";
+import { classifyTaskIntent, normalizeLocaleKeyword, type TaskIntentDecision } from "../domain/task-intent.js";
 import { type Task } from "../domain/parser.js";
 import type { ToolResolverPort } from "../domain/ports/tool-resolver-port.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -43,6 +43,7 @@ export function resolveIterationVerificationMode(params: {
   configuredShouldVerify: boolean;
   forceExecute: boolean;
   task: Task;
+  localeAliases?: Record<string, string>;
   toolResolver?: ToolResolverPort;
   emit: EmitFn;
 }): IterationVerificationMode {
@@ -51,17 +52,22 @@ export function resolveIterationVerificationMode(params: {
     configuredShouldVerify,
     forceExecute,
     task,
+    localeAliases,
     toolResolver,
     emit,
   } = params;
 
+  const normalizedTaskText = localeAliases
+    ? normalizeLocaleKeyword(task.text, localeAliases)
+    : task.text;
+
   // Classify explicit text prefixes, then apply any inherited parser directive intent.
   const taskIntent = applyInheritedTaskIntent(
-    classifyTaskIntent(task.text, toolResolver),
+    classifyTaskIntent(normalizedTaskText, toolResolver),
     task.intent,
   );
   // Parse the unified prefix chain for tool-based dispatch.
-  const prefixChain = parsePrefixChain(task.text, toolResolver);
+  const prefixChain = parsePrefixChain(normalizedTaskText, toolResolver);
 
   // Determine verify-only from either legacy intent or prefix chain handler.
   const prefixChainIsVerifyOnly = prefixChain.handler?.tool.frontmatter?.skipExecution === true

@@ -384,6 +384,7 @@ export async function runTaskIteration(params: {
     configuredShouldVerify: verifyConfig.configuredShouldVerify,
     forceExecute: execution.forceExecute,
     task: taskForIntent,
+    localeAliases: dependencies.localeAliases,
     toolResolver: dependencies.toolResolver,
     emit,
   });
