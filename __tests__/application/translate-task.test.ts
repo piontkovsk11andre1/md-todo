@@ -5,6 +5,7 @@ import {
   type TranslateTaskDependencies,
   type TranslateTaskOptions,
 } from "../../src/application/translate-task.js";
+import { parseTasks } from "../../src/domain/parser.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import type {
   ArtifactStore,
@@ -53,6 +54,37 @@ describe("translate-task", () => {
     expect(prompt).toContain("Return only the full translated Markdown document body.");
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
+  });
+
+  it("prints a translation-quality contract that forbids invention and requires explicit ambiguity signaling", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nDescribe rollout policy updates.\n",
+      howContent: "# How\nUse framework-native governance terms.\n",
+    });
+    dependencies.configDir = undefined;
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("No invention: do not add or invent requirements, tasks, or implementation commitments.");
+    expect(prompt).toContain("Uncertainty signaling: when no clear analog exists in <how>, keep the original concept explicit and clearly mark the mismatch.");
+    expect(prompt).toContain("Markdown validity: return valid Markdown suitable for downstream rundown commands.");
+    expect(prompt).toContain("Return only the full translated Markdown document body.");
   });
 
   it("reports dry-run details without executing worker", async () => {
@@ -176,6 +208,41 @@ describe("translate-task", () => {
     expect(traceEvents?.some((event) => event?.event_type === "output.volume")).toBe(true);
     expect(traceEvents?.some((event) => event?.event_type === "run.completed")).toBe(true);
     expect(vi.mocked(dependencies.fileLock.releaseAll)).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes worker markdown output in a downstream-compatible form", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const translatedMarkdown = "# Domain Rewrite\n\n- [ ] verify: validate policy drift constraints\n";
+    const { dependencies } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nValidate policy drift constraints.\n",
+      howContent: "# How\nUse canonical governance controls language.\n",
+    });
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 0,
+      stdout: translatedMarkdown,
+      stderr: "",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+    }));
+
+    expect(code).toBe(0);
+    const writeCall = vi.mocked(dependencies.fileSystem.writeText).mock.calls[0];
+    const writtenMarkdown = writeCall?.[1] ?? "";
+    expect(writtenMarkdown).toBe(translatedMarkdown);
+    expect(() => parseTasks(writtenMarkdown, outputFile)).not.toThrow();
+    expect(parseTasks(writtenMarkdown, outputFile)).toHaveLength(1);
   });
 
   it("finalizes failed runs with preserved artifacts and trace completion", async () => {
