@@ -4301,6 +4301,34 @@ describe("CLI plan and utility command normalization", () => {
     }
   });
 
+  it("passes translate options through with --worker pattern", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-options-worker-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    const outputFile = path.join(tempRoot, "output.md");
+    fs.writeFileSync(whatFile, "# What\n", "utf8");
+    fs.writeFileSync(howFile, "# How\n", "utf8");
+
+    try {
+      const call = await invokeTranslateAndCaptureCall([
+        "translate",
+        whatFile,
+        howFile,
+        outputFile,
+        "--dry-run",
+        "--worker",
+        "claude -p",
+      ], translateTask);
+
+      expect(call.workerCommand).toEqual(["claude", "-p"]);
+      expect(call.dryRun).toBe(true);
+      expect(call.printPrompt).toBe(false);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("prefers --worker pattern over separator worker command for translate", async () => {
     const translateTask = vi.fn(async () => 0);
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-worker-priority-"));
@@ -4324,6 +4352,157 @@ describe("CLI plan and utility command normalization", () => {
       ], translateTask);
 
       expect(call.workerCommand).toEqual(["claude", "-p"]);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards print-prompt without enabling dry-run for translate", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-print-prompt-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    const outputFile = path.join(tempRoot, "output.md");
+    fs.writeFileSync(whatFile, "# What\n", "utf8");
+    fs.writeFileSync(howFile, "# How\n", "utf8");
+
+    try {
+      const call = await invokeTranslateAndCaptureCall([
+        "translate",
+        whatFile,
+        howFile,
+        outputFile,
+        "--print-prompt",
+        "--worker",
+        "opencode",
+        "run",
+      ], translateTask);
+
+      expect(call.printPrompt).toBe(true);
+      expect(call.dryRun).toBe(false);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when translate is missing required args", async () => {
+    const translateTask = vi.fn(async () => 0);
+    let stderr = "";
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    }) as never);
+
+    try {
+      await invokeTranslateAndExpectExit([
+        "translate",
+        "only-what.md",
+      ], translateTask);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    expect(translateTask).not.toHaveBeenCalled();
+    expect(stderr).toContain("missing required argument");
+  });
+
+  it("logs a CLI error and exits with code 1 when translate <what> path is not markdown", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await invokeTranslateAndExpectExit([
+      "translate",
+      "what.txt",
+      "how.md",
+      "out.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], translateTask);
+
+    expect(translateTask).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid translate <what> document path: what.txt"));
+  });
+
+  it("logs a CLI error and exits with code 1 when translate <how> file does not exist", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-missing-how-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    const outputFile = path.join(tempRoot, "output.md");
+    fs.writeFileSync(whatFile, "# What\n", "utf8");
+
+    try {
+      await invokeTranslateAndExpectExit([
+        "translate",
+        whatFile,
+        howFile,
+        outputFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], translateTask);
+
+      expect(translateTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid translate document path for <how>"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("does not exist"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when translate <output> parent directory does not exist", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-missing-output-parent-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    const outputFile = path.join(tempRoot, "missing", "output.md");
+    fs.writeFileSync(whatFile, "# What\n", "utf8");
+    fs.writeFileSync(howFile, "# How\n", "utf8");
+
+    try {
+      await invokeTranslateAndExpectExit([
+        "translate",
+        whatFile,
+        howFile,
+        outputFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], translateTask);
+
+      expect(translateTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid translate document path for <output>"));
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Parent directory does not exist"));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("logs a CLI error and exits with code 1 when translate <output> matches <how>", async () => {
+    const translateTask = vi.fn(async () => 0);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-output-equals-how-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    fs.writeFileSync(whatFile, "# What\n", "utf8");
+    fs.writeFileSync(howFile, "# How\n", "utf8");
+
+    try {
+      await invokeTranslateAndExpectExit([
+        "translate",
+        whatFile,
+        howFile,
+        howFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], translateTask);
+
+      expect(translateTask).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("does not allow <output> to be the same path as <how>"));
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -5166,6 +5345,42 @@ async function invokeTranslateAndCaptureCall(args: string[], translateTask: Retu
 
   expect(translateTask).toHaveBeenCalledTimes(1);
   return withLegacyWorkerCommand(translateTask.mock.calls[0][0] as RunTaskCall);
+}
+
+async function invokeTranslateAndExpectExit(args: string[], translateTask: ReturnType<typeof vi.fn>): Promise<void> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      researchTask: vi.fn(async () => 0),
+      translateTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    if (/CLI exited with code \d+/.test(message) || /process\.exit unexpectedly called/.test(message)) {
+      return;
+    }
+    throw error;
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
 }
 
 async function invokeRunAndExpectExitWithGlobalLogCapture(
