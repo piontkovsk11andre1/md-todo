@@ -190,6 +190,67 @@ describe("resolveIterationVerificationMode", () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it("normalizes localized memory prefix before classification", () => {
+    const emit = vi.fn();
+
+    const mode = resolveIterationVerificationMode({
+      configuredOnlyVerify: false,
+      configuredShouldVerify: false,
+      forceExecute: false,
+      task: createTask("记忆: capture release summary"),
+      localeAliases: {
+        "记忆:": "memory:",
+      },
+      emit,
+    });
+
+    expect(mode.taskIntentDecision.intent).toBe("memory-capture");
+    expect(mode.taskIntentDecision.normalizedTaskText).toBe("capture release summary");
+    expect(mode.onlyVerify).toBe(false);
+    expect(mode.shouldVerify).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("normalizes localized verify prefix before classification", () => {
+    const emit = vi.fn();
+
+    const mode = resolveIterationVerificationMode({
+      configuredOnlyVerify: false,
+      configuredShouldVerify: false,
+      forceExecute: false,
+      task: createTask("验证: confirm changelog is complete"),
+      localeAliases: {
+        "验证:": "verify:",
+      },
+      emit,
+    });
+
+    expect(mode.taskIntentDecision.intent).toBe("verify-only");
+    expect(mode.onlyVerify).toBe(true);
+    expect(mode.shouldVerify).toBe(true);
+    expect(emit).toHaveBeenCalledWith({
+      kind: "info",
+      message: "Task classified as verify-only (explicit marker); skipping execution.",
+    });
+  });
+
+  it("does not classify localized prefixes when locale aliases are not provided", () => {
+    const emit = vi.fn();
+
+    const mode = resolveIterationVerificationMode({
+      configuredOnlyVerify: false,
+      configuredShouldVerify: false,
+      forceExecute: false,
+      task: createTask("记忆: capture release summary"),
+      emit,
+    });
+
+    expect(mode.taskIntentDecision.intent).toBe("execute-and-verify");
+    expect(mode.onlyVerify).toBe(false);
+    expect(mode.shouldVerify).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
   it("applies verify-only mode for composed chains routed by prefix handler metadata", () => {
     const emit = vi.fn();
 

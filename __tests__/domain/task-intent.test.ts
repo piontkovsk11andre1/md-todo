@@ -642,4 +642,13 @@ describe("normalizeLocaleKeyword", () => {
 
     expect(normalized).toBe("verify: release checklist");
   });
+
+  it("ignores empty aliases and empty canonical targets", () => {
+    const normalized = normalizeLocaleKeyword("记忆: capture this context", {
+      "": "memory:",
+      "记忆:": "",
+    });
+
+    expect(normalized).toBe("记忆: capture this context");
+  });
 });
