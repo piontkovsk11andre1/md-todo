@@ -34,6 +34,41 @@ const PARALLEL_GROUP_PREFIX = /^(parallel|concurrent|par)\s*:\s*/i;
 // Prefix marker that requests execution without verification.
 const FAST_EXECUTION_PREFIX = /^(fast|raw|quick)\s*:/i;
 
+/**
+ * Rewrites localized intent prefix aliases to canonical English prefixes.
+ *
+ * Example: `记忆: capture context` -> `memory: capture context`
+ */
+export function normalizeLocaleKeyword(text: string, aliases: Record<string, string>): string {
+  if (text.length === 0) {
+    return text;
+  }
+
+  const aliasEntries = Object.entries(aliases)
+    .filter(([alias, canonical]) => alias.length > 0 && canonical.length > 0)
+    .sort((a, b) => b[0].length - a[0].length);
+
+  if (aliasEntries.length === 0) {
+    return text;
+  }
+
+  const leadingWhitespaceLength = text.length - text.trimStart().length;
+  const leadingWhitespace = text.slice(0, leadingWhitespaceLength);
+  const textWithoutLeadingWhitespace = text.slice(leadingWhitespaceLength);
+  const loweredText = textWithoutLeadingWhitespace.toLocaleLowerCase();
+
+  for (const [alias, canonical] of aliasEntries) {
+    const loweredAlias = alias.toLocaleLowerCase();
+    if (!loweredText.startsWith(loweredAlias)) {
+      continue;
+    }
+
+    return `${leadingWhitespace}${canonical}${textWithoutLeadingWhitespace.slice(alias.length)}`;
+  }
+
+  return text;
+}
+
 function extractParallelGroupPayload(taskText: string): string | null {
   const prefixMatch = taskText.match(PARALLEL_GROUP_PREFIX);
   if (!prefixMatch) {

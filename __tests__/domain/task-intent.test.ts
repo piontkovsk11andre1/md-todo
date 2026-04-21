@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyTaskIntent } from "../../src/domain/task-intent.js";
+import { classifyTaskIntent, normalizeLocaleKeyword } from "../../src/domain/task-intent.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import type { ToolResolverPort } from "../../src/domain/ports/tool-resolver-port.js";
 import {
@@ -606,5 +606,40 @@ describe("classifyTaskIntent", () => {
     const memoryThenParallel = classifyTaskIntent("memory: parallel: capture release notes", noToolResolver);
     expect(memoryThenParallel.intent).toBe("memory-capture");
     expect(memoryThenParallel.normalizedTaskText).toBe("parallel: capture release notes");
+  });
+});
+
+describe("normalizeLocaleKeyword", () => {
+  it("replaces a localized prefix alias with a canonical prefix", () => {
+    const normalized = normalizeLocaleKeyword("记忆: capture this context", {
+      "记忆:": "memory:",
+    });
+
+    expect(normalized).toBe("memory: capture this context");
+  });
+
+  it("matches aliases case-insensitively and preserves leading whitespace", () => {
+    const normalized = normalizeLocaleKeyword("  FASTO: run this quickly", {
+      "fasto:": "fast:",
+    });
+
+    expect(normalized).toBe("  fast: run this quickly");
+  });
+
+  it("uses the longest matching alias when prefixes overlap", () => {
+    const normalized = normalizeLocaleKeyword("pref-long: payload", {
+      "pref:": "fast:",
+      "pref-long:": "memory:",
+    });
+
+    expect(normalized).toBe("memory: payload");
+  });
+
+  it("returns the original text when no alias matches", () => {
+    const normalized = normalizeLocaleKeyword("verify: release checklist", {
+      "记忆:": "memory:",
+    });
+
+    expect(normalized).toBe("verify: release checklist");
   });
 });
