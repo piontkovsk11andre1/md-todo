@@ -87,6 +87,40 @@ describe("translate-task", () => {
     expect(vi.mocked(dependencies.fileLock.releaseAll)).not.toHaveBeenCalled();
   });
 
+  it("prefers print-prompt over dry-run and skips worker/output mutation", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, events, artifactStore } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      printPrompt: true,
+      dryRun: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("## Source document (<what>)");
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Dry run"))).toBe(false);
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileLock.acquire)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileLock.releaseAll)).not.toHaveBeenCalled();
+  });
+
   it("runs single worker turn and writes deterministic output", async () => {
     const cwd = "/workspace";
     const whatFile = path.join(cwd, "what.md");
