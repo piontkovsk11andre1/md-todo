@@ -61,6 +61,7 @@ export const WORKER_CONFIG_COMMAND_NAMES = [
   "plan",
   "discuss",
   "research",
+  "translate",
   "reverify",
   "verify",
   "memory",

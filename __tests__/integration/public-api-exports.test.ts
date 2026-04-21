@@ -32,6 +32,7 @@ describe("public API exports", () => {
       runTask: expect.any(Function),
       discussTask: expect.any(Function),
       planTask: expect.any(Function),
+      translateTask: expect.any(Function),
       listTasks: expect.any(Function),
       nextTask: expect.any(Function),
       initProject: expect.any(Function),

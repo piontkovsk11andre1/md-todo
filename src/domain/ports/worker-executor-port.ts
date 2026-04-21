@@ -41,7 +41,7 @@ export interface WorkerExecutionOptions {
   // Optional context object recorded alongside artifacts.
   artifactContext?: unknown;
   // Optional artifact phase identifier for run segmentation.
-  artifactPhase?: "execute" | "verify" | "repair" | "resolve" | "worker" | "plan" | "discuss";
+  artifactPhase?: "execute" | "verify" | "repair" | "resolve" | "worker" | "plan" | "discuss" | "translate";
   // Optional human-readable artifact phase label.
   artifactPhaseLabel?: string;
   // Optional additional metadata attached to generated artifacts.

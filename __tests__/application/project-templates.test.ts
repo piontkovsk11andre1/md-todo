@@ -21,6 +21,7 @@ import {
   DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
   DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_QUERY_YN_SEED_TEMPLATE,
+  DEFAULT_TRANSLATE_TEMPLATE,
   DEFAULT_RESEARCH_REPAIR_TEMPLATE,
   DEFAULT_RESEARCH_RESOLVE_TEMPLATE,
   DEFAULT_RESEARCH_OUTPUT_CONTRACT_TEMPLATE,
@@ -81,6 +82,7 @@ describe("project-templates", () => {
       queryExecute: DEFAULT_QUERY_EXECUTION_TEMPLATE,
       queryStreamExecute: DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
       queryAggregate: DEFAULT_QUERY_AGGREGATION_TEMPLATE,
+      translate: DEFAULT_TRANSLATE_TEMPLATE,
     });
     expect(templateLoader.load).not.toHaveBeenCalled();
   });
@@ -147,6 +149,7 @@ describe("project-templates", () => {
       queryExecute: DEFAULT_QUERY_EXECUTION_TEMPLATE,
       queryStreamExecute: DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
       queryAggregate: DEFAULT_QUERY_AGGREGATION_TEMPLATE,
+      translate: DEFAULT_TRANSLATE_TEMPLATE,
     });
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "execute.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "agent.md"));
@@ -178,6 +181,7 @@ describe("project-templates", () => {
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-execute.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-stream-execute.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-aggregate.md"));
+    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "translate.md"));
   });
 
   it("loads undo/test/migrate template overrides from project templates", () => {

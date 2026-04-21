@@ -19,6 +19,7 @@ import {
 } from "./application/worker-health-status.js";
 import { createPlanTask, type PlanTaskOptions as PlanTaskUseCaseOptions } from "./application/plan-task.js";
 import { createResearchTask, type ResearchTaskOptions as ResearchTaskUseCaseOptions } from "./application/research-task.js";
+import { createTranslateTask, type TranslateTaskOptions as TranslateTaskUseCaseOptions } from "./application/translate-task.js";
 import {
   createQueryTask,
   type QueryTaskOptions as QueryTaskUseCaseOptions,
@@ -156,6 +157,7 @@ export type App = {
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
+  translateTask: (options: TranslateTaskCommandOptions) => Promise<number>;
   queryTask: (options: QueryTaskCommandOptions) => Promise<number>;
   unlockTask: (options: UnlockTaskOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
@@ -239,6 +241,27 @@ export interface QueryTaskCommandOptions {
   scanCount?: number;
   maxItems?: number;
   deep?: number;
+  verbose?: boolean;
+}
+
+export interface TranslateTaskCommandOptions {
+  what: string;
+  how: string;
+  output: string;
+  cwd?: string;
+  mode: TranslateTaskUseCaseOptions["mode"];
+  workerPattern: TranslateTaskUseCaseOptions["workerPattern"];
+  showAgentOutput: boolean;
+  dryRun: boolean;
+  printPrompt: boolean;
+  keepArtifacts: boolean;
+  varsFileOption: string | boolean | undefined;
+  cliTemplateVarArgs: string[];
+  trace: boolean;
+  forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
+  configDirOption?: string;
   verbose?: boolean;
 }
 
@@ -598,6 +621,18 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       output: ports.output,
     }),
+    translateTask: (ports) => createTranslateTask({
+      workerExecutor: ports.workerExecutor,
+      workingDirectory: ports.workingDirectory,
+      fileSystem: ports.fileSystem,
+      fileLock: ports.fileLock,
+      workerConfigPort: ports.workerConfigPort,
+      templateLoader: ports.templateLoader,
+      pathOperations: ports.pathOperations,
+      artifactStore: ports.artifactStore,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
     queryTask: (ports) => createQueryTask({
       runTask: runTaskUseCase(ports),
       researchTask: createResearchTask({
@@ -769,6 +804,7 @@ function createAppFromFactories(
   const testSpecs = factories.testSpecs(ports);
   const planTask = factories.planTask(ports);
   const researchTask = factories.researchTask(ports);
+  const translateTask = factories.translateTask(ports);
   const queryTask = factories.queryTask(ports);
   const unlockTask = factories.unlockTask(ports);
   const listTasks = factories.listTasks(ports);
@@ -812,6 +848,7 @@ function createAppFromFactories(
     testSpecs,
     planTask,
     researchTask,
+    translateTask,
     queryTask,
     unlockTask,
     listTasks,

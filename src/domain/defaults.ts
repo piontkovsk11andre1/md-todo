@@ -1578,6 +1578,38 @@ Return the full updated Markdown document and nothing else.
 `;
 
 /**
+ * Default translate prompt template used to re-express one document into
+ * domain vocabulary defined by another document.
+ */
+export const DEFAULT_TRANSLATE_TEMPLATE = `\
+## Source document (<what>)
+
+{{what}}
+
+## Know-how reference (<how>)
+
+{{how}}
+
+## Task
+
+Rewrite <what> so it is naturally expressed in the vocabulary and conceptual framing defined by <how>.
+
+Rules:
+
+- Preserve intent, scope, and constraints from <what>.
+- Prefer terms, distinctions, and mental models established by <how>.
+- Do not add or invent requirements, tasks, or implementation commitments.
+- When no clear analog exists in <how>, keep the original concept explicit and clearly mark the mismatch.
+- Produce natural target-domain prose, not dictionary substitution.
+- Return valid Markdown suitable for downstream rundown commands.
+
+Output contract:
+
+- Return only the full translated Markdown document body.
+- Do not wrap output in commentary, metadata, or code fences.
+`;
+
+/**
  * Default research-verify template used to validate research enrichment quality.
  */
 export const DEFAULT_RESEARCH_VERIFY_TEMPLATE = `\

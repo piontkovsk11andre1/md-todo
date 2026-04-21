@@ -19,6 +19,7 @@ import {
   DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
   DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
   DEFAULT_QUERY_YN_SEED_TEMPLATE,
+  DEFAULT_TRANSLATE_TEMPLATE,
   DEFAULT_RESEARCH_REPAIR_TEMPLATE,
   DEFAULT_RESEARCH_RESOLVE_TEMPLATE,
   DEFAULT_RESEARCH_OUTPUT_CONTRACT_TEMPLATE,
@@ -83,6 +84,7 @@ export interface ProjectTemplates {
   queryExecute: string;
   queryStreamExecute: string;
   queryAggregate: string;
+  translate: string;
 }
 
 /**
@@ -134,6 +136,7 @@ export function loadProjectTemplatesFromPorts(
       queryExecute: DEFAULT_QUERY_EXECUTION_TEMPLATE,
       queryStreamExecute: DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
       queryAggregate: DEFAULT_QUERY_AGGREGATION_TEMPLATE,
+      translate: DEFAULT_TRANSLATE_TEMPLATE,
     };
   }
 
@@ -192,5 +195,6 @@ export function loadProjectTemplatesFromPorts(
       DEFAULT_QUERY_STREAM_EXECUTION_TEMPLATE,
     ),
     queryAggregate: loadTemplateWithFallback("query-aggregate.md", DEFAULT_QUERY_AGGREGATION_TEMPLATE),
+    translate: loadTemplateWithFallback("translate.md", DEFAULT_TRANSLATE_TEMPLATE),
   };
 }

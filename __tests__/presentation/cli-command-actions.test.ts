@@ -25,6 +25,7 @@ import {
   createMakeCommandAction,
   createPlanCommandAction,
   createQueryCommandAction,
+  createTranslateCommandAction,
   createReverifyCommandAction,
   createRunCommandAction,
   createStartCommandAction,
@@ -783,6 +784,72 @@ describe("createPlanCommandAction", () => {
       source: "roadmap.md",
       loop: false,
     }));
+  });
+});
+
+describe("createTranslateCommandAction", () => {
+  it("forwards normalized options and markdown paths to translateTask", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-translate-action-"));
+    const whatFile = path.join(tempRoot, "what.md");
+    const howFile = path.join(tempRoot, "how.md");
+    const outputFile = path.join(tempRoot, "output.md");
+    fs.writeFileSync(whatFile, "# What\n");
+    fs.writeFileSync(howFile, "# How\n");
+
+    const translateTask = vi.fn(async () => 0);
+    const app = { translateTask } as unknown as CliApp;
+    const action = createTranslateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      translateModes: ["wait"],
+    });
+
+    try {
+      const exitCode = await action(whatFile, howFile, outputFile, {
+        mode: "wait",
+        dryRun: false,
+        printPrompt: false,
+        keepArtifacts: false,
+        showAgentOutput: false,
+        trace: false,
+        forceUnlock: false,
+        ignoreCliBlock: false,
+        cliBlockTimeout: "1111",
+        varsFile: "vars.json",
+        var: ["foo=bar"],
+        worker: "opencode run",
+        configDir: ".rundown",
+        verbose: true,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(translateTask).toHaveBeenCalledTimes(1);
+      expect(translateTask).toHaveBeenCalledWith(expect.objectContaining({
+        what: whatFile,
+        how: howFile,
+        output: outputFile,
+        cwd: expect.any(String),
+        invocationDir: expect.any(String),
+        workspaceDir: expect.any(String),
+        workspaceLinkPath: expect.any(String),
+        isLinkedWorkspace: expect.any(Boolean),
+        mode: "wait",
+        dryRun: false,
+        printPrompt: false,
+        keepArtifacts: false,
+        showAgentOutput: false,
+        trace: false,
+        forceUnlock: false,
+        ignoreCliBlock: false,
+        cliBlockTimeoutMs: 1111,
+        varsFileOption: "vars.json",
+        cliTemplateVarArgs: ["foo=bar"],
+        configDirOption: ".rundown",
+        verbose: true,
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
 

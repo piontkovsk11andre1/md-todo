@@ -13,6 +13,7 @@ export type RuntimePhase =
   | "repair"
   | "resolve"
   | "plan"
+  | "translate"
   | "discuss"
   | "help"
   | "inline-cli"
