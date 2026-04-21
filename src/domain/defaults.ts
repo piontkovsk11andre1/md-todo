@@ -1277,6 +1277,27 @@ export const DEFAULT_CONFIG_CONTENT = `{}
 `;
 
 /**
+ * Default localization prompt template used to translate rundown templates.
+ */
+export const DEFAULT_LOCALIZE_PROMPT_TEMPLATE = `\
+You are localizing a rundown template into {{language}}.
+
+Translate natural-language content while preserving runtime protocol tokens and structural syntax exactly.
+
+Rules:
+- Preserve all \`{{double-brace vars}}\` placeholders exactly.
+- Preserve protocol verdict/status tokens exactly: \`OK\`, \`NOT_OK:\`, \`RESOLVED:\`, \`UNRESOLVED:\`.
+- Preserve Markdown checkbox syntax exactly: \`- [ ]\` and \`- [x]\`.
+- Preserve all fenced code blocks exactly, including fence markers, info strings, and body content.
+- Do not add commentary, metadata, or wrappers.
+- Return only the translated template content.
+
+## Template content
+
+{{content}}
+`;
+
+/**
  * Default plan-phase prompt template used to propose missing additive TODO items.
  */
 export const DEFAULT_PLAN_TEMPLATE = `\
