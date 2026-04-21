@@ -82,6 +82,7 @@ const QUERY_MODES: readonly ProcessRunMode[] = ["wait"];
 const MAKE_MODES: readonly ProcessRunMode[] = ["wait"];
 const ADD_MODES: readonly ProcessRunMode[] = ["wait"];
 const DO_MODES: readonly ProcessRunMode[] = ["wait"];
+const TRANSLATE_MODES: readonly ProcessRunMode[] = ["wait"];
 const LOOP_MODES: readonly ProcessRunMode[] = ["wait"];
 const COMMIT_MODES = ["per-task", "file-done"] as const;
 const DEFAULT_PLAN_DEEP = 0;
@@ -717,6 +718,38 @@ program
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     makeModes: MAKE_MODES,
   })));
+
+program
+  .command("translate")
+  .description("Re-express one Markdown document using the vocabulary defined by another.")
+  .argument("<what>", "Source Markdown document to translate")
+  .argument("<how>", "Know-how Markdown reference document")
+  .argument("<output>", "Target Markdown file path for translated output")
+  .option("--mode <mode>", "Translate mode: wait", "wait")
+  .option("--dry-run", "Show what would run for translation without executing workers", false)
+  .option("--print-prompt", "Print rendered translation prompt and exit", false)
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
+  .option("-v, --verbose", "Show detailed per-task run diagnostics (within grouped output)", false)
+  .option("-q, --quiet", "Suppress info-level output (info, success, progress, grouped status)", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
+  .option("--force-unlock", "Break stale source lockfiles before acquiring translate lock", false)
+  .option("--vars-file [path]", DEFAULT_VARS_FILE_HELP)
+  .option("--var <key=value>", "Template variable to inject into prompts (repeatable)", collectOption, [])
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
+  .option("--ignore-cli-block", "Disable execution of `cli` fenced blocks during prompt expansion")
+  .option(
+    "--cli-block-timeout <ms>",
+    "Timeout in milliseconds for executing `cli` fenced blocks (0 disables timeout)",
+    String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
+  )
+  .allowUnknownOption(false)
+  .action(withCliAction(async (_what: string, _how: string, _output: string, _opts: Record<string, unknown>) => {
+    if (!TRANSLATE_MODES.includes("wait")) {
+      throw new Error("Invalid --mode value: wait. Allowed: wait.");
+    }
+    throw new Error("The `translate` command is registered but not yet available in this build.");
+  }));
 
 program
   .command("add")
