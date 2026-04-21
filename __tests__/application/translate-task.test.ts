@@ -344,6 +344,66 @@ describe("translate-task", () => {
     expect(vi.mocked(dependencies.fileLock.isLocked)).toHaveBeenCalledWith(resolvedOutputFile);
     expect(vi.mocked(dependencies.fileLock.forceRelease)).not.toHaveBeenCalled();
   });
+
+  it("supports deterministic in-place writes when <output> matches <what>", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const { dependencies } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile: whatFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const resolvedWhatFile = path.resolve(cwd, whatFile);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: whatFile,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.fileLock.acquire)).toHaveBeenCalledWith(resolvedWhatFile, { command: "translate" });
+    expect(vi.mocked(dependencies.fileSystem.writeText)).toHaveBeenCalledWith(
+      resolvedWhatFile,
+      "# Translated\n\nDomain-native output\n",
+    );
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalledWith(
+      howFile,
+      expect.any(String),
+    );
+  });
+
+  it("rejects when <output> matches <how> and avoids mutation", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile: howFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: howFile,
+    }));
+
+    expect(code).toBe(1);
+    expect(events.some((event) => event.kind === "error" && event.message.includes("does not allow <output> to be the same path as <how>"))).toBe(true);
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileLock.acquire)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
+  });
 });
 
 function createDependencies(options: {

@@ -77,7 +77,18 @@ export function createTranslateTask(
 
   return async function translateTask(options: TranslateTaskOptions): Promise<number> {
     const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
+    const howDocumentPath = dependencies.pathOperations.resolve(executionCwd, options.how);
     const outputDocumentPath = dependencies.pathOperations.resolve(executionCwd, options.output);
+
+    if (isSamePath(outputDocumentPath, howDocumentPath)) {
+      emit({
+        kind: "error",
+        message: "Invalid translate document path: "
+          + outputDocumentPath
+          + ". The `translate` command does not allow <output> to be the same path as <how>.",
+      });
+      return EXIT_CODE_FAILURE;
+    }
 
     let whatDocument: string;
     try {
@@ -371,6 +382,14 @@ export function createTranslateTask(
       }
     }
   };
+}
+
+function isSamePath(leftPath: string, rightPath: string): boolean {
+  if (process.platform === "win32") {
+    return leftPath.toLowerCase() === rightPath.toLowerCase();
+  }
+
+  return leftPath === rightPath;
 }
 
 function finalizeTranslateArtifacts(
