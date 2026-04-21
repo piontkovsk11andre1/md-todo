@@ -51,6 +51,7 @@ export interface InitProjectOptions {
   tuiWorker?: string;
   gitignore?: boolean;
   overwriteConfig?: boolean;
+  silent?: boolean;
 }
 
 /**
@@ -80,6 +81,41 @@ export function createInitProject(
   const emit = dependencies.output.emit.bind(dependencies.output);
   const { localeMessages } = dependencies;
 
+  const resolveLocaleMessages = (configDir: string): LocaleMessages => {
+    const localeConfigPath = `${configDir}/locale.json`;
+    if (!dependencies.fileSystem.exists(localeConfigPath)) {
+      return localeMessages;
+    }
+
+    try {
+      const rawLocaleConfig = dependencies.fileSystem.readText(localeConfigPath);
+      const parsed = JSON.parse(rawLocaleConfig) as { messages?: unknown };
+      const configuredMessages = parsed.messages;
+      if (!configuredMessages || typeof configuredMessages !== "object" || Array.isArray(configuredMessages)) {
+        return localeMessages;
+      }
+
+      const normalizedMessages: LocaleMessages = { ...localeMessages };
+      for (const [key, value] of Object.entries(configuredMessages)) {
+        if (typeof value === "string" && value.length > 0) {
+          normalizedMessages[key] = value;
+        }
+      }
+
+      return normalizedMessages;
+    } catch {
+      return localeMessages;
+    }
+  };
+
+  const emitIfEnabled = (options: InitProjectOptions, event: Parameters<typeof emit>[0]): void => {
+    if (options.silent) {
+      return;
+    }
+
+    emit(event);
+  };
+
   // Render paths relative to the current working directory unless config is explicit.
   const displayPathForMessage = (targetPath: string): string => {
     // Preserve the full path when the user explicitly selected a config directory.
@@ -107,6 +143,7 @@ export function createInitProject(
       ? dependencies.configDir.configDir
       : dependencies.pathOperations.resolve(CONFIG_DIR_NAME);
     const displayConfigDir = displayPathForMessage(configDir);
+    const activeLocaleMessages = resolveLocaleMessages(configDir);
 
     // Create the config directory once when it does not yet exist.
     if (!dependencies.fileSystem.exists(configDir)) {
@@ -116,9 +153,9 @@ export function createInitProject(
     const toolsDirPath = `${configDir}/tools`;
     if (!dependencies.fileSystem.exists(toolsDirPath)) {
       dependencies.fileSystem.mkdir(toolsDirPath, { recursive: true });
-      emit({
+      emitIfEnabled(options, {
         kind: "success",
-        message: msg("init.created-tools-dir", { configDir: displayConfigDir }, localeMessages),
+        message: msg("init.created-tools-dir", { configDir: displayConfigDir }, activeLocaleMessages),
       });
     }
 
@@ -127,17 +164,17 @@ export function createInitProject(
       const filePath = `${configDir}/${name}`;
       const displayFilePath = `${displayConfigDir}/${name}`;
       if (dependencies.fileSystem.exists(filePath)) {
-        emit({
+        emitIfEnabled(options, {
           kind: "warn",
-          message: msg("init.skip-existing", { filePath: displayFilePath }, localeMessages),
+          message: msg("init.skip-existing", { filePath: displayFilePath }, activeLocaleMessages),
         });
         return;
       }
 
       dependencies.fileSystem.writeText(filePath, content);
-      emit({
+      emitIfEnabled(options, {
         kind: "success",
-        message: msg("init.created", { filePath: displayFilePath }, localeMessages),
+        message: msg("init.created", { filePath: displayFilePath }, activeLocaleMessages),
       });
     };
 
@@ -146,22 +183,22 @@ export function createInitProject(
       const displayFilePath = `${displayConfigDir}/${name}`;
       const exists = dependencies.fileSystem.exists(filePath);
       if (exists && !options.overwriteConfig) {
-        emit({
+        emitIfEnabled(options, {
           kind: "warn",
-          message: msg("init.preserved", { filePath: displayFilePath }, localeMessages),
+          message: msg("init.preserved", { filePath: displayFilePath }, activeLocaleMessages),
         });
         return;
       }
 
       dependencies.fileSystem.writeText(filePath, content);
-      emit({
+      emitIfEnabled(options, {
         kind: "success",
         message: msg(
-          "init.updated-or-created",
-          { action: exists ? "Updated" : "Created", filePath: displayFilePath },
-          localeMessages,
-        ),
-      });
+            "init.updated-or-created",
+            { action: exists ? "Updated" : "Created", filePath: displayFilePath },
+            activeLocaleMessages,
+          ),
+        });
     };
 
     // Seed default workflow templates and project configuration files.
@@ -221,30 +258,30 @@ export function createInitProject(
         const existing = dependencies.fileSystem.readText(gitignorePath);
         const lines = existing.split("\n");
         if (lines.some((line) => line.trim() === CONFIG_DIR_NAME)) {
-          emit({
+          emitIfEnabled(options, {
             kind: "warn",
-            message: msg("init.gitignore-skip", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+            message: msg("init.gitignore-skip", { configDirName: CONFIG_DIR_NAME }, activeLocaleMessages),
           });
         } else {
           const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
           dependencies.fileSystem.writeText(gitignorePath, existing + separator + CONFIG_DIR_NAME + "\n");
-          emit({
+          emitIfEnabled(options, {
             kind: "success",
-            message: msg("init.gitignore-added", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+            message: msg("init.gitignore-added", { configDirName: CONFIG_DIR_NAME }, activeLocaleMessages),
           });
         }
       } else {
         dependencies.fileSystem.writeText(gitignorePath, CONFIG_DIR_NAME + "\n");
-        emit({
+        emitIfEnabled(options, {
           kind: "success",
-          message: msg("init.gitignore-created", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+          message: msg("init.gitignore-created", { configDirName: CONFIG_DIR_NAME }, activeLocaleMessages),
         });
       }
     }
 
-    emit({
+    emitIfEnabled(options, {
       kind: "success",
-      message: msg("init.success", { configDir: displayConfigDir }, localeMessages),
+      message: msg("init.success", { configDir: displayConfigDir }, activeLocaleMessages),
     });
     return 0;
   };

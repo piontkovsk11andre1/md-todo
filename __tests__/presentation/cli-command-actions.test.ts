@@ -19,6 +19,7 @@ import {
   createDocsReleaseCommandAction,
   createDocsSaveCommandAction,
   createHelpCommandAction,
+  createInitCommandAction,
   createLoopCommandAction,
   createMigrateCommandAction,
   createMaterializeCommandAction,
@@ -1652,6 +1653,78 @@ describe("createMaterializeCommandAction", () => {
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("createInitCommandAction", () => {
+  it("runs init only when --language is omitted", async () => {
+    const initProject = vi.fn(async () => 0);
+    const localizeProject = vi.fn(async () => 0);
+    const app = { initProject, localizeProject } as unknown as CliApp;
+    const action = createInitCommandAction({ getApp: () => app });
+
+    const exitCode = await action({
+      defaultWorker: "opencode run",
+      overwriteConfig: true,
+      gitignore: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(initProject).toHaveBeenCalledTimes(1);
+    expect(initProject).toHaveBeenCalledWith({
+      defaultWorker: "opencode run",
+      tuiWorker: undefined,
+      gitignore: true,
+      overwriteConfig: true,
+      silent: false,
+    });
+    expect(localizeProject).not.toHaveBeenCalled();
+  });
+
+  it("re-runs init after localization so init messages use translated catalog", async () => {
+    const initProject = vi.fn(async () => 0);
+    const localizeProject = vi.fn(async () => 0);
+    const app = { initProject, localizeProject } as unknown as CliApp;
+    const action = createInitCommandAction({ getApp: () => app });
+
+    const exitCode = await action({
+      language: "Japanese",
+      defaultWorker: "opencode run",
+      tuiWorker: "opencode",
+      overwriteConfig: true,
+      gitignore: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(initProject).toHaveBeenCalledTimes(2);
+    expect(initProject).toHaveBeenNthCalledWith(1, {
+      defaultWorker: "opencode run",
+      tuiWorker: "opencode",
+      gitignore: true,
+      overwriteConfig: true,
+      silent: true,
+    });
+    expect(localizeProject).toHaveBeenCalledTimes(1);
+    expect(localizeProject).toHaveBeenCalledWith({ language: "Japanese" });
+    expect(initProject).toHaveBeenNthCalledWith(2, {
+      defaultWorker: "opencode run",
+      tuiWorker: "opencode",
+      gitignore: true,
+      overwriteConfig: true,
+    });
+  });
+
+  it("does not re-run init when localization fails", async () => {
+    const initProject = vi.fn(async () => 0);
+    const localizeProject = vi.fn(async () => 1);
+    const app = { initProject, localizeProject } as unknown as CliApp;
+    const action = createInitCommandAction({ getApp: () => app });
+
+    const exitCode = await action({ language: "Japanese" });
+
+    expect(exitCode).toBe(1);
+    expect(initProject).toHaveBeenCalledTimes(1);
+    expect(localizeProject).toHaveBeenCalledTimes(1);
   });
 });
 

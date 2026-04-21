@@ -463,6 +463,59 @@ describe("init-project", () => {
       expect.any(String),
     );
   });
+
+  it("suppresses emitted init messages when silent option is enabled", async () => {
+    const { dependencies, events } = createDependencies();
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject({ silent: true });
+
+    expect(code).toBe(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it("loads locale messages from locale.json when present", async () => {
+    const { dependencies, fileSystem, events } = createDependencies();
+    vi.mocked(fileSystem.exists).mockImplementation((targetPath: string) => targetPath === "/workspace/.rundown/locale.json");
+    vi.mocked(fileSystem.readText).mockImplementation((targetPath: string) => {
+      if (targetPath === "/workspace/.rundown/locale.json") {
+        return JSON.stringify({
+          language: "Japanese",
+          aliases: {},
+          messages: {
+            "init.success": "初期化完了 {{configDir}}",
+          },
+        });
+      }
+      return "";
+    });
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject();
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "success" && event.message.startsWith("初期化完了 "))).toBe(true);
+  });
+
+  it("falls back to dependency locale messages when locale.json is invalid", async () => {
+    const { dependencies, fileSystem, events } = createDependencies();
+    dependencies.localeMessages = {
+      "init.success": "Translated init {{configDir}}",
+    };
+    vi.mocked(fileSystem.exists).mockImplementation((targetPath: string) => targetPath === "/workspace/.rundown/locale.json");
+    vi.mocked(fileSystem.readText).mockImplementation((targetPath: string) => {
+      if (targetPath === "/workspace/.rundown/locale.json") {
+        return "{not-json";
+      }
+      return "";
+    });
+    const initProject = createInitProject(dependencies);
+
+    const code = await initProject();
+
+    expect(code).toBe(0);
+    expect(events.some((event) => event.kind === "success" && event.message.startsWith("Translated init "))).toBe(true);
+  });
 });
 
 function createDependencies(overrides: {

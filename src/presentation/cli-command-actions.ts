@@ -2446,23 +2446,34 @@ export function createInitCommandAction({
 ) => CliActionResult {
   return async (options) => {
     const app = getApp();
+    const language = normalizeOptionalString(options.language);
     const initExitCode = await app.initProject({
       defaultWorker: options.defaultWorker,
       tuiWorker: options.tuiWorker,
       gitignore: options.gitignore,
       overwriteConfig: options.overwriteConfig,
+      silent: Boolean(language),
     });
 
     if (initExitCode !== EXIT_CODE_SUCCESS) {
       return initExitCode;
     }
 
-    const language = normalizeOptionalString(options.language);
     if (!language) {
       return initExitCode;
     }
 
-    return app.localizeProject({ language });
+    const localizeExitCode = await app.localizeProject({ language });
+    if (localizeExitCode !== EXIT_CODE_SUCCESS) {
+      return localizeExitCode;
+    }
+
+    return app.initProject({
+      defaultWorker: options.defaultWorker,
+      tuiWorker: options.tuiWorker,
+      gitignore: options.gitignore,
+      overwriteConfig: options.overwriteConfig,
+    });
   };
 }
 
