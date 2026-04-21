@@ -1,6 +1,6 @@
 import { type Task } from "../domain/parser.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
-import { pluralize } from "./run-task-utils.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
@@ -10,6 +10,7 @@ type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
  */
 export interface HandleDryRunOrPrintPromptParams {
   emit: EmitFn;
+  localeMessages?: LocaleMessages;
   printPrompt: boolean;
   dryRun: boolean;
   dryRunSuppressesCliExpansion: boolean;
@@ -28,10 +29,11 @@ export interface HandleDryRunOrPrintPromptParams {
  */
 function emitDryRunCliExpansionNote(params: {
   emit: EmitFn;
+  localeMessages: LocaleMessages;
   dryRunSuppressesCliExpansion: boolean;
   dryRunCliBlockCount: number;
 }): void {
-  const { emit, dryRunSuppressesCliExpansion, dryRunCliBlockCount } = params;
+  const { emit, localeMessages, dryRunSuppressesCliExpansion, dryRunCliBlockCount } = params;
   if (!dryRunSuppressesCliExpansion) {
     // Nothing was suppressed, so there is no expansion note to show.
     return;
@@ -39,11 +41,7 @@ function emitDryRunCliExpansionNote(params: {
 
   emit({
     kind: "info",
-    message: "Dry run - skipped `cli` fenced block execution; would execute "
-      + dryRunCliBlockCount
-      + " "
-      + pluralize(dryRunCliBlockCount, "block", "blocks")
-      + ".",
+    message: msg("dry.cli-skipped", { count: String(dryRunCliBlockCount) }, localeMessages),
   });
 }
 
@@ -56,6 +54,7 @@ function emitDryRunCliExpansionNote(params: {
 export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParams): number | null {
   const {
     emit,
+    localeMessages: localeMessagesInput,
     printPrompt,
     dryRun,
     dryRunSuppressesCliExpansion,
@@ -67,6 +66,7 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
     automationCommand,
     resolvedWorkerCommand,
   } = params;
+  const localeMessages = localeMessagesInput ?? {};
 
   if (printPrompt && onlyVerify) {
     // Verification-only print mode renders the verification prompt directly.
@@ -76,9 +76,20 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
 
   if (dryRun && onlyVerify) {
     // Verification-only dry run reports the command and prompt size.
-    emitDryRunCliExpansionNote({ emit, dryRunSuppressesCliExpansion, dryRunCliBlockCount });
-    emit({ kind: "info", message: "Dry run — would run verification with: " + automationCommand.join(" ") });
-    emit({ kind: "info", message: "Prompt length: " + verificationPrompt.length + " chars" });
+    emitDryRunCliExpansionNote({
+      emit,
+      localeMessages,
+      dryRunSuppressesCliExpansion,
+      dryRunCliBlockCount,
+    });
+    emit({
+      kind: "info",
+      message: msg("dry.would-verify", { command: automationCommand.join(" ") }, localeMessages),
+    });
+    emit({
+      kind: "info",
+      message: msg("dry.prompt-length", { length: String(verificationPrompt.length) }, localeMessages),
+    });
     return 0;
   }
 
@@ -91,9 +102,14 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
 
     if (dryRun) {
       // Standard worker task dry run reports command and prompt size.
-      emitDryRunCliExpansionNote({ emit, dryRunSuppressesCliExpansion, dryRunCliBlockCount });
-      emit({ kind: "info", message: "Dry run — would run: " + resolvedWorkerCommand.join(" ") });
-      emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
+      emitDryRunCliExpansionNote({
+        emit,
+        localeMessages,
+        dryRunSuppressesCliExpansion,
+        dryRunCliBlockCount,
+      });
+      emit({ kind: "info", message: msg("dry.would-run", { command: resolvedWorkerCommand.join(" ") }, localeMessages) });
+      emit({ kind: "info", message: msg("dry.prompt-length", { length: String(prompt.length) }, localeMessages) });
       return 0;
     }
   }
@@ -101,7 +117,7 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
   if (!onlyVerify && task.isInlineCli && printPrompt) {
     // Inline CLI tasks do not generate worker prompts; show the CLI command.
     const inlineCliCommand = resolveInlineCliCommand(task);
-    emit({ kind: "info", message: "Selected task is inline CLI; no worker prompt is rendered." });
+    emit({ kind: "info", message: msg("dry.inline-cli-task", {}, localeMessages) });
     emit({ kind: "text", text: "cli: " + inlineCliCommand });
     return 0;
   }
@@ -109,8 +125,16 @@ export function handleDryRunOrPrintPrompt(params: HandleDryRunOrPrintPromptParam
   if (!onlyVerify && task.isInlineCli && dryRun) {
     // Inline CLI dry run reports the command that would be executed.
     const inlineCliCommand = resolveInlineCliCommand(task);
-    emitDryRunCliExpansionNote({ emit, dryRunSuppressesCliExpansion, dryRunCliBlockCount });
-    emit({ kind: "info", message: "Dry run — would execute inline CLI: " + inlineCliCommand });
+    emitDryRunCliExpansionNote({
+      emit,
+      localeMessages,
+      dryRunSuppressesCliExpansion,
+      dryRunCliBlockCount,
+    });
+    emit({
+      kind: "info",
+      message: msg("dry.would-inline-cli", { command: inlineCliCommand }, localeMessages),
+    });
     return 0;
   }
 

@@ -730,6 +730,7 @@ export async function runTaskIteration(params: {
   // Handle print and dry-run flows without executing the worker command.
   const dryRunOrPrintPromptExitCode = handleDryRunOrPrintPrompt({
     emit,
+    localeMessages,
     printPrompt: execution.printPrompt,
     dryRun: execution.dryRun,
     dryRunSuppressesCliExpansion: execution.dryRunSuppressesCliExpansion,
