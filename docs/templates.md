@@ -34,10 +34,7 @@ Store templates in `.rundown/`:
   test-future.md
   test-verify.md
   migrate.md
-  migrate-ux.md
-  migrate-context.md
   migrate-snapshot.md
-  migrate-backlog.md
   migrate-review.md
   query-seed.md
   query-execute.md
@@ -73,11 +70,8 @@ Store templates in `.rundown/`:
 | `.rundown/test-verify.md` | Shared verification instructions used by both `rundown test` modes |
 | `.rundown/trace.md` | Instructions for trace-context enrichment output used by preview, plan, and execution flows |
 | `.rundown/undo.md` | Instructions for preparing and applying rollback prompts in `rundown undo` |
-| `.rundown/migrate.md` | Instructions for migration generation in `rundown migrate` |
-| `.rundown/migrate-ux.md` | UX and interaction instructions for migration flows in `rundown migrate` |
-| `.rundown/migrate-context.md` | Instructions for building incremental migration context in `rundown migrate` |
-| `.rundown/migrate-snapshot.md` | Instructions for capturing current migration state in `rundown migrate` |
-| `.rundown/migrate-backlog.md` | Instructions for extracting migration backlog and technical debt in `rundown migrate` |
+| `.rundown/migrate.md` | Instructions for the migrate planning scan loop in `rundown migrate`; worker must output kebab-case migration names or `DONE` |
+| `.rundown/migrate-snapshot.md` | Instructions for generating batch-end `N.1 Snapshot.md` checkpoints in `rundown migrate up` |
 | `.rundown/migrate-review.md` | Instructions for migration review against design and context in `rundown migrate` |
 | `.rundown/query-seed.md` | Instructions for seed extraction and decomposition in `rundown query` |
 | `.rundown/query-execute.md` | Instructions for non-stream query execution in `rundown query` |

@@ -677,16 +677,16 @@ Do not modify the source Markdown task file or change its checkbox state.
 `;
 
 /**
- * Default migrate prompt template used to propose the next migration.
+ * Default migrate planning template used by the convergence scan loop.
  */
 export const DEFAULT_MIGRATE_TEMPLATE = `\
-You are planning the next migration step for a prediction-driven project.
+You are planning migration names for a prediction-driven project.
 
 ## Position
 
 - Current migration number: {{position}}
 
-## Design revisions
+## Design revision diff
 
 - Comparison available: {{designRevisionDiffHasComparison}}
 - Previous revision: {{designRevisionFromRevision}}
@@ -704,7 +704,7 @@ You are planning the next migration step for a prediction-driven project.
 
 {{designRevisionDiffSources}}
 
-## Design
+## Design content
 
 {{design}}
 
@@ -714,17 +714,13 @@ You are planning the next migration step for a prediction-driven project.
 
 {{designContextSourceReferences}}
 
-## Latest context
+## Latest snapshot
 
-{{latestContext}}
+{{latestSnapshot}}
 
-## Latest migration
+## Backlog
 
-{{latestMigration}}
-
-## Latest backlog
-
-{{latestBacklog}}
+{{backlog}}
 
 ## Migration history
 
@@ -732,104 +728,28 @@ You are planning the next migration step for a prediction-driven project.
 
 ## Task
 
-Propose ranked alternatives for the next migration.
-
-Return exactly this format:
-
-1. \`<kebab-case-name>\` - <short title>
-   - Why now: <reason tied to design/context>
-   - Scope: <clear boundaries>
-   - Risks: <main tradeoff>
-
-2. \`<kebab-case-name>\` - <short title>
-   - Why now: <reason tied to design/context>
-   - Scope: <clear boundaries>
-   - Risks: <main tradeoff>
-
-3. \`<kebab-case-name>\` - <short title>
-   - Why now: <reason tied to design/context>
-   - Scope: <clear boundaries>
-   - Risks: <main tradeoff>
+Inventory design changes not yet reflected in the current snapshot.
+For each uncovered change, propose exactly one migration name as a kebab-case list item.
+If all design changes are already covered by the snapshot, output only: \`DONE\`
 
 Rules:
-- Names must be kebab-case; rundown will format the final migration filename automatically.
-- Keep each alternative independent and actionable.
-- Rank by expected value for the project right now.
+- Output format must be either:
+  - Plain list items containing only kebab-case migration names, one per line, or
+  - The single token \`DONE\`
+- Do not include titles, explanations, numbering metadata, or any extra commentary.
 `;
 
 /**
- * Default migrate-context template used to build incremental context.
- */
-export const DEFAULT_MIGRATE_CONTEXT_TEMPLATE = `\
-You are updating migration context incrementally.
-
-## Position
-
-- Current migration number: {{position}}
-
-## Design revisions
-
-- Comparison available: {{designRevisionDiffHasComparison}}
-- Previous revision: {{designRevisionFromRevision}}
-- Target: {{designRevisionToTarget}}
-- Summary: {{designRevisionDiffSummary}}
-- Added files: {{designRevisionDiffAddedCount}}
-- Modified files: {{designRevisionDiffModifiedCount}}
-- Removed files: {{designRevisionDiffRemovedCount}}
-
-### Changed files
-
-{{designRevisionDiffFiles}}
-
-## Design
-
-{{design}}
-
-## Design context sources
-
-- Managed docs layout detected: {{designContextHasManagedDocs}}
-
-{{designContextSourceReferences}}
-
-## Previous context
-
-{{latestContext}}
-
-## Latest migration
-
-{{latestMigration}}
-
-## Latest backlog
-
-{{latestBacklog}}
-
-## Migration history
-
-{{migrationHistory}}
-
-## Task
-
-Produce an updated context document that merges the previous context with the
-new information introduced by the latest migration.
-
-Rules:
-- Preserve still-valid context from previous context.
-- Focus on durable facts, constraints, and decisions.
-- Remove or correct outdated assumptions.
-- Return Markdown only.
-`;
-
-/**
- * Default migrate-snapshot template used to capture current state.
+ * Default migrate-snapshot template used for batch-end checkpoint updates.
  */
 export const DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE = `\
-You are producing a migration snapshot of project state.
+You are updating the migration snapshot at the end of a migration batch.
 
 ## Position
 
 - Current migration number: {{position}}
 
-## Design revisions
+## Design revision reference
 
 - Comparison available: {{designRevisionDiffHasComparison}}
 - Previous revision: {{designRevisionFromRevision}}
@@ -843,102 +763,32 @@ You are producing a migration snapshot of project state.
 
 {{designRevisionDiffFiles}}
 
-## Design
+### Diff source references
+
+{{designRevisionDiffSources}}
+
+## Design content
 
 {{design}}
 
-## Design context sources
+## Previous snapshot
 
-- Managed docs layout detected: {{designContextHasManagedDocs}}
+{{latestSnapshot}}
 
-{{designContextSourceReferences}}
+## New migrations since snapshot
 
-## Latest context
+{{newMigrations}}
 
-{{latestContext}}
+## Backlog
 
-## Latest migration
-
-{{latestMigration}}
-
-## Latest backlog
-
-{{latestBacklog}}
-
-## Migration history
-
-{{migrationHistory}}
+{{backlog}}
 
 ## Task
 
-Write a concise state snapshot in Markdown covering:
-- Current implemented direction
-- Active assumptions
-- Known gaps and risks
-- Immediate next opportunities
-
-Use concrete references to migration history where relevant.
-`;
-
-/**
- * Default migrate-backlog template used to extract technical debt/work items.
- */
-export const DEFAULT_MIGRATE_BACKLOG_TEMPLATE = `\
-You are generating a backlog from migration progress.
-
-## Position
-
-- Current migration number: {{position}}
-
-## Design revisions
-
-- Comparison available: {{designRevisionDiffHasComparison}}
-- Previous revision: {{designRevisionFromRevision}}
-- Target: {{designRevisionToTarget}}
-- Summary: {{designRevisionDiffSummary}}
-- Added files: {{designRevisionDiffAddedCount}}
-- Modified files: {{designRevisionDiffModifiedCount}}
-- Removed files: {{designRevisionDiffRemovedCount}}
-
-### Changed files
-
-{{designRevisionDiffFiles}}
-
-## Design
-
-{{design}}
-
-## Design context sources
-
-- Managed docs layout detected: {{designContextHasManagedDocs}}
-
-{{designContextSourceReferences}}
-
-## Latest context
-
-{{latestContext}}
-
-## Latest migration
-
-{{latestMigration}}
-
-## Existing backlog
-
-{{latestBacklog}}
-
-## Migration history
-
-{{migrationHistory}}
-
-## Task
-
-Generate a prioritized Markdown backlog of follow-up work.
-
-Rules:
-- Include only items justified by design/context/history.
-- Separate near-term tasks from longer-term debt.
-- Keep items specific enough to become migrations.
-- Remove stale items already addressed.
+Update the snapshot to reflect changes introduced by the new migrations.
+Reference the design revision in the snapshot.
+Keep concise - capture decisions and structure, not exhaustive detail.
+Return Markdown only.
 `;
 
 /**
@@ -998,69 +848,6 @@ Write a Markdown review with:
 - Drift: where trajectory diverges and why
 - Risk: implications of drift
 - Recommendations: concrete corrective next migrations
-`;
-
-/**
- * Default migrate UX template used to generate user scenarios and questions.
- */
-export const DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE = `\
-You are evaluating user experience implications of migration progress.
-
-## Position
-
-- Current migration number: {{position}}
-
-## Design revisions
-
-- Comparison available: {{designRevisionDiffHasComparison}}
-- Previous revision: {{designRevisionFromRevision}}
-- Target: {{designRevisionToTarget}}
-- Summary: {{designRevisionDiffSummary}}
-- Added files: {{designRevisionDiffAddedCount}}
-- Modified files: {{designRevisionDiffModifiedCount}}
-- Removed files: {{designRevisionDiffRemovedCount}}
-
-### Changed files
-
-{{designRevisionDiffFiles}}
-
-## Design
-
-{{design}}
-
-## Design context sources
-
-- Managed docs layout detected: {{designContextHasManagedDocs}}
-
-{{designContextSourceReferences}}
-
-## Latest context
-
-{{latestContext}}
-
-## Latest migration
-
-{{latestMigration}}
-
-## Latest backlog
-
-{{latestBacklog}}
-
-## Migration history
-
-{{migrationHistory}}
-
-## Task
-
-Write a Markdown UX analysis with:
-- Primary user scenarios
-- Friction points and uncertainty
-- Missing validations
-- Open questions for product/design
-
-For open questions, use this exact checklist format:
-
-- [ ] question: <clear user/product question>
 `;
 
 /**

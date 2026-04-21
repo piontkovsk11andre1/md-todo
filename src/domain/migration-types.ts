@@ -1,4 +1,4 @@
-export type SatelliteType = "context" | "snapshot" | "backlog" | "user-experience" | "review";
+export type SatelliteType = "snapshot" | "review";
 
 export interface Satellite {
   migrationNumber: number;
@@ -19,6 +19,6 @@ export interface MigrationState {
   migrationsDir: string;
   migrations: Migration[];
   currentPosition: number;
-  latestContext: Satellite | null;
-  latestBacklog: Satellite | null;
+  latestSnapshot: Satellite | null;
+  backlogPath: string | null;
 }

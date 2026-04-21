@@ -8,25 +8,16 @@ const DOTTED_SATELLITE_PATTERN = /^(\d+)\.(\d+)\s+(.+)\.md$/;
 
 const DOTTED_SATELLITE_INDEX_BY_TYPE: Record<SatelliteType, number> = {
   snapshot: 1,
-  backlog: 2,
   review: 3,
-  context: 4,
-  "user-experience": 5,
 };
 
 const DOTTED_SATELLITE_LABEL_BY_TYPE: Record<SatelliteType, string> = {
   snapshot: "Snapshot",
-  backlog: "Backlog",
   review: "Review",
-  context: "Context",
-  "user-experience": "User Experience",
 };
 
 const SATELLITE_TYPES = new Set<SatelliteType>([
-  "context",
   "snapshot",
-  "backlog",
-  "user-experience",
   "review",
 ]);
 
@@ -160,8 +151,8 @@ export function parseMigrationDirectory(files: string[], migrationsDir: string):
     migrationsDir,
     migrations,
     currentPosition: getCurrentPositionFromMigrations(migrations),
-    latestContext: getLatestSatelliteFromMigrations(migrations, "context"),
-    latestBacklog: getLatestSatelliteFromMigrations(migrations, "backlog"),
+    latestSnapshot: getLatestSatelliteFromMigrations(migrations, "snapshot"),
+    backlogPath: getSingletonBacklogPath(files, migrationsDir),
   };
 
   return state;
@@ -213,17 +204,19 @@ function getSatelliteTypeFromLabel(label: string): SatelliteType | null {
   if (normalized === "snapshot") {
     return "snapshot";
   }
-  if (normalized === "backlog") {
-    return "backlog";
-  }
   if (normalized === "review") {
     return "review";
   }
-  if (normalized === "context") {
-    return "context";
-  }
-  if (normalized === "user-experience") {
-    return "user-experience";
+
+  return null;
+}
+
+function getSingletonBacklogPath(files: string[], migrationsDir: string): string | null {
+  const expected = path.normalize(path.join(migrationsDir, "Backlog.md"));
+  for (const filePath of files) {
+    if (path.normalize(filePath) === expected) {
+      return filePath;
+    }
   }
 
   return null;

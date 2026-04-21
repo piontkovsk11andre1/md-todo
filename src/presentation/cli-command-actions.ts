@@ -323,13 +323,7 @@ interface QueryActionDependencies extends WorkerActionDependencies {
 
 type MigrateAction =
   | "up"
-  | "down"
-  | "snapshot"
-  | "backlog"
-  | "context"
-  | "review"
-  | "user-experience"
-  | "user-session";
+  | "down";
 
 type TestAction = "new";
 
@@ -339,6 +333,7 @@ interface MigrateCommandOptions {
   dir?: string;
   workspace?: string;
   confirm: boolean;
+  noBacklog?: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
   keepArtifacts: boolean;
@@ -1367,7 +1362,7 @@ export function createMigrateCommandAction({
       throw new Error(
         "Invalid migrate action: "
           + normalizedAction
-          + ". Allowed: up, down, snapshot, backlog, context, review, user-experience, user-session.",
+          + ". Allowed: up, down.",
       );
     }
 
@@ -1381,6 +1376,7 @@ export function createMigrateCommandAction({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       confirm: Boolean(opts.confirm as boolean | undefined),
+      noBacklog: Boolean(opts.noBacklog as boolean | undefined),
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
       keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
@@ -2836,13 +2832,7 @@ function formatWithConfiguredKeyLine(configuredKey: WithTaskConfiguredKeyResult)
 
 function isMigrateAction(value: string): value is MigrateAction {
   return value === "up"
-    || value === "down"
-    || value === "snapshot"
-    || value === "backlog"
-    || value === "context"
-    || value === "review"
-    || value === "user-experience"
-    || value === "user-session";
+    || value === "down";
 }
 
 function isTestAction(value: string): value is TestAction {

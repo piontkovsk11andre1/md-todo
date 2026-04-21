@@ -25,21 +25,31 @@ In addition to execute/verify task running, rundown supports a prediction-orient
 - `design diff [target]` compares revision state for `design/current/` using shorthand or explicit selectors.
 - Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
 - Compatibility fallback remains additive for older projects: `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
-- `migrate` advances a numbered migration track and generates satellite artifacts.
+- `migrate` advances a numbered migration track using a convergence loop and writes snapshot checkpoints.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test` verifies assertion specs against predicted migration state.
 
 Command-boundary rule:
 
 - `rd design ...` is the canonical naming for design-doc revision lifecycle (`release`, `diff`).
-- `rundown migrate ...` is for migration lifecycle (proposal generation, execution, satellites, user-session flow).
+- `rundown migrate ...` is for migration lifecycle (`migrate`, `migrate up`, `migrate down [n]`).
 
 Prediction migration naming convention:
 
 - migration step: `7. Implement Feature.md`
 - satellite artifact: `7.1 Snapshot.md`
 
-Satellites use dotted numeric suffixes on the same migration number (`N.1`, `N.2`, `N.3`).
+Snapshot checkpoints use dotted numeric suffix `N.1` on the same migration number.
+Backlog is a singleton file: `migrations/Backlog.md`.
+
+Prediction migration loop model:
+
+1. Edit design docs.
+2. Run `rd design release`.
+3. Run `rundown migrate` (loop: planner proposes migration names; execution continues until planner returns `DONE`).
+4. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
+5. Optionally revise design and release again, then repeat.
+6. Run `rundown materialize` to turn prediction state into implementation execution.
 
 Predicted-state test semantics:
 

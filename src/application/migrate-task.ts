@@ -1,11 +1,7 @@
 import path from "node:path";
 import {
-  DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
-  DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
-  DEFAULT_MIGRATE_REVIEW_TEMPLATE,
   DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
   DEFAULT_MIGRATE_TEMPLATE,
-  DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
 } from "../domain/defaults.js";
 import {
   formatMigrationFilename,
@@ -30,6 +26,7 @@ import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import {
   EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
   EXIT_CODE_SUCCESS,
 } from "../domain/exit-codes.js";
 import {
@@ -58,25 +55,15 @@ import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selecti
 
 type MigrateAction =
   | "up"
-  | "down"
-  | "snapshot"
-  | "backlog"
-  | "context"
-  | "review"
-  | "user-experience"
-  | "user-session";
-
-interface MigrationProposal {
-  name: string;
-  label: string;
-}
+  | "down";
 
 export interface MigrateTaskOptions {
-  action?: MigrateAction;
+  action?: string;
   downCount?: number;
   dir?: string;
   workspace?: string;
   confirm?: boolean;
+  noBacklog?: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
   keepArtifacts?: boolean;
@@ -189,7 +176,15 @@ export function createMigrateTask(
       return EXIT_CODE_FAILURE;
     }
 
-    const action = options.action;
+    const rawAction = options.action;
+    const action = getMigrationActionFromArg(rawAction);
+    if (rawAction !== undefined && rawAction.trim().length > 0 && !action) {
+      emit({
+        kind: "error",
+        message: "Invalid migrate action: " + rawAction + ". Allowed: up, down.",
+      });
+      return EXIT_CODE_FAILURE;
+    }
     const projectRoot = workspaceRoot;
     const configDir = path.join(projectRoot, ".rundown");
     const loadedWorkerConfig = dependencies.fileSystem.exists(configDir)
@@ -222,83 +217,12 @@ export function createMigrateTask(
       return EXIT_CODE_FAILURE;
     }
 
-    if (action === "up") {
-      if (!dependencies.runTask) {
-        throw new Error("migrate up requires runTask dependency.");
-      }
-
-      await reconcilePendingMigrationPredictions({
-        dependencies,
-        migrationsDir,
-        workspaceRoot,
-        slugWorkerPattern,
-        workerTimeoutMs,
-        artifactContext: undefined,
-        showAgentOutput: Boolean(options.showAgentOutput),
-      });
-
-      const runExitCode = await dependencies.runTask({
-        source: migrationsDir,
-        cwd: workspaceRoot,
-        invocationDir: executionContext.invocationDir,
-        workspaceDir: executionContext.workspaceDir,
-        workspaceLinkPath: executionContext.workspaceLinkPath,
-        isLinkedWorkspace: executionContext.isLinkedWorkspace,
-        mode: "wait",
-        workerPattern: resolvedWorker.workerPattern,
-        sortMode: "name-sort",
-        verify: true,
-        onlyVerify: false,
-        forceExecute: false,
-        forceAttempts: 2,
-        noRepair: false,
-        repairAttempts: 1,
-        dryRun: false,
-        printPrompt: false,
-        keepArtifacts: Boolean(options.keepArtifacts),
-        varsFileOption: undefined,
-        cliTemplateVarArgs: [],
-        commitAfterComplete: true,
-        commitMode: "per-task",
-        runAll: true,
-        redo: false,
-        resetAfter: false,
-        clean: false,
-        rounds: 1,
-        showAgentOutput: Boolean(options.showAgentOutput),
-        trace: false,
-        traceOnly: false,
-        forceUnlock: false,
-        ignoreCliBlock: false,
-        verbose: false,
-      });
-
-      persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
-      return runExitCode;
-    }
-
-    if (action === "down") {
-      if (!dependencies.undoTask) {
-        throw new Error("migrate down is not wired yet: undoTask dependency is missing.");
-      }
-
-      return dependencies.undoTask({
-        runId: options.runId ?? "latest",
-        last: options.downCount,
-        workerPattern: resolvedWorker.workerPattern,
-        keepArtifacts: options.keepArtifacts,
-        showAgentOutput: options.showAgentOutput,
-      });
-    }
-
     emitLowDesignContextGuidance(
       dependencies.fileSystem,
       projectRoot,
       executionContext.invocationDir,
       emit,
     );
-
-    const state = readMigrationState(dependencies.fileSystem, migrationsDir);
 
     const artifactContext = dependencies.artifactStore.createContext({
       cwd: workspaceRoot,
@@ -311,141 +235,73 @@ export function createMigrateTask(
     });
 
     try {
+      let exitCode: number = EXIT_CODE_SUCCESS;
       if (!action) {
-        await generateNextMigration({
+        exitCode = await runMigrateLoop({
           dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-            workerPattern: resolvedWorker.workerPattern,
-            slugWorkerPattern,
-            workerTimeoutMs,
-            artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
+          migrationsDir,
+          projectRoot,
+          invocationRoot: executionContext.invocationDir,
+          workspaceRoot,
+          workspaceDirectories,
+          workspacePlacement,
+          workspacePaths,
+          workerPattern: resolvedWorker.workerPattern,
+          slugWorkerPattern,
+          workerTimeoutMs,
+          artifactContext,
+          keepArtifacts: Boolean(options.keepArtifacts),
+          showAgentOutput: Boolean(options.showAgentOutput),
+          executionContext,
+          confirm: Boolean(options.confirm),
         });
-      } else if (action === "snapshot") {
-        await generateSatellite({
+      } else if (action === "up") {
+        exitCode = await runMigrateUp({
           dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-           templateFile: "migrate-snapshot.md",
-           defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
-           satelliteType: "snapshot",
-           workerPattern: resolvedWorker.workerPattern,
-           workerTimeoutMs,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
+          migrationsDir,
+          projectRoot,
+          invocationRoot: executionContext.invocationDir,
+          workspaceRoot,
+          workspaceDirectories,
+          workspacePlacement,
+          workspacePaths,
+          workerPattern: resolvedWorker.workerPattern,
+          slugWorkerPattern,
+          workerTimeoutMs,
+          artifactContext,
+          keepArtifacts: Boolean(options.keepArtifacts),
+          showAgentOutput: Boolean(options.showAgentOutput),
+          executionContext,
+          newMigrationsSource: "",
+          skipRunTaskWhenNoMigrations: false,
         });
-      } else if (action === "backlog") {
-        await generateSatellite({
+      } else {
+        exitCode = await runMigrateDown({
           dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-           templateFile: "migrate-backlog.md",
-           defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
-           satelliteType: "backlog",
-           workerPattern: resolvedWorker.workerPattern,
-           workerTimeoutMs,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
-        });
-      } else if (action === "context") {
-        await generateSatellite({
-          dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-           templateFile: "migrate-context.md",
-           defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
-           satelliteType: "context",
-           workerPattern: resolvedWorker.workerPattern,
-           workerTimeoutMs,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
-        });
-      } else if (action === "review") {
-        await generateSatellite({
-          dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-           templateFile: "migrate-review.md",
-           defaultTemplate: DEFAULT_MIGRATE_REVIEW_TEMPLATE,
-           satelliteType: "review",
-           workerPattern: resolvedWorker.workerPattern,
-           workerTimeoutMs,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
-        });
-      } else if (action === "user-experience") {
-        await generateSatellite({
-          dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-           workspacePaths,
-           templateFile: "migrate-ux.md",
-           defaultTemplate: DEFAULT_MIGRATE_USER_EXPERIENCE_TEMPLATE,
-           satelliteType: "user-experience",
-           workerPattern: resolvedWorker.workerPattern,
-           workerTimeoutMs,
-           artifactContext,
-           confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
-        });
-      } else if (action === "user-session") {
-        await runUserSession({
-          dependencies,
-          state,
-           projectRoot,
-           invocationRoot: executionContext.invocationDir,
-           workspaceRoot,
-           workspaceDirectories,
-           workspacePlacement,
-            workspacePaths,
-            workerPattern: resolvedWorker.workerPattern,
-            workerTimeoutMs,
-            artifactContext,
-            confirm: Boolean(options.confirm),
-           showAgentOutput: Boolean(options.showAgentOutput),
+          migrationsDir,
+          projectRoot,
+          invocationRoot: executionContext.invocationDir,
+          workspaceRoot,
+          workspaceDirectories,
+          workspacePlacement,
+          workspacePaths,
+          workerPattern: resolvedWorker.workerPattern,
+          slugWorkerPattern,
+          workerTimeoutMs,
+          artifactContext,
+          keepArtifacts: Boolean(options.keepArtifacts),
+          showAgentOutput: Boolean(options.showAgentOutput),
+          executionContext,
+          downCount: options.downCount,
+          noBacklog: Boolean(options.noBacklog),
         });
       }
 
       dependencies.artifactStore.finalize(artifactContext, {
-        status: "completed",
+        status: exitCode === EXIT_CODE_SUCCESS ? "completed" : "failed",
         preserve: Boolean(options.keepArtifacts),
       });
-      return EXIT_CODE_SUCCESS;
+      return exitCode;
     } catch (error) {
       dependencies.artifactStore.finalize(artifactContext, {
         status: "failed",
@@ -645,20 +501,11 @@ function readPredictionInputs(fileSystem: FileSystem, migrationsDir: string, pro
 }
 
 function toPredictionTrackedFileKind(type: SatelliteType): PredictionTrackedFileKind | null {
-  if (type === "context") {
-    return "context";
-  }
   if (type === "snapshot") {
     return "snapshot";
   }
-  if (type === "backlog") {
-    return "backlog";
-  }
   if (type === "review") {
     return "review";
-  }
-  if (type === "user-experience") {
-    return "user-experience";
   }
   return null;
 }
@@ -725,192 +572,9 @@ function savePredictionBaseline(fileSystem: FileSystem, migrationsDir: string, b
   fileSystem.writeText(baselinePath, JSON.stringify(baseline, null, 2) + "\n");
 }
 
-async function runUserSession(input: {
+async function runMigrateLoop(input: {
   dependencies: MigrateTaskDependencies;
-  state: ReturnType<typeof readMigrationState>;
-  projectRoot: string;
-  invocationRoot: string;
-  workspaceRoot: string;
-  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
-  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
-  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
-  workerPattern: ParsedWorkerPattern;
-  artifactContext: ReturnType<ArtifactStore["createContext"]>;
-  workerTimeoutMs?: number;
-  confirm: boolean;
-  showAgentOutput: boolean;
-}): Promise<void> {
-  const {
-    dependencies,
-    state,
-    projectRoot,
-    invocationRoot,
-    workspaceRoot,
-    workspaceDirectories,
-    workspacePlacement,
-    workspacePaths,
-    workerPattern,
-    artifactContext,
-    workerTimeoutMs,
-    confirm,
-    showAgentOutput,
-  } = input;
-  const emit = dependencies.output.emit.bind(dependencies.output);
-  const latestMigration = state.migrations[state.migrations.length - 1];
-  if (!latestMigration) {
-    throw new Error("No migration exists for user-session.");
-  }
-
-  const migrationSource = dependencies.fileSystem.readText(latestMigration.filePath);
-  const discussionResult = await dependencies.workerExecutor.runWorker({
-    workerPattern,
-    prompt: buildUserSessionDiscussPrompt(latestMigration.filePath, migrationSource),
-    mode: "tui",
-    captureOutput: true,
-    cwd: workspaceRoot,
-    timeoutMs: workerTimeoutMs,
-    artifactContext,
-    artifactPhase: "worker",
-    artifactPhaseLabel: "migrate-user-session-discuss",
-  });
-  if ((discussionResult.exitCode ?? 1) !== 0) {
-    throw new Error("Worker failed during migrate user-session discussion.");
-  }
-
-  const summaryResult = await dependencies.workerExecutor.runWorker({
-    workerPattern,
-    prompt: buildUserSessionSummaryPrompt({
-      migrationFilePath: latestMigration.filePath,
-      migrationSource,
-      discussionStdout: discussionResult.stdout,
-      discussionStderr: discussionResult.stderr,
-    }),
-    mode: "wait",
-    cwd: workspaceRoot,
-    timeoutMs: workerTimeoutMs,
-    artifactContext,
-    artifactPhase: "worker",
-    artifactPhaseLabel: "migrate-user-session-summary",
-  });
-  if ((summaryResult.exitCode ?? 1) !== 0) {
-    throw new Error("Worker failed to summarize migrate user-session discussion.");
-  }
-  if (showAgentOutput && summaryResult.stderr.length > 0) {
-    emit({ kind: "stderr", text: summaryResult.stderr });
-  }
-
-  const currentMigrationSource = dependencies.fileSystem.readText(latestMigration.filePath);
-  const updatedMigration = mergeUserSessionSummary(currentMigrationSource, summaryResult.stdout.trim());
-
-  if (confirm) {
-    const approved = await confirmBeforeWrite(
-      dependencies.output,
-      dependencies.interactiveInput,
-      path.basename(latestMigration.filePath),
-      updatedMigration,
-    );
-    if (!approved) {
-      return;
-    }
-  }
-
-  dependencies.fileSystem.writeText(latestMigration.filePath, updatedMigration);
-
-  await generateSatellite({
-    dependencies,
-    state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
-    projectRoot,
-    invocationRoot,
-    workspaceRoot,
-    workspaceDirectories,
-    workspacePlacement,
-    workspacePaths,
-    templateFile: "migrate-backlog.md",
-    defaultTemplate: DEFAULT_MIGRATE_BACKLOG_TEMPLATE,
-    satelliteType: "backlog",
-    workerPattern,
-    workerTimeoutMs,
-    artifactContext,
-    confirm,
-    showAgentOutput,
-  });
-}
-
-function buildUserSessionDiscussPrompt(migrationFilePath: string, migrationSource: string): string {
-  return [
-    "Run an interactive migration user-session in TUI mode.",
-    "",
-    "Goals:",
-    "- Discuss the latest migration with the user.",
-    "- Ask clarifying questions about scope, constraints, and acceptance criteria.",
-    "- Gather decisions and unresolved questions.",
-    "",
-    "When the user exits the TUI session, the CLI will ask for a separate summary.",
-    "Do not rewrite files in this step.",
-    "",
-    "Migration file:",
-    migrationFilePath,
-    "",
-    "Migration source:",
-    migrationSource,
-  ].join("\n");
-}
-
-function buildUserSessionSummaryPrompt(input: {
-  migrationFilePath: string;
-  migrationSource: string;
-  discussionStdout: string;
-  discussionStderr: string;
-}): string {
-  return [
-    "Summarize the completed migration user-session discussion.",
-    "",
-    "Return Markdown only. Keep it concise and actionable.",
-    "Include:",
-    "- decisions made",
-    "- open questions",
-    "- concrete follow-up tasks",
-    "",
-    "Use this heading exactly:",
-    "## User session summary",
-    "",
-    "Migration file:",
-    input.migrationFilePath,
-    "",
-    "Migration source before summary append:",
-    input.migrationSource,
-    "",
-    "Discussion stdout transcript:",
-    input.discussionStdout || "(empty)",
-    "",
-    "Discussion stderr transcript:",
-    input.discussionStderr || "(empty)",
-  ].join("\n");
-}
-
-function mergeUserSessionSummary(currentMigrationSource: string, summary: string): string {
-  const normalizedSummary = summary.endsWith("\n") ? summary : summary + "\n";
-  const summaryHeading = "## User session summary";
-  const sectionPattern = /^## User session summary\s*[\s\S]*?(?=^##\s+|\s*$)/m;
-
-  if (sectionPattern.test(currentMigrationSource)) {
-    const replaced = currentMigrationSource.replace(sectionPattern, normalizedSummary.trimEnd());
-    return replaced.endsWith("\n") ? replaced : replaced + "\n";
-  }
-
-  const base = currentMigrationSource.endsWith("\n")
-    ? currentMigrationSource
-    : currentMigrationSource + "\n";
-  const summaryBlock = normalizedSummary.startsWith(summaryHeading)
-    ? normalizedSummary
-    : `${summaryHeading}\n\n${normalizedSummary}`;
-
-  return `${base}\n${summaryBlock}`;
-}
-
-async function generateNextMigration(input: {
-  dependencies: MigrateTaskDependencies;
-  state: ReturnType<typeof readMigrationState>;
+  migrationsDir: string;
   projectRoot: string;
   invocationRoot: string;
   workspaceRoot: string;
@@ -921,12 +585,19 @@ async function generateNextMigration(input: {
   slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   workerTimeoutMs?: number;
+  keepArtifacts: boolean;
+  executionContext: {
+    invocationDir: string;
+    workspaceDir: string;
+    workspaceLinkPath: string;
+    isLinkedWorkspace: boolean;
+  };
   confirm: boolean;
   showAgentOutput: boolean;
-}): Promise<void> {
+}): Promise<number> {
   const {
     dependencies,
-    state,
+    migrationsDir,
     projectRoot,
     invocationRoot,
     workspaceRoot,
@@ -937,99 +608,656 @@ async function generateNextMigration(input: {
     slugWorkerPattern,
     artifactContext,
     workerTimeoutMs,
+    keepArtifacts,
+    executionContext,
     confirm,
     showAgentOutput,
   } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
-  const template = readTemplate(
-    dependencies.templateLoader,
-    projectRoot,
-    "migrate.md",
-    DEFAULT_MIGRATE_TEMPLATE,
-  );
-  const vars = buildTemplateVars({
-    fileSystem: dependencies.fileSystem,
-    state,
-    projectRoot,
-    invocationRoot,
-    workspaceDirectories,
-    workspacePlacement,
-    workspacePaths,
-  });
-  const prompt = renderTemplate(template, vars);
 
-  const result = await dependencies.workerExecutor.runWorker({
-    workerPattern: slugWorkerPattern,
-    prompt,
-    mode: "wait",
-    cwd: workspaceRoot,
-    timeoutMs: workerTimeoutMs,
-    artifactContext,
-    artifactPhase: "worker",
-    artifactPhaseLabel: "migrate-next",
-  });
-  if ((result.exitCode ?? 1) !== 0) {
-    throw new Error("Worker failed to generate migration proposals.");
-  }
-  if (showAgentOutput && result.stderr.length > 0) {
-    emit({ kind: "stderr", text: result.stderr });
-  }
+  for (;;) {
+    const plannedNames: string[] = [];
+    const knownNames = new Set<string>();
 
-  const proposals = parseProposals(result.stdout);
-  if (proposals.length === 0) {
-    throw new Error("Worker returned no migration proposals.");
-  }
-
-  emit({ kind: "info", message: "Proposed migrations:" });
-  for (const [index, proposal] of proposals.entries()) {
-    emit({ kind: "text", text: `${index + 1}. ${proposal.label}\n` });
-  }
-
-  const selected = await selectProposal(dependencies.interactiveInput, proposals);
-  const nextNumber = state.currentPosition + 1;
-  const migrationFilename = formatMigrationFilename(nextNumber, selected.name);
-  const migrationPath = path.join(state.migrationsDir, migrationFilename);
-  const migrationContent = createMigrationDocument(nextNumber, selected, result.stdout);
-
-  if (confirm) {
-    const approved = await confirmBeforeWrite(
-      dependencies.output,
-      dependencies.interactiveInput,
-      migrationFilename,
-      migrationContent,
+    const planningTemplate = readTemplate(
+      dependencies.templateLoader,
+      projectRoot,
+      "migrate.md",
+      DEFAULT_MIGRATE_TEMPLATE,
     );
-    if (!approved) {
-      return;
+
+    for (;;) {
+      const latestState = readMigrationState(dependencies.fileSystem, migrationsDir);
+      const vars = buildTemplateVars({
+        fileSystem: dependencies.fileSystem,
+        state: latestState,
+        projectRoot,
+        invocationRoot,
+        workspaceDirectories,
+        workspacePlacement,
+        workspacePaths,
+        newMigrations: "",
+      });
+      const prompt = renderTemplate(planningTemplate, vars);
+      const result = await dependencies.workerExecutor.runWorker({
+        workerPattern: slugWorkerPattern,
+        prompt,
+        mode: "wait",
+        cwd: workspaceRoot,
+        timeoutMs: workerTimeoutMs,
+        artifactContext,
+        artifactPhase: "worker",
+        artifactPhaseLabel: "migrate-plan",
+      });
+      if ((result.exitCode ?? 1) !== 0) {
+        throw new Error("Worker failed to generate migration plan.");
+      }
+      if (showAgentOutput && result.stderr.length > 0) {
+        emit({ kind: "stderr", text: result.stderr });
+      }
+
+      const proposedNames = parseProposedMigrationNames(result.stdout);
+      if (proposedNames === null) {
+        return EXIT_CODE_SUCCESS;
+      }
+
+      for (const migration of latestState.migrations) {
+        knownNames.add(migration.name);
+      }
+      for (const name of plannedNames) {
+        knownNames.add(name);
+      }
+
+      let addedInPass = 0;
+      for (const proposedName of proposedNames) {
+        if (knownNames.has(proposedName)) {
+          continue;
+        }
+        plannedNames.push(proposedName);
+        knownNames.add(proposedName);
+        addedInPass += 1;
+      }
+
+      if (addedInPass === 0) {
+        break;
+      }
+    }
+
+    if (plannedNames.length === 0) {
+      return EXIT_CODE_SUCCESS;
+    }
+
+    const stateBeforeCreate = readMigrationState(dependencies.fileSystem, migrationsDir);
+    const createdMigrationContents: string[] = [];
+    for (const [index, migrationName] of plannedNames.entries()) {
+      const number = stateBeforeCreate.currentPosition + index + 1;
+      const migrationFileName = formatMigrationFilename(number, migrationName);
+      const migrationPath = path.join(migrationsDir, migrationFileName);
+      const migrationContent = createMigrationDocument(number, migrationName);
+      dependencies.fileSystem.writeText(migrationPath, migrationContent);
+      createdMigrationContents.push(migrationContent.trim());
+
+      await runExploreForMigration({
+        runExplore: dependencies.runExplore,
+        migrationPath,
+        projectRoot,
+        emit,
+      });
+    }
+
+    removePromotedBacklogItems({
+      fileSystem: dependencies.fileSystem,
+      backlogPath: stateBeforeCreate.backlogPath ?? path.join(migrationsDir, "Backlog.md"),
+      promotedNames: plannedNames,
+      promotedContents: createdMigrationContents,
+    });
+
+    if (confirm) {
+      if (dependencies.interactiveInput.prepareForPrompt) {
+        await dependencies.interactiveInput.prepareForPrompt();
+      }
+      const answer = await dependencies.interactiveInput.prompt({
+        kind: "confirm",
+        message: "Files created. Edit if needed. Continue?",
+        defaultValue: true,
+      });
+      if (answer.value.trim().toLowerCase() !== "true") {
+        emit({ kind: "info", message: "Stopped after file creation by confirmation prompt." });
+        return EXIT_CODE_SUCCESS;
+      }
+    }
+
+    const upCode = await runMigrateUp({
+      dependencies,
+      migrationsDir,
+      projectRoot,
+      invocationRoot,
+      workspaceRoot,
+      workspaceDirectories,
+      workspacePlacement,
+      workspacePaths,
+      workerPattern,
+      slugWorkerPattern,
+      workerTimeoutMs,
+      artifactContext,
+      keepArtifacts,
+      showAgentOutput,
+      executionContext,
+      newMigrationsSource: createdMigrationContents.join("\n\n---\n\n"),
+      skipRunTaskWhenNoMigrations: false,
+    });
+    if (upCode !== EXIT_CODE_SUCCESS) {
+      return upCode;
     }
   }
+}
 
-  dependencies.fileSystem.writeText(migrationPath, migrationContent);
-
-  await runExploreForMigration({
-    runExplore: dependencies.runExplore,
-    migrationPath,
-    projectRoot,
-    emit,
-  });
-
-  await generateSatellite({
+async function runMigrateUp(input: {
+  dependencies: MigrateTaskDependencies;
+  migrationsDir: string;
+  projectRoot: string;
+  invocationRoot: string;
+  workspaceRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
+  workerPattern: ParsedWorkerPattern;
+  slugWorkerPattern: ParsedWorkerPattern;
+  artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
+  keepArtifacts: boolean;
+  showAgentOutput: boolean;
+  executionContext: {
+    invocationDir: string;
+    workspaceDir: string;
+    workspaceLinkPath: string;
+    isLinkedWorkspace: boolean;
+  };
+  newMigrationsSource: string;
+  skipRunTaskWhenNoMigrations: boolean;
+}): Promise<number> {
+  const {
     dependencies,
-    state: readMigrationState(dependencies.fileSystem, state.migrationsDir),
+    migrationsDir,
     projectRoot,
     invocationRoot,
     workspaceRoot,
     workspaceDirectories,
     workspacePlacement,
     workspacePaths,
-    templateFile: "migrate-context.md",
-    defaultTemplate: DEFAULT_MIGRATE_CONTEXT_TEMPLATE,
-    satelliteType: "context",
+    workerPattern,
+    slugWorkerPattern,
+    artifactContext,
+    workerTimeoutMs,
+    keepArtifacts,
+    showAgentOutput,
+    executionContext,
+    newMigrationsSource,
+    skipRunTaskWhenNoMigrations,
+  } = input;
+
+  if (!dependencies.runTask) {
+    throw new Error("migrate up requires runTask dependency.");
+  }
+
+  await reconcilePendingMigrationPredictions({
+    dependencies,
+    migrationsDir,
+    workspaceRoot,
+    slugWorkerPattern,
+    workerTimeoutMs,
+    artifactContext,
+    showAgentOutput,
+  });
+
+  const stateAfterReconciliation = readMigrationState(dependencies.fileSystem, migrationsDir);
+  const pendingAfterReconciliation = getPendingExecutableMigrationNumbers(
+    dependencies.fileSystem,
+    stateAfterReconciliation,
+  );
+  const migrationByNumber = new Map(
+    stateAfterReconciliation.migrations.map((migration) => [migration.number, migration.filePath]),
+  );
+  const executedMigrationNumbers: number[] = [];
+
+  let runExitCode: number = EXIT_CODE_SUCCESS;
+  if (!skipRunTaskWhenNoMigrations || pendingAfterReconciliation.length > 0) {
+    for (const migrationNumber of pendingAfterReconciliation) {
+      const migrationPath = migrationByNumber.get(migrationNumber);
+      if (!migrationPath) {
+        continue;
+      }
+
+      runExitCode = await dependencies.runTask({
+        source: migrationPath,
+        cwd: workspaceRoot,
+        invocationDir: executionContext.invocationDir,
+        workspaceDir: executionContext.workspaceDir,
+        workspaceLinkPath: executionContext.workspaceLinkPath,
+        isLinkedWorkspace: executionContext.isLinkedWorkspace,
+        mode: "wait",
+        workerPattern,
+        sortMode: "name-sort",
+        verify: true,
+        onlyVerify: false,
+        forceExecute: false,
+        forceAttempts: 2,
+        noRepair: false,
+        repairAttempts: 1,
+        dryRun: false,
+        printPrompt: false,
+        keepArtifacts,
+        varsFileOption: undefined,
+        cliTemplateVarArgs: [],
+        commitAfterComplete: true,
+        commitMode: "per-task",
+        runAll: true,
+        redo: false,
+        resetAfter: false,
+        clean: false,
+        rounds: 1,
+        showAgentOutput,
+        trace: false,
+        traceOnly: false,
+        forceUnlock: false,
+        ignoreCliBlock: false,
+        verbose: false,
+      });
+
+      if (runExitCode === EXIT_CODE_SUCCESS) {
+        executedMigrationNumbers.push(migrationNumber);
+        continue;
+      }
+
+      if (runExitCode !== EXIT_CODE_NO_WORK) {
+        break;
+      }
+    }
+  }
+
+  if (runExitCode !== EXIT_CODE_SUCCESS && runExitCode !== EXIT_CODE_NO_WORK) {
+    return runExitCode;
+  }
+
+  const stateAfterRun = readMigrationState(dependencies.fileSystem, migrationsDir);
+  if (stateAfterRun.currentPosition <= 0) {
+    persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
+    return EXIT_CODE_SUCCESS;
+  }
+
+  const migrationsFromBatchFromRun = buildMigrationBatchSourceFromNumbers({
+      fileSystem: dependencies.fileSystem,
+      state: stateAfterRun,
+      migrationNumbers: executedMigrationNumbers,
+    });
+  const migrationsFromBatch = migrationsFromBatchFromRun.trim().length > 0
+    ? migrationsFromBatchFromRun
+    : newMigrationsSource;
+
+  if (migrationsFromBatch.trim().length === 0) {
+    persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
+    return EXIT_CODE_NO_WORK;
+  }
+
+  await generateSatellite({
+    dependencies,
+    state: stateAfterRun,
+    projectRoot,
+    invocationRoot,
+    workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+    templateFile: "migrate-snapshot.md",
+    defaultTemplate: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
+    satelliteType: "snapshot",
     workerPattern,
     workerTimeoutMs,
     artifactContext,
-    confirm,
+    confirm: false,
     showAgentOutput,
+    additionalVars: {
+      newMigrations: migrationsFromBatch,
+    },
   });
+
+  persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
+  return EXIT_CODE_SUCCESS;
+}
+
+async function runMigrateDown(input: {
+  dependencies: MigrateTaskDependencies;
+  migrationsDir: string;
+  projectRoot: string;
+  invocationRoot: string;
+  workspaceRoot: string;
+  workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
+  workerPattern: ParsedWorkerPattern;
+  slugWorkerPattern: ParsedWorkerPattern;
+  artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
+  keepArtifacts: boolean;
+  showAgentOutput: boolean;
+  executionContext: {
+    invocationDir: string;
+    workspaceDir: string;
+    workspaceLinkPath: string;
+    isLinkedWorkspace: boolean;
+  };
+  downCount?: number;
+  noBacklog: boolean;
+}): Promise<number> {
+  const {
+    dependencies,
+    migrationsDir,
+    projectRoot,
+    invocationRoot,
+    workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+    workerPattern,
+    slugWorkerPattern,
+    artifactContext,
+    workerTimeoutMs,
+    keepArtifacts,
+    showAgentOutput,
+    executionContext,
+    downCount,
+    noBacklog,
+  } = input;
+
+  const emit = dependencies.output.emit.bind(dependencies.output);
+  const stateBeforeDown = readMigrationState(dependencies.fileSystem, migrationsDir);
+  if (stateBeforeDown.migrations.length === 0) {
+    emit({ kind: "info", message: "No migrations found to remove." });
+    return EXIT_CODE_NO_WORK;
+  }
+
+  const requestedRemovalCount = Math.max(1, Math.floor(downCount ?? 1));
+  const removedMigrations = stateBeforeDown.migrations.slice(-requestedRemovalCount);
+  if (removedMigrations.length === 0) {
+    emit({ kind: "info", message: "No migrations matched the requested down count." });
+    return EXIT_CODE_NO_WORK;
+  }
+
+  const removedMigrationRecords = removedMigrations.map((migration) => ({
+    name: migration.name,
+    source: dependencies.fileSystem.exists(migration.filePath)
+      ? dependencies.fileSystem.readText(migration.filePath)
+      : "",
+    filePath: migration.filePath,
+  }));
+
+  for (const migration of removedMigrationRecords) {
+    if (dependencies.fileSystem.exists(migration.filePath)) {
+      dependencies.fileSystem.unlink(migration.filePath);
+    }
+  }
+
+  if (!noBacklog) {
+    const backlogPath = stateBeforeDown.backlogPath ?? path.join(migrationsDir, "Backlog.md");
+    const existingBacklog = dependencies.fileSystem.exists(backlogPath)
+      ? dependencies.fileSystem.readText(backlogPath)
+      : "";
+    const removedSection = removedMigrationRecords
+      .map((migration) => {
+        return [
+          `- ${migration.name}`,
+          "",
+          "```md",
+          migration.source.trim(),
+          "```",
+        ].join("\n");
+      })
+      .join("\n\n");
+
+    const normalizedExisting = existingBacklog.trim();
+    const nextBacklog = normalizedExisting.length > 0
+      ? normalizedExisting + "\n\n" + removedSection + "\n"
+      : ["# Backlog", "", removedSection, ""].join("\n");
+    dependencies.fileSystem.writeText(backlogPath, nextBacklog);
+  }
+
+  const remainingState = readMigrationState(dependencies.fileSystem, migrationsDir);
+  for (const entry of dependencies.fileSystem.readdir(migrationsDir)) {
+    if (!entry.isFile) {
+      continue;
+    }
+    const parsed = parseMigrationFilename(entry.name);
+    if (!parsed || !parsed.isSatellite || parsed.satelliteType !== "snapshot") {
+      continue;
+    }
+    if (parsed.number <= remainingState.currentPosition) {
+      continue;
+    }
+    dependencies.fileSystem.unlink(path.join(migrationsDir, entry.name));
+  }
+
+  const stateAfterPrune = readMigrationState(dependencies.fileSystem, migrationsDir);
+  const fallbackSnapshotSource = buildMigrationBatchSourceFromNumbers({
+    fileSystem: dependencies.fileSystem,
+    state: stateAfterPrune,
+    migrationNumbers: stateAfterPrune.migrations.map((migration) => migration.number),
+  });
+
+  const upCode = await runMigrateUp({
+    dependencies,
+    migrationsDir,
+    projectRoot,
+    invocationRoot,
+    workspaceRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+    workerPattern,
+    slugWorkerPattern,
+    workerTimeoutMs,
+    artifactContext,
+    keepArtifacts,
+    showAgentOutput,
+    executionContext,
+    newMigrationsSource: fallbackSnapshotSource,
+    skipRunTaskWhenNoMigrations: false,
+  });
+
+  return upCode;
+}
+
+function parseProposedMigrationNames(stdout: string): string[] | null {
+  const trimmed = stdout.trim();
+  if (trimmed.toUpperCase() === "DONE") {
+    return null;
+  }
+
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:[-*+]\s+|\d+[.)]\s+)?`?([a-z0-9]+(?:-[a-z0-9]+)*)`?\s*$/);
+    if (!match) {
+      continue;
+    }
+    const proposedName = match[1] ?? "";
+    if (proposedName.length === 0 || seen.has(proposedName)) {
+      continue;
+    }
+    seen.add(proposedName);
+    names.push(proposedName);
+  }
+
+  return names;
+}
+
+function createMigrationDocument(number: number, migrationName: string): string {
+  return [
+    `# ${String(number)}. ${toTitleCase(migrationName)}`,
+    "",
+    "- [ ] Implement this migration",
+    "",
+  ].join("\n");
+}
+
+function removePromotedBacklogItems(input: {
+  fileSystem: FileSystem;
+  backlogPath: string;
+  promotedNames: readonly string[];
+  promotedContents: readonly string[];
+}): void {
+  const { fileSystem, backlogPath, promotedNames, promotedContents } = input;
+  if (!fileSystem.exists(backlogPath)) {
+    return;
+  }
+
+  const source = fileSystem.readText(backlogPath);
+  const next = stripBacklogEntries(source, promotedNames, promotedContents);
+  if (next !== source) {
+    fileSystem.writeText(backlogPath, next);
+  }
+}
+
+function stripBacklogEntries(
+  source: string,
+  promotedNames: readonly string[],
+  promotedContents: readonly string[],
+): string {
+  if (source.length === 0) {
+    return source;
+  }
+
+  const normalizedPromotedNames = new Set(promotedNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+  const normalizedPromotedContents = new Set(promotedContents.map((content) => normalizeBacklogEntryContent(content)).filter(Boolean));
+  if (normalizedPromotedNames.size === 0 && normalizedPromotedContents.size === 0) {
+    return source;
+  }
+
+  const lines = source.split(/\r?\n/);
+  const entryRanges: Array<{ start: number; end: number }> = [];
+  let inFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (/^```/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    if (!/^\s*[-*]\s+/.test(line)) {
+      continue;
+    }
+
+    entryRanges.push({ start: index, end: lines.length });
+    if (entryRanges.length > 1) {
+      entryRanges[entryRanges.length - 2]!.end = index;
+    }
+  }
+
+  if (entryRanges.length === 0) {
+    return source;
+  }
+
+  const removeIndexes = new Set<number>();
+  for (const range of entryRanges) {
+    const entryLines = lines.slice(range.start, range.end);
+    const firstLine = entryLines[0] ?? "";
+    const entryName = parseBacklogEntryName(firstLine);
+    const entryContent = extractBacklogEntryFencedContent(entryLines);
+    const byName = entryName.length > 0 && normalizedPromotedNames.has(entryName);
+    const byContent = entryContent.length > 0 && normalizedPromotedContents.has(entryContent);
+    if (!byName && !byContent) {
+      continue;
+    }
+
+    for (let index = range.start; index < range.end; index += 1) {
+      removeIndexes.add(index);
+    }
+  }
+
+  if (removeIndexes.size === 0) {
+    return source;
+  }
+
+  const nextLines = lines.filter((_line, index) => !removeIndexes.has(index));
+  let next = nextLines.join("\n");
+  if (/\r\n/.test(source)) {
+    next = next.replace(/\n/g, "\r\n");
+  }
+  if (source.endsWith("\n") && !next.endsWith("\n")) {
+    next += /\r\n/.test(source) ? "\r\n" : "\n";
+  }
+  return next;
+}
+
+function parseBacklogEntryName(line: string): string {
+  const match = line.match(/^\s*[-*]\s+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?\s*$/i);
+  return (match?.[1] ?? "").trim().toLowerCase();
+}
+
+function extractBacklogEntryFencedContent(entryLines: readonly string[]): string {
+  let start = -1;
+  for (let index = 0; index < entryLines.length; index += 1) {
+    if (/^```/.test((entryLines[index] ?? "").trim())) {
+      start = index + 1;
+      break;
+    }
+  }
+
+  if (start < 0) {
+    return "";
+  }
+
+  const contentLines: string[] = [];
+  for (let index = start; index < entryLines.length; index += 1) {
+    if (/^```/.test((entryLines[index] ?? "").trim())) {
+      break;
+    }
+    contentLines.push(entryLines[index] ?? "");
+  }
+
+  return normalizeBacklogEntryContent(contentLines.join("\n"));
+}
+
+function normalizeBacklogEntryContent(content: string): string {
+  return content.trim().replace(/\r\n/g, "\n");
+}
+
+function buildMigrationBatchSourceFromNumbers(input: {
+  fileSystem: FileSystem;
+  state: ReturnType<typeof readMigrationState>;
+  migrationNumbers: readonly number[];
+}): string {
+  const { fileSystem, state, migrationNumbers } = input;
+  const selectedNumbers = new Set(migrationNumbers);
+  const sections: string[] = [];
+  for (const migration of state.migrations) {
+    if (!selectedNumbers.has(migration.number)) {
+      continue;
+    }
+    sections.push(`# ${path.basename(migration.filePath)}\n\n${fileSystem.readText(migration.filePath).trim()}`);
+  }
+
+  return sections.join("\n\n---\n\n");
+}
+
+function getPendingExecutableMigrationNumbers(
+  fileSystem: FileSystem,
+  state: ReturnType<typeof readMigrationState>,
+): number[] {
+  const pending: number[] = [];
+  for (const migration of state.migrations) {
+    const tasks = parseTasks(fileSystem.readText(migration.filePath), migration.filePath);
+    if (tasks.length === 0) {
+      continue;
+    }
+
+    if (tasks.some((task) => !task.checked)) {
+      pending.push(migration.number);
+    }
+  }
+
+  return pending;
 }
 
 async function runExploreForMigration(input: {
@@ -1070,6 +1298,7 @@ async function generateSatellite(input: {
   workerTimeoutMs?: number;
   confirm: boolean;
   showAgentOutput: boolean;
+  additionalVars?: Partial<TemplateVars>;
 }): Promise<void> {
   const {
     dependencies,
@@ -1088,6 +1317,7 @@ async function generateSatellite(input: {
     workerTimeoutMs,
     confirm,
     showAgentOutput,
+    additionalVars,
   } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
 
@@ -1097,15 +1327,19 @@ async function generateSatellite(input: {
     templateFile,
     defaultTemplate,
   );
-  const vars = buildTemplateVars({
-    fileSystem: dependencies.fileSystem,
-    state,
-    projectRoot,
-    invocationRoot,
-    workspaceDirectories,
-    workspacePlacement,
-    workspacePaths,
-  });
+  const vars = {
+    ...buildTemplateVars({
+      fileSystem: dependencies.fileSystem,
+      state,
+      projectRoot,
+      invocationRoot,
+      workspaceDirectories,
+      workspacePlacement,
+      workspacePaths,
+      newMigrations: "",
+    }),
+    ...(additionalVars ?? {}),
+  };
   const prompt = renderTemplate(template, vars);
 
   const result = await dependencies.workerExecutor.runWorker({
@@ -1142,12 +1376,6 @@ async function generateSatellite(input: {
     }
   }
 
-  if (satelliteType === "context" && state.latestContext && state.latestContext.filePath !== filePath) {
-    if (dependencies.fileSystem.exists(state.latestContext.filePath)) {
-      dependencies.fileSystem.unlink(state.latestContext.filePath);
-    }
-  }
-
   dependencies.fileSystem.writeText(filePath, result.stdout);
 }
 
@@ -1169,6 +1397,7 @@ function buildTemplateVars(input: {
   workspaceDirectories: ReturnType<typeof resolvePredictionWorkspaceDirectories>;
   workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
   workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
+  newMigrations?: string;
 }): TemplateVars {
   const {
     fileSystem,
@@ -1178,11 +1407,13 @@ function buildTemplateVars(input: {
     workspaceDirectories,
     workspacePlacement,
     workspacePaths,
+    newMigrations,
   } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
-  const latestContext = state.latestContext;
-  const latestBacklog = state.latestBacklog;
-  const latestSnapshot = getLatestSatellitePath(state, "snapshot");
+  const latestSnapshot = state.latestSnapshot?.filePath ?? null;
+  const backlog = state.backlogPath && fileSystem.exists(state.backlogPath)
+    ? fileSystem.readText(state.backlogPath)
+    : "";
 
   const design = resolveDesignContext(fileSystem, projectRoot, { invocationRoot }).design;
   const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
@@ -1217,10 +1448,10 @@ function buildTemplateVars(input: {
     taskLine: 1,
     source: "",
     design,
-    latestContext: latestContext ? fileSystem.readText(latestContext.filePath) : "",
     latestMigration: latestMigration ? fileSystem.readText(latestMigration.filePath) : "",
-    latestBacklog: latestBacklog ? fileSystem.readText(latestBacklog.filePath) : "",
+    backlog,
     latestSnapshot: latestSnapshot ? fileSystem.readText(latestSnapshot) : "",
+    newMigrations: newMigrations ?? "",
     migrationHistory: historyLines.join("\n"),
     designContextSourceReferences: designContextSourceRefs,
     designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
@@ -1260,45 +1491,6 @@ function buildTemplateVars(input: {
   };
 }
 
-function getLatestSatellitePath(
-  state: ReturnType<typeof readMigrationState>,
-  type: SatelliteType,
-): string | null {
-  for (let index = state.migrations.length - 1; index >= 0; index -= 1) {
-    const migration = state.migrations[index];
-    if (!migration) {
-      continue;
-    }
-
-    for (const satellite of migration.satellites) {
-      if (satellite.type === type) {
-        return satellite.filePath;
-      }
-    }
-  }
-
-  return null;
-}
-
-function createMigrationDocument(
-  number: number,
-  selected: MigrationProposal,
-  proposalsOutput: string,
-): string {
-  return [
-    `# ${String(number)}. ${toTitleCase(selected.name)}`,
-    "",
-    selected.label,
-    "",
-    "- [ ] Implement this migration",
-    "",
-    "## Proposal output",
-    "",
-    proposalsOutput.trim(),
-    "",
-  ].join("\n");
-}
-
 function toTitleCase(value: string): string {
   return value
     .trim()
@@ -1310,73 +1502,12 @@ function toTitleCase(value: string): string {
     .join(" ");
 }
 
-function parseProposals(stdout: string): MigrationProposal[] {
-  const lines = stdout.split(/\r?\n/);
-  const proposals: MigrationProposal[] = [];
-
-  for (const line of lines) {
-    const match = line.match(/^\s*\d+\.\s*`?([a-z0-9][a-z0-9-]*)`?(?:\s*-\s*(.+))?\s*$/i);
-    if (!match) {
-      continue;
-    }
-
-    proposals.push({
-      name: toKebabCase(match[1] ?? "migration"),
-      label: line.trim(),
-    });
-  }
-
-  if (proposals.length > 0) {
-    return proposals;
-  }
-
-  const fallbackName = toKebabCase(stdout.split(/\r?\n/)[0] ?? "migration");
-  return [{ name: fallbackName, label: fallbackName }];
-}
-
-async function selectProposal(
-  interactiveInput: InteractiveInputPort,
-  proposals: MigrationProposal[],
-): Promise<MigrationProposal> {
-  if (!interactiveInput.isTTY()) {
-    return proposals[0]!;
-  }
-
-  const promptResult = await interactiveInput.prompt({
-    kind: "select",
-    message: "Choose the next migration",
-    choices: proposals.map((proposal, index) => ({
-      value: String(index),
-      label: proposal.label,
-      isDefault: index === 0,
-    })),
-    defaultValue: "0",
-  });
-
-  const index = Number.parseInt(promptResult.value, 10);
-  if (!Number.isInteger(index) || index < 0 || index >= proposals.length) {
-    return proposals[0]!;
-  }
-
-  return proposals[index]!;
-}
 
 function readMigrationState(fileSystem: FileSystem, migrationsDir: string) {
   const files = fileSystem.readdir(migrationsDir)
     .filter((entry) => entry.isFile)
     .map((entry) => path.join(migrationsDir, entry.name));
   return parseMigrationDirectory(files, migrationsDir);
-}
-
-function toKebabCase(value: string): string {
-  const trimmed = value.trim().toLowerCase();
-  const kebab = trimmed
-    .replace(/[`'".]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-
-  return kebab.length > 0 ? kebab : "migration";
 }
 
 export async function confirmBeforeWrite(
@@ -1407,13 +1538,7 @@ export async function confirmBeforeWrite(
 
 export function isMigrationAction(value: string | undefined): value is MigrateAction {
   return value === "up"
-    || value === "down"
-    || value === "snapshot"
-    || value === "backlog"
-    || value === "context"
-    || value === "review"
-    || value === "user-experience"
-    || value === "user-session";
+    || value === "down";
 }
 
 

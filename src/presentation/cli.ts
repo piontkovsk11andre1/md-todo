@@ -395,12 +395,13 @@ const migrateCommand = program
   .description("Generate and manage revision-aware prediction migrations.")
   .argument(
     "[action]",
-    "Migration action: up | down [n] | snapshot | backlog | context | review | user-experience | user-session",
+    "Migration action: up | down [n]",
   )
   .argument("[count]", "Optional number of runs to undo for down")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--confirm", "Show generated content and confirm before writing files", false)
+  .option("--no-backlog", "Do not push removed migrations to Backlog.md when running migrate down")
   .option("--run <id|latest>", "Choose artifact run id or 'latest' for down", "latest")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
