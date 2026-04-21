@@ -6069,6 +6069,72 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("CUSTOM PLAN TEMPLATE"))).toBe(true);
   });
 
+  it("translate --config-dir prefers shared .rundown/translate.md when present", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "project");
+    const sharedConfigDir = path.join(workspace, "shared", ".rundown");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(sharedConfigDir, { recursive: true });
+
+    fs.writeFileSync(path.join(projectDir, "what.md"), "# What\nShip auth flow.\n", "utf-8");
+    fs.writeFileSync(path.join(projectDir, "how.md"), "# How\nUse bounded contexts.\n", "utf-8");
+    fs.writeFileSync(
+      path.join(sharedConfigDir, "translate.md"),
+      "CUSTOM TRANSLATE TEMPLATE\nWHAT:\n{{what}}\nHOW:\n{{how}}\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "translate",
+      "what.md",
+      "how.md",
+      "output.md",
+      "--config-dir",
+      "../shared/.rundown",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], projectDir);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("CUSTOM TRANSLATE TEMPLATE"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Ship auth flow."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Use bounded contexts."))).toBe(true);
+  });
+
+  it("translate --config-dir falls back to built-in template when translate.md is missing", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDir = path.join(workspace, "project");
+    const sharedConfigDir = path.join(workspace, "shared", ".rundown");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.mkdirSync(sharedConfigDir, { recursive: true });
+
+    fs.writeFileSync(path.join(projectDir, "what.md"), "# What\nTrack rollout readiness.\n", "utf-8");
+    fs.writeFileSync(path.join(projectDir, "how.md"), "# How\nUse canonical governance terms.\n", "utf-8");
+    fs.writeFileSync(path.join(sharedConfigDir, "plan.md"), "UNRELATED TEMPLATE\n", "utf-8");
+
+    const result = await runCli([
+      "translate",
+      "what.md",
+      "how.md",
+      "output.md",
+      "--config-dir",
+      "../shared/.rundown",
+      "--print-prompt",
+      "--worker",
+      "opencode",
+      "run",
+    ], projectDir);
+
+    expect(result.code).toBe(0);
+    expect(result.logs.some((line) => line.includes("## Source document (<what>)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("## Know-how reference (<how>)"))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Track rollout readiness."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("Use canonical governance terms."))).toBe(true);
+    expect(result.logs.some((line) => line.includes("UNRELATED TEMPLATE"))).toBe(false);
+  });
+
   it("run expands cli blocks in custom templates after template variable substitution", async () => {
     const workspace = makeTempWorkspace();
     const projectDir = path.join(workspace, "project");
