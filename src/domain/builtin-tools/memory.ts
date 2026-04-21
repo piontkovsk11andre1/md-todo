@@ -68,6 +68,7 @@ export function createMemoryHandler(memoryWriter?: MemoryWriterPort): ToolHandle
 
     if (!writeResult.ok) {
       if (writeResult.error.warningMessage) {
+        // TODO: catalog warningMessage strings in a future migration.
         context.emit({ kind: "warn", message: writeResult.error.warningMessage });
       }
       return {
@@ -78,6 +79,7 @@ export function createMemoryHandler(memoryWriter?: MemoryWriterPort): ToolHandle
     }
 
     if (writeResult.value.warningMessage) {
+      // TODO: catalog warningMessage strings in a future migration.
       context.emit({ kind: "warn", message: writeResult.value.warningMessage });
     }
 
