@@ -11002,6 +11002,34 @@ describe.sequential("CLI integration", () => {
     expect(result.logs.some((line) => line.includes("No unchecked tasks found"))).toBe(true);
   });
 
+  it("run --all emits translated no-unchecked-tasks message from locale.json", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] cli: echo done\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "locale.json"),
+      JSON.stringify({
+        language: "Spanish",
+        aliases: {},
+        messages: {
+          "run.no-unchecked-tasks": "No hay tareas pendientes.",
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--all",
+    ], workspace);
+
+    expect(result.code).toBe(3);
+    expect(result.logs.some((line) => stripAnsi(line).includes("No hay tareas pendientes."))).toBe(true);
+    expect(result.logs.some((line) => stripAnsi(line).includes("No unchecked tasks found."))).toBe(false);
+  });
+
   it("run --on-fail executes hook on inline CLI failure", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
