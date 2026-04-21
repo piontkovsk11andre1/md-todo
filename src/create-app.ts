@@ -28,6 +28,7 @@ import { createListTasks, type ListTasksOptions } from "./application/list-tasks
 import { createNextTask, type NextTaskOptions } from "./application/next-task.js";
 import { createUnlockTask, type UnlockTaskOptions } from "./application/unlock-task.js";
 import { createInitProject, type InitProjectOptions } from "./application/init-project.js";
+import { createLocalizeProject, type LocalizeProjectOptions } from "./application/localize-project.js";
 import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
@@ -167,6 +168,7 @@ export type App = {
   nextTask: (options: NextTaskOptions) => Promise<number>;
   logRuns: (options: LogRunsOptions) => number;
   initProject: (options?: InitProjectOptions) => Promise<number>;
+  localizeProject: (options: LocalizeProjectOptions) => Promise<number>;
   startProject: (options?: StartProjectOptions) => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
   configGet: (options: ConfigGetOptions) => number;
@@ -735,6 +737,14 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       pathOperations: ports.pathOperations,
       output: ports.output,
     }),
+    localizeProject: (ports) => createLocalizeProject({
+      fileSystem: ports.fileSystem,
+      workerExecutor: ports.workerExecutor,
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+      templateLoader: ports.templateLoader,
+    }),
     startProject: (ports) => startProjectUseCase(ports),
     manageArtifacts: (ports) => createManageArtifacts({
       artifactStore: ports.artifactStore,
@@ -830,6 +840,7 @@ function createAppFromFactories(
   const nextTask = factories.nextTask(ports);
   const logRuns = factories.logRuns(ports);
   const initProject = factories.initProject(ports);
+  const localizeProject = factories.localizeProject(ports);
   const startProject = factories.startProject(ports);
   const manageArtifacts = factories.manageArtifacts(ports);
   const configGet = factories.configGet(ports);
@@ -874,6 +885,7 @@ function createAppFromFactories(
     nextTask,
     logRuns,
     initProject,
+    localizeProject,
     startProject,
     manageArtifacts,
     configGet,

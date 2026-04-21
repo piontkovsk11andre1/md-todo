@@ -2435,13 +2435,54 @@ export function createWorkspaceRemoveCommandAction({
  */
 export function createInitCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (options: { defaultWorker?: string; tuiWorker?: string; gitignore?: boolean; overwriteConfig?: boolean }) => CliActionResult {
-  return (options) => getApp().initProject({
-    defaultWorker: options.defaultWorker,
-    tuiWorker: options.tuiWorker,
-    gitignore: options.gitignore,
-    overwriteConfig: options.overwriteConfig,
-  });
+}: Pick<WorkerActionDependencies, "getApp">): (
+  options: {
+    language?: string;
+    defaultWorker?: string;
+    tuiWorker?: string;
+    gitignore?: boolean;
+    overwriteConfig?: boolean;
+  },
+) => CliActionResult {
+  return async (options) => {
+    const app = getApp();
+    const initExitCode = await app.initProject({
+      defaultWorker: options.defaultWorker,
+      tuiWorker: options.tuiWorker,
+      gitignore: options.gitignore,
+      overwriteConfig: options.overwriteConfig,
+    });
+
+    if (initExitCode !== EXIT_CODE_SUCCESS) {
+      return initExitCode;
+    }
+
+    const language = normalizeOptionalString(options.language);
+    if (!language) {
+      return initExitCode;
+    }
+
+    return app.localizeProject({ language });
+  };
+}
+
+/**
+ * Creates the `localize` command action handler.
+ *
+ * The returned action validates `--language` then delegates localization
+ * to the application `localizeProject` use case.
+ */
+export function createLocalizeCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    const language = normalizeOptionalString(opts.language);
+    if (!language) {
+      throw new Error("Missing required option: --language <lang>.");
+    }
+
+    return getApp().localizeProject({ language });
+  };
 }
 
 /**
