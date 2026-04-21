@@ -41,6 +41,7 @@ import {
   CONFIG_DIR_NAME,
   type ConfigDirResult,
 } from "../domain/ports/config-dir-port.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 import type { FileSystem } from "../domain/ports/file-system.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { PathOperationsPort } from "../domain/ports/path-operations-port.js";
@@ -63,6 +64,7 @@ export interface InitProjectDependencies {
   configDir: ConfigDirResult | undefined;
   pathOperations: PathOperationsPort;
   output: ApplicationOutputPort;
+  localeMessages: LocaleMessages;
 }
 
 /**
@@ -76,6 +78,7 @@ export function createInitProject(
   dependencies: InitProjectDependencies,
 ): (options?: InitProjectOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const { localeMessages } = dependencies;
 
   // Render paths relative to the current working directory unless config is explicit.
   const displayPathForMessage = (targetPath: string): string => {
@@ -113,7 +116,10 @@ export function createInitProject(
     const toolsDirPath = `${configDir}/tools`;
     if (!dependencies.fileSystem.exists(toolsDirPath)) {
       dependencies.fileSystem.mkdir(toolsDirPath, { recursive: true });
-      emit({ kind: "success", message: `Created ${displayConfigDir}/tools/` });
+      emit({
+        kind: "success",
+        message: msg("init.created-tools-dir", { configDir: displayConfigDir }, localeMessages),
+      });
     }
 
     // Write a default file only when no project-specific file exists yet.
@@ -121,12 +127,18 @@ export function createInitProject(
       const filePath = `${configDir}/${name}`;
       const displayFilePath = `${displayConfigDir}/${name}`;
       if (dependencies.fileSystem.exists(filePath)) {
-        emit({ kind: "warn", message: `${displayFilePath} already exists, skipping.` });
+        emit({
+          kind: "warn",
+          message: msg("init.skip-existing", { filePath: displayFilePath }, localeMessages),
+        });
         return;
       }
 
       dependencies.fileSystem.writeText(filePath, content);
-      emit({ kind: "success", message: `Created ${displayFilePath}` });
+      emit({
+        kind: "success",
+        message: msg("init.created", { filePath: displayFilePath }, localeMessages),
+      });
     };
 
     const writeConfigArtifact = (name: "config.json" | "vars.json", content: string) => {
@@ -134,12 +146,22 @@ export function createInitProject(
       const displayFilePath = `${displayConfigDir}/${name}`;
       const exists = dependencies.fileSystem.exists(filePath);
       if (exists && !options.overwriteConfig) {
-        emit({ kind: "warn", message: `Preserved ${displayFilePath} (already exists).` });
+        emit({
+          kind: "warn",
+          message: msg("init.preserved", { filePath: displayFilePath }, localeMessages),
+        });
         return;
       }
 
       dependencies.fileSystem.writeText(filePath, content);
-      emit({ kind: "success", message: `${exists ? "Updated" : "Created"} ${displayFilePath}` });
+      emit({
+        kind: "success",
+        message: msg(
+          "init.updated-or-created",
+          { action: exists ? "Updated" : "Created", filePath: displayFilePath },
+          localeMessages,
+        ),
+      });
     };
 
     // Seed default workflow templates and project configuration files.
@@ -199,19 +221,31 @@ export function createInitProject(
         const existing = dependencies.fileSystem.readText(gitignorePath);
         const lines = existing.split("\n");
         if (lines.some((line) => line.trim() === CONFIG_DIR_NAME)) {
-          emit({ kind: "warn", message: `.gitignore already contains ${CONFIG_DIR_NAME}, skipping.` });
+          emit({
+            kind: "warn",
+            message: msg("init.gitignore-skip", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+          });
         } else {
           const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
           dependencies.fileSystem.writeText(gitignorePath, existing + separator + CONFIG_DIR_NAME + "\n");
-          emit({ kind: "success", message: `Added ${CONFIG_DIR_NAME} to .gitignore` });
+          emit({
+            kind: "success",
+            message: msg("init.gitignore-added", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+          });
         }
       } else {
         dependencies.fileSystem.writeText(gitignorePath, CONFIG_DIR_NAME + "\n");
-        emit({ kind: "success", message: `Created .gitignore with ${CONFIG_DIR_NAME}` });
+        emit({
+          kind: "success",
+          message: msg("init.gitignore-created", { configDirName: CONFIG_DIR_NAME }, localeMessages),
+        });
       }
     }
 
-    emit({ kind: "success", message: `Initialized ${displayConfigDir}/ with default templates.` });
+    emit({
+      kind: "success",
+      message: msg("init.success", { configDir: displayConfigDir }, localeMessages),
+    });
     return 0;
   };
 }

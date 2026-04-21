@@ -155,6 +155,7 @@ export function createStartProject(
       },
       pathOperations: dependencies.pathOperations,
       output: dependencies.output,
+      localeMessages: {},
     });
     const initCode = await initProject();
     if (initCode !== EXIT_CODE_SUCCESS) {

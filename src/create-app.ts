@@ -741,6 +741,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       pathOperations: ports.pathOperations,
       output: ports.output,
+      localeMessages: ports.localeMessages ?? {},
     }),
     localizeProject: (ports) => createLocalizeProject({
       fileSystem: ports.fileSystem,

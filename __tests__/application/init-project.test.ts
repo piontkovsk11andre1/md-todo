@@ -518,6 +518,7 @@ function createDependencies(overrides: {
           events.push(event);
         },
       },
+      localeMessages: {},
     },
     fileSystem,
     events,
