@@ -35,7 +35,7 @@ import { extractForceModifier } from "../domain/prefix-chain.js";
 import { applyTraceStatisticsDefaults } from "../domain/worker-config.js";
 import type { WorkerHealthPolicyConfig } from "../domain/worker-config.js";
 import { createCachedCommandExecutor } from "./cached-command-executor.js";
-import { formatNoItemsFound, formatNoItemsFoundMatching, pluralize } from "./run-task-utils.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
   resolvePredictionWorkspaceDirectories,
   resolvePredictionWorkspacePaths,
@@ -142,8 +142,9 @@ function emitStartupUnhealthyWorkerWarnings(params: {
   entries: readonly WorkerHealthEntry[];
   nowMs: number;
   emit: EmitFn;
+  localeMessages: LocaleMessages;
 }): void {
-  const { entries, nowMs, emit } = params;
+  const { entries, nowMs, emit, localeMessages } = params;
 
   for (const entry of entries) {
     if (entry.source !== "worker") {
@@ -162,7 +163,10 @@ function emitStartupUnhealthyWorkerWarnings(params: {
         : "";
       emit({
         kind: "warn",
-        message: "Worker \"" + workerLabel + "\" is cooling down" + cooldownSuffix + ".",
+        message: msg("run.worker-cooling-down", {
+          workerLabel,
+          suffix: cooldownSuffix,
+        }, localeMessages),
       });
       continue;
     }
@@ -180,7 +184,10 @@ function emitStartupUnhealthyWorkerWarnings(params: {
 
     emit({
       kind: "warn",
-      message: "Worker \"" + workerLabel + "\" is unavailable" + detailSuffix + ".",
+      message: msg("run.worker-unavailable", {
+        workerLabel,
+        suffix: detailSuffix,
+      }, localeMessages),
     });
   }
 }
@@ -556,6 +563,7 @@ export interface RunTaskDependencies {
   toolResolver?: ToolResolverPort;
   memoryWriter?: MemoryWriterPort;
   localeAliases?: LocaleAliases;
+  localeMessages?: LocaleMessages;
   traceWriter: TraceWriterPort;
   configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
@@ -619,6 +627,7 @@ export function createRunTaskExecution(
   dependencies: RunTaskDependencies,
 ): (options: RunTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const localeMessages = dependencies.localeMessages ?? {};
   // Provide a no-op CLI executor when none is injected by the caller.
   const defaultCliBlockExecutor = dependencies.cliBlockExecutor ?? {
     async execute() {
@@ -745,7 +754,7 @@ export function createRunTaskExecution(
     if (onlyVerify && (redo || resetAfter || clean)) {
       emit({
         kind: "error",
-        message: "--redo, --reset-after, and --clean cannot be combined with --only-verify.",
+        message: msg("run.error-redo-only-verify", {}, localeMessages),
       });
       return EXIT_CODE_FAILURE;
     }
@@ -753,7 +762,7 @@ export function createRunTaskExecution(
     if (!Number.isInteger(rounds) || rounds <= 0) {
       emit({
         kind: "error",
-        message: "--rounds must be a positive integer.",
+        message: msg("run.error-rounds-invalid", {}, localeMessages),
       });
       return EXIT_CODE_FAILURE;
     }
@@ -761,7 +770,7 @@ export function createRunTaskExecution(
     if (rounds > 1 && !(clean || (redo && resetAfter))) {
       emit({
         kind: "error",
-        message: "--rounds > 1 requires --clean or both --redo and --reset-after.",
+        message: msg("run.error-rounds-requires-clean", {}, localeMessages),
       });
       return EXIT_CODE_FAILURE;
     }
@@ -770,7 +779,10 @@ export function createRunTaskExecution(
     const effectiveRunAll = runAll || redo || clean;
     if (!runAll && (redo || clean)) {
       const impliedByFlag = clean ? "--clean" : "--redo";
-      emit({ kind: "info", message: impliedByFlag + " implies --all; running all tasks." });
+      emit({
+        kind: "info",
+        message: msg("run.implied-all", { flag: impliedByFlag }, localeMessages),
+      });
     }
 
     // Resolve effective verification/repair behavior from CLI flags.
@@ -844,6 +856,7 @@ export function createRunTaskExecution(
       entries: workerHealthEntries,
       nowMs: Date.now(),
       emit,
+      localeMessages,
     });
 
     // Initialize run-scoped mutable state shared across task iterations.
@@ -970,7 +983,10 @@ export function createRunTaskExecution(
       const files = await dependencies.sourceResolver.resolveSources(source);
       resolvedFiles = files;
       if (files.length === 0) {
-        emit({ kind: "warn", message: formatNoItemsFoundMatching("Markdown files", source) });
+        emit({
+          kind: "warn",
+          message: msg("run.no-markdown-found", { source }, localeMessages),
+        });
         return EXIT_CODE_NO_WORK;
       }
 
@@ -983,7 +999,10 @@ export function createRunTaskExecution(
           }
 
           dependencies.fileLock.forceRelease(filePath);
-          emit({ kind: "info", message: "Force-unlocked stale source lock: " + filePath });
+          emit({
+            kind: "info",
+            message: msg("run.force-unlocked", { filePath }, localeMessages),
+          });
         }
       }
 
@@ -996,14 +1015,12 @@ export function createRunTaskExecution(
         if (error instanceof FileLockError) {
           emit({
             kind: "error",
-            message: "Source file is locked by another rundown process: "
-              + error.filePath
-              + " (pid=" + error.holder.pid
-              + ", command=" + error.holder.command
-              + ", startTime=" + error.holder.startTime
-              + "). If this lock is stale, rerun with --force-unlock or run `rundown unlock "
-              + error.filePath
-              + "`.",
+            message: msg("run.lock-error", {
+              filePath: error.filePath,
+              pid: String(error.holder.pid),
+              command: error.holder.command,
+              startTime: error.holder.startTime,
+            }, localeMessages),
           });
           return EXIT_CODE_FAILURE;
         }
@@ -1015,7 +1032,7 @@ export function createRunTaskExecution(
         const cwd = executionCwd;
         const inGitRepo = await isGitRepoWithGitClient(dependencies.gitClient, cwd);
         if (!inGitRepo) {
-          emit({ kind: "warn", message: "--commit: not inside a git repository, skipping." });
+          emit({ kind: "warn", message: msg("run.no-git-repo", {}, localeMessages) });
         } else {
           commitRetryBoundaryGitEnabled = true;
           const isClean = await isWorkingDirectoryClean(
@@ -1027,7 +1044,7 @@ export function createRunTaskExecution(
           if (!isClean) {
             emit({
               kind: "error",
-              message: "--commit: working directory is not clean. Commit or stash changes before using --commit.",
+              message: msg("run.commit-dirty", {}, localeMessages),
             });
             return EXIT_CODE_FAILURE;
           }
@@ -1144,16 +1161,14 @@ export function createRunTaskExecution(
               if (emitCompletionMessage) {
                 emit({
                   kind: "success",
-                  message: "All tasks completed ("
-                    + state.tasksCompleted
-                    + " "
-                    + pluralize(state.tasksCompleted, "task", "tasks")
-                    + " total).",
+                  message: msg("run.all-tasks-completed", {
+                    count: String(state.tasksCompleted),
+                  }, localeMessages),
                 });
               }
               return EXIT_CODE_SUCCESS;
             }
-            emit({ kind: "info", message: formatNoItemsFound("unchecked tasks") });
+            emit({ kind: "info", message: msg("run.no-unchecked-tasks", {}, localeMessages) });
             return EXIT_CODE_NO_WORK;
           }
 
@@ -1161,7 +1176,7 @@ export function createRunTaskExecution(
           if (shouldRunBatchSequentiallyForTui) {
             emit({
               kind: "info",
-              message: "Parallel batch selected in TUI mode; executing tasks sequentially.",
+              message: msg("run.parallel-tui-sequential", {}, localeMessages),
             });
           }
           const selectedBatch = shouldRunBatchSequentiallyForTui
@@ -1175,11 +1190,10 @@ export function createRunTaskExecution(
               if (firstIndex !== index) {
                 emit({
                   kind: "info",
-                  message: "Skipping duplicate parallel sibling selection at "
-                    + candidate.task.file
-                    + ":"
-                    + candidate.task.line
-                    + ".",
+                  message: msg("run.parallel-skip-duplicate", {
+                    file: candidate.task.file,
+                    line: String(candidate.task.line),
+                  }, localeMessages),
                 });
                 return false;
               }
@@ -1194,13 +1208,11 @@ export function createRunTaskExecution(
               if (refreshedSelection.kind === "skip") {
                 emit({
                   kind: "info",
-                  message: "Skipping parallel sibling at "
-                    + result.task.file
-                    + ":"
-                    + result.task.line
-                    + " because "
-                    + refreshedSelection.reason
-                    + ".",
+                  message: msg("run.parallel-skip-reason", {
+                    file: result.task.file,
+                    line: String(result.task.line),
+                    reason: refreshedSelection.reason,
+                  }, localeMessages),
                 });
                 continue;
               }
@@ -1261,7 +1273,7 @@ export function createRunTaskExecution(
                   });
                   retryBoundaryBaselineCaptured = true;
                 } catch (error) {
-                  const message = "--commit: failed to capture retry baseline git state: " + String(error);
+                  const message = msg("run.commit-stash-error", { error: String(error) }, localeMessages);
                   emit({ kind: "error", message });
                   return 1;
                 }
@@ -1285,17 +1297,15 @@ export function createRunTaskExecution(
                 retryBoundaryGitCheckpoints.push(checkpoint);
                 emit({
                   kind: "info",
-                  message: "--commit: stashed retry-boundary git state at "
-                    + checkpoint.taskFile
-                    + ":"
-                    + checkpoint.taskLine
-                    + " ("
-                    + checkpoint.stashHash.slice(0, 12)
-                    + ").",
+                  message: msg("run.commit-stashed", {
+                    file: checkpoint.taskFile,
+                    line: String(checkpoint.taskLine),
+                    hash: checkpoint.stashHash.slice(0, 12),
+                  }, localeMessages),
                 });
                 return null;
               } catch (error) {
-                const message = "--commit: failed to preserve git state before retry boundary: " + String(error);
+                const message = msg("run.commit-preserve-error", { error: String(error) }, localeMessages);
                 emit({ kind: "error", message });
                 return 1;
               }
@@ -1319,19 +1329,18 @@ export function createRunTaskExecution(
                 });
                 emit({
                   kind: "warn",
-                  message: "--commit: restored stashed retry-boundary git state from "
-                    + latestCheckpoint.reason
-                    + " attempt ("
-                    + latestCheckpoint.stashHash.slice(0, 12)
-                    + ").",
+                  message: msg("run.commit-stash-restored", {
+                    reason: latestCheckpoint.reason,
+                    hash: latestCheckpoint.stashHash.slice(0, 12),
+                  }, localeMessages),
                 });
               } catch (error) {
                 emit({
                   kind: "warn",
-                  message: "--commit: retry-boundary stash restore failed; manual recovery may be needed ("
-                    + latestCheckpoint.stashHash.slice(0, 12)
-                    + "). Error: "
-                    + String(error),
+                  message: msg("run.commit-stash-restore-error", {
+                    hash: latestCheckpoint.stashHash.slice(0, 12),
+                    error: String(error),
+                  }, localeMessages),
                 });
               }
             };
@@ -1611,7 +1620,7 @@ export function createRunTaskExecution(
                 if (taskSemanticResetAttemptsUsed >= maxSemanticResetAttemptsPerTask) {
                   emit({
                     kind: "error",
-                    message: "Semantic reset exhausted: per-task semantic reset attempt limit reached.",
+                    message: msg("run.semantic-reset-exhausted", {}, localeMessages),
                   });
                   await maybeRestoreGitStateAfterTerminalFailure();
                   return exitCode;
@@ -1627,8 +1636,7 @@ export function createRunTaskExecution(
                 if (typeof semanticResetRunId !== "string" || semanticResetRunId.trim().length === 0) {
                   emit({
                     kind: "error",
-                    message: "Semantic reset requires failed-cycle run metadata, but the run id is unavailable. "
-                      + "Retry with --keep-artifacts and ensure run metadata is writable before retrying.",
+                    message: msg("run.semantic-reset-missing-run-id", {}, localeMessages),
                   });
                   await maybeRestoreGitStateAfterTerminalFailure();
                   return exitCode;
@@ -1639,20 +1647,16 @@ export function createRunTaskExecution(
                 usingSemanticResetRoute = true;
                 emit({
                   kind: "warn",
-                  message: "Verification/repair exhausted; retrying with configured reset worker"
-                    + " (semantic reset "
-                    + taskSemanticResetAttemptsUsed
-                    + "/"
-                    + maxSemanticResetAttemptsPerTask
-                    + ", run total "
-                    + runSemanticResetAttemptsUsed
-                    + ").",
+                  message: msg("run.semantic-reset-retrying", {
+                    current: String(taskSemanticResetAttemptsUsed),
+                    max: String(maxSemanticResetAttemptsPerTask),
+                    total: String(runSemanticResetAttemptsUsed),
+                  }, localeMessages),
                 });
                 if (!semanticResetCycleHead) {
                   emit({
                     kind: "error",
-                    message: "Semantic reset failed: missing pre-cycle commit metadata. "
-                      + "Retry with --keep-artifacts so failed-cycle metadata is retained and ensure git history is available.",
+                    message: msg("run.semantic-reset-missing-meta", {}, localeMessages),
                   });
                   await maybeRestoreGitStateAfterTerminalFailure();
                   return exitCode;
@@ -1912,7 +1916,10 @@ export function createRunTaskExecution(
       try {
         dependencies.fileLock.releaseAll();
       } catch (error) {
-        emit({ kind: "warn", message: "Failed to release file locks: " + String(error) });
+        emit({
+          kind: "warn",
+          message: msg("run.lock-release-failed", { error: String(error) }, localeMessages),
+        });
       }
 
       // Ensure trace/artifact failure metadata is written for uncaught exceptions.

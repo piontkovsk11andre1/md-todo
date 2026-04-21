@@ -437,6 +437,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     workerConfigPort: ports.workerConfigPort,
     workerHealthStore: ports.workerHealthStore,
     localeAliases: ports.localeAliases,
+    localeMessages: ports.localeMessages ?? {},
     traceWriter: ports.traceWriter,
     cliBlockExecutor: ports.cliBlockExecutor,
     configDir: ports.configDir,
