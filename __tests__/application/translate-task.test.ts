@@ -220,6 +220,39 @@ describe("translate-task", () => {
     expect(vi.mocked(traceWriter.flush)).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves artifacts on success when keepArtifacts is enabled", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, artifactStore, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      keepArtifacts: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-translate" }),
+      expect.objectContaining({
+        status: "completed",
+        preserve: true,
+      }),
+    );
+    expect(events.some((event) => event.kind === "info" && event.message.includes("Runtime artifacts saved at"))).toBe(true);
+  });
+
   it("acquires and writes output lock using execution-cwd-resolved path", async () => {
     const cwd = "/workspace";
     const whatFile = path.join(cwd, "what.md");
@@ -314,6 +347,10 @@ describe("translate-task", () => {
     expect(vi.mocked(dependencies.fileLock.isLocked)).toHaveBeenCalledWith(resolvedOutputFile);
     expect(vi.mocked(dependencies.fileLock.forceRelease)).toHaveBeenCalledWith(resolvedOutputFile);
     expect(events.some((event) => event.kind === "info" && event.message.includes("Force-unlocked stale source lock: " + resolvedOutputFile))).toBe(true);
+
+    const forceReleaseOrder = vi.mocked(dependencies.fileLock.forceRelease).mock.invocationCallOrder[0];
+    const lockAcquireOrder = vi.mocked(dependencies.fileLock.acquire).mock.invocationCallOrder[0];
+    expect(forceReleaseOrder).toBeLessThan(lockAcquireOrder);
   });
 
   it("does not force-unlock active source lock when enabled", async () => {
@@ -376,6 +413,118 @@ describe("translate-task", () => {
       howFile,
       expect.any(String),
     );
+  });
+
+  it("never mutates <what> or <how> when output is a different file", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const resolvedOutputFile = path.resolve(cwd, outputFile);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+    }));
+
+    expect(code).toBe(0);
+    expect(vi.mocked(dependencies.fileSystem.writeText)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dependencies.fileSystem.writeText)).toHaveBeenCalledWith(
+      resolvedOutputFile,
+      "# Translated\n\nDomain-native output\n",
+    );
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalledWith(
+      whatFile,
+      expect.any(String),
+    );
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalledWith(
+      howFile,
+      expect.any(String),
+    );
+  });
+
+  it("does not mutate <what> or <how> when translation execution fails", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, artifactStore } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    vi.mocked(dependencies.workerExecutor.runWorker).mockResolvedValue({
+      exitCode: 5,
+      stdout: "",
+      stderr: "translate failed",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+    }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.finalize)).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-translate" }),
+      expect.objectContaining({
+        status: "execution-failed",
+        preserve: true,
+      }),
+    );
+  });
+
+  it("does not create or finalize artifacts when lock contention blocks execution", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, artifactStore } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\nShip auth flow.\n",
+      howContent: "# How\nUse bounded contexts.\n",
+    });
+
+    vi.mocked(dependencies.fileLock.acquire).mockImplementation(() => {
+      throw new FileLockError(outputFile, {
+        pid: 4321,
+        command: "translate",
+        startTime: "2026-01-01T00:00:00.000Z",
+      });
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+    }));
+
+    expect(code).toBe(1);
+    expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.createContext)).not.toHaveBeenCalled();
+    expect(vi.mocked(artifactStore.finalize)).not.toHaveBeenCalled();
   });
 
   it("rejects when <output> matches <how> and avoids mutation", async () => {
