@@ -130,6 +130,7 @@ import {
   createTaskRepairAdapter,
   createTaskSelectorAdapter,
   createLocaleConfigAdapter,
+  extractLocaleMessages,
   createTaskVerificationAdapter,
   createWorkerConfigAdapter,
   createWorkerExecutorAdapter,
@@ -300,6 +301,7 @@ export interface AppPorts {
   interactiveInput: InteractiveInputPort;
   localeConfigPort: LocaleConfigPort;
   localeAliases?: LocaleAliases;
+  localeMessages?: Record<string, string>;
   workerConfigPort: WorkerConfigPort;
   workerHealthStore: WorkerHealthStore;
   templateVarsLoader: TemplateVarsLoaderPort;
@@ -324,6 +326,8 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
   };
   const localeConfigPort = overrides.localeConfigPort ?? createLocaleConfigAdapter();
   const localeConfig = localeConfigPort.load(configDir.configDir);
+  const localeMessages = overrides.localeMessages
+    ?? (localeConfig ? extractLocaleMessages(localeConfig) : {});
   const verificationStore = overrides.verificationStore
     ?? createArtifactVerificationStore(configDir.configDir);
   const taskVerification = overrides.taskVerification
@@ -378,6 +382,7 @@ function createAppPorts(overrides: Partial<AppPorts> = {}): AppPorts {
     interactiveInput,
     localeConfigPort,
     localeAliases: overrides.localeAliases ?? localeConfig?.aliases,
+    localeMessages,
     workerConfigPort: overrides.workerConfigPort ?? createWorkerConfigAdapter(),
     workerHealthStore: overrides.workerHealthStore ?? createFsWorkerHealthStore(),
     templateVarsLoader: overrides.templateVarsLoader ?? createFsTemplateVarsLoaderAdapter(),
