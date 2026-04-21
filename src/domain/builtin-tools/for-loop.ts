@@ -7,6 +7,7 @@ import {
   hasForLoopCheckboxChildren,
   resolveForLoopItems,
 } from "../for-loop.js";
+import { msg } from "../locale.js";
 import { buildResearchOutputPromptContract } from "./research-output-prompt.js";
 
 interface OpenFence {
@@ -118,6 +119,7 @@ function extractForLoopItemsFromOutput(output: string): string[] {
  * execution and verification.
  */
 export const forLoopHandler: ToolHandlerFn = async (context) => {
+  const localeMessages = context.localeMessages ?? {};
   const payload = context.payload.trim();
   if (payload.length === 0) {
     return {
@@ -205,7 +207,10 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
   }
 
   if (bakedItems.length === 0) {
-    context.emit({ kind: "info", message: "For loop resolved zero items; completing without iteration." });
+    context.emit({
+      kind: "info",
+      message: msg("tool.for.zero-items", {}, localeMessages),
+    });
     return {
       skipExecution: true,
       shouldVerify: false,
@@ -218,9 +223,18 @@ export const forLoopHandler: ToolHandlerFn = async (context) => {
 
   context.emit({
     kind: "info",
-    message: "For loop baked " + bakedItems.length + " items from " + itemSource + ": " + bakedItems.join(", "),
+    message: msg("tool.for.baked-items", {
+      count: String(bakedItems.length),
+      source: itemSource,
+      items: bakedItems.join(", "),
+    }, localeMessages),
   });
-  context.emit({ kind: "info", message: "For loop current item: " + (existingCurrent ?? bakedItems[0] ?? "") });
+  context.emit({
+    kind: "info",
+    message: msg("tool.for.current-item", {
+      item: existingCurrent ?? bakedItems[0] ?? "",
+    }, localeMessages),
+  });
 
   return {
     skipExecution: true,
