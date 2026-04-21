@@ -1,6 +1,7 @@
 export interface LocaleConfig {
   language: string;
   aliases: Record<string, string>;
+  messages?: Record<string, string>;
 }
 
 export type LocaleAliases = LocaleConfig["aliases"];

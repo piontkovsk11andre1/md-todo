@@ -114,6 +114,7 @@ export { createConfigDirAdapter } from "./config-dir-adapter.js";
  * Creates the locale configuration adapter.
  */
 export { createLocaleConfigAdapter } from "./locale-adapter.js";
+export { extractLocaleMessages } from "./locale-adapter.js";
 /**
  * Resolves user-level global config path candidates.
  */
