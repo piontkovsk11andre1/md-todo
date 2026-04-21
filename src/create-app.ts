@@ -496,6 +496,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     artifactStore: ports.artifactStore,
     traceWriter: ports.traceWriter,
     configDir: ports.configDir,
+    localeMessages: ports.localeMessages ?? {},
     createTraceWriter: (trace, artifactContext) => {
       if (!trace) {
         return ports.traceWriter;

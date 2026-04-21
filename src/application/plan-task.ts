@@ -42,10 +42,10 @@ import {
 } from "./runtime-workspace-context.js";
 import {
   countTraceLines,
-  formatNoItemsFoundIn,
   formatSuccessFailureSummary,
   pluralize,
 } from "./run-task-utils.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
   createOutputVolumeEvent,
   createPhaseCompletedEvent,
@@ -150,6 +150,7 @@ export interface PlanTaskDependencies {
   traceWriter: TraceWriterPort;
   configDir: ConfigDirResult | undefined;
   createTraceWriter: (trace: boolean, artifactContext: ArtifactContext) => TraceWriterPort;
+  localeMessages?: LocaleMessages;
   output: ApplicationOutputPort;
 }
 
@@ -192,6 +193,7 @@ export function createPlanTask(
   dependencies: PlanTaskDependencies,
 ): (options: PlanTaskOptions) => Promise<number> {
   const emit = dependencies.output.emit.bind(dependencies.output);
+  const localeMessages = dependencies.localeMessages ?? {};
   const cliBlockExecutor = dependencies.cliBlockExecutor;
 
   return async function planTask(options: PlanTaskOptions): Promise<number> {
@@ -265,7 +267,7 @@ export function createPlanTask(
     if (forceUnlock) {
       if (!dependencies.fileLock.isLocked(source)) {
         dependencies.fileLock.forceRelease(source);
-        emit({ kind: "info", message: "Force-unlocked stale source lock: " + source });
+        emit({ kind: "info", message: msg("plan.force-unlocked", { source }, localeMessages) });
       }
     }
 
@@ -276,14 +278,7 @@ export function createPlanTask(
       if (error instanceof FileLockError) {
         emit({
           kind: "error",
-          message: "Source file is locked by another rundown process: "
-            + error.filePath
-            + " (pid=" + error.holder.pid
-            + ", command=" + error.holder.command
-            + ", startTime=" + error.holder.startTime
-            + "). If this lock is stale, rerun with --force-unlock or run `rundown unlock "
-            + error.filePath
-            + "`.",
+          message: msg("plan.lock-error", { source: error.filePath }, localeMessages),
         });
         return EXIT_CODE_FAILURE;
       }
@@ -323,7 +318,7 @@ export function createPlanTask(
       } catch {
         emit({
           kind: "error",
-          message: "Unable to read Markdown document: " + source,
+          message: msg("plan.read-error", { source }, localeMessages),
         });
         return EXIT_CODE_NO_WORK;
       }
@@ -348,22 +343,20 @@ export function createPlanTask(
       const workerTimeoutMs = loadedWorkerConfig?.workerTimeoutMs;
       emit({
         kind: "info",
-        message: "Planning document: " + source,
+        message: msg("plan.planning-document", { source }, localeMessages),
       });
       emit({
         kind: "info",
         message: hasExistingTodos
-          ? "Detected " + existingTodoCount + " "
-            + pluralize(existingTodoCount, "existing TODO item", "existing TODO items")
-            + " in document."
-          : formatNoItemsFoundIn("existing TODO items", "document"),
+          ? msg("plan.detected-todos", { count: String(existingTodoCount) }, localeMessages)
+          : msg("plan.no-todos", {}, localeMessages),
       });
 
       // Planner execution requires a resolved worker command.
       if (resolvedWorkerCommand.length === 0) {
         emit({
           kind: "error",
-          message: "No worker command available: .rundown/config.json has no configured worker, and no CLI worker was provided. Use --worker <pattern> or -- <command>.",
+          message: msg("plan.no-worker", {}, localeMessages),
         });
         return EXIT_CODE_FAILURE;
       }
@@ -473,6 +466,7 @@ export function createPlanTask(
           loop,
           selectedTemplatePath: selectedPlanTemplatePath,
           dryRun: false,
+          localeMessages,
         });
         emit({
           kind: "text",
@@ -490,13 +484,16 @@ export function createPlanTask(
           if (deepCandidates.length === 0) {
             emit({
               kind: "info",
-              message: "Deep prompt preview skipped: no leaf TODO items without children.",
+              message: msg("plan.deep-no-leaves-preview", {}, localeMessages),
             });
           } else {
             emit({
               kind: "info",
-              message: "Deep prompt preview (pass 1 of " + deep + ") for " + deepCandidates.length + " "
-                + pluralize(deepCandidates.length, "parent task", "parent tasks") + ".",
+              message: msg(
+                "plan.deep-preview-pass",
+                { total: String(deep), count: String(deepCandidates.length) },
+                localeMessages,
+              ),
             });
             for (const parentTask of deepCandidates) {
               const deepPrompt = buildPlanDeepPrompt({
@@ -514,7 +511,7 @@ export function createPlanTask(
             if (deep > 1) {
               emit({
                 kind: "info",
-                message: "Deep prompt preview includes pass 1 only. Later passes depend on worker output from earlier passes.",
+                message: msg("plan.deep-preview-pass-note", {}, localeMessages),
               });
             }
           }
@@ -529,51 +526,63 @@ export function createPlanTask(
           loop,
           selectedTemplatePath: selectedPlanTemplatePath,
           dryRun: true,
+          localeMessages,
         });
         if (dryRunSuppressesCliExpansion && !ignoreCliBlock) {
           emit({
             kind: "info",
-            message: "Dry run — skipped `cli` fenced block execution; would execute "
-              + promptCliBlockCount
-              + " "
-              + pluralize(promptCliBlockCount, "block", "blocks")
-              + ".",
+            message: msg("plan.dry-run-cli-skipped", { count: String(promptCliBlockCount) }, localeMessages),
           });
         }
-        emit({ kind: "info", message: "Dry run — would plan: " + resolvedWorkerCommand.join(" ") });
+        emit({
+          kind: "info",
+          message: msg("plan.dry-run-would-plan", { command: resolvedWorkerCommand.join(" ") }, localeMessages),
+        });
         emit({
           kind: "info",
           message: scanStrategy.mode === "bounded"
-            ? "Scan count: " + scanStrategy.scanCount
-            : "Scan count: unlimited",
+            ? msg("plan.scan-count", { count: String(scanStrategy.scanCount) }, localeMessages)
+            : msg("plan.scan-count-unlimited", {}, localeMessages),
         });
         if (maxItems !== undefined) {
-          emit({ kind: "info", message: "Max items: " + maxItems });
+          emit({
+            kind: "info",
+            message: msg("plan.max-items", { maxItems: String(maxItems) }, localeMessages),
+          });
         }
         emit({
           kind: "info",
-          message: "Prompt length: " + buildPlanScanPrompt(
-            prompt,
-            source,
-            1,
-            scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
-            maxItems,
-            initialInsertedTotal,
-          ).length + " chars",
+          message: msg(
+            "plan.prompt-length",
+            {
+              length: String(buildPlanScanPrompt(
+                prompt,
+                source,
+                1,
+                scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
+                maxItems,
+                initialInsertedTotal,
+              ).length),
+            },
+            localeMessages,
+          ),
         });
         if (deep > 0) {
           const deepCandidates = collectDeepLeafCandidates(documentSource, source);
-          emit({ kind: "info", message: "Deep count: " + deep });
+          emit({ kind: "info", message: msg("plan.deep-count", { count: String(deep) }, localeMessages) });
           if (deepCandidates.length === 0) {
             emit({
               kind: "info",
-              message: "Dry run — deep passes would converge immediately: no leaf TODO items without children.",
+              message: msg("plan.dry-run-deep-no-leaves", {}, localeMessages),
             });
           } else {
             emit({
               kind: "info",
-              message: "Dry run — would run deep pass 1 of " + deep + " for " + deepCandidates.length + " "
-                + pluralize(deepCandidates.length, "parent task", "parent tasks") + ".",
+              message: msg(
+                "plan.dry-run-deep-would-run",
+                { total: String(deep), count: String(deepCandidates.length) },
+                localeMessages,
+              ),
             });
             const firstDeepPrompt = buildPlanDeepPrompt({
               deepPlanTemplate,
@@ -585,11 +594,14 @@ export function createPlanTask(
               planPrependGuidance,
               planAppendGuidance,
             });
-            emit({ kind: "info", message: "Deep prompt length (first parent task): " + firstDeepPrompt.length + " chars" });
+            emit({
+              kind: "info",
+              message: msg("plan.deep-prompt-length", { length: String(firstDeepPrompt.length) }, localeMessages),
+            });
             if (deep > 1) {
               emit({
                 kind: "info",
-                message: "Dry run — passes 2.." + deep + " depend on child TODO additions from earlier deep passes.",
+                message: msg("plan.dry-run-deep-passes-note", { total: String(deep) }, localeMessages),
               });
             }
           }
@@ -734,7 +746,15 @@ export function createPlanTask(
         artifactStatus = status;
         completeTraceRun(status, extra);
         traceWriter.flush();
-        finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, artifactStatus, emit, extra);
+        finalizePlanArtifacts(
+          dependencies.artifactStore,
+          artifactContext,
+          keepArtifacts,
+          artifactStatus,
+          emit,
+          localeMessages,
+          extra,
+        );
         artifactsFinalized = true;
         return code;
       };
@@ -782,9 +802,11 @@ export function createPlanTask(
             convergenceOutcome = "emergency-cap-reached";
             emit({
               kind: "warn",
-              message: "Emergency scan ceiling reached: planner stopped after "
-                + EMERGENCY_MAX_UNLIMITED_PLAN_SCANS
-                + " unlimited scans to prevent a runaway loop. This is a non-fatal safety stop; using current plan output.",
+              message: msg(
+                "plan.emergency-ceiling",
+                { count: String(EMERGENCY_MAX_UNLIMITED_PLAN_SCANS) },
+                localeMessages,
+              ),
             });
             break;
           }
@@ -793,8 +815,15 @@ export function createPlanTask(
             convergenceOutcome = "max-items-reached";
             emit({
               kind: "info",
-              message: "Planner stopped before scan " + scanIndex + ": max-items cap already reached ("
-                + insertedTotal + "/" + maxItems + " TODO items added).",
+              message: msg(
+                "plan.scan-stop-max-items",
+                {
+                  scan: String(scanIndex),
+                  added: String(insertedTotal),
+                  max: String(maxItems),
+                },
+                localeMessages,
+              ),
             });
             break;
           }
@@ -805,7 +834,7 @@ export function createPlanTask(
 
           emit({
             kind: "group-start",
-            label: "Plan scan " + scanLabel,
+            label: msg("plan.scan-group-label", { label: scanLabel }, localeMessages),
             counter: scanCounter,
           });
 
@@ -818,7 +847,7 @@ export function createPlanTask(
             if (verbose) {
               emit({
                 kind: "info",
-                message: "Planning " + scanLabel + ".",
+                message: msg("plan.scan-started-verbose", { label: scanLabel }, localeMessages),
               });
             }
             scansExecuted += 1;
@@ -835,7 +864,7 @@ export function createPlanTask(
             if (verbose) {
               emit({
                 kind: "info",
-                message: "Executing planner " + scanLabel + "...",
+                message: msg("plan.scan-executing-verbose", { label: scanLabel }, localeMessages),
               });
             }
             const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
@@ -861,9 +890,11 @@ export function createPlanTask(
             if (verbose) {
               emit({
                 kind: "info",
-                message: "Planner " + scanLabel + " completed (exit "
-                  + (runResult.exitCode === null ? "null" : String(runResult.exitCode))
-                  + ").",
+                message: msg(
+                  "plan.scan-completed-verbose",
+                  { label: scanLabel, code: runResult.exitCode === null ? "null" : String(runResult.exitCode) },
+                  localeMessages,
+                ),
               });
             }
             completePlanPhaseTrace(
@@ -881,7 +912,11 @@ export function createPlanTask(
 
             // Non-zero exits fail the planning run for this task.
             if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
-              const message = "Planner worker exited with code " + runResult.exitCode + " during scan " + scanIndex + ".";
+              const message = msg(
+                "plan.scan-exit-error",
+                { code: String(runResult.exitCode), scan: String(scanIndex) },
+                localeMessages,
+              );
               emit({ kind: "error", message });
               emitScanFailure(message);
               emitPlanSummary();
@@ -892,7 +927,11 @@ export function createPlanTask(
             try {
               editedDocumentSource = dependencies.fileSystem.readText(source);
             } catch {
-              const message = "Unable to read Markdown document after scan " + scanIndex + ": " + source;
+              const message = msg(
+                "plan.scan-read-error",
+                { scan: String(scanIndex), source },
+                localeMessages,
+              );
               emit({
                 kind: "error",
                 message,
@@ -928,9 +967,12 @@ export function createPlanTask(
             if (editedDocumentSource === scanBaseline) {
               convergenceOutcome = "converged-no-change";
               if (scanIndex === 1) {
-                emit({ kind: "warn", message: "Planner made no file edits. No TODO items added." });
+                emit({ kind: "warn", message: msg("plan.no-edits", {}, localeMessages) });
               } else {
-                emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": file unchanged after worker edit." });
+                emit({
+                  kind: "info",
+                  message: msg("plan.scan-unchanged", { scan: String(scanIndex) }, localeMessages),
+                });
               }
               planSuccessCount += 1;
               emit({ kind: "group-end", status: "success" });
@@ -953,8 +995,7 @@ export function createPlanTask(
               convergenceOutcome = "converged-rewrite-only";
               emit({
                 kind: "warn",
-                message: "Planner scan " + scanIndex
-                  + " rewrote existing TODO items without net additions. File reverted. Treating as converged.",
+                message: msg("plan.scan-rewrite-reverted", { scan: String(scanIndex) }, localeMessages),
               });
               planSuccessCount += 1;
               emit({ kind: "group-end", status: "success" });
@@ -964,7 +1005,10 @@ export function createPlanTask(
             if (netAdditions <= 0) {
               convergenceOutcome = "converged-no-additions";
               latestDocumentSource = editedDocumentSource;
-              emit({ kind: "info", message: "Planner converged at scan " + scanIndex + ": edit added no new TODO items." });
+              emit({
+                kind: "info",
+                message: msg("plan.scan-no-new-items", { scan: String(scanIndex) }, localeMessages),
+              });
               planSuccessCount += 1;
               emit({ kind: "group-end", status: "success" });
               continue;
@@ -984,8 +1028,7 @@ export function createPlanTask(
               convergenceOutcome = "converged-diminishing";
               emit({
                 kind: "info",
-                message: "Planner converged at scan " + scanIndex
-                  + ": diminishing returns after consecutive low-addition scans.",
+                message: msg("plan.scan-diminishing-returns", { scan: String(scanIndex) }, localeMessages),
               });
               break;
             }
@@ -994,8 +1037,15 @@ export function createPlanTask(
               convergenceOutcome = "max-items-reached";
               emit({
                 kind: "info",
-                message: "Planner stopped after scan " + scanIndex + ": max-items cap reached ("
-                  + insertedTotal + "/" + maxItems + " TODO items added).",
+                message: msg(
+                  "plan.scan-stopped-max-items",
+                  {
+                    scan: String(scanIndex),
+                    added: String(insertedTotal),
+                    max: String(maxItems),
+                  },
+                  localeMessages,
+                ),
               });
               break;
             }
@@ -1019,7 +1069,11 @@ export function createPlanTask(
             } catch {
               emit({
                 kind: "error",
-                message: "Unable to reload Markdown document before deep pass " + deepPass + ": " + source,
+                message: msg(
+                  "plan.deep-reload-error",
+                  { pass: String(deepPass), source },
+                  localeMessages,
+                ),
               });
               emitPlanSummary();
               return finishPlan(EXIT_CODE_FAILURE, "failed");
@@ -1030,7 +1084,7 @@ export function createPlanTask(
             if (deepCandidates.length === 0) {
               emit({
                 kind: "info",
-                message: "Deep planning converged at pass " + deepPass + ": no leaf TODO items without children.",
+                message: msg("plan.deep-converged-no-leaves", { pass: String(deepPass) }, localeMessages),
               });
               break;
             }
@@ -1038,8 +1092,15 @@ export function createPlanTask(
             if (verbose) {
               emit({
                 kind: "info",
-                message: "Running deep pass " + deepPass + " of " + deep + " for " + deepCandidates.length + " "
-                  + pluralize(deepCandidates.length, "parent task", "parent tasks") + ".",
+                message: msg(
+                  "plan.deep-running-verbose",
+                  {
+                    pass: String(deepPass),
+                    total: String(deep),
+                    count: String(deepCandidates.length),
+                  },
+                  localeMessages,
+                ),
               });
             }
 
@@ -1062,7 +1123,11 @@ export function createPlanTask(
               if (verbose) {
                 emit({
                   kind: "info",
-                  message: "Executing planner " + deepTaskLabel + " for parent line " + parentTask.line + "...",
+                  message: msg(
+                    "plan.deep-task-executing",
+                    { label: deepTaskLabel, line: String(parentTask.line) },
+                    localeMessages,
+                  ),
                 });
               }
 
@@ -1105,7 +1170,15 @@ export function createPlanTask(
               if (runResult.exitCode !== 0 && runResult.exitCode !== null) {
                 emit({
                   kind: "error",
-                  message: "Planner worker exited with code " + runResult.exitCode + " during deep pass " + deepPass + ", task " + (deepTaskIndex + 1) + ".",
+                  message: msg(
+                    "plan.deep-exit-error",
+                    {
+                      code: String(runResult.exitCode),
+                      pass: String(deepPass),
+                      task: String(deepTaskIndex + 1),
+                    },
+                    localeMessages,
+                  ),
                 });
                 planFailureCount += 1;
                 emitPlanSummary();
@@ -1118,7 +1191,11 @@ export function createPlanTask(
               } catch {
                 emit({
                   kind: "error",
-                  message: "Unable to read Markdown document after deep pass " + deepPass + ", task " + (deepTaskIndex + 1) + ": " + source,
+                  message: msg(
+                    "plan.deep-read-error",
+                    { pass: String(deepPass), task: String(deepTaskIndex + 1), source },
+                    localeMessages,
+                  ),
                 });
                 planFailureCount += 1;
                 emitPlanSummary();
@@ -1150,9 +1227,16 @@ export function createPlanTask(
                 convergenceOutcome = "max-items-reached";
                 emit({
                   kind: "info",
-                  message: "Planner stopped during deep pass " + deepPass + ", task " + (deepTaskIndex + 1)
-                    + ": max-items cap reached ("
-                    + insertedTotal + "/" + maxItems + " TODO items added).",
+                  message: msg(
+                    "plan.deep-task-max-items",
+                    {
+                      pass: String(deepPass),
+                      task: String(deepTaskIndex + 1),
+                      added: String(insertedTotal),
+                      max: String(maxItems),
+                    },
+                    localeMessages,
+                  ),
                 });
                 maxItemsReachedDuringDeep = true;
                 break;
@@ -1168,9 +1252,15 @@ export function createPlanTask(
               convergenceOutcome = "max-items-reached";
               emit({
                 kind: "info",
-                message: "Planner stopped after deep pass " + deepPass
-                  + ": max-items cap reached ("
-                  + insertedTotal + "/" + maxItems + " TODO items added).",
+                message: msg(
+                  "plan.deep-pass-max-items",
+                  {
+                    pass: String(deepPass),
+                    added: String(insertedTotal),
+                    max: String(maxItems),
+                  },
+                  localeMessages,
+                ),
               });
               break;
             }
@@ -1178,7 +1268,7 @@ export function createPlanTask(
             if (deepPassInsertedCount === 0) {
               emit({
                 kind: "info",
-                message: "Deep planning converged at pass " + deepPass + ": no child TODO items were added.",
+                message: msg("plan.deep-converged-no-items", { pass: String(deepPass) }, localeMessages),
               });
               break;
             }
@@ -1210,9 +1300,7 @@ export function createPlanTask(
 
         emit({
           kind: "success",
-          message: "Inserted " + insertedTotal + " "
-            + pluralize(insertedTotal, "TODO item", "TODO items")
-            + " into: " + source,
+          message: msg("plan.inserted", { count: String(insertedTotal), source }, localeMessages),
         });
         return finishPlan(EXIT_CODE_SUCCESS, "completed", convergenceMetadata);
       } finally {
@@ -1221,7 +1309,14 @@ export function createPlanTask(
           const finalStatus = artifactStatus === "running" ? "failed" : artifactStatus;
           completeTraceRun(finalStatus);
           traceWriter.flush();
-          finalizePlanArtifacts(dependencies.artifactStore, artifactContext, keepArtifacts, finalStatus, emit);
+          finalizePlanArtifacts(
+            dependencies.artifactStore,
+            artifactContext,
+            keepArtifacts,
+            finalStatus,
+            emit,
+            localeMessages,
+          );
           artifactsFinalized = true;
         }
       }
@@ -1230,7 +1325,7 @@ export function createPlanTask(
         // Release all held source locks regardless of execution outcome.
         dependencies.fileLock.releaseAll();
       } catch (error) {
-        emit({ kind: "warn", message: "Failed to release file locks: " + String(error) });
+        emit({ kind: "warn", message: msg("plan.lock-release-failed", { error: String(error) }, localeMessages) });
       }
     }
   };
@@ -1245,6 +1340,7 @@ function finalizePlanArtifacts(
   keepArtifacts: boolean,
   status: ArtifactStoreStatus,
   emit: ApplicationOutputPort["emit"],
+  localeMessages: LocaleMessages,
   extra?: Record<string, unknown>,
 ): void {
   const preserve = keepArtifacts || artifactStore.isFailedStatus(status);
@@ -1257,9 +1353,7 @@ function finalizePlanArtifacts(
   if (preserve) {
     emit({
       kind: "info",
-      message: "Runtime artifacts saved at "
-        + artifactStore.displayPath(artifactContext)
-        + ".",
+      message: msg("plan.artifacts-saved", { path: artifactStore.displayPath(artifactContext) }, localeMessages),
     });
   }
 }
@@ -1294,6 +1388,7 @@ function buildPlanConvergenceMetadata(
  * Builds a user-facing summary line for top-level plan stop reason.
  */
 function formatPlanStopReason(convergenceOutcome: PlanConvergenceOutcome): string {
+  // TODO: Catalog per-outcome stop-reason strings in a follow-up migration.
   return "Plan stop reason: " + convergenceOutcome + ".";
 }
 
@@ -1412,13 +1507,16 @@ function emitPlanPromptSelectionInfo(options: {
   loop: boolean;
   selectedTemplatePath: string | undefined;
   dryRun: boolean;
+  localeMessages: LocaleMessages;
 }): void {
-  const modeLabel = options.loop
-    ? "loop (--loop enabled)"
-    : "standard (--loop disabled)";
+  const modeLabel = options.loop ? "loop (--loop enabled)" : "standard (--loop disabled)";
   const modeMessage = options.dryRun
-    ? "Dry run — prompt mode: " + modeLabel + "."
-    : "Prompt mode: " + modeLabel + ".";
+    ? msg("plan.dry-run-prompt-mode", { mode: modeLabel }, options.localeMessages)
+    : msg(
+      options.loop ? "plan.prompt-mode-loop" : "plan.prompt-mode-standard",
+      {},
+      options.localeMessages,
+    );
   options.emit({ kind: "info", message: modeMessage });
 
   const templatePathMessage = options.selectedTemplatePath
@@ -1427,9 +1525,14 @@ function emitPlanPromptSelectionInfo(options: {
   const templateBehaviorSuffix = options.loop
     ? "loop planner template with deterministic `get:` + `for:` + `end:` guidance"
     : "standard planner template";
-  const templateMessage = options.dryRun
-    ? "Dry run — planner template: " + templatePathMessage + " (" + templateBehaviorSuffix + ")."
-    : "Planner template: " + templatePathMessage + " (" + templateBehaviorSuffix + ").";
+  const templateMessage = msg(
+    "plan.template-info",
+    {
+      path: templatePathMessage,
+      behavior: templateBehaviorSuffix,
+    },
+    options.localeMessages,
+  );
   options.emit({ kind: "info", message: templateMessage });
 }
 
