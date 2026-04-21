@@ -28,6 +28,7 @@ describe("translate-task", () => {
       whatContent: "# What\nShip auth flow.\n",
       howContent: "# How\nUse bounded contexts.\n",
     });
+    dependencies.configDir = undefined;
 
     const translateTask = createTranslateTask(dependencies);
     const code = await translateTask(createOptions({
@@ -45,6 +46,10 @@ describe("translate-task", () => {
     expect(prompt).toContain("# How");
     expect(prompt).toContain("Ship auth flow.");
     expect(prompt).toContain("Use bounded contexts.");
+    expect(prompt).toContain("Meaning fidelity");
+    expect(prompt).toContain("No invention");
+    expect(prompt).toContain("Uncertainty signaling");
+    expect(prompt).toContain("Return only the full translated Markdown document body.");
     expect(vi.mocked(dependencies.workerExecutor.runWorker)).not.toHaveBeenCalled();
     expect(vi.mocked(dependencies.fileSystem.writeText)).not.toHaveBeenCalled();
   });

@@ -1592,21 +1592,23 @@ export const DEFAULT_TRANSLATE_TEMPLATE = `\
 
 ## Task
 
-Rewrite <what> so it is naturally expressed in the vocabulary and conceptual framing defined by <how>.
+Rewrite the full <what> document so it is naturally expressed in the vocabulary and conceptual framing defined by <how>.
+Use the complete text of both documents above as authoritative context.
 
 Rules:
 
-- Preserve intent, scope, and constraints from <what>.
-- Prefer terms, distinctions, and mental models established by <how>.
-- Do not add or invent requirements, tasks, or implementation commitments.
-- When no clear analog exists in <how>, keep the original concept explicit and clearly mark the mismatch.
-- Produce natural target-domain prose, not dictionary substitution.
-- Return valid Markdown suitable for downstream rundown commands.
+- Meaning fidelity: preserve intent, scope, and constraints from <what>.
+- Vocabulary alignment: prefer terms, distinctions, and mental models established by <how>.
+- No invention: do not add or invent requirements, tasks, or implementation commitments.
+- Uncertainty signaling: when no clear analog exists in <how>, keep the original concept explicit and clearly mark the mismatch.
+- Natural target prose: produce native domain writing, not dictionary substitution.
+- Markdown validity: return valid Markdown suitable for downstream rundown commands.
 
 Output contract:
 
 - Return only the full translated Markdown document body.
 - Do not wrap output in commentary, metadata, or code fences.
+- Do not omit sections from <what>; translate the entire document.
 `;
 
 /**
