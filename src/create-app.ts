@@ -623,6 +623,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     }),
     translateTask: (ports) => createTranslateTask({
       workerExecutor: ports.workerExecutor,
+      cliBlockExecutor: ports.cliBlockExecutor,
       workingDirectory: ports.workingDirectory,
       fileSystem: ports.fileSystem,
       fileLock: ports.fileLock,

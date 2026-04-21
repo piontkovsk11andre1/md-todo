@@ -120,6 +120,159 @@ describe("translate-task", () => {
     expect(vi.mocked(dependencies.fileLock.releaseAll)).not.toHaveBeenCalled();
   });
 
+  it("expands `cli` fenced blocks from <what> and <how> by default", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\n```cli\nwhoami\n```\n",
+      howContent: "# How\n```cli\npwd\n```\n",
+    });
+    dependencies.configDir = undefined;
+    vi.mocked(dependencies.cliBlockExecutor.execute)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "author\n", stderr: "" })
+      .mockResolvedValueOnce({ exitCode: 0, stdout: "/workspace\n", stderr: "" });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("<command>whoami</command>");
+    expect(prompt).toContain("<command>pwd</command>");
+    expect(prompt).toContain("author");
+    expect(prompt).toContain("/workspace");
+    const expectedWhatCwd = path.dirname(whatFile);
+    const expectedHowCwd = path.dirname(howFile);
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).toHaveBeenNthCalledWith(
+      1,
+      "whoami",
+      expectedWhatCwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).toHaveBeenNthCalledWith(
+      2,
+      "pwd",
+      expectedHowCwd,
+      expect.objectContaining({
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+  });
+
+  it("bypasses cli fenced-block expansion when --ignore-cli-block is enabled", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\n```cli\nwhoami\n```\n",
+      howContent: "# How\nReference\n",
+    });
+    dependencies.configDir = undefined;
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      printPrompt: true,
+      ignoreCliBlock: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("```cli");
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).not.toHaveBeenCalled();
+  });
+
+  it("applies --cli-block-timeout to fenced-block expansion", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\n```cli\nwhoami\n```\n",
+      howContent: "# How\nReference\n",
+    });
+    dependencies.configDir = undefined;
+    vi.mocked(dependencies.cliBlockExecutor.execute).mockResolvedValue({
+      exitCode: 0,
+      stdout: "author\n",
+      stderr: "",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      printPrompt: true,
+      cliBlockTimeoutMs: 4321,
+    }));
+
+    expect(code).toBe(0);
+    const expectedWhatCwd = path.dirname(whatFile);
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).toHaveBeenCalledWith(
+      "whoami",
+      expectedWhatCwd,
+      expect.objectContaining({
+        timeoutMs: 4321,
+        onCommandExecuted: expect.any(Function),
+      }),
+    );
+  });
+
+  it("skips fenced-block expansion in dry-run mode unless print-prompt is enabled", async () => {
+    const cwd = "/workspace";
+    const whatFile = path.join(cwd, "what.md");
+    const howFile = path.join(cwd, "how.md");
+    const outputFile = path.join(cwd, "output.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      whatFile,
+      howFile,
+      outputFile,
+      whatContent: "# What\n```cli\nwhoami\n```\n",
+      howContent: "# How\n```cli\npwd\n```\n",
+    });
+
+    const translateTask = createTranslateTask(dependencies);
+    const code = await translateTask(createOptions({
+      what: whatFile,
+      how: howFile,
+      output: outputFile,
+      dryRun: true,
+    }));
+
+    expect(code).toBe(0);
+    expect(events).toContainEqual({
+      kind: "info",
+      message: "Dry run — skipped `cli` fenced block execution; would execute 2 blocks.",
+    });
+    expect(vi.mocked(dependencies.cliBlockExecutor.execute)).not.toHaveBeenCalled();
+  });
+
   it("prefers print-prompt over dry-run and skips worker/output mutation", async () => {
     const cwd = "/workspace";
     const whatFile = path.join(cwd, "what.md");
@@ -693,6 +846,9 @@ function createDependencies(options: {
       })),
       executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    },
+    cliBlockExecutor: {
+      execute: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
     },
     workingDirectory: { cwd: vi.fn(() => options.cwd) },
     fileSystem,

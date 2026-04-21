@@ -1,4 +1,5 @@
 import { EXIT_CODE_FAILURE, EXIT_CODE_SUCCESS } from "../domain/exit-codes.js";
+import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
@@ -10,13 +11,15 @@ import {
   createRunStartedEvent,
   type TraceRunStatus,
 } from "../domain/trace.js";
-import { countTraceLines } from "./run-task-utils.js";
+import { withSourceCliFailureWarning } from "./cli-block-handlers.js";
+import { countTraceLines, pluralize } from "./run-task-utils.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import type {
   ArtifactRunContext,
   ArtifactStore,
   ArtifactStoreStatus,
+  CommandExecutor,
   ConfigDirResult,
   FileLock,
   FileSystem,
@@ -36,6 +39,7 @@ export type RunnerMode = ProcessRunMode;
 
 export interface TranslateTaskDependencies {
   workerExecutor: WorkerExecutorPort;
+  cliBlockExecutor: CommandExecutor;
   workingDirectory: WorkingDirectoryPort;
   fileSystem: FileSystem;
   fileLock: FileLock;
@@ -79,6 +83,16 @@ export function createTranslateTask(
     const executionCwd = options.cwd ?? dependencies.workingDirectory.cwd();
     const howDocumentPath = dependencies.pathOperations.resolve(executionCwd, options.how);
     const outputDocumentPath = dependencies.pathOperations.resolve(executionCwd, options.output);
+    const whatCliCwd = resolveCliExpansionCwd(
+      executionCwd,
+      options.what,
+      dependencies.pathOperations,
+    );
+    const howCliCwd = resolveCliExpansionCwd(
+      executionCwd,
+      options.how,
+      dependencies.pathOperations,
+    );
 
     if (isSamePath(outputDocumentPath, howDocumentPath)) {
       emit({
@@ -110,6 +124,33 @@ export function createTranslateTask(
         message: "Unable to read translate input <how>: " + options.how,
       });
       return EXIT_CODE_FAILURE;
+    }
+
+    const cliExecutionOptions = options.cliBlockTimeoutMs === undefined
+      ? undefined
+      : { timeoutMs: options.cliBlockTimeoutMs };
+    const cliExecutionOptionsWithSourceFailureWarning = withSourceCliFailureWarning(
+      cliExecutionOptions,
+      emit,
+    );
+    const whatCliBlockCount = extractCliBlocks(whatDocument).length;
+    const howCliBlockCount = extractCliBlocks(howDocument).length;
+    const inputCliBlockCount = whatCliBlockCount + howCliBlockCount;
+    const dryRunSuppressesCliExpansion = options.dryRun && !options.printPrompt;
+
+    if (!options.ignoreCliBlock && !dryRunSuppressesCliExpansion) {
+      whatDocument = await expandCliBlocks(
+        whatDocument,
+        dependencies.cliBlockExecutor,
+        whatCliCwd,
+        cliExecutionOptionsWithSourceFailureWarning,
+      );
+      howDocument = await expandCliBlocks(
+        howDocument,
+        dependencies.cliBlockExecutor,
+        howCliCwd,
+        cliExecutionOptionsWithSourceFailureWarning,
+      );
     }
 
     const loadedWorkerConfig = dependencies.configDir?.configDir
@@ -158,6 +199,16 @@ export function createTranslateTask(
     }
 
     if (options.dryRun) {
+      if (dryRunSuppressesCliExpansion && !options.ignoreCliBlock) {
+        emit({
+          kind: "info",
+          message: "Dry run — skipped `cli` fenced block execution; would execute "
+            + inputCliBlockCount
+            + " "
+            + pluralize(inputCliBlockCount, "block", "blocks")
+            + ".",
+        });
+      }
       emit({ kind: "info", message: "Dry run - would translate: " + resolvedWorkerCommand.join(" ") });
       emit({ kind: "info", message: "Prompt length: " + prompt.length + " chars" });
       return EXIT_CODE_SUCCESS;
@@ -382,6 +433,18 @@ export function createTranslateTask(
       }
     }
   };
+}
+
+function resolveCliExpansionCwd(
+  executionCwd: string,
+  markdownPath: string,
+  pathOperations: Pick<PathOperationsPort, "dirname" | "isAbsolute" | "resolve">,
+): string {
+  if (pathOperations.isAbsolute(markdownPath)) {
+    return pathOperations.dirname(markdownPath);
+  }
+
+  return pathOperations.resolve(executionCwd, pathOperations.dirname(markdownPath));
 }
 
 function isSamePath(leftPath: string, rightPath: string): boolean {
