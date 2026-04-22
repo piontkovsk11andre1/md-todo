@@ -19,11 +19,13 @@ rundown discuss [source] [options] --worker <pattern>
 
 `discuss` uses the same source resolution and task-selection logic as `run`, but opens a discussion-oriented worker session (default `--mode tui`) instead of executing the task implementation flow.
 
+In source mode (`discuss <source>`), the rendered prompt now includes a related run history summary for the selected task when previous `run` artifacts exist in the active config directory.
+
 When `--run <id|prefix|latest>` is provided, `discuss` loads a finished artifact run and opens a post-run discussion session for that run instead of selecting a new unchecked task from source Markdown.
 
 `--worker` is optional when rundown can resolve a worker for `discuss` from `.rundown/config.json`.
 
-During this session, the agent may edit the Markdown source task text to improve scope and clarity (for example rewriting task wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
+By default, `discuss` is conversational and non-mutating: the agent analyzes the task, answers questions, and can reference prior run history. The agent should not edit source Markdown unless the user explicitly requests edits (for example rewriting wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
 
 Arguments:
 
