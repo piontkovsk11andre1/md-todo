@@ -514,6 +514,8 @@ describe("discuss-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(dependencies.sourceResolver.resolveSources)).not.toHaveBeenCalled();
     expect(vi.mocked(dependencies.taskSelector.selectNextTask)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.listSaved)).not.toHaveBeenCalled();
+    expect(vi.mocked(dependencies.artifactStore.listFailed)).not.toHaveBeenCalled();
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
     expect(prompt).toContain("run=run-finished");
     expect(prompt).toContain("status=completed");
@@ -2738,8 +2740,8 @@ describe("discuss-task", () => {
     expect(DEFAULT_DISCUSS_TEMPLATE).toContain("Discuss and refine the selected task before execution.");
   });
 
-  it("keeps discuss template permissive edit wording", () => {
-    expect(DEFAULT_DISCUSS_TEMPLATE).toContain("You may modify the source Markdown task text as part of discussion when it helps");
+  it("removes old permissive edit wording from discuss template", () => {
+    expect(DEFAULT_DISCUSS_TEMPLATE).not.toContain("You may modify the source Markdown task text as part of discussion when it helps");
   });
 
   it("captures discuss output into artifacts when --keep-artifacts is set", async () => {
