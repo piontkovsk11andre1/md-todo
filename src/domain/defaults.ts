@@ -316,6 +316,10 @@ You may modify the source Markdown task text as part of discussion when it helps
 - add sub-items to capture concrete steps
 - clarify scope, assumptions, constraints, or acceptance criteria
 
+## Related run history
+
+{{relatedRunsSummary}}
+
 ## Task context
 
 Use the full task context below when refining scope.
