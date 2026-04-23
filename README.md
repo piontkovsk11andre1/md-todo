@@ -130,13 +130,40 @@ rundown all .
 
 At the **highest level**, `rundown` recommends the following layout (names can be changed).
 
-You don't have to use this if you don't want to.
-
 ```text
 design/
+implementation/
 migrations/
 specs/
 ```
+
+or
+
+```text
+docs/
+output/
+deltas/
+tests/
+```
+or
+
+```text
+target/
+result/
+drift/
+requirements/
+```
+
+or
+
+```text
+subject/
+object/
+mutation/
+asserts/
+```
+
+Or any combinations of those.
 
 A concrete example:
 
