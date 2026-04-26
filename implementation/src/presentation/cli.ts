@@ -226,7 +226,7 @@ configureRunLikeCommandOptions(callCommand)
 
 const materializeCommand = program
   .command("materialize")
-  .description("Run all tasks with revertable defaults (equivalent to `run --all --revertable`).")
+  .description("Run all tasks with revertable defaults (equivalent to `run --all --revertable`). Writes implementation/ only; refresh prediction/ with `rundown migrate up`.")
   .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
   .configureHelp({ showGlobalOptions: true });
 
