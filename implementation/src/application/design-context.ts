@@ -98,6 +98,15 @@ const LEGACY_WORKSPACE_DIR = "docs";
 const CANONICAL_PRIMARY_FILE = "Target.md";
 const LEGACY_PRIMARY_FILE = "Design.md";
 
+export function formatRevisionDesignContext(
+  fileSystem: FileSystem,
+  revisionAbsolutePath: string,
+  primaryFileName: string = CANONICAL_PRIMARY_FILE,
+): string {
+  const designFiles = collectDesignFiles(fileSystem, revisionAbsolutePath);
+  return formatDesignWorkspaceContext(fileSystem, revisionAbsolutePath, designFiles, primaryFileName);
+}
+
 export function resolveDesignContext(
   fileSystem: FileSystem,
   workspaceRoot: string,
