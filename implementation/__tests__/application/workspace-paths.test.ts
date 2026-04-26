@@ -140,6 +140,25 @@ describe("prediction workspace config", () => {
     });
   });
 
+  it("rejects collisions when design and prediction directories are identical", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            design: "shared",
+            prediction: "shared",
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: workspace directories "design" and "prediction" both resolve to "shared".`,
+    );
+  });
+
   it("rejects non-string workspace placement values", () => {
     const workspaceRoot = path.join(path.sep, "repo");
     const configPath = path.join(workspaceRoot, ".rundown", "config.json");
