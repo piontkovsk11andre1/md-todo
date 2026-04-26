@@ -32,6 +32,7 @@ Every external concern is mediated by a port (a TypeScript interface in [src/dom
 | `WorkerConfigPort` | `createWorkerConfigAdapter` | [worker-config-adapter.ts](../../implementation/src/infrastructure/adapters/worker-config-adapter.ts) |
 | `WorkerHealthStore` | `createFsWorkerHealthStore` | [fs-worker-health-store.ts](../../implementation/src/infrastructure/adapters/fs-worker-health-store.ts) |
 | `TemplateVarsLoaderPort` | `createFsTemplateVarsLoaderAdapter` | [fs-template-vars-loader-adapter.ts](../../implementation/src/infrastructure/adapters/fs-template-vars-loader-adapter.ts) |
+| `MigrationPort` | `createMigrationAdapter` | [migration-adapter.ts](../../implementation/src/infrastructure/adapters/migration-adapter.ts) |
 | `TraceWriterPort` | `createNoopTraceWriter` (default), `createJsonlTraceWriter`, `createFanoutTraceWriter` | [noop-trace-writer.ts](../../implementation/src/infrastructure/adapters/noop-trace-writer.ts), [jsonl-trace-writer.ts](../../implementation/src/infrastructure/adapters/jsonl-trace-writer.ts), [fanout-trace-writer.ts](../../implementation/src/infrastructure/adapters/fanout-trace-writer.ts) |
 | `CommandExecutor` (cli-block) | `createCliBlockExecutor` | [cli-block-executor.ts](../../implementation/src/infrastructure/cli-block-executor.ts) |
 | `ApplicationOutputPort` | presentation-side renderers | [output-port.ts](../../implementation/src/presentation/output-port.ts), [logged-output-port.ts](../../implementation/src/presentation/logged-output-port.ts) |
@@ -39,7 +40,7 @@ Every external concern is mediated by a port (a TypeScript interface in [src/dom
 ## Conventions
 
 - **Names**: ports end in `Port` (or domain noun like `FileSystem`, `Clock`, `GitClient` for very stable contracts). Adapter factories use `create<Name>` exclusively.
-- **Pure interfaces**: ports under `src/domain/ports/` only contain types and interfaces; they have no runtime exports. The `ports/**` glob is excluded from coverage.
+- **Pure interfaces**: ports under `src/domain/ports/` only contain types and interfaces; they have no runtime exports. The `ports/**` glob is excluded from coverage. A few port files (e.g. `memory-clean-port.ts`, `memory-validation-port.ts`, `tool-handler-port.ts`) export only result/context types and have no separate adapter — their behavior is implemented directly inside the use cases or other adapters that consume those types.
 - **Single composition root**: only [src/create-app.ts](../../implementation/src/create-app.ts) imports adapters. Use cases never reach into `src/infrastructure/*`.
 - **Testability**: every use case test substitutes ports directly; no global mocking of `node:fs` or `child_process`.
 - **Trace writer default**: noop. Tracing is opt-in (`--trace`) via `createJsonlTraceWriter` (with `createFanoutTraceWriter` allowing multiple destinations).

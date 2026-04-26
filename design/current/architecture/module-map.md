@@ -20,6 +20,7 @@ One-line description of each file in [implementation/src/](../../implementation/
 | `task-intent.ts` | Classifies tasks into `execute-and-verify` / `verify-only` / `memory-capture` / `tool-expansion` / `fast-execution`. |
 | `checkbox.ts` | Pure checkbox state mutation; `resetAllCheckboxes` exported as public API. |
 | `todo-lines.ts` | Helpers for inserting and reformatting checkbox lines. |
+| `planner.ts` | Plan-output validation and additive TODO insertion used by `plan` / `migrate` convergence loops. |
 | `migration-parser.ts` | Parses migration filenames (`N. Title.md`, `N.M Snapshot.md`). |
 | `migration-types.ts` | Migration-related types. |
 | `prediction-reconciliation.ts` | Reconciles predicted vs materialized state for `test --future`. |

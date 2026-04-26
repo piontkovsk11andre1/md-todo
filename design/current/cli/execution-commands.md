@@ -46,9 +46,9 @@ rundown call tasks.md --index 3
 rundown call tasks.md --text "deploy staging"
 ```
 
-## `do <task-text>`
+## `do <seed-text> <markdown-file>`
 
-Execute a one-off inline task without persisting to a file. The task body is taken from the argument; the runtime constructs an ephemeral source under `<config-dir>/runs/...` and runs the standard loop against it.
+Bootstraps a new Markdown task file from `<seed-text>` (via `make`'s research+plan pipeline) and then immediately executes the resulting tasks against that same file. Effectively a one-shot "describe what I want, get the work done" entry point. Inherits the run-style options (`--repair-attempts`, `--commit`, `--rounds`, `--clean`, `--reset-after`, `--revertable`, `--trace`, `--keep-artifacts`, …).
 
 ## `loop <source>`
 

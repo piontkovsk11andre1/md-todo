@@ -41,6 +41,22 @@ Nested checkboxes are rendered as children; non-checkbox bullets are rendered as
 [src/application/log-runs.ts](../../implementation/src/application/log-runs.ts).
 
 - Lists past runs with timestamp (in **local time** per migration 102), command, source, status.
-- `--run <id>` opens a specific run dir.
-- `--trace <id>` prints the JSONL trace for inspection.
+- `--command <name>` filters by command.
+- `--revertable` shows only runs that can be reverted.
+- `--limit <n>` caps results.
+- `--json` emits machine-readable output.
 - Backed by the global invocation log plus the per-run artifact dirs.
+
+## `artifacts`
+
+[src/application/manage-artifacts.ts](../../implementation/src/application/manage-artifacts.ts).
+
+Manages the on-disk runtime-artifact directories under `<config-dir>/runs/`:
+
+- (no flags) lists saved runs in human-readable form;
+- `--failed` filters to failed runs only;
+- `--json` emits the same listing as JSON;
+- `--open <runId|prefix|latest>` opens the run directory in the OS file manager;
+- `--clean` removes all saved runs.
+
+Use `log` for the cross-run history view; use `artifacts` for the on-disk evidence directories.

@@ -4,7 +4,7 @@ Three modes select how rundown talks to the spawned worker process. Implemented 
 
 ## `wait`
 
-Default for non-interactive commands (`run`, `plan`, `materialize`, `verify`, `repair`, `research`, `reverify`).
+Default for non-interactive commands (`run`, `plan`, `materialize`, `reverify`, `research`, `query`, `translate`, `make`, `add`, `explore`, `do`).
 
 - Stdout and stderr piped and **fully buffered** in memory.
 - Returned as `WorkerRunResult` with `stdout`, `stderr`, `exitCode`, `durationMs`.

@@ -35,11 +35,8 @@ In `--commit-mode per-task` runs (default), each task carries its own commit and
 
 In `--commit-mode file-done` runs, only the final run artifact carries `extra.commitSha`. `revert` operates at run-level: the single final commit is reverted, and all completed checkboxes from that run are un-checked together.
 
-## Reverify and repair
+## Reverify
 
-These do not roll back; they re-execute parts of the loop:
+Unlike `undo` / `revert`, `reverify` does not roll back; it re-executes the verification (and, if needed, the bounded repair loop) against an already-checked task. Useful after worker config changes or to refresh stale validation sidecars. It consumes the same artifacts as `revert` and emits the same trace events as a normal run.
 
-- **`reverify`** — re-runs the verification phase against an already-checked task, possibly with a different `verify` worker. Useful after worker config changes.
-- **`repair`** — runs a single repair pass against a task whose verification sidecar shows failure, without re-executing the original task body.
-
-Both consume the same artifacts as `revert` and emit the same trace events as a normal run.
+There is no top-level `repair` command — repair is a phase **inside** `run` and `reverify` (see [../execution/verify-repair-loop.md](../execution/verify-repair-loop.md)).

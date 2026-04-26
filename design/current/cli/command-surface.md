@@ -2,6 +2,8 @@
 
 Full list of top-level commands. Detailed contracts in the topic files.
 
+This list is the authoritative inventory of every `program.command(...)` registration in [src/presentation/cli.ts](../../implementation/src/presentation/cli.ts). When a command is added, removed, or renamed there, this table must change in the same PR.
+
 ## Execution
 
 | Command | Purpose |
@@ -9,19 +11,21 @@ Full list of top-level commands. Detailed contracts in the topic files.
 | `run <source>` | Execute the next runnable task (or all with `--all`) |
 | `materialize <source>` | `run --all --revertable` for collapsing prediction onto reality |
 | `call <source>` | Run a single named task by index or text match |
-| `do <task-text>` | One-off inline task without a file |
+| `do <seed-text> <markdown-file>` | Bootstrap with `make`, then execute all generated tasks against the same file |
 | `loop <source>` | Repeatedly run until source is fully checked or errors |
 | `all <source>` | Implicit-all alias used inside seed files |
 
-## Planning and research
+## Planning, research, scaffolding
 
 | Command | Purpose |
 |---|---|
 | `plan <source>` | Scan-based TODO generation with convergence |
+| `add <seed-text> <markdown-file>` | Append seed text to an existing doc, then run `plan` |
+| `make <seed-text> <markdown-file>` | Create a new task doc from seed text, then run research + plan |
+| `explore <source>` | Combined research + plan pass |
 | `research <source>` | Research worker invocation; produces output without executing tasks |
-| `explore <source>` | Combined plan + research pass |
-| `query <source>` | Non-interactive single-turn worker query |
-| `translate <what>` | Localize / translate operation |
+| `query <text>` | Non-interactive single-turn worker query (codebase research + plan + execute) |
+| `translate <what> <how> <output>` | Re-express one Markdown document using the vocabulary of another |
 
 ## Prediction lifecycle
 
@@ -31,9 +35,6 @@ Full list of top-level commands. Detailed contracts in the topic files.
 | `migrate` | Convergence loop: planner → migration files |
 | `migrate up` | Execute pending migrations, write `N.1 Snapshot.md` |
 | `migrate down [n]` | Remove last `n`, prune snapshots, regenerate |
-| `migrate memory-clean` | Prune outdated memory entries |
-| `migrate memory-validate` | Validate memory against state |
-| `migrate memory-view` | Read current memory |
 | `design release` | Snapshot `design/current/` → `design/rev.N/` |
 | `design diff [target]` | Compare revisions |
 | `test [source]` | Verify specs (materialized or `--future`) |
@@ -46,6 +47,7 @@ Full list of top-level commands. Detailed contracts in the topic files.
 | `next <source>` | Show what the next runnable task would be |
 | `list <source>` | List tasks (`--all` to include checked) |
 | `log` | Show run history and traces |
+| `artifacts` | List, prune, or open saved runtime-artifact run directories |
 
 ## Maintenance
 
@@ -54,13 +56,16 @@ Full list of top-level commands. Detailed contracts in the topic files.
 | `undo` | Semantic reversal of last task outcome |
 | `revert <source>` | Revert revertable task commits |
 | `reverify <source>` | Re-run verification on completed tasks |
-| `repair <source>` | Run repair pass without full execution |
 | `unlock <source>` | Release stuck file locks |
 | `init` | Initialize `.rundown/` in current project |
+| `localize` | Localize `.rundown/` templates and locale aliases |
 | `with <harness>` | Configure worker harness preset |
-| `config <action>` | Get/set/unset config keys (`--scope local|global`) |
-| `workspace` | Manage linked workspace metadata |
+| `config <action>` | Get/set/unset/list config keys (`--scope local\|global`); also `config path` |
+| `workspace <action>` | Manage linked workspace metadata (`unlink`, `remove`) |
 | `worker-health` | Show worker health status |
+| `memory-view <source>` | Display source-local memory entries |
+| `memory-validate <source>` | Validate source-local memory consistency |
+| `memory-clean <source>` | Remove orphaned, outdated, or invalid memory |
 
 ## Global
 
@@ -68,3 +73,4 @@ Full list of top-level commands. Detailed contracts in the topic files.
 |---|---|
 | `--config-dir <path>` | Explicit `.rundown/`, bypasses upward discovery |
 | `--agents` | Print AGENTS.md guidance to stdout (root-level only) |
+| `-c, --continue` | Resume the previous interactive root help/agent session |

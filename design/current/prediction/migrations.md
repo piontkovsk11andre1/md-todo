@@ -51,13 +51,13 @@ The planner is a research-only worker invocation when there are no target files 
 
 ## Memory integration
 
-The migrate workspace has dedicated memory commands:
+The planner's working knowledge between iterations lives in source-local memory written via the `memory:` built-in tool. It is inspected and curated through the **top-level** memory commands (not subactions of `migrate`):
 
-- `migrate memory-clean` — prune outdated entries.
-- `migrate memory-validate` — validate against current state.
-- `migrate memory-view` — read current memory.
+- `memory-view <source>` — read current memory.
+- `memory-validate <source>` — validate against current state.
+- `memory-clean <source>` — prune outdated, orphaned, or invalid entries.
 
-Memory entries scope the planner's working knowledge between iterations.
+See [../cli/maintenance-commands.md](../cli/maintenance-commands.md).
 
 ## What `migrate` does **not** do
 
