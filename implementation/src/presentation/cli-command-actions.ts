@@ -1388,7 +1388,7 @@ export function createMigrateCommandAction({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       confirm: Boolean(opts.confirm as boolean | undefined),
-      noBacklog: Boolean(opts.noBacklog as boolean | undefined),
+      noBacklog: opts.backlog === false,
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
       keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
