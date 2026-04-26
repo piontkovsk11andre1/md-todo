@@ -1204,7 +1204,7 @@ async function runMigrateDown(input: {
 }
 
 function collectTargetRevisionsFromRuns(
-  runs: readonly Array<{ extra?: Record<string, unknown> }>,
+  runs: ReadonlyArray<{ extra?: Record<string, unknown> }>,
 ): Set<string> {
   const targetRevisions = new Set<string>();
 
