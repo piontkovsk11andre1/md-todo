@@ -38,11 +38,14 @@ export interface StartProjectOptions {
   noBootstrap?: boolean;
 }
 
+const BOOTSTRAP_EXCLUDED_WORKSPACE_DIR_KEYS = [
+  "designDir",
+  "specsDir",
+  "migrationsDir",
+  "predictionDir",
+] as const;
+
 const BOOTSTRAP_EXCLUDED_DIRS = new Set([
-  "design",
-  "specs",
-  "migrations",
-  "prediction",
   ".rundown",
   ".git",
   "node_modules",
@@ -124,11 +127,6 @@ export function createStartProject(
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
     }
 
-    const implementationHadFilesBeforeStart = hasBootstrapSourceFilesBeforeStart({
-      fileSystem: dependencies.fileSystem,
-      implementationRoot: targetDirectory,
-    });
-
     let workspaceDirectories: ValidatedWorkspaceDirectories;
     let workspacePlacement: ValidatedWorkspacePlacement;
     try {
@@ -173,12 +171,18 @@ export function createStartProject(
       targetDirectory,
       workspaceDirectories.predictionDir,
     );
+    const bootstrapExcludedRelativePaths = buildBootstrapExcludedRelativePaths(workspaceDirectories);
     const designPathExistedBeforeStart = dependencies.fileSystem.exists(designPath);
     const designHadFilesBeforeStart = hasAnyFilesRecursively(dependencies.fileSystem, dependencies.pathOperations.join(
       targetDirectory,
       workspaceDirectories.designDir,
     ));
     const predictionHadFilesBeforeStart = hasAnyFilesRecursively(dependencies.fileSystem, predictionDir);
+    const implementationHadFilesBeforeStart = hasBootstrapSourceFilesBeforeStart({
+      fileSystem: dependencies.fileSystem,
+      implementationRoot: targetDirectory,
+      excludedRelativePaths: bootstrapExcludedRelativePaths,
+    });
     const initialMigrationPath = dependencies.pathOperations.join(
       migrationsDir,
       formatMigrationFilename(1, "initialize"),
@@ -269,6 +273,7 @@ export function createStartProject(
           designPath,
           predictionDir,
           implementationRoot: targetDirectory,
+          bootstrapExcludedRelativePaths,
           implementationHadFilesBeforeStart,
           designPathExistedBeforeStart,
           designHadFilesBeforeStart,
@@ -347,6 +352,7 @@ function bootstrapFromExistingImplementation(input: {
     designPath: string;
     predictionDir: string;
     implementationRoot: string;
+    bootstrapExcludedRelativePaths: string[];
     implementationHadFilesBeforeStart: boolean;
     designPathExistedBeforeStart: boolean;
     designHadFilesBeforeStart: boolean;
@@ -379,6 +385,7 @@ function bootstrapFromExistingImplementation(input: {
     fileSystem,
     workspaceRoot,
     implementationRoot: paths.implementationRoot,
+    excludedRelativePaths: paths.bootstrapExcludedRelativePaths,
   });
   if (implementationFiles.length === 0) {
     return { bootstrapped: false, mirroredFiles: 0 };
@@ -407,8 +414,9 @@ function bootstrapFromExistingImplementation(input: {
 function hasBootstrapSourceFilesBeforeStart(input: {
   fileSystem: FileSystem;
   implementationRoot: string;
+  excludedRelativePaths: string[];
 }): boolean {
-  const { fileSystem, implementationRoot } = input;
+  const { fileSystem, implementationRoot, excludedRelativePaths } = input;
   if (!fileSystem.exists(implementationRoot)) {
     return false;
   }
@@ -427,7 +435,7 @@ function hasBootstrapSourceFilesBeforeStart(input: {
     for (const entry of directoryEntries) {
       const entryPath = path.join(currentDirectory, entry.name);
       const relativePath = path.relative(implementationRoot, entryPath).replace(/\\/g, "/");
-      if (isBootstrapExcludedRelativePath(relativePath)) {
+      if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
         continue;
       }
 
@@ -447,8 +455,14 @@ function listBootstrapSourceFiles(input: {
   fileSystem: FileSystem;
   workspaceRoot: string;
   implementationRoot: string;
+  excludedRelativePaths: string[];
 }): string[] {
-  const { fileSystem, workspaceRoot, implementationRoot } = input;
+  const {
+    fileSystem,
+    workspaceRoot,
+    implementationRoot,
+    excludedRelativePaths,
+  } = input;
   if (!fileSystem.exists(implementationRoot)) {
     return [];
   }
@@ -472,7 +486,7 @@ function listBootstrapSourceFiles(input: {
       const relativePath = path.relative(implementationRoot, entryPath).replace(/\\/g, "/");
 
       if (entry.isDirectory()) {
-        if (isBootstrapExcludedRelativePath(relativePath)) {
+        if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
           continue;
         }
         pendingDirectories.push(entryPath);
@@ -483,7 +497,7 @@ function listBootstrapSourceFiles(input: {
         continue;
       }
 
-      if (isBootstrapExcludedRelativePath(relativePath)) {
+      if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
         continue;
       }
 
@@ -509,14 +523,43 @@ function listBootstrapSourceFiles(input: {
   return discoveredFiles;
 }
 
-function isBootstrapExcludedRelativePath(relativePath: string): boolean {
+function isBootstrapExcludedRelativePath(relativePath: string, excludedRelativePaths: string[]): boolean {
   const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
   if (normalizedPath.length === 0) {
     return false;
   }
 
-  const topLevelSegment = normalizedPath.split("/", 1)[0];
-  return topLevelSegment !== undefined && BOOTSTRAP_EXCLUDED_DIRS.has(topLevelSegment);
+  for (const excludedRelativePath of excludedRelativePaths) {
+    if (normalizedPath === excludedRelativePath || normalizedPath.startsWith(excludedRelativePath + "/")) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function buildBootstrapExcludedRelativePaths(
+  workspaceDirectories: ValidatedWorkspaceDirectories,
+): string[] {
+  const excludedPaths = new Set<string>();
+
+  for (const key of BOOTSTRAP_EXCLUDED_WORKSPACE_DIR_KEYS) {
+    excludedPaths.add(normalizeRelativePathSegment(workspaceDirectories[key]));
+  }
+
+  for (const dirName of BOOTSTRAP_EXCLUDED_DIRS) {
+    excludedPaths.add(normalizeRelativePathSegment(dirName));
+  }
+
+  return [...excludedPaths].sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeRelativePathSegment(value: string): string {
+  return value
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
 }
 
 function hasAnyFilesRecursively(fileSystem: FileSystem, rootDirectory: string): boolean {
