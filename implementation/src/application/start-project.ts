@@ -10,11 +10,11 @@ import {
   serializeWorkspaceLinkSchema,
 } from "../domain/workspace-link.js";
 import {
-  DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
-  DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
-  PREDICTION_WORKSPACE_PLACEMENTS,
-  type PredictionWorkspacePlacement,
-} from "./prediction-workspace-paths.js";
+  DEFAULT_WORKSPACE_DIRECTORIES,
+  DEFAULT_WORKSPACE_PLACEMENT,
+  WORKSPACE_PLACEMENTS,
+  type WorkspacePlacement,
+} from "./workspace-paths.js";
 import { formatMigrationFilename } from "../domain/migration-parser.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
@@ -42,9 +42,9 @@ interface ValidatedWorkspaceDirectories {
 }
 
 interface ValidatedWorkspacePlacement {
-  designPlacement: PredictionWorkspacePlacement;
-  specsPlacement: PredictionWorkspacePlacement;
-  migrationsPlacement: PredictionWorkspacePlacement;
+  designPlacement: WorkspacePlacement;
+  specsPlacement: WorkspacePlacement;
+  migrationsPlacement: WorkspacePlacement;
 }
 
 interface RundownConfigDocument {
@@ -55,9 +55,9 @@ interface RundownConfigDocument {
       migrations: string;
     };
     placement?: {
-      design: PredictionWorkspacePlacement;
-      specs: PredictionWorkspacePlacement;
-      migrations: PredictionWorkspacePlacement;
+      design: WorkspacePlacement;
+      specs: WorkspacePlacement;
+      migrations: WorkspacePlacement;
     };
   };
   [key: string]: unknown;
@@ -506,9 +506,9 @@ function resolveAndValidateWorkspaceDirectories(input: {
 }): ValidatedWorkspaceDirectories {
   const { targetDirectory, designDirOption, specsDirOption, migrationsDirOption, pathOperations } = input;
   const defaults = {
-    designDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.design,
-    specsDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.specs,
-    migrationsDir: DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES.migrations,
+    designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
+    specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
+    migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
   };
 
   const designDir = normalizeWorkspaceDirectoryOverride(
@@ -620,15 +620,15 @@ function resolveAndValidateWorkspacePlacement(input: {
   migrationsPlacementOption: string | undefined;
 }): ValidatedWorkspacePlacement {
   const designPlacement = normalizeWorkspacePlacementOverride(
-    input.designPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.design,
+    input.designPlacementOption ?? DEFAULT_WORKSPACE_PLACEMENT.design,
     "--design-placement",
   );
   const specsPlacement = normalizeWorkspacePlacementOverride(
-    input.specsPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.specs,
+    input.specsPlacementOption ?? DEFAULT_WORKSPACE_PLACEMENT.specs,
     "--specs-placement",
   );
   const migrationsPlacement = normalizeWorkspacePlacementOverride(
-    input.migrationsPlacementOption ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT.migrations,
+    input.migrationsPlacementOption ?? DEFAULT_WORKSPACE_PLACEMENT.migrations,
     "--migrations-placement",
   );
 
@@ -642,19 +642,19 @@ function resolveAndValidateWorkspacePlacement(input: {
 function normalizeWorkspacePlacementOverride(
   rawValue: string,
   optionName: string,
-): PredictionWorkspacePlacement {
+): WorkspacePlacement {
   const trimmedValue = rawValue.trim();
   if (trimmedValue.length === 0) {
     throw new Error(`Invalid ${optionName} value: placement cannot be empty.`);
   }
 
-  if (!PREDICTION_WORKSPACE_PLACEMENTS.includes(trimmedValue as PredictionWorkspacePlacement)) {
+  if (!WORKSPACE_PLACEMENTS.includes(trimmedValue as WorkspacePlacement)) {
     throw new Error(
-      `Invalid ${optionName} value: "${trimmedValue}". Allowed values: ${PREDICTION_WORKSPACE_PLACEMENTS.join(", ")}.`,
+      `Invalid ${optionName} value: "${trimmedValue}". Allowed values: ${WORKSPACE_PLACEMENTS.join(", ")}.`,
     );
   }
 
-  return trimmedValue as PredictionWorkspacePlacement;
+  return trimmedValue as WorkspacePlacement;
 }
 
 function persistWorkspaceConfiguration(input: {
