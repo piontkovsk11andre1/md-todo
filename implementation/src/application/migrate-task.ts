@@ -1142,12 +1142,11 @@ async function runMigrateDown(input: {
     completedRunBySource.set(normalizedSource, { runId: run.runId });
   }
 
-  const removedMigrationRecords: Array<{ name: string; source: string; filePath: string }> = [];
-
   for (const revision of revisionsToRewind) {
     const revisionMigrations = (revision.metadata.migrations ?? [])
       .map((migrationFileName) => migrationFileName.trim())
       .filter((migrationFileName) => migrationFileName.length > 0);
+    const rewoundMigrationRecords: Array<{ name: string; source: string }> = [];
 
     for (const migrationFileName of revisionMigrations) {
       const migrationPath = path.join(migrationsDir, migrationFileName);
@@ -1195,10 +1194,9 @@ async function runMigrateDown(input: {
         });
       }
 
-      removedMigrationRecords.push({
+      rewoundMigrationRecords.push({
         name: parseMigrationFilename(migrationFileName)?.name ?? migrationFileName,
         source: migrationSource,
-        filePath: migrationPath,
       });
 
       if (dependencies.fileSystem.exists(migrationPath)) {
@@ -1208,6 +1206,15 @@ async function runMigrateDown(input: {
 
     markRevisionUnplanned(dependencies.fileSystem, workspaceRoot, revision.name);
     markRevisionUnmigrated(dependencies.fileSystem, workspaceRoot, revision.name);
+    if (!noBacklog && rewoundMigrationRecords.length > 0) {
+      const stateBeforeBacklogUpdate = readMigrationState(dependencies.fileSystem, migrationsDir);
+      const backlogPath = stateBeforeBacklogUpdate.backlogPath ?? path.join(migrationsDir, "Backlog.md");
+      appendMigrationsToBacklog({
+        fileSystem: dependencies.fileSystem,
+        backlogPath,
+        migrations: rewoundMigrationRecords,
+      });
+    }
     emit({
       kind: "info",
       message:
@@ -1235,31 +1242,6 @@ async function runMigrateDown(input: {
     }
   }
 
-  if (!noBacklog && removedMigrationRecords.length > 0) {
-    const stateBeforeDown = readMigrationState(dependencies.fileSystem, migrationsDir);
-    const backlogPath = stateBeforeDown.backlogPath ?? path.join(migrationsDir, "Backlog.md");
-    const existingBacklog = dependencies.fileSystem.exists(backlogPath)
-      ? dependencies.fileSystem.readText(backlogPath)
-      : "";
-    const removedSection = removedMigrationRecords
-      .map((migration) => {
-        return [
-          `- ${migration.name}`,
-          "",
-          "```md",
-          migration.source.trim(),
-          "```",
-        ].join("\n");
-      })
-      .join("\n\n");
-
-    const normalizedExisting = existingBacklog.trim();
-    const nextBacklog = normalizedExisting.length > 0
-      ? normalizedExisting + "\n\n" + removedSection + "\n"
-      : ["# Backlog", "", removedSection, ""].join("\n");
-    dependencies.fileSystem.writeText(backlogPath, nextBacklog);
-  }
-
   const remainingState = readMigrationState(dependencies.fileSystem, migrationsDir);
   for (const entry of dependencies.fileSystem.readdir(migrationsDir)) {
     if (!entry.isFile) {
@@ -1276,6 +1258,38 @@ async function runMigrateDown(input: {
   }
 
   return EXIT_CODE_SUCCESS;
+}
+
+function appendMigrationsToBacklog(input: {
+  fileSystem: FileSystem;
+  backlogPath: string;
+  migrations: readonly Array<{ name: string; source: string }>;
+}): void {
+  const { fileSystem, backlogPath, migrations } = input;
+  if (migrations.length === 0) {
+    return;
+  }
+
+  const existingBacklog = fileSystem.exists(backlogPath)
+    ? fileSystem.readText(backlogPath)
+    : "";
+  const removedSection = migrations
+    .map((migration) => {
+      return [
+        `- ${migration.name}`,
+        "",
+        "```md",
+        migration.source.trim(),
+        "```",
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  const normalizedExisting = existingBacklog.trim();
+  const nextBacklog = normalizedExisting.length > 0
+    ? normalizedExisting + "\n\n" + removedSection + "\n"
+    : ["# Backlog", "", removedSection, ""].join("\n");
+  fileSystem.writeText(backlogPath, nextBacklog);
 }
 
 function resolveRewindTarget(
