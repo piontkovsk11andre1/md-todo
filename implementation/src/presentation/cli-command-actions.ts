@@ -347,7 +347,8 @@ interface DesignCommandOptions {
   dir?: string;
   workspace?: string;
   label?: string;
-  target?: "current" | "preview";
+  target?: string;
+  from?: string;
 }
 
 type DesignCommandHandler = (options: DesignCommandOptions) => CliActionResult;
@@ -1470,17 +1471,11 @@ export function createDesignDiffCommandAction({
   getApp,
 }: Pick<WorkerActionDependencies, "getApp">): (target: string | undefined, opts: CliOpts) => CliActionResult {
   return (target: string | undefined, opts: CliOpts) => {
-    const resolvedDiffMode = resolveDocsDiffMode({
-      target: normalizeOptionalString(target),
-      from: normalizeOptionalString(opts.from),
-      to: normalizeOptionalString(opts.to),
-    });
-
-    return resolveDesignCommandHandler(getApp())({
-      action: "diff",
+    return resolveDesignDiffCommandHandler(getApp())({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      target: resolvedDiffMode,
+      target: normalizeOptionalString(target),
+      from: normalizeOptionalString(opts.from),
     });
   };
 }
@@ -2785,6 +2780,33 @@ function resolveDesignCommandHandler(appInstance: CliApp): DesignCommandHandler 
   throw new Error("The `design` command is not available in this build.");
 }
 
+function resolveDesignDiffCommandHandler(appInstance: CliApp): (options: {
+  dir?: string;
+  workspace?: string;
+  target?: string;
+  from?: string;
+}) => CliActionResult {
+  const maybeDesignDiffHandler = appInstance as CliApp & {
+    designDiffTask?: (options: {
+      dir?: string;
+      workspace?: string;
+      target?: string;
+      from?: string;
+    }) => CliActionResult;
+  };
+
+  if (typeof maybeDesignDiffHandler.designDiffTask === "function") {
+    return maybeDesignDiffHandler.designDiffTask;
+  }
+
+  return (options) => resolveDesignCommandHandler(appInstance)({
+    action: "diff",
+    dir: options.dir,
+    workspace: options.workspace,
+    target: options.target,
+  });
+}
+
 /**
  * Resolves the active test command implementation for the current app build.
  */
@@ -2876,71 +2898,4 @@ function parseConfigValueType(value: string | undefined): ConfigValueType {
   }
 
   throw new Error(`Invalid --type value: ${value}. Allowed: auto, string, number, boolean, json.`);
-}
-
-function resolveDocsDiffMigrateAction(target: string | undefined): "current" | "preview" {
-  if (target === undefined || target === "current") {
-    return "current";
-  }
-
-  if (target === "preview") {
-    return "preview";
-  }
-
-  throw new Error("Invalid design diff target: " + target + ". Allowed: current, preview.");
-}
-
-function resolveDocsDiffMode(input: {
-  target: string | undefined;
-  from: string | undefined;
-  to: string | undefined;
-}): "current" | "preview" {
-  const { target, from, to } = input;
-  const hasExplicitSelectors = from !== undefined || to !== undefined;
-
-  if (!hasExplicitSelectors) {
-    return resolveDocsDiffMigrateAction(target);
-  }
-
-  if (target !== undefined) {
-    throw new Error("Invalid design diff selector usage: [target] shorthand cannot be combined with --from/--to.");
-  }
-
-  if (from === undefined || to === undefined) {
-    throw new Error("Invalid design diff selector usage: --from and --to must be provided together.");
-  }
-
-  parseDocsDiffRevisionSelector(from, "from");
-  const toSelector = parseDocsDiffRevisionSelector(to, "to");
-
-  if (toSelector !== "current") {
-    throw new Error(
-      "Unsupported design diff selector combination in this build: --to "
-      + to
-      + ". Use --to current, or use shorthand `rundown design diff [current|preview]`.",
-    );
-  }
-
-  return "current";
-}
-
-function parseDocsDiffRevisionSelector(value: string, optionName: "from" | "to"): "current" | `rev.${number}` {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "current") {
-    return "current";
-  }
-
-  const revisionMatch = /^rev\.([0-9]+)$/i.exec(normalized);
-  if (!revisionMatch) {
-    throw new Error(
-      "Invalid design diff --"
-      + optionName
-      + " selector: "
-      + value
-      + ". Allowed: current, rev.<n> (for example: rev.0).",
-    );
-  }
-
-  const index = Number.parseInt(revisionMatch[1] ?? "", 10);
-  return `rev.${index}`;
 }

@@ -2339,9 +2339,9 @@ describe("createDocsSaveCommandAction", () => {
 });
 
 describe("createDesignDiffCommandAction", () => {
-  it("routes shorthand defaults and preview target to design diff action", async () => {
-    const designTask = vi.fn(async () => 0);
-    const app = { designTask } as unknown as CliApp;
+  it("routes default and explicit target revision to design diff task", async () => {
+    const designDiffTask = vi.fn(async () => 0);
+    const app = { designDiffTask } as unknown as CliApp;
     const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
@@ -2350,86 +2350,77 @@ describe("createDesignDiffCommandAction", () => {
       dir: "migrations",
       workspace: "../workspace-source",
     });
-    const previewExitCode = await action("preview", {
+    const targetExitCode = await action("rev.2", {
       dir: "migrations",
       workspace: "../workspace-source",
     });
 
     expect(defaultExitCode).toBe(0);
-    expect(previewExitCode).toBe(0);
-    expect(designTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      action: "diff",
-      target: "current",
+    expect(targetExitCode).toBe(0);
+    expect(designDiffTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
       dir: "migrations",
       workspace: "../workspace-source",
     }));
-    expect(designTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      action: "diff",
-      target: "preview",
+    expect(designDiffTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      target: "rev.2",
       dir: "migrations",
       workspace: "../workspace-source",
     }));
   });
 
-  it("accepts explicit --from/--to selectors with deterministic current target", async () => {
+  it("passes optional --from selector through to design diff task", async () => {
+    const designDiffTask = vi.fn(async () => 0);
+    const app = { designDiffTask } as unknown as CliApp;
+    const action = createDesignDiffCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action("rev.3", {
+      dir: "migrations",
+      from: "rev.2",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(designDiffTask).toHaveBeenCalledWith(expect.objectContaining({
+      target: "rev.3",
+      from: "rev.2",
+      dir: "migrations",
+    }));
+  });
+
+  it("falls back to designTask diff action when designDiffTask is unavailable", async () => {
     const designTask = vi.fn(async () => 0);
     const app = { designTask } as unknown as CliApp;
     const action = createDesignDiffCommandAction({
       getApp: () => app,
     });
 
-    const exitCode = await action(undefined, {
+    const exitCode = await action("rev.1", {
       dir: "migrations",
-      from: "rev.1",
-      to: "current",
+      workspace: "../workspace-source",
+      from: "rev.0",
     });
 
     expect(exitCode).toBe(0);
     expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
       action: "diff",
-      target: "current",
+      target: "rev.1",
       dir: "migrations",
+      workspace: "../workspace-source",
     }));
-  });
-
-  it("rejects invalid selector combinations and values", async () => {
-    const designTask = vi.fn(async () => 0);
-    const app = { designTask } as unknown as CliApp;
-    const action = createDesignDiffCommandAction({
-      getApp: () => app,
-    });
-
-    expect(() => action("preview", {
-      from: "rev.1",
-      to: "current",
-    })).toThrow("[target] shorthand cannot be combined");
-
-    expect(() => action(undefined, {
-      from: "rev.1",
-    })).toThrow("--from and --to must be provided together");
-
-    expect(() => action(undefined, {
-      from: "release-1",
-      to: "current",
-    })).toThrow("Invalid design diff --from selector");
-
-    expect(() => action(undefined, {
-      from: "rev.1",
-      to: "rev.2",
-    })).toThrow("Unsupported design diff selector combination");
   });
 });
 
 describe("createDocsDiffCommandAction", () => {
   it("routes docs diff to designTask diff action with deprecation warning", async () => {
-    const designTask = vi.fn(async () => 0);
+    const designDiffTask = vi.fn(async () => 0);
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const app = { designTask, emitOutput } as unknown as CliApp;
+    const app = { designDiffTask, emitOutput } as unknown as CliApp;
     const action = createDocsDiffCommandAction({
       getApp: () => app,
     });
 
-    const exitCode = await action("preview", {
+    const exitCode = await action("rev.1", {
       dir: "migrations",
       workspace: "../workspace-source",
     });
@@ -2439,9 +2430,8 @@ describe("createDocsDiffCommandAction", () => {
       kind: "warn",
       message: "`rundown docs diff` is deprecated; use `rundown design diff`.",
     }));
-    expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
-      action: "diff",
-      target: "preview",
+    expect(designDiffTask).toHaveBeenCalledWith(expect.objectContaining({
+      target: "rev.1",
       dir: "migrations",
       workspace: "../workspace-source",
     }));

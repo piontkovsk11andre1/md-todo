@@ -37,6 +37,10 @@ import {
   createDesignTask,
   type DesignTaskOptions,
 } from "./application/docs-task.js";
+import {
+  createDesignDiffTask,
+  type DesignDiffTaskOptions,
+} from "./application/design-diff-task.js";
 import { createTestSpecs, type TestSpecsOptions } from "./application/test-specs.js";
 import {
   createStartProject,
@@ -158,6 +162,7 @@ export type App = {
   undoTask: (options: UndoTaskOptions) => Promise<number>;
   migrateTask: (options: MigrateTaskOptions) => Promise<number>;
   designTask: (options: DesignTaskOptions) => Promise<number>;
+  designDiffTask: (options: DesignDiffTaskOptions) => Promise<number>;
   docsTask: (options: DesignTaskOptions) => Promise<number>;
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
@@ -620,6 +625,10 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       }),
     }),
     designTask: (ports) => designTaskUseCase(ports),
+    designDiffTask: (ports) => createDesignDiffTask({
+      fileSystem: ports.fileSystem,
+      output: ports.output,
+    }),
     docsTask: (ports) => designTaskUseCase(ports),
     testSpecs: (ports) => testSpecsUseCase(ports),
     planTask: (ports) => {
@@ -848,6 +857,7 @@ function createAppFromFactories(
   const undoTask = factories.undoTask(ports);
   const migrateTask = factories.migrateTask(ports);
   const designTask = factories.designTask(ports);
+  const designDiffTask = factories.designDiffTask(ports);
   const docsTask = factories.docsTask(ports);
   const testSpecs = factories.testSpecs(ports);
   const planTask = factories.planTask(ports);
@@ -893,6 +903,7 @@ function createAppFromFactories(
     undoTask,
     migrateTask,
     designTask,
+    designDiffTask,
     docsTask,
     testSpecs,
     planTask,

@@ -15,7 +15,6 @@ import {
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
 
 type DocsRevisionAction = "release" | "diff";
-type DocsRevisionDiffTarget = "current" | "preview";
 
 const LEGACY_WORKSPACE_DIR = "docs";
 const CANONICAL_PRIMARY_FILE = "Target.md";
@@ -26,7 +25,8 @@ export interface DocsRevisionTaskOptions {
   dir?: string;
   workspace?: string;
   label?: string;
-  target?: DocsRevisionDiffTarget;
+  target?: string;
+  from?: string;
 }
 
 export interface DocsRevisionTaskDependencies {

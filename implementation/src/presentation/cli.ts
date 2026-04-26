@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Argument, Command, InvalidArgumentError } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import type { ProcessRunMode } from "../domain/ports/index.js";
@@ -99,6 +99,17 @@ const EXIT_CODES_HELP_TEXT = [
   "  2  verification failure",
   "  3  no-work / no actionable target",
 ].join("\n");
+
+function parseDesignRevisionName(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^rev\.[0-9]+$/.test(normalized)) {
+    throw new InvalidArgumentError(
+      `Invalid revision value: ${value}. Expected format rev.<n> (for example: rev.1).`,
+    );
+  }
+
+  return normalized;
+}
 
 type CliActionResult = number | Promise<number>;
 
@@ -446,7 +457,8 @@ const designCommand = program
       "  - rd design release --label \"Initial baseline\"",
       "  - rd design release --workspace ../source-workspace --label \"Initial baseline\"",
       "  - rd design diff",
-      "  - rd design diff preview",
+      "  - rd design diff rev.2",
+      "  - rd design diff rev.2 --from rev.0",
       "  - rd design diff --workspace ../source-workspace",
     ].join("\n"),
   );
@@ -464,12 +476,14 @@ designCommand
 
 designCommand
   .command("diff")
-  .description("Show revision diff summary for design/current/ against the latest revision.")
-  .argument("[target]", "Diff target shorthand: current (default) | preview")
+  .description("Show the design revision diff migrate would use for a target revision.")
+  .addArgument(
+    new Argument("[target]", "Optional target revision (format: rev.<n>)")
+      .argParser(parseDesignRevisionName),
+  )
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
-  .option("--from <rev|current>", "Explicit source revision selector (use with --to)")
-  .option("--to <rev|current>", "Explicit destination revision selector (use with --from)")
+  .option("--from <revName>", "Optional source revision override (format: rev.<n>)", parseDesignRevisionName)
   .allowUnknownOption(false)
   .action(withCliAction(createDesignDiffCommandAction({
     getApp,
@@ -480,7 +494,8 @@ designCommand
       "",
       "Examples:",
       "  - rd design diff",
-      "  - rd design diff preview",
+      "  - rd design diff rev.1",
+      "  - rd design diff rev.2 --from rev.0",
       "  - rd design diff --workspace ../source-workspace",
     ].join("\n"),
   );

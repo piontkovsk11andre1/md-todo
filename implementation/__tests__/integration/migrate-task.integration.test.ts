@@ -1161,7 +1161,7 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     const result = await runCli([
       "design",
       "diff",
-      "preview",
+      "rev.1",
       "--dir",
       "migrations",
     ], linkedInvocationDir);
@@ -1235,7 +1235,7 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+    expect(combinedOutput).toContain("rev.0 -> rev.1");
     expect(combinedOutput).toMatch(/docs[\\/]rev\.1/);
     expect(combinedOutput).toMatch(/docs[\\/]current/);
   });
@@ -1266,15 +1266,14 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Design revision diff:");
-    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+    expect(combinedOutput).toContain("rev.1 -> rev.2");
     expect(combinedOutput).toContain("- added: added.md");
     expect(combinedOutput).toContain("- modified: Design.md");
     expect(combinedOutput).toContain("- removed: removed.md");
     expect(combinedOutput).not.toContain("No worker command available");
   });
 
-  it("design diff preview includes revision sources plus file-level change summary", async () => {
+  it("design diff includes unified per-file diff output", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
     fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
@@ -1285,7 +1284,7 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     const result = await runCli([
       "design",
       "diff",
-      "preview",
+      "rev.1",
       "--dir",
       "migrations",
     ], workspace);
@@ -1297,12 +1296,11 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Design revision diff preview:");
-    expect(combinedOutput).toContain("Sources:");
-    expect(combinedOutput).toMatch(/docs[\\/]rev\.1/);
-    expect(combinedOutput).toMatch(/docs[\\/]current/);
-    expect(combinedOutput).toContain("Changes:");
-    expect(combinedOutput).toContain("- modified: Design.md");
+    expect(combinedOutput).toContain("rev.0 -> rev.1");
+    expect(combinedOutput).toContain("#### Design.md (modified)");
+    expect(combinedOutput).toContain("```diff");
+    expect(combinedOutput).toContain("-old");
+    expect(combinedOutput).toContain("+new");
   });
 
   it("design diff bootstraps docs/current from legacy Design.md when needed", async () => {
@@ -1329,10 +1327,10 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
       ...result.stderrWrites,
     ].join("\n"));
     expect(combinedOutput).toContain("Bootstrapped docs/current/ from legacy Design.md");
-    expect(combinedOutput).toContain("Compared rev.1 -> current:");
+    expect(combinedOutput).toContain("rev.1 -> rev.2");
   });
 
-  it("design diff preview fails clearly when docs/current and legacy Design.md are both missing", async () => {
+  it("design diff fails clearly when docs/current and legacy Design.md are both missing", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
     fs.rmSync(path.join(workspace, "docs"), { recursive: true, force: true });
@@ -1341,7 +1339,7 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     const result = await runCli([
       "design",
       "diff",
-      "preview",
+      "rev.1",
       "--dir",
       "migrations",
     ], workspace);
