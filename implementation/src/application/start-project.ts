@@ -38,23 +38,6 @@ export interface StartProjectOptions {
   noBootstrap?: boolean;
 }
 
-const BOOTSTRAP_EXCLUDED_WORKSPACE_DIR_KEYS = [
-  "designDir",
-  "specsDir",
-  "migrationsDir",
-  "predictionDir",
-] as const;
-
-const BOOTSTRAP_EXCLUDED_DIRS = new Set([
-  ".rundown",
-  ".git",
-  "node_modules",
-  "dist",
-  "coverage",
-  "build",
-  "out",
-]);
-
 const BOOTSTRAP_MAX_FILES = 5000;
 const BOOTSTRAP_MAX_BYTES = 50 * 1024 * 1024;
 
@@ -541,11 +524,18 @@ function isBootstrapExcludedRelativePath(relativePath: string, excludedRelativeP
 function buildBootstrapExcludedRelativePaths(
   workspaceDirectories: ValidatedWorkspaceDirectories,
 ): string[] {
+  const BOOTSTRAP_EXCLUDED_DIRS = [
+    ".git",
+    ".rundown",
+    "node_modules",
+    "dist",
+    "coverage",
+    workspaceDirectories.designDir,
+    workspaceDirectories.specsDir,
+    workspaceDirectories.migrationsDir,
+    workspaceDirectories.predictionDir,
+  ];
   const excludedPaths = new Set<string>();
-
-  for (const key of BOOTSTRAP_EXCLUDED_WORKSPACE_DIR_KEYS) {
-    excludedPaths.add(normalizeRelativePathSegment(workspaceDirectories[key]));
-  }
 
   for (const dirName of BOOTSTRAP_EXCLUDED_DIRS) {
     excludedPaths.add(normalizeRelativePathSegment(dirName));
