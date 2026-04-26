@@ -438,6 +438,37 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     );
   });
 
+  it("materialize leaves prediction/ byte-for-byte unchanged", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectForReconciliation(workspace);
+
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workers: {
+          default: ["node", "-e", buildMigrateUpExecutionOnlyWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const predictionDir = path.join(workspace, "prediction");
+    fs.mkdirSync(path.join(predictionDir, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(predictionDir, "migrations", formatMigrationFilename(2, "feature-a")), "# predicted 2\n", "utf-8");
+    fs.writeFileSync(path.join(predictionDir, "migrations", formatSatelliteFilename(2, "snapshot")), "# snapshot predicted 2\n", "utf-8");
+    fs.writeFileSync(path.join(predictionDir, "migrations", "raw.bin"), Buffer.from([0, 255, 17, 42]));
+
+    const predictionBefore = readDirectoryFileBytes(predictionDir);
+
+    const result = await runCli([
+      "materialize",
+      path.join("migrations", formatMigrationFilename(2, "feature-a")),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(readDirectoryFileBytes(predictionDir)).toEqual(predictionBefore);
+  });
+
   it("migrate up follow-up keeps prediction tree pruned when a file is no longer predicted", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProjectForReconciliation(workspace);
@@ -1607,6 +1638,34 @@ function readJsonLine(prompt: string, key: string): string[] {
   }
 
   return JSON.parse(line.slice(key.length)) as string[];
+}
+
+function readDirectoryFileBytes(rootDir: string): Array<{ path: string; bytes: number[] }> {
+  const files: Array<{ path: string; bytes: number[] }> = [];
+
+  const visit = (currentDir: string): void => {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const relativePath = path.relative(rootDir, absolutePath).replace(/\\/g, "/");
+      files.push({
+        path: relativePath,
+        bytes: Array.from(fs.readFileSync(absolutePath)),
+      });
+    }
+  };
+
+  visit(rootDir);
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return files;
 }
 
 function scaffoldPredictionProject(workspace: string): void {
