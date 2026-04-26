@@ -167,6 +167,46 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2Meta.migrations?.length ?? 0).toBeGreaterThan(0);
   });
 
+  it("migrate exits success with caught-up message when all released revisions are planned", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(1, "snapshot")), "# Snapshot 1\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+
+    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
+    const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
+      revision: string;
+      index: number;
+      createdAt: string;
+      plannedAt?: string | null;
+      migrations?: string[];
+    };
+    rev1Meta.plannedAt = rev1Meta.createdAt;
+    rev1Meta.migrations = [formatMigrationFilename(1, "initialize")];
+    fs.writeFileSync(rev1MetaPath, JSON.stringify(rev1Meta, null, 2) + "\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision). Edit design/current/ and run rundown design release to create the next revision.");
+  });
+
   it("migrate up generates N.1 snapshot at batch end and keeps previous snapshots", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
