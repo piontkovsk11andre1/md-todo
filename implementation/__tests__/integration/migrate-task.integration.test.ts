@@ -540,42 +540,6 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(predictionMigrationsDir, removedSnapshot))).toBe(false);
   });
 
-  it("migrate up falls back to satellites when prediction/ is empty and saves a correct baseline", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldPredictionProjectForReconciliation(workspace);
-    fs.writeFileSync(
-      path.join(workspace, ".rundown", "config.json"),
-      JSON.stringify({
-        workers: {
-          default: ["node", "-e", buildMigrateUpExecutionOnlyWorkerScript()],
-        },
-      }, null, 2) + "\n",
-      "utf-8",
-    );
-
-    const predictionDir = path.join(workspace, "prediction");
-    fs.mkdirSync(predictionDir, { recursive: true });
-
-    const result = await runCli([
-      "migrate",
-      "up",
-      "--dir",
-      "migrations",
-    ], workspace);
-
-    expect(result.code).toBe(0);
-
-    const baseline = JSON.parse(
-      fs.readFileSync(path.join(workspace, "migrations", ".rundown", "prediction-baseline.json"), "utf-8"),
-    ) as {
-      fileFingerprints: Array<{ relativePath: string }>;
-    };
-    const fingerprintPaths = new Set(baseline.fileFingerprints.map((fingerprint) => fingerprint.relativePath));
-
-    expect(fingerprintPaths.has(`migrations/${formatSatelliteFilename(2, "snapshot")}`)).toBe(true);
-    expect(fingerprintPaths.has(`migrations/${formatSatelliteFilename(3, "snapshot")}`)).toBe(true);
-  });
-
   it("migrate down rewinds one planned revision by default", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);

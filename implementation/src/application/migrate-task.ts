@@ -340,9 +340,9 @@ function persistPredictionBaselineSnapshot(
   fileSystem: FileSystem,
   migrationsDir: string,
   projectRoot: string,
-  options?: { preferPredictionTree?: boolean; writePredictionBucket?: boolean },
+  options?: { writePredictionBucket?: boolean },
 ): void {
-  const predictionInputs = readPredictionInputs(fileSystem, migrationsDir, projectRoot, options);
+  const predictionInputs = readPredictionInputs(fileSystem, migrationsDir, projectRoot);
   const baseline = createPredictionBaseline(predictionInputs);
   if (options?.writePredictionBucket !== false) {
     const predictionDir = resolveWorkspacePath({
@@ -559,9 +559,7 @@ function readPredictionInputs(
   fileSystem: FileSystem,
   migrationsDir: string,
   projectRoot: string,
-  options?: { preferPredictionTree?: boolean },
 ): PredictionInputs {
-  const shouldPreferPredictionTree = options?.preferPredictionTree !== false;
   const predictionDir = resolveWorkspacePath({
     fileSystem,
     workspaceRoot: projectRoot,
@@ -572,7 +570,6 @@ function readPredictionInputs(
     fileSystem,
     predictionDir,
   });
-  const shouldReadFromPredictionTree = shouldPreferPredictionTree && predictionTrackedFiles.length > 0;
 
   const migrationFiles = fileSystem.readdir(migrationsDir)
     .filter((entry) => entry.isFile)
@@ -591,25 +588,9 @@ function readPredictionInputs(
     };
   });
 
-  const files: PredictionTrackedFile[] = [];
-  if (shouldReadFromPredictionTree) {
-    files.push(...predictionTrackedFiles);
-  }
-
-  for (const migration of state.migrations) {
-    const migrationSource = fileSystem.readText(migration.filePath);
-    files.push({
-      relativePath: toProjectRelativePath(projectRoot, migration.filePath),
-      migrationNumber: migration.number,
-      kind: "migration",
-      content: migrationSource,
-    });
-
-  }
-
   return {
     migrations,
-    files,
+    files: predictionTrackedFiles,
   };
 }
 
@@ -1297,7 +1278,7 @@ async function runMigrateDown(input: {
   }
 
   persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot, {
-    preferPredictionTree: false,
+    writePredictionBucket: false,
   });
 
   return EXIT_CODE_SUCCESS;
