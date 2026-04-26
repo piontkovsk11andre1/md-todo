@@ -124,6 +124,36 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2Meta.migrations ?? []).toEqual([]);
   });
 
+  it("renders an empty diff section and plans exactly once for unplanned no-op released revision pair", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldLoopMigrateProject(workspace);
+    scaffoldUnplannedNoOpReleasedRevisionPair(workspace, "docs");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildNoOpPlannerPromptCaptureWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".captured-migrate-planner-prompt.txt"), "utf-8");
+    const diffSectionMatch = capturedPrompt.match(/### Diff\n\n([\s\S]*?)\n\n### Diff source references/);
+    expect(diffSectionMatch).not.toBeNull();
+    const diffSectionBody = diffSectionMatch?.[1]?.trim() ?? "";
+    expect(["", "(no content changes)"]).toContain(diffSectionBody);
+
+    const plannerCallCount = Number.parseInt(
+      fs.readFileSync(path.join(workspace, ".migrate-plan.seq"), "utf-8"),
+      10,
+    );
+    expect(plannerCallCount).toBe(1);
+  });
+
   it("migrate stamps plannedAt and migrations on each revision after planning", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);
@@ -1732,6 +1762,37 @@ function buildPlannerPromptCaptureWorkerScript(): string {
     "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
     "const capturedPath=path.join(process.cwd(),'.captured-migrate-planner-prompt.txt');",
     "if(prompt.includes('Inventory design changes not yet reflected in the current snapshot.')){",
+    "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
+    "  console.log('DONE');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('updating the migration snapshot at the end of a migration batch')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildNoOpPlannerPromptCaptureWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const capturedPath=path.join(process.cwd(),'.captured-migrate-planner-prompt.txt');",
+    "const seqPath=path.join(process.cwd(),'.migrate-plan.seq');",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current snapshot.')){",
+    "  let index=0;",
+    "  if(fs.existsSync(seqPath)){",
+    "    index=Number.parseInt(fs.readFileSync(seqPath,'utf-8'),10)||0;",
+    "  }",
+    "  fs.writeFileSync(seqPath,String(index+1));",
     "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
     "  console.log('DONE');",
     "  process.exit(0);",
