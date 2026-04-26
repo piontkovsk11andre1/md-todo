@@ -5,6 +5,7 @@ export interface WorkspaceDirectories {
   design: string;
   specs: string;
   migrations: string;
+  prediction: string;
 }
 
 type WorkspaceBucket = keyof WorkspaceDirectories;
@@ -17,12 +18,14 @@ export interface WorkspacePlacementMap {
   design: WorkspacePlacement;
   specs: WorkspacePlacement;
   migrations: WorkspacePlacement;
+  prediction: WorkspacePlacement;
 }
 
 export interface WorkspacePaths {
   design: string;
   specs: string;
   migrations: string;
+  prediction: string;
 }
 
 interface WorkspaceConfig {
