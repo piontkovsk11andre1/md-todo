@@ -30,12 +30,15 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspaceDesignDir",
   "workspaceSpecsDir",
   "workspaceMigrationsDir",
+  "workspacePredictionDir",
   "workspaceDesignPlacement",
   "workspaceSpecsPlacement",
   "workspaceMigrationsPlacement",
+  "workspacePredictionPlacement",
   "workspaceDesignPath",
   "workspaceSpecsPath",
   "workspaceMigrationsPath",
+  "workspacePredictionPath",
 ] as const;
 
 /**
