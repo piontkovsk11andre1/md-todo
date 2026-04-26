@@ -381,6 +381,40 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(backlog).toContain("- rev2-modified-file");
   });
 
+  it("migrate down 2 rewinds across two revisions", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldRevisionPlanningStampProjectThroughRev3(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+      { revision: 3, migrations: [formatMigrationFilename(4, "rev3-added-file")] },
+    ]);
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "down",
+      "2",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    const rev3MetaAfterDown = readRevisionMeta(workspace, "docs", 3);
+    expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev1MetaAfterDown.migrations ?? []).toEqual([formatMigrationFilename(2, "rev1-added-file")]);
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+    expect(rev2MetaAfterDown.migrations ?? []).toEqual([]);
+    expect(rev3MetaAfterDown.plannedAt).toBeNull();
+    expect(rev3MetaAfterDown.migrations ?? []).toEqual([]);
+  });
+
   it("migrate down --to rewinds to an explicit planned boundary", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);
@@ -1265,6 +1299,25 @@ function scaffoldRevisionPlanningStampProject(workspace: string): void {
   fs.writeFileSync(path.join(migrationsDir, formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
   fs.writeFileSync(path.join(migrationsDir, formatSatelliteFilename(1, "snapshot")), "# Snapshot 1\n", "utf-8");
   fs.writeFileSync(path.join(migrationsDir, "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+}
+
+function scaffoldRevisionPlanningStampProjectThroughRev3(workspace: string): void {
+  scaffoldRevisionPlanningStampProject(workspace);
+
+  const designRoot = path.join(workspace, "docs");
+  const rev3CreatedAt = "2026-01-04T00:00:00.000Z";
+
+  fs.mkdirSync(path.join(designRoot, "rev.3"), { recursive: true });
+  fs.writeFileSync(path.join(designRoot, "rev.3", "Design.md"), "# Design\n\nAdded in rev.3.\n", "utf-8");
+  fs.writeFileSync(path.join(designRoot, "current", "Design.md"), "# Design\n\nAdded in rev.3.\n", "utf-8");
+
+  fs.writeFileSync(path.join(designRoot, "rev.3.meta.json"), JSON.stringify({
+    revision: "rev.3",
+    index: 3,
+    createdAt: rev3CreatedAt,
+    plannedAt: null,
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
 }
 
 function seedPlannedRevisionMigrations(
