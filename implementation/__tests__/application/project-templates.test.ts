@@ -37,7 +37,49 @@ import {
 import type { TemplateLoader } from "../../src/domain/ports/index.js";
 import { loadProjectTemplatesFromPorts } from "../../src/application/project-templates.js";
 
+const EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE = [
+  "You are producing the predicted whole-application snapshot at design revision {{designRevisionToTarget}}.",
+  "",
+  "The migrations listed below were just applied. Your task is to write the snapshot that describes the application **state after these migrations are in place**, not the delta itself. The delta is provided as evidence; the deliverable is a coherent post-state document.",
+  "",
+  "## Position",
+  "",
+  "- Current migration number: {{position}}",
+  "",
+  "## Target revision ({{designRevisionToTarget}})",
+  "",
+  "{{design}}",
+  "",
+  "## Newly applied migrations (evidence, do not just summarize these)",
+  "",
+  "{{newMigrations}}",
+  "",
+  "## Previous snapshot (evolve from this; preserve still-true facts)",
+  "",
+  "{{latestSnapshot}}",
+  "",
+  "## Backlog (context only; do not duplicate into the snapshot)",
+  "",
+  "{{backlog}}",
+  "",
+  "## Output contract",
+  "",
+  "Produce Markdown describing the predicted application state at {{designRevisionToTarget}}. Cover:",
+  "",
+  "- **Modules / packages** - what exists and its role.",
+  "- **Public surfaces** - exported types, commands, CLI options, ports/adapters at module boundaries.",
+  "- **Invariants** - facts about the system that remain true after the migrations.",
+  "- **Key flows** - the main runtime paths a user/operator would hit, end-to-end.",
+  "- **Open boundaries** - things deliberately left unimplemented or deferred (link to backlog items by name when relevant).",
+  "",
+  "Be concrete. Reference file paths, command names, and template var names by their real names (no placeholders). Do not include changelog-style sentences (\"we added X\") - write in the present tense describing the state, not the change. Length: as long as needed to faithfully represent the system; do not pad.",
+].join("\n") + "\n";
+
 describe("project-templates", () => {
+  it("keeps default migrate snapshot template text in sync", () => {
+    expect(DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE).toBe(EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE);
+  });
+
   it("returns defaults when config directory is unavailable", () => {
     const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
     const templates = loadProjectTemplatesFromPorts(undefined, templateLoader, path);
@@ -67,7 +109,7 @@ describe("project-templates", () => {
       testFuture: DEFAULT_TEST_FUTURE_TEMPLATE,
       testMaterialized: DEFAULT_TEST_MATERIALIZED_TEMPLATE,
       migrate: DEFAULT_MIGRATE_TEMPLATE,
-      migrateSnapshot: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
+      migrateSnapshot: EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE,
       querySeed: DEFAULT_QUERY_SEED_TEMPLATE,
       querySeedYn: DEFAULT_QUERY_YN_SEED_TEMPLATE,
       querySeedSuccessError: DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
@@ -130,7 +172,7 @@ describe("project-templates", () => {
       testFuture: DEFAULT_TEST_FUTURE_TEMPLATE,
       testMaterialized: DEFAULT_TEST_MATERIALIZED_TEMPLATE,
       migrate: DEFAULT_MIGRATE_TEMPLATE,
-      migrateSnapshot: DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE,
+      migrateSnapshot: EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE,
       querySeed: DEFAULT_QUERY_SEED_TEMPLATE,
       querySeedYn: DEFAULT_QUERY_YN_SEED_TEMPLATE,
       querySeedSuccessError: DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,

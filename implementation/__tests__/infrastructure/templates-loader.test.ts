@@ -21,6 +21,44 @@ import {
 import { CONFIG_DIR_NAME } from "../../src/domain/ports/config-dir-port.js";
 import { loadProjectTemplates } from "../../src/infrastructure/templates-loader.js";
 
+const EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE = [
+  "You are producing the predicted whole-application snapshot at design revision {{designRevisionToTarget}}.",
+  "",
+  "The migrations listed below were just applied. Your task is to write the snapshot that describes the application **state after these migrations are in place**, not the delta itself. The delta is provided as evidence; the deliverable is a coherent post-state document.",
+  "",
+  "## Position",
+  "",
+  "- Current migration number: {{position}}",
+  "",
+  "## Target revision ({{designRevisionToTarget}})",
+  "",
+  "{{design}}",
+  "",
+  "## Newly applied migrations (evidence, do not just summarize these)",
+  "",
+  "{{newMigrations}}",
+  "",
+  "## Previous snapshot (evolve from this; preserve still-true facts)",
+  "",
+  "{{latestSnapshot}}",
+  "",
+  "## Backlog (context only; do not duplicate into the snapshot)",
+  "",
+  "{{backlog}}",
+  "",
+  "## Output contract",
+  "",
+  "Produce Markdown describing the predicted application state at {{designRevisionToTarget}}. Cover:",
+  "",
+  "- **Modules / packages** - what exists and its role.",
+  "- **Public surfaces** - exported types, commands, CLI options, ports/adapters at module boundaries.",
+  "- **Invariants** - facts about the system that remain true after the migrations.",
+  "- **Key flows** - the main runtime paths a user/operator would hit, end-to-end.",
+  "- **Open boundaries** - things deliberately left unimplemented or deferred (link to backlog items by name when relevant).",
+  "",
+  "Be concrete. Reference file paths, command names, and template var names by their real names (no placeholders). Do not include changelog-style sentences (\"we added X\") - write in the present tense describing the state, not the change. Length: as long as needed to faithfully represent the system; do not pad.",
+].join("\n") + "\n";
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -44,6 +82,10 @@ function writeTemplate(configDir: string, fileName: string, content: string): vo
 }
 
 describe("loadProjectTemplates", () => {
+  it("keeps default migrate snapshot template text in sync", () => {
+    expect(DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE).toBe(EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE);
+  });
+
   it("loads new execute/verify/repair filenames", () => {
     const cwd = makeTempDir();
     const configDir = path.join(cwd, CONFIG_DIR_NAME);
@@ -70,7 +112,7 @@ describe("loadProjectTemplates", () => {
     expect(templates.testFuture).toBe(DEFAULT_TEST_FUTURE_TEMPLATE);
     expect(templates.testMaterialized).toBe(DEFAULT_TEST_MATERIALIZED_TEMPLATE);
     expect(templates.migrate).toBe(DEFAULT_MIGRATE_TEMPLATE);
-    expect(templates.migrateSnapshot).toBe(DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE);
+    expect(templates.migrateSnapshot).toBe(EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE);
   });
 
   it("falls back to defaults when templates are missing", () => {
@@ -91,7 +133,7 @@ describe("loadProjectTemplates", () => {
     expect(templates.testFuture).toBe(DEFAULT_TEST_FUTURE_TEMPLATE);
     expect(templates.testMaterialized).toBe(DEFAULT_TEST_MATERIALIZED_TEMPLATE);
     expect(templates.migrate).toBe(DEFAULT_MIGRATE_TEMPLATE);
-    expect(templates.migrateSnapshot).toBe(DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE);
+    expect(templates.migrateSnapshot).toBe(EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE);
   });
 
   it("loads explicit execute/verify/repair files with precedence", () => {
@@ -116,7 +158,7 @@ describe("loadProjectTemplates", () => {
     expect(templates.testFuture).toBe(DEFAULT_TEST_FUTURE_TEMPLATE);
     expect(templates.testMaterialized).toBe(DEFAULT_TEST_MATERIALIZED_TEMPLATE);
     expect(templates.migrate).toBe(DEFAULT_MIGRATE_TEMPLATE);
-    expect(templates.migrateSnapshot).toBe(DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE);
+    expect(templates.migrateSnapshot).toBe(EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE);
   });
 
   it("loads undo.md, test-verify.md, and test mode templates when present", () => {
