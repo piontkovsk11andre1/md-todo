@@ -647,6 +647,11 @@ async function runMigrateLoop(input: {
               + highestReleasedRevision.name
               + " (highest released revision). Edit design/current/ and run rundown design release to create the next revision.",
           });
+        } else {
+          emit({
+            kind: "info",
+            message: "No released design revisions yet. Run rundown design release to create rev.0.",
+          });
         }
       }
       return EXIT_CODE_SUCCESS;
