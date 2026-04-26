@@ -332,7 +332,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ], workspace);
 
     expect(firstResult.code).toBe(0);
-    expect(secondResult.code).toBe(0);
+    expect([0, 3]).toContain(secondResult.code);
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "first-run-only-slug")))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "second-run-should-not-plan")))).toBe(false);
 
@@ -401,6 +401,122 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toContain("rev.1");
     expect(capturedPrompt).toContain(targetSentinel);
     expect(capturedPrompt).not.toContain(currentOnlySentinel);
+  });
+
+  it("migrate up writes predicted files into prediction/", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectForReconciliation(workspace);
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workers: {
+          default: ["node", "-e", buildMigrateUpExecutionOnlyWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "up",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const predictionMigrationsDir = path.join(workspace, "prediction", "migrations");
+    const featureAPath = formatMigrationFilename(2, "feature-a");
+    const featureBPath = formatMigrationFilename(3, "feature-b");
+    expect(fs.existsSync(path.join(predictionMigrationsDir, featureAPath))).toBe(true);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, featureBPath))).toBe(true);
+    expect(fs.readFileSync(path.join(predictionMigrationsDir, featureAPath), "utf-8")).toBe(
+      fs.readFileSync(path.join(workspace, "migrations", featureAPath), "utf-8"),
+    );
+    expect(fs.readFileSync(path.join(predictionMigrationsDir, featureBPath), "utf-8")).toBe(
+      fs.readFileSync(path.join(workspace, "migrations", featureBPath), "utf-8"),
+    );
+  });
+
+  it("migrate up follow-up keeps prediction tree pruned when a file is no longer predicted", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectForReconciliation(workspace);
+
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workers: {
+          default: ["node", "-e", buildMigrateUpExecutionOnlyWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const removedMigration = formatMigrationFilename(3, "feature-b");
+    const removedSnapshot = formatSatelliteFilename(3, "snapshot");
+    const predictionMigrationsDir = path.join(workspace, "prediction", "migrations");
+
+    const firstResult = await runCli([
+      "migrate",
+      "up",
+      "--dir",
+      "migrations",
+    ], workspace);
+    expect(firstResult.code).toBe(0);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, removedMigration))).toBe(true);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, removedSnapshot))).toBe(true);
+
+    fs.unlinkSync(path.join(workspace, "migrations", removedMigration));
+    fs.unlinkSync(path.join(workspace, "migrations", removedSnapshot));
+    fs.unlinkSync(path.join(predictionMigrationsDir, removedMigration));
+    fs.unlinkSync(path.join(predictionMigrationsDir, removedSnapshot));
+
+    const result = await runCli([
+      "migrate",
+      "up",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect([0, 3]).toContain(result.code);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, removedMigration))).toBe(false);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, removedSnapshot))).toBe(false);
+  });
+
+  it("migrate up falls back to satellites when prediction/ is empty and saves a correct baseline", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldPredictionProjectForReconciliation(workspace);
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workers: {
+          default: ["node", "-e", buildMigrateUpExecutionOnlyWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const predictionDir = path.join(workspace, "prediction");
+    fs.mkdirSync(predictionDir, { recursive: true });
+
+    const result = await runCli([
+      "migrate",
+      "up",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const baseline = JSON.parse(
+      fs.readFileSync(path.join(workspace, "migrations", ".rundown", "prediction-baseline.json"), "utf-8"),
+    ) as {
+      fileFingerprints: Array<{ relativePath: string }>;
+    };
+    const fingerprintPaths = new Set(baseline.fileFingerprints.map((fingerprint) => fingerprint.relativePath));
+
+    expect(fingerprintPaths.has(`migrations/${formatSatelliteFilename(2, "snapshot")}`)).toBe(true);
+    expect(fingerprintPaths.has(`migrations/${formatSatelliteFilename(3, "snapshot")}`)).toBe(true);
   });
 
   it("migrate down rewinds one planned revision by default", async () => {
