@@ -131,7 +131,6 @@
     "137. Discuss gets links to artifacts.md",
     "138. Add translate to ArtifactStorePhase.md",
     "139. Migrate walks released revision pairs not current.md",
-    "140. Migrate down clears migratedAt on reverted revisions.md",
     "140. Migrate down rewinds by revision boundary.md"
   ]
 }
