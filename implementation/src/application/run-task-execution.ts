@@ -37,10 +37,10 @@ import type { WorkerHealthPolicyConfig } from "../domain/worker-config.js";
 import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
-  resolvePredictionWorkspaceDirectories,
-  resolvePredictionWorkspacePaths,
-  resolvePredictionWorkspacePlacement,
-} from "./prediction-workspace-paths.js";
+  resolveWorkspaceDirectories,
+  resolveWorkspacePaths,
+  resolveWorkspacePlacement,
+} from "./workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
   mergeTemplateVarsWithWorkspaceContext,
@@ -695,15 +695,15 @@ export function createRunTaskExecution(
       },
       dependencies.pathOperations,
     );
-    const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+    const workspaceDirectories = resolveWorkspaceDirectories({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
-    const workspacePlacement = resolvePredictionWorkspacePlacement({
+    const workspacePlacement = resolveWorkspacePlacement({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
-    const workspacePaths = resolvePredictionWorkspacePaths({
+    const workspacePaths = resolveWorkspacePaths({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
