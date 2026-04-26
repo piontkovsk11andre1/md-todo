@@ -7,13 +7,13 @@ Reversal, re-execution, configuration, and housekeeping.
 | Command | Behavior |
 |---|---|
 | `undo` | Semantic reversal via worker. Reads most recent run artifact and asks the worker to undo. See [../prediction/undo-and-revert.md](../prediction/undo-and-revert.md). |
-| `revert <source>` | Reverts revertable commits via `GitClient` and unchecks the corresponding boxes. |
+| `revert` | Reverts revertable commits via `GitClient` and unchecks the corresponding boxes. Targets are selected by run id (`--run`, `--last <n>`, or `--all`); there is no positional source argument. |
 
 ## Re-execution
 
 | Command | Behavior |
 |---|---|
-| `reverify <source>` | Re-runs verification on completed tasks. Refreshes the `<file>.<index>.validation` sidecar. Repair attempts are reused on failure unless `--no-repair` is set. |
+| `reverify` | Re-runs verification on completed runs from saved artifacts. Refreshes the `<file>.<index>.validation` sidecar. Targets are selected by run id (`--run`, `--last <n>`, or `--all`); there is no positional source argument. Repair attempts are reused on failure unless `--no-repair` is set. |
 
 There is no top-level `repair` command; repair is a phase **inside** `run` / `reverify` (see [../execution/verify-repair-loop.md](../execution/verify-repair-loop.md)).
 
@@ -44,7 +44,7 @@ There is no top-level `repair` command; repair is a phase **inside** `run` / `re
 | `config list` | Dump effective config |
 | `config path` | Print absolute path of the in-effect config file |
 
-All accept `--scope local\|global` (defaults to local).
+Read-style subcommands (`get`, `list`, `path`) accept `--scope effective|local|global` and default to `effective`. Write-style subcommands (`set`, `unset`) accept `--scope local|global` and default to `local`. `get` and `list` also accept `--json` and `--show-source`; `set` accepts `--type auto|string|number|boolean|json`.
 
 ## Workspace
 
@@ -87,5 +87,4 @@ Project-level memory **writes** happen through the `memory:` built-in tool durin
 
 | Command | Effect |
 |---|---|
-| `worker-health` | Print health status (`healthy`/`cooling_down`/`unavailable`) for each known worker |
-| `worker-health --reset` | Clear sticky `unavailable` entries |
+| `worker-health` | Print health status (`healthy`/`cooling_down`/`unavailable`) for each known worker (`--json` for machine-readable output) |

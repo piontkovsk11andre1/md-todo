@@ -37,7 +37,7 @@ This list is the authoritative inventory of every `program.command(...)` registr
 | `migrate down [n]` | Remove last `n`, prune snapshots, regenerate |
 | `design release` | Snapshot `design/current/` → `design/rev.N/` |
 | `design diff [target]` | Compare revisions |
-| `test [source]` | Verify specs (materialized or `--future`) |
+| `test [action] [prompt]` | Verify specs (materialized or `--future`); `test new "<prompt>"` creates a new spec assertion |
 
 ## Review
 
@@ -54,8 +54,8 @@ This list is the authoritative inventory of every `program.command(...)` registr
 | Command | Purpose |
 |---|---|
 | `undo` | Semantic reversal of last task outcome |
-| `revert <source>` | Revert revertable task commits |
-| `reverify <source>` | Re-run verification on completed tasks |
+| `revert` | Revert revertable task commits (selects runs via `--run`/`--last`/`--all`) |
+| `reverify` | Re-run verification on completed tasks (selects runs via `--run`/`--last`/`--all`) |
 | `unlock <source>` | Release stuck file locks |
 | `init` | Initialize `.rundown/` in current project |
 | `localize` | Localize `.rundown/` templates and locale aliases |

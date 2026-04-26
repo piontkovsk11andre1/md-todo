@@ -46,14 +46,14 @@ State lives in `<config-dir>/worker-health.json`, written by [src/infrastructure
 | `cooldownSecondsByFailureClass` | per-class cooldown duration to apply on failure |
 | `maxFailoverAttemptsPerTask` | cap on fallback worker attempts within one task |
 | `maxFailoverAttemptsPerRun` | cap across the whole run |
-| `fallbackStrategy` | currently `strict_order` (iterate `workers.fallbacks` in order) |
+| `fallbackStrategy` | `strict_order` (iterate `workers.fallbacks` in order) or `priority` |
 | `unavailableReevaluation.mode` | `cooldown` (default) or `manual` |
 | `unavailableReevaluation.probeCooldownSeconds` | retry delay for `cooldown` mode |
 
 ## Reevaluation modes
 
 - **`cooldown` (default)**: `transport_unavailable` failures mark the worker `cooling_down` with `cooldownUntil = now + probeCooldownSeconds`. After expiry, the worker is selectable again.
-- **`manual`**: legacy sticky behavior. `transport_unavailable` marks the worker `unavailable` until `worker-health` is manually reset (CLI: `rundown worker-health --reset`).
+- **`manual`**: legacy sticky behavior. `transport_unavailable` marks the worker `unavailable` until the entry is manually cleared by deleting `<config-dir>/worker-health.json` (or removing the relevant entries).
 
 ## Run-time behavior
 
@@ -64,10 +64,10 @@ State lives in `<config-dir>/worker-health.json`, written by [src/infrastructure
 
 ## CLI
 
-- `rundown worker-health` — list worker health status.
-- `rundown worker-health --reset` (and per-worker variants) — clear stickiness.
+- `rundown worker-health` — list worker health status (add `--json` for machine-readable output).
+- To clear stickiness, delete the `<config-dir>/worker-health.json` file (or remove the relevant entries); deletion = "all healthy".
 
-These map to [src/application/worker-health-status.ts](../../implementation/src/application/worker-health-status.ts).
+The inspection command maps to [src/application/worker-health-status.ts](../../implementation/src/application/worker-health-status.ts).
 
 ## Why a separate state file
 

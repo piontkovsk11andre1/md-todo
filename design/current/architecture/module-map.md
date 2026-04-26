@@ -34,7 +34,7 @@ One-line description of each file in [implementation/src/](../../implementation/
 | `worker-pattern.ts` | Parses worker patterns; `$bootstrap` / `$file` / `--prompt=` placeholders. |
 | `worker-health.ts` | Health-policy types and predicates. |
 | `worker-output-parser.ts` | Extracts structured signals from worker stdout. |
-| `harness-preset-registry.ts` | Known harness presets (opencode, claude, gemini, codex, aider, cursor). |
+| `harness-preset-registry.ts` | Known harness presets (opencode, claude, gemini, codex, aider, cursor, pi). |
 | `agents-template.ts` | `AGENTS.md` content emitter. |
 
 ### Templates and vars

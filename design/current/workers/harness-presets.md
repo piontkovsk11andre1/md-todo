@@ -12,6 +12,7 @@ The registry currently includes:
 - `codex`
 - `aider`
 - `cursor`
+- `pi`
 
 Aliases (case differences, hyphenation) normalize to the canonical name.
 
