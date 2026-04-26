@@ -1767,6 +1767,7 @@ function buildTemplateVars(input: {
     workspaceDesignDir: workspaceDirectories.design,
     workspaceSpecsDir: workspaceDirectories.specs,
     workspaceMigrationsDir: workspaceDirectories.migrations,
+    workspacePredictionDir: workspaceDirectories.prediction,
     workspaceDesignPlacement: workspacePlacement.design,
     workspaceSpecsPlacement: workspacePlacement.specs,
     workspaceMigrationsPlacement: workspacePlacement.migrations,
