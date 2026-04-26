@@ -415,12 +415,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev3MetaAfterDown.migrations ?? []).toEqual([]);
   });
 
-  it("migrate down --to rewinds to an explicit planned boundary", async () => {
+  it("migrate down --to rev.K rewinds to a named revision", async () => {
     const workspace = makeTempWorkspace();
-    scaffoldRevisionPlanningStampProject(workspace);
+    scaffoldRevisionPlanningStampProjectThroughRev3(workspace);
     seedPlannedRevisionMigrations(workspace, "docs", [
       { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
       { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+      { revision: 3, migrations: [formatMigrationFilename(4, "rev3-added-file")] },
     ]);
 
     const result = await runCli([
@@ -440,8 +441,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
 
     const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
     const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    const rev3MetaAfterDown = readRevisionMeta(workspace, "docs", 3);
     expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev1MetaAfterDown.migrations ?? []).toEqual([formatMigrationFilename(2, "rev1-added-file")]);
     expect(rev2MetaAfterDown.plannedAt).toBeNull();
+    expect(rev2MetaAfterDown.migrations ?? []).toEqual([]);
+    expect(rev3MetaAfterDown.plannedAt).toBeNull();
+    expect(rev3MetaAfterDown.migrations ?? []).toEqual([]);
   });
 
   it("migrate down --to fails when target revision is unplanned", async () => {
