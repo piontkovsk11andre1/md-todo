@@ -1263,7 +1263,7 @@ async function runMigrateDown(input: {
 function appendMigrationsToBacklog(input: {
   fileSystem: FileSystem;
   backlogPath: string;
-  migrations: readonly Array<{ name: string; source: string }>;
+  migrations: ReadonlyArray<{ name: string; source: string }>;
 }): void {
   const { fileSystem, backlogPath, migrations } = input;
   if (migrations.length === 0) {
