@@ -51,7 +51,6 @@ import {
   markRevisionUnmigrated,
   parseDesignRevisionDirectoryName,
   prepareDesignRevisionDiffContext,
-  resolveDesignContext,
   type DesignRevisionDiffContext,
 } from "./design-context.js";
 import {
@@ -233,13 +232,6 @@ export function createMigrateTask(
       });
       return EXIT_CODE_FAILURE;
     }
-
-    emitLowDesignContextGuidance(
-      dependencies.fileSystem,
-      projectRoot,
-      executionContext.invocationDir,
-      emit,
-    );
 
     const artifactContext = dependencies.artifactStore.createContext({
       cwd: workspaceRoot,
@@ -541,23 +533,6 @@ function toPredictionTrackedFileKind(type: SatelliteType): PredictionTrackedFile
 
 function toProjectRelativePath(projectRoot: string, absolutePath: string): string {
   return path.relative(projectRoot, absolutePath).replace(/\\/g, "/");
-}
-
-function emitLowDesignContextGuidance(
-  fileSystem: FileSystem,
-  projectRoot: string,
-  invocationRoot: string,
-  emit: ApplicationOutputPort["emit"],
-): void {
-  const designContext = resolveDesignContext(fileSystem, projectRoot, { invocationRoot });
-  if (!designContext.isLowContext || designContext.lowContextGuidance.trim().length === 0) {
-    return;
-  }
-
-  emit({
-    kind: "warn",
-    message: designContext.lowContextGuidance,
-  });
 }
 
 function isDirectory(fileSystem: FileSystem, absolutePath: string): boolean {
