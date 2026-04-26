@@ -975,7 +975,7 @@ function findNearestLowerDiscoveredRevision(
       continue;
     }
 
-    if (revision.index < targetRevisionIndex && revision.index > 0) {
+    if (revision.index < targetRevisionIndex && revision.index >= 0) {
       return revision;
     }
   }
