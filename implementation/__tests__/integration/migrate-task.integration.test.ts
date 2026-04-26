@@ -1303,6 +1303,91 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     expect(combinedOutput).toContain("+new");
   });
 
+  it("design diff without target defaults to rev.0 -> rev.1 and includes changed file hunks", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.0"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.0", "Target.md"), "before\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1", "Target.md"), "after\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.0.meta.json"), JSON.stringify({
+      revision: "rev.0",
+      index: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      plannedAt: "2026-01-01T00:00:00.000Z",
+      migrations: [],
+    }, null, 2) + "\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.1.meta.json"), JSON.stringify({
+      revision: "rev.1",
+      index: 1,
+      createdAt: "2026-01-02T00:00:00.000Z",
+      plannedAt: null,
+      migrations: [],
+    }, null, 2) + "\n", "utf-8");
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const stdout = stripAnsi(result.stdoutWrites.join(""));
+    expect(stdout.trimStart().startsWith("rev.0 → rev.1")).toBe(true);
+    expect(stdout).toContain("#### Target.md (modified)");
+    expect(stdout).toContain("-before");
+    expect(stdout).toContain("+after");
+  });
+
+  it("design diff rev.0 prints initial diff against nothing", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "docs", "rev.0"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "docs", "rev.0", "Target.md"), "baseline\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.0.meta.json"), JSON.stringify({
+      revision: "rev.0",
+      index: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      plannedAt: "2026-01-01T00:00:00.000Z",
+      migrations: [],
+    }, null, 2) + "\n", "utf-8");
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "rev.0",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const stdout = stripAnsi(result.stdoutWrites.join(""));
+    expect(stdout.trimStart().startsWith("nothing → rev.0")).toBe(true);
+    expect(stdout).toContain("+baseline");
+  });
+
+  it("design diff fails with clear message when no released revisions exist", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+
+    const result = await runCli([
+      "design",
+      "diff",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    expect(result.code).not.toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("No released design revisions yet. Run rundown design release to create rev.0.");
+  });
+
   it("design diff bootstraps docs/current from legacy Design.md when needed", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProject(workspace);
