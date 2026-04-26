@@ -51,6 +51,7 @@ import {
   prepareDesignRevisionDiffContext,
   resolveDesignContext,
   resolveDesignContextSourceReferences,
+  type DesignRevisionDiffContext,
 } from "./design-context.js";
 import {
   resolvePredictionWorkspaceDirectories,
@@ -685,6 +686,10 @@ async function runMigrateLoop(input: {
     processedAnyRevision = true;
 
     const latestState = readMigrationState(dependencies.fileSystem, migrationsDir);
+    const revisionDiff = prepareDesignRevisionDiffContext(dependencies.fileSystem, projectRoot, {
+      invocationRoot,
+      target: targetRevision.name,
+    });
     const vars = buildTemplateVars({
       fileSystem: dependencies.fileSystem,
       state: latestState,
@@ -694,6 +699,7 @@ async function runMigrateLoop(input: {
       workspacePlacement,
       workspacePaths,
       designRevisionTarget: targetRevision.name,
+      revisionDiff,
       newMigrations: "",
     });
     const prompt = renderTemplate(planningTemplate, vars);
@@ -1688,6 +1694,7 @@ function buildTemplateVars(input: {
   workspacePlacement: ReturnType<typeof resolvePredictionWorkspacePlacement>;
   workspacePaths: ReturnType<typeof resolvePredictionWorkspacePaths>;
   designRevisionTarget?: string | number;
+  revisionDiff?: DesignRevisionDiffContext;
   newMigrations?: string;
 }): TemplateVars {
   const {
@@ -1699,6 +1706,7 @@ function buildTemplateVars(input: {
     workspacePlacement,
     workspacePaths,
     designRevisionTarget,
+    revisionDiff: providedRevisionDiff,
     newMigrations,
   } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
@@ -1709,10 +1717,11 @@ function buildTemplateVars(input: {
 
   const design = resolveDesignContext(fileSystem, projectRoot, { invocationRoot }).design;
   const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
-  const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, projectRoot, {
-    invocationRoot,
-    target: designRevisionTarget,
-  });
+  const revisionDiff = providedRevisionDiff
+    ?? prepareDesignRevisionDiffContext(fileSystem, projectRoot, {
+      invocationRoot,
+      target: designRevisionTarget,
+    });
   const previousRevisionId = revisionDiff.fromRevision?.name ?? (revisionDiff.hasComparison ? "nothing" : "");
   const currentRevisionId = revisionDiff.toTarget.name;
   const currentRevisionCreatedAt = revisionDiff.toTarget.metadata.createdAt;
