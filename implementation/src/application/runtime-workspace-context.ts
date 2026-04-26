@@ -2,12 +2,12 @@ import path from "node:path";
 import type { ExtraTemplateVars } from "../domain/template-vars.js";
 import type { PathOperationsPort } from "../domain/ports/index.js";
 import {
-  DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
-  DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
-  type PredictionWorkspaceDirectories,
-  type PredictionWorkspacePaths,
-  type PredictionWorkspacePlacementMap,
-} from "./prediction-workspace-paths.js";
+  DEFAULT_WORKSPACE_DIRECTORIES,
+  DEFAULT_WORKSPACE_PLACEMENT,
+  type WorkspaceDirectories,
+  type WorkspacePaths,
+  type WorkspacePlacementMap,
+} from "./workspace-paths.js";
 
 /**
  * Workspace location metadata that is injected into prompt templates.
@@ -83,16 +83,16 @@ export function resolveRuntimeWorkspaceContext(
  */
 export function buildWorkspaceContextTemplateVars(
   context: RuntimeWorkspaceContext,
-  predictionWorkspace?: PredictionWorkspaceDirectories | {
-    directories?: PredictionWorkspaceDirectories;
-    placement?: PredictionWorkspacePlacementMap;
-    paths?: PredictionWorkspacePaths;
+  workspace?: WorkspaceDirectories | {
+    directories?: WorkspaceDirectories;
+    placement?: WorkspacePlacementMap;
+    paths?: WorkspacePaths;
   },
 ): ExtraTemplateVars {
-  const normalizedPredictionWorkspace = normalizePredictionWorkspaceTemplateInput(predictionWorkspace);
-  const directories = normalizedPredictionWorkspace.directories ?? DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES;
-  const placement = normalizedPredictionWorkspace.placement ?? DEFAULT_PREDICTION_WORKSPACE_PLACEMENT;
-  const paths = normalizedPredictionWorkspace.paths ?? {
+  const normalizedWorkspace = normalizeWorkspaceTemplateInput(workspace);
+  const directories = normalizedWorkspace.directories ?? DEFAULT_WORKSPACE_DIRECTORIES;
+  const placement = normalizedWorkspace.placement ?? DEFAULT_WORKSPACE_PLACEMENT;
+  const paths = normalizedWorkspace.paths ?? {
     design: path.join(resolvePlacementRoot(context, placement.design), directories.design),
     specs: path.join(resolvePlacementRoot(context, placement.specs), directories.specs),
     migrations: path.join(resolvePlacementRoot(context, placement.migrations), directories.migrations),
@@ -117,34 +117,34 @@ export function buildWorkspaceContextTemplateVars(
 
 function resolvePlacementRoot(
   context: RuntimeWorkspaceContext,
-  placement: PredictionWorkspacePlacementMap[keyof PredictionWorkspacePlacementMap],
+  placement: WorkspacePlacementMap[keyof WorkspacePlacementMap],
 ): string {
   return placement === "workdir" ? context.invocationDir : context.workspaceDir;
 }
 
-function normalizePredictionWorkspaceTemplateInput(
-  input: PredictionWorkspaceDirectories | {
-    directories?: PredictionWorkspaceDirectories;
-    placement?: PredictionWorkspacePlacementMap;
-    paths?: PredictionWorkspacePaths;
+function normalizeWorkspaceTemplateInput(
+  input: WorkspaceDirectories | {
+    directories?: WorkspaceDirectories;
+    placement?: WorkspacePlacementMap;
+    paths?: WorkspacePaths;
   } | undefined,
 ): {
-  directories?: PredictionWorkspaceDirectories;
-  placement?: PredictionWorkspacePlacementMap;
-  paths?: PredictionWorkspacePaths;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+  paths?: WorkspacePaths;
 } {
   if (!input) {
     return {};
   }
 
-  if (isPredictionWorkspaceDirectories(input)) {
+  if (isWorkspaceDirectories(input)) {
     return { directories: input };
   }
 
   return input;
 }
 
-function isPredictionWorkspaceDirectories(value: unknown): value is PredictionWorkspaceDirectories {
+function isWorkspaceDirectories(value: unknown): value is WorkspaceDirectories {
   if (typeof value !== "object" || value === null) {
     return false;
   }
