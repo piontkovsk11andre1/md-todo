@@ -518,6 +518,11 @@ describeIfStartAvailable("start-project integration", () => {
     const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
     expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
     expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from design/current/Target.md");
+
+    const targetDesignPath = path.join(projectDir, "design", "current", "Target.md");
+    const targetDesignSource = fs.readFileSync(targetDesignPath, "utf-8");
+    expect(targetDesignSource).toContain("# Existing directory start");
+    expect(targetDesignSource).toContain("Bootstrapped from existing implementation. Replace with target description in domain language; do not list implementation details.");
   });
 
   it("uses configured design directory path in non-empty workspace migration seed", async () => {
