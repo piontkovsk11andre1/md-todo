@@ -300,6 +300,41 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "rev2-modified-file")))).toBe(false);
   });
 
+  it("migrate down rewinds one revision and clears its meta", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldRevisionPlanningStampProject(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+    ]);
+
+    const downResult = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "down",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(downResult.code).toBe(0);
+
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev1MetaAfterDown.migrations ?? []).toEqual([formatMigrationFilename(2, "rev1-added-file")]);
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+    expect(rev2MetaAfterDown.migrations ?? []).toEqual([]);
+
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "rev1-added-file")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "rev2-modified-file")))).toBe(false);
+
+    const backlog = fs.readFileSync(path.join(workspace, "migrations", "Backlog.md"), "utf-8");
+    expect(backlog).toContain("- rev2-modified-file");
+  });
+
   it("migrate down 2 rewinds two revisions, updates Backlog.md, and prunes later snapshots", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);
