@@ -1,13 +1,13 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
-  DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
-  resolvePredictionWorkspaceDirectories,
-  resolvePredictionWorkspacePath,
-  resolvePredictionWorkspacePaths,
-  resolvePredictionWorkspacePlacement,
-} from "../../src/application/prediction-workspace-paths.js";
+  DEFAULT_WORKSPACE_DIRECTORIES,
+  DEFAULT_WORKSPACE_PLACEMENT,
+  resolveWorkspaceDirectories,
+  resolveWorkspacePath,
+  resolveWorkspacePaths,
+  resolveWorkspacePlacement,
+} from "../../src/application/workspace-paths.js";
 import type { FileSystem } from "../../src/domain/ports/index.js";
 
 class InMemoryFileSystem implements FileSystem {
@@ -73,12 +73,12 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(resolvePredictionWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
+    expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
       design: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
     });
-    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design-docs"),
       specs: path.join(workspaceRoot, "quality", "specs"),
       migrations: path.join(workspaceRoot, "changesets"),
@@ -89,11 +89,11 @@ describe("prediction workspace config", () => {
     const fileSystem = new InMemoryFileSystem({});
     const workspaceRoot = path.join(path.sep, "repo");
 
-    expect(resolvePredictionWorkspaceDirectories({ fileSystem, workspaceRoot })).toEqual(
-      DEFAULT_PREDICTION_WORKSPACE_DIRECTORIES,
+    expect(resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toEqual(
+      DEFAULT_WORKSPACE_DIRECTORIES,
     );
-    expect(resolvePredictionWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual(
-      DEFAULT_PREDICTION_WORKSPACE_PLACEMENT,
+    expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual(
+      DEFAULT_WORKSPACE_PLACEMENT,
     );
   });
 
@@ -110,7 +110,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(resolvePredictionWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
+    expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
       design: "workdir",
       specs: "sourcedir",
       migrations: "sourcedir",
@@ -130,7 +130,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(() => resolvePredictionWorkspacePlacement({ fileSystem, workspaceRoot })).toThrow(
+    expect(() => resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toThrow(
       `Invalid project config at ${configPath}: "workspace.placement.design" must be a string.`,
     );
   });
@@ -148,7 +148,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(() => resolvePredictionWorkspacePlacement({ fileSystem, workspaceRoot })).toThrow(
+    expect(() => resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toThrow(
       `Invalid project config at ${configPath}: "workspace.placement.design" must be "sourcedir" or "workdir".`,
     );
   });
@@ -158,7 +158,7 @@ describe("prediction workspace config", () => {
     const invocationRoot = path.join(path.sep, "repo", "work");
     const fileSystem = new InMemoryFileSystem({});
 
-    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design"),
       specs: path.join(workspaceRoot, "specs"),
       migrations: path.join(workspaceRoot, "migrations"),
@@ -186,7 +186,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "docs"),
       specs: path.join(invocationRoot, "checks", "specs"),
       migrations: path.join(invocationRoot, "history"),
@@ -214,7 +214,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design"),
       specs: path.join(invocationRoot, "quality", "specs"),
       migrations: path.join(invocationRoot, "changesets"),
@@ -235,7 +235,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(resolvePredictionWorkspacePath({
+    expect(resolveWorkspacePath({
       fileSystem,
       workspaceRoot,
       invocationRoot,
@@ -250,7 +250,7 @@ describe("prediction workspace config", () => {
     const fileSystem = new InMemoryFileSystem({});
 
     expect(() =>
-      resolvePredictionWorkspacePaths({
+      resolveWorkspacePaths({
         fileSystem,
         workspaceRoot,
         invocationRoot,
@@ -289,7 +289,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(() => resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toThrow(
+    expect(() => resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toThrow(
       `Invalid project config at ${configPath}: workspace directories "design" and "specs" both resolve to "${path.join(workspaceRoot, "design")}".`,
     );
   });
@@ -315,7 +315,7 @@ describe("prediction workspace config", () => {
       }),
     });
 
-    expect(() => resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toThrow(
+    expect(() => resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toThrow(
       `Invalid project config at ${configPath}: workspace directories "design" ("${path.join(workspaceRoot, "design", "current")}") and "specs" ("${path.join(workspaceRoot, "design")}") overlap.`,
     );
   });
