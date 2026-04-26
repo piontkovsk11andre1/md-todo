@@ -1,15 +1,13 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { formatMigrationFilename, formatSatelliteFilename } from "./migration-parser.js";
+import {
+  formatMigrationFilename,
+  formatSatelliteFilename,
+  parseMigrationFilename,
+} from "./migration-parser.js";
 import type { FileSystem } from "./ports/index.js";
 
-export type PredictionTrackedFileKind =
-  | "migration"
-  | "context"
-  | "snapshot"
-  | "backlog"
-  | "review"
-  | "user-experience";
+export type PredictionTrackedFileKind = "file";
 
 export interface PredictionTrackedMigration {
   number: number;
@@ -147,7 +145,7 @@ export function readPredictionTreeAsTrackedFiles(input: {
     .map((file) => ({
       relativePath: normalizeRelativePath(file.relativePath),
       migrationNumber: 0,
-      kind: "snapshot",
+      kind: "file",
       content: fileSystem.readText(file.absolutePath),
     }));
 }
@@ -302,22 +300,22 @@ export function createPredictionReconciliationEntryPoint(input: {
     latestExecutedMigration: findLatestFileAtOrBefore({
       files: input.current.files,
       migrationNumber: lastCompletedMigrationNumber,
-      kinds: ["migration"],
+      matches: (file) => isMigrationTrackedFile(file),
     }),
     latestContext: findLatestFileAtOrBefore({
       files: input.current.files,
       migrationNumber: lastCompletedMigrationNumber,
-      kinds: ["context"],
+      matches: (file) => isLegacySatelliteTrackedFile(file, "context"),
     }),
     latestSnapshot: findLatestFileAtOrBefore({
       files: input.current.files,
       migrationNumber: lastCompletedMigrationNumber,
-      kinds: ["snapshot"],
+      matches: (file) => isSnapshotTrackedFile(file),
     }),
     latestBacklog: findLatestFileAtOrBefore({
       files: input.current.files,
       migrationNumber: lastCompletedMigrationNumber,
-      kinds: ["backlog"],
+      matches: (file) => isLegacySatelliteTrackedFile(file, "backlog"),
     }),
   };
 }
@@ -432,11 +430,11 @@ export function reconcilePendingPredictedItemsAtomically(input: {
 
   const targetSet = new Set(targetPendingMigrationNumbers);
   const filesToReplace = currentFiles.filter(
-    (file) => targetSet.has(file.migrationNumber) && (file.kind === "migration" || file.kind === "snapshot"),
+    (file) => targetSet.has(file.migrationNumber) && (isMigrationTrackedFile(file) || isSnapshotTrackedFile(file)),
   );
   const removeRelativePaths = uniqueSortedStrings(filesToReplace.map((file) => normalizeRelativePath(file.relativePath)));
   const preservedFiles = currentFiles.filter(
-    (file) => !(targetSet.has(file.migrationNumber) && (file.kind === "migration" || file.kind === "snapshot")),
+    (file) => !(targetSet.has(file.migrationNumber) && (isMigrationTrackedFile(file) || isSnapshotTrackedFile(file))),
   );
 
   const defaultPrefix = inferMigrationPrefix(currentFiles);
@@ -456,13 +454,13 @@ export function reconcilePendingPredictedItemsAtomically(input: {
     writeFiles.push({
       relativePath: migrationPath,
       migrationNumber,
-      kind: "migration",
+      kind: "file",
       content: item.migrationContent,
     });
     writeFiles.push({
       relativePath: snapshotPath,
       migrationNumber,
-      kind: "snapshot",
+      kind: "file",
       content: item.snapshotContent,
     });
   }
@@ -513,10 +511,10 @@ function getStablePendingMigrationName(
 }
 
 function buildFileChangeCandidate(
-  fingerprint: Pick<PredictionFileFingerprint, "migrationNumber" | "kind">,
+  fingerprint: Pick<PredictionFileFingerprint, "migrationNumber" | "relativePath">,
   firstPendingMigrationNumber: number,
 ): { reason: PredictionStaleReason; affectedMigrationNumber: number } {
-  if (fingerprint.kind === "migration") {
+  if (isMigrationPath(fingerprint.relativePath)) {
     if (fingerprint.migrationNumber >= firstPendingMigrationNumber) {
       return {
         reason: "pending_manual_edit",
@@ -530,13 +528,11 @@ function buildFileChangeCandidate(
     };
   }
 
-  if (fingerprint.kind === "context" || fingerprint.kind === "snapshot" || fingerprint.kind === "backlog") {
-    if (fingerprint.migrationNumber <= firstPendingMigrationNumber) {
-      return {
-        reason: "context_changed",
-        affectedMigrationNumber: firstPendingMigrationNumber,
-      };
-    }
+  if (fingerprint.migrationNumber <= firstPendingMigrationNumber) {
+    return {
+      reason: "context_changed",
+      affectedMigrationNumber: firstPendingMigrationNumber,
+    };
   }
 
   return {
@@ -552,7 +548,7 @@ function buildPendingReResolutionPrompt(input: {
   startMigrationNumber: number;
 }): string {
   const currentPendingMigrations = input.current.files
-    .filter((file) => file.kind === "migration" && input.pendingMigrationNumbers.includes(file.migrationNumber))
+    .filter((file) => isMigrationTrackedFile(file) && input.pendingMigrationNumbers.includes(file.migrationNumber))
     .sort((left, right) => left.migrationNumber - right.migrationNumber)
     .map((file) => {
       const normalizedPath = normalizeRelativePath(file.relativePath);
@@ -739,7 +735,7 @@ function toFingerprints(files: readonly PredictionTrackedFile[]): PredictionFile
         return left.relativePath.localeCompare(right.relativePath);
       }
 
-      return left.kind.localeCompare(right.kind);
+      return 0;
     });
 }
 
@@ -772,14 +768,14 @@ function sortTrackedFiles(files: readonly PredictionTrackedFile[]): PredictionTr
       return leftPath.localeCompare(rightPath);
     }
 
-    return left.kind.localeCompare(right.kind);
+    return 0;
   });
 }
 
 function inferMigrationPrefix(files: readonly PredictionTrackedFile[]): string {
   for (const file of files) {
     const normalizedPath = normalizeRelativePath(file.relativePath);
-    if (file.kind !== "migration" && file.kind !== "snapshot") {
+    if (!isMigrationTrackedFile(file) && !isSnapshotTrackedFile(file)) {
       continue;
     }
     return getPathPrefix(normalizedPath);
@@ -791,10 +787,10 @@ function inferMigrationPrefix(files: readonly PredictionTrackedFile[]): string {
 function getPreferredPrefixForMigration(
   files: readonly PredictionTrackedFile[],
   migrationNumber: number,
-  kind: "migration" | "snapshot",
+  fileType: "migration" | "snapshot",
 ): string | null {
   const candidates = files
-    .filter((file) => file.migrationNumber === migrationNumber && file.kind === kind)
+    .filter((file) => file.migrationNumber === migrationNumber && matchesPredictedFileType(file, fileType))
     .map((file) => normalizeRelativePath(file.relativePath))
     .sort((left, right) => left.localeCompare(right));
   const first = candidates[0];
@@ -804,13 +800,20 @@ function getPreferredPrefixForMigration(
 function getExistingPathForMigrationAndKind(
   files: readonly PredictionTrackedFile[],
   migrationNumber: number,
-  kind: "migration" | "snapshot",
+  fileType: "migration" | "snapshot",
 ): string | null {
   const candidates = files
-    .filter((file) => file.migrationNumber === migrationNumber && file.kind === kind)
+    .filter((file) => file.migrationNumber === migrationNumber && matchesPredictedFileType(file, fileType))
     .map((file) => normalizeRelativePath(file.relativePath))
     .sort((left, right) => left.localeCompare(right));
   return candidates[0] ?? null;
+}
+
+function matchesPredictedFileType(
+  file: Pick<PredictionTrackedFile, "relativePath">,
+  fileType: "migration" | "snapshot",
+): boolean {
+  return fileType === "migration" ? isMigrationTrackedFile(file) : isSnapshotTrackedFile(file);
 }
 
 function getPathPrefix(relativePath: string): string {
@@ -869,6 +872,33 @@ function getEarliestSequenceDifference(
 
 function normalizeRelativePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function isMigrationTrackedFile(file: Pick<PredictionTrackedFile, "relativePath">): boolean {
+  return isMigrationPath(file.relativePath);
+}
+
+function isMigrationPath(relativePath: string): boolean {
+  const parsed = parseMigrationFilename(path.basename(normalizeRelativePath(relativePath)));
+  return Boolean(parsed && !parsed.isSatellite);
+}
+
+function isSnapshotTrackedFile(file: Pick<PredictionTrackedFile, "relativePath">): boolean {
+  const normalized = normalizeRelativePath(file.relativePath);
+  const parsed = parseMigrationFilename(path.basename(normalized));
+  if (parsed?.isSatellite && parsed.satelliteType === "snapshot") {
+    return true;
+  }
+
+  return /\.(?:snapshot|review)\.md$/i.test(normalized);
+}
+
+function isLegacySatelliteTrackedFile(
+  file: Pick<PredictionTrackedFile, "relativePath">,
+  type: "context" | "backlog",
+): boolean {
+  const normalized = normalizeRelativePath(file.relativePath);
+  return new RegExp(`(?:--|\\.)${type}\\.md$`, "i").test(normalized);
 }
 
 function extractJsonObject(output: string): string {
@@ -962,7 +992,7 @@ function isRuntimeResidueLine(line: string): boolean {
 function findLatestFileAtOrBefore(input: {
   files: readonly PredictionTrackedFile[];
   migrationNumber: number;
-  kinds: readonly PredictionTrackedFileKind[];
+  matches: (file: PredictionTrackedFile) => boolean;
 }): PredictionTrackedFile | null {
   if (input.migrationNumber <= 0) {
     return null;
@@ -970,7 +1000,7 @@ function findLatestFileAtOrBefore(input: {
 
   let candidate: PredictionTrackedFile | null = null;
   for (const file of input.files) {
-    if (!input.kinds.includes(file.kind)) {
+    if (!input.matches(file)) {
       continue;
     }
     if (file.migrationNumber > input.migrationNumber) {

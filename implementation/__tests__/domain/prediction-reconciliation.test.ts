@@ -61,19 +61,19 @@ describe("readPredictionTreeAsTrackedFiles", () => {
       {
         relativePath: "README.md",
         migrationNumber: 0,
-        kind: "snapshot",
+        kind: "file",
         content: "# Prediction\n",
       },
       {
         relativePath: "src/api/a-first.ts",
         migrationNumber: 0,
-        kind: "snapshot",
+        kind: "file",
         content: "export const a = true;\n",
       },
       {
         relativePath: "src/core/z-last.ts",
         migrationNumber: 0,
-        kind: "snapshot",
+        kind: "file",
         content: "export const z = true;\n",
       },
     ]);
