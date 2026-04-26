@@ -330,6 +330,7 @@ type TestAction = "new";
 interface MigrateCommandOptions {
   action?: MigrateAction;
   downCount?: number;
+  toRevName?: string;
   dir?: string;
   workspace?: string;
   confirm: boolean;
@@ -1373,6 +1374,7 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(getApp())({
       action: normalizedAction,
       downCount: parseLastCount(count),
+      toRevName: normalizeOptionalString(opts.to),
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       confirm: Boolean(opts.confirm as boolean | undefined),
