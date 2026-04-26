@@ -695,11 +695,9 @@ You are planning migration names for a prediction-driven project.
 
 - Current migration number: {{position}}
 
-## Design revision diff
+## Design diff ({{designRevisionFromRevision}} → {{designRevisionToTarget}})
 
 - Comparison available: {{designRevisionDiffHasComparison}}
-- Previous revision: {{designRevisionFromRevision}}
-- Target: {{designRevisionToTarget}}
 - Summary: {{designRevisionDiffSummary}}
 - Added files: {{designRevisionDiffAddedCount}}
 - Modified files: {{designRevisionDiffModifiedCount}}
@@ -709,11 +707,15 @@ You are planning migration names for a prediction-driven project.
 
 {{designRevisionDiffFiles}}
 
+### Diff
+
+{{designRevisionDiffContent}}
+
 ### Diff source references
 
 {{designRevisionDiffSources}}
 
-## Design content
+## Target revision design ({{designRevisionToTarget}})
 
 {{design}}
 
