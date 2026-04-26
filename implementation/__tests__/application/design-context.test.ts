@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   discoverDesignRevisionDirectories,
+  findLowestUnplannedRevision,
   prepareDesignRevisionDiffContext,
   resolveDesignContext,
   resolveDesignContextSourceReferences,
@@ -96,6 +97,123 @@ function normalizePath(value: string): string {
 }
 
 describe("design-context revision metadata and immutability", () => {
+  it("finds the lowest unplanned released revision and skips rev.0", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.0", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+          { name: "rev.3", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.0": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.3": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.0/Target.md": "zero\n",
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.2/Target.md": "two\n",
+        "/repo/design/rev.3/Target.md": "three\n",
+        "/repo/design/rev.0.meta.json": JSON.stringify({
+          revision: "rev.0",
+          index: 0,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          plannedAt: "2026-01-01T00:00:00.000Z",
+          migrations: [],
+        }),
+        "/repo/design/rev.1.meta.json": JSON.stringify({
+          revision: "rev.1",
+          index: 1,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          plannedAt: "2026-01-02T00:00:00.000Z",
+          migrations: ["1. Existing.md"],
+        }),
+        "/repo/design/rev.3.meta.json": JSON.stringify({
+          revision: "rev.3",
+          index: 3,
+          createdAt: "2026-01-04T00:00:00.000Z",
+          plannedAt: "2026-01-04T00:00:00.000Z",
+          migrations: ["2. Existing.md"],
+        }),
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.0": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+        "/repo/design/rev.3": { isDirectory: true, isFile: false },
+        "/repo/design/rev.0.meta.json": { isDirectory: false, isFile: true },
+        "/repo/design/rev.1.meta.json": { isDirectory: false, isFile: true },
+        "/repo/design/rev.3.meta.json": { isDirectory: false, isFile: true },
+      },
+    });
+
+    const unplanned = findLowestUnplannedRevision(fileSystem, "/repo");
+
+    expect(unplanned).toMatchObject({
+      name: "rev.2",
+      index: 2,
+      metadata: {
+        plannedAt: null,
+        migrations: [],
+      },
+    });
+  });
+
+  it("returns null when all released revisions are already planned", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.0", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.0": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.0/Target.md": "zero\n",
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.1.meta.json": JSON.stringify({
+          revision: "rev.1",
+          index: 1,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          plannedAt: "2026-01-02T00:00:00.000Z",
+          migrations: ["1. Existing.md"],
+        }),
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.0": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1.meta.json": { isDirectory: false, isFile: true },
+      },
+    });
+
+    expect(findLowestUnplannedRevision(fileSystem, "/repo")).toBeNull();
+  });
+
+  it("returns null when only rev.0 exists", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.0", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.0": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.0/Target.md": "zero\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.0": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(findLowestUnplannedRevision(fileSystem, "/repo")).toBeNull();
+  });
+
   it("saves canonical design/current into design/rev.N snapshots", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {

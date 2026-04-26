@@ -25,6 +25,8 @@ export interface DesignRevisionDirectory {
   metadataPath: string;
 }
 
+export type RevisionDescriptor = DesignRevisionDirectory;
+
 export interface DesignRevisionMetadata {
   createdAt: string;
   label: string;
@@ -279,6 +281,28 @@ export function discoverDesignRevisionDirectories(
 
     return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
   });
+}
+
+export function findLowestUnplannedRevision(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+  options?: { invocationRoot?: string },
+): RevisionDescriptor | null {
+  const revisions = discoverDesignRevisionDirectories(fileSystem, workspaceRoot, {
+    invocationRoot: options?.invocationRoot,
+  });
+
+  for (const revision of revisions) {
+    if (revision.index < 1) {
+      continue;
+    }
+
+    if (revision.metadata.plannedAt === null) {
+      return revision;
+    }
+  }
+
+  return null;
 }
 
 export function parseDesignRevisionDirectoryName(name: string): { index: number } | null {
