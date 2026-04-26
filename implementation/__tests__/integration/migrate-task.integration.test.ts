@@ -165,6 +165,73 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2Meta.migrations?.length ?? 0).toBeGreaterThan(0);
   });
 
+  it("renders migrate planner prompt from target revision design with real diff content", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldRevisionPlanningStampProject(workspace);
+
+    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
+    const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
+      plannedAt?: string | null;
+      createdAt: string;
+      migrations?: string[];
+    };
+    rev1Meta.plannedAt = rev1Meta.createdAt;
+    rev1Meta.migrations = [formatMigrationFilename(1, "initialize")];
+    fs.writeFileSync(rev1MetaPath, JSON.stringify(rev1Meta, null, 2) + "\n", "utf-8");
+
+    const targetSentinel = "TARGET-REV2-SENTINEL";
+    const currentOnlySentinel = "CURRENT-ONLY-SENTINEL";
+    fs.writeFileSync(
+      path.join(workspace, "docs", "rev.1", "Target.md"),
+      "# Target\n\ncommon line\nline removed from rev.2\nkept line\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "docs", "rev.2", "Target.md"),
+      `# Target\n\n${targetSentinel}\ncommon line\nline added in rev.2\nkept line\n`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "docs", "current", "Target.md"),
+      `# Target\n\n${currentOnlySentinel}\n`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "docs", "rev.2", "added.md"),
+      "added file from rev.2\nsecond added line\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildPlannerPromptCaptureWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Planning migrations for rev.1 → rev.2 (position 1)...");
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".captured-migrate-planner-prompt.txt"), "utf-8");
+    expect(capturedPrompt).toContain(targetSentinel);
+    expect(capturedPrompt).not.toContain(currentOnlySentinel);
+    expect(capturedPrompt).toContain("### Diff");
+    expect(capturedPrompt).toContain("-line removed from rev.2");
+    expect(capturedPrompt).toContain("+line added in rev.2");
+    expect(capturedPrompt).toContain("#### added.md (added)");
+    expect(capturedPrompt).toContain("+added file from rev.2");
+  });
+
   it("migrate exits success with caught-up message when all released revisions are planned", async () => {
     const workspace = makeTempWorkspace();
     scaffoldReleasedDesignRevisions(workspace, "docs");
@@ -1653,6 +1720,31 @@ function buildTemplateVarsAssertionWorkerScript(): string {
     "  process.exit(0);",
     "}",
     "console.log('1. template-vars-checked');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildPlannerPromptCaptureWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const capturedPath=path.join(process.cwd(),'.captured-migrate-planner-prompt.txt');",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current snapshot.')){",
+    "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
+    "  console.log('DONE');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('updating the migration snapshot at the end of a migration batch')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
     "process.exit(0);",
   ].join("\n");
 }
