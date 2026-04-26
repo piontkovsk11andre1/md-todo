@@ -124,6 +124,49 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2Meta.migrations ?? []).toEqual([]);
   });
 
+  it("migrate stamps plannedAt and migrations on each revision after planning", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldRevisionPlanningStampProject(workspace);
+
+    const rev0MetaPath = path.join(workspace, "docs", "rev.0.meta.json");
+    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
+    const rev2MetaPath = path.join(workspace, "docs", "rev.2.meta.json");
+    const rev0MetaBefore = fs.readFileSync(rev0MetaPath, "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript([
+        "rev1-added-file",
+        "rev1-added-file",
+        "rev2-modified-file",
+        "rev2-modified-file",
+      ]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const rev0MetaAfter = fs.readFileSync(rev0MetaPath, "utf-8");
+    const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
+      plannedAt?: string | null;
+      migrations?: string[];
+    };
+    const rev2Meta = JSON.parse(fs.readFileSync(rev2MetaPath, "utf-8")) as {
+      plannedAt?: string | null;
+      migrations?: string[];
+    };
+
+    expect(rev0MetaAfter).toBe(rev0MetaBefore);
+    expect(rev1Meta.plannedAt).toBeTypeOf("string");
+    expect(rev1Meta.migrations?.length ?? 0).toBeGreaterThan(0);
+    expect(rev2Meta.plannedAt).toBeTypeOf("string");
+    expect(rev2Meta.migrations?.length ?? 0).toBeGreaterThan(0);
+  });
+
   it("migrate up generates N.1 snapshot at batch end and keeps previous snapshots", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
@@ -969,6 +1012,53 @@ function scaffoldUnplannedNoOpReleasedRevisionPair(workspace: string, designDir:
     plannedAt: null,
     migrations: [],
   }, null, 2) + "\n", "utf-8");
+}
+
+function scaffoldRevisionPlanningStampProject(workspace: string): void {
+  const migrationsDir = path.join(workspace, "migrations");
+  const designRoot = path.join(workspace, "docs");
+  const rev0CreatedAt = "2026-01-01T00:00:00.000Z";
+  const rev1CreatedAt = "2026-01-02T00:00:00.000Z";
+  const rev2CreatedAt = "2026-01-03T00:00:00.000Z";
+
+  fs.mkdirSync(migrationsDir, { recursive: true });
+  fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+  fs.mkdirSync(path.join(designRoot, "current"), { recursive: true });
+  fs.mkdirSync(path.join(designRoot, "rev.0"), { recursive: true });
+  fs.mkdirSync(path.join(designRoot, "rev.1"), { recursive: true });
+  fs.mkdirSync(path.join(designRoot, "rev.2"), { recursive: true });
+
+  fs.writeFileSync(path.join(designRoot, "rev.1", "Design.md"), "# Design\n\nAdded in rev.1.\n", "utf-8");
+  fs.writeFileSync(path.join(designRoot, "rev.2", "Design.md"), "# Design\n\nModified in rev.2.\n", "utf-8");
+  fs.writeFileSync(path.join(designRoot, "current", "Design.md"), "# Design\n\nModified in rev.2.\n", "utf-8");
+
+  fs.writeFileSync(path.join(designRoot, "rev.0.meta.json"), JSON.stringify({
+    revision: "rev.0",
+    index: 0,
+    createdAt: rev0CreatedAt,
+    plannedAt: rev0CreatedAt,
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
+
+  fs.writeFileSync(path.join(designRoot, "rev.1.meta.json"), JSON.stringify({
+    revision: "rev.1",
+    index: 1,
+    createdAt: rev1CreatedAt,
+    plannedAt: null,
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
+
+  fs.writeFileSync(path.join(designRoot, "rev.2.meta.json"), JSON.stringify({
+    revision: "rev.2",
+    index: 2,
+    createdAt: rev2CreatedAt,
+    plannedAt: null,
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
+
+  fs.writeFileSync(path.join(migrationsDir, formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, formatSatelliteFilename(1, "snapshot")), "# Snapshot 1\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
 }
 
 function buildConvergentMigrateWorkerScript(plannerOutputs: string[]): string {
