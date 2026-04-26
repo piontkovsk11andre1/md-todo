@@ -24,10 +24,10 @@ import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import {
-  resolvePredictionWorkspaceDirectories,
-  resolvePredictionWorkspacePaths,
-  resolvePredictionWorkspacePlacement,
-} from "./prediction-workspace-paths.js";
+  resolveWorkspaceDirectories,
+  resolveWorkspacePaths,
+  resolveWorkspacePlacement,
+} from "./workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
   mergeTemplateVarsWithWorkspaceContext,
@@ -171,15 +171,15 @@ export function createResearchTask(
       },
       dependencies.pathOperations,
     );
-    const workspaceDirectories = resolvePredictionWorkspaceDirectories({
+    const workspaceDirectories = resolveWorkspaceDirectories({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
-    const workspacePlacement = resolvePredictionWorkspacePlacement({
+    const workspacePlacement = resolveWorkspacePlacement({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
-    const workspacePaths = resolvePredictionWorkspacePaths({
+    const workspacePaths = resolveWorkspacePaths({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
