@@ -44,6 +44,7 @@ import {
   discoverDesignRevisionDirectories,
   findLowestUnplannedRevision,
   markRevisionPlanned,
+  markRevisionUnmigrated,
   prepareDesignRevisionDiffContext,
   resolveDesignContext,
   resolveDesignContextSourceReferences,
@@ -1181,7 +1182,43 @@ async function runMigrateDown(input: {
     artifactRunExtra,
   });
 
-  return upCode;
+  if (upCode !== EXIT_CODE_SUCCESS) {
+    return upCode;
+  }
+
+  const revertedRuns = dependencies.artifactStore
+    .listSaved(artifactContext.configDir)
+    .filter((run) => run.commandName === "migrate" && run.status === "completed")
+    .slice(0, removedMigrations.length);
+  const targetRevisionsFromRevertedRuns = collectTargetRevisionsFromRuns(revertedRuns);
+
+  for (const revisionName of targetRevisionsFromRevertedRuns) {
+    markRevisionUnmigrated(dependencies.fileSystem, projectRoot, revisionName);
+    emit({
+      kind: "info",
+      message: "Cleared migratedAt on " + revisionName + "; re-run rundown migrate to re-apply.",
+    });
+  }
+
+  return EXIT_CODE_SUCCESS;
+}
+
+function collectTargetRevisionsFromRuns(
+  runs: readonly Array<{ extra?: Record<string, unknown> }>,
+): Set<string> {
+  const targetRevisions = new Set<string>();
+
+  for (const run of runs) {
+    const targetRevision = typeof run.extra?.targetRevision === "string"
+      ? run.extra.targetRevision.trim()
+      : "";
+    if (targetRevision.length === 0) {
+      continue;
+    }
+    targetRevisions.add(targetRevision);
+  }
+
+  return targetRevisions;
 }
 
 function parseProposedMigrationNames(stdout: string): string[] | null {
