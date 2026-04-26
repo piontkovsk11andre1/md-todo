@@ -516,9 +516,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2MetaAfterDown.plannedAt).toBeNull();
   });
 
-  it("migrate down emits a baseline no-op message when nothing is planned beyond rev.0", async () => {
+  it("migrate down at baseline is a no-op", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
+    const rev0MetaPath = path.join(workspace, "docs", "rev.0.meta.json");
+    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
+    const rev0MetaBefore = fs.readFileSync(rev0MetaPath, "utf-8");
+    const rev1MetaBefore = fs.readFileSync(rev1MetaPath, "utf-8");
 
     const result = await runCli([
       "migrate",
@@ -539,6 +543,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ...result.stderrWrites,
     ].join("\n"));
     expect(combinedOutput).toContain("Already at baseline (rev.0). Nothing to rewind.");
+    expect(fs.readFileSync(rev0MetaPath, "utf-8")).toBe(rev0MetaBefore);
+    expect(fs.readFileSync(rev1MetaPath, "utf-8")).toBe(rev1MetaBefore);
   });
 
   it("uses commands.migrate-slug during migrate up prediction reconciliation", async () => {
