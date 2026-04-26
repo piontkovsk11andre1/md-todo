@@ -705,7 +705,9 @@ async function runMigrateLoop(input: {
     const prompt = renderTemplate(planningTemplate, vars);
     emit({
       kind: "info",
-      message: "Planning migrations from design revision diff to "
+      message: "Planning migrations for "
+        + (revisionDiff.fromRevision?.name ?? "nothing")
+        + " → "
         + targetRevision.name
         + " (position "
         + String(latestState.currentPosition)
