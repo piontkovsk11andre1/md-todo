@@ -1,6 +1,6 @@
 # Built-in tools
 
-Tool prefixes are recognized at the start of a task's text. Built-ins are statically registered in [src/domain/builtin-tools/index.ts](../../implementation/src/domain/builtin-tools/index.ts); project-level tools (`.md` template files or `.js` modules under `<config-dir>/tools/`) extend the registry at runtime via [src/infrastructure/adapters/tool-resolver-adapter.ts](../../implementation/src/infrastructure/adapters/tool-resolver-adapter.ts).
+Tool prefixes are recognized at the start of a task's text. Most built-ins are statically registered in [src/domain/builtin-tools/index.ts](../../implementation/src/domain/builtin-tools/index.ts); built-ins that need composition-time dependencies (`memory:` needs the memory writer, `question:` needs the interactive input port) are registered as **dynamic built-ins** in [src/infrastructure/adapters/tool-resolver-adapter.ts](../../implementation/src/infrastructure/adapters/tool-resolver-adapter.ts), which also extends the registry with project-level tools (`.md` template files or `.js` modules under `<config-dir>/tools/`).
 
 ## Files
 
@@ -15,3 +15,4 @@ Tool prefixes are recognized at the start of a task's text. Built-ins are static
 | [end-and-skip.md](end-and-skip.md) | `optional:`, `skip:`, terminal `end:`/`exit:`/`return:`/`quit:`/`break:` |
 | [profile-and-force.md](profile-and-force.md) | The two modifiers: `profile=name` and `force:` |
 | [get.md](get.md) | `get:` extraction handler |
+| [question.md](question.md) | `question:` — interactive user-input capture |
