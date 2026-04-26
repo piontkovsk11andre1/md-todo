@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   discoverDesignRevisionDirectories,
   findLowestUnplannedRevision,
+  formatDesignRevisionUnifiedDiff,
+  formatRevisionDesignContext,
   markRevisionPlanned,
   markRevisionUnplanned,
   markRevisionUnmigrated,
@@ -1174,5 +1176,179 @@ describe("design-context canonical workspace resolution", () => {
     const resolvedContext = resolveDesignContext(fileSystem, "/repo");
     expect(resolvedContext.sourcePaths.map(normalizePath)).toEqual(["/repo/docs/current/Design.md"]);
     expect(resolvedContext.design).toBe("legacy only");
+  });
+});
+
+describe("design-context revision format helpers", () => {
+  it("formats single-file revision context as plain content", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design/rev.3": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.3/Target.md": "Only target\n",
+      },
+      stats: {
+        "/repo/design/rev.3": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(formatRevisionDesignContext(fileSystem, "/repo/design/rev.3")).toBe("Only target");
+  });
+
+  it("formats multi-file revision context with primary file first", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design/rev.7": [
+          { name: "notes.md", isDirectory: false, isFile: true },
+          { name: "Target.md", isDirectory: false, isFile: true },
+          { name: "details", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.7/details": [{ name: "extra.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.7/notes.md": "Notes body\n",
+        "/repo/design/rev.7/Target.md": "Primary target\n",
+        "/repo/design/rev.7/details/extra.md": "Extra body\n",
+      },
+      stats: {
+        "/repo/design/rev.7": { isDirectory: true, isFile: false },
+        "/repo/design/rev.7/details": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(formatRevisionDesignContext(fileSystem, "/repo/design/rev.7")).toBe([
+      "Primary target",
+      "",
+      "",
+      "---",
+      "",
+      "### details/extra.md",
+      "",
+      "Extra body",
+      "",
+      "",
+      "---",
+      "",
+      "### notes.md",
+      "",
+      "Notes body",
+    ].join("\n"));
+  });
+
+  it("supports explicit primary file ordering override", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design/rev.8": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+          { name: "Design.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/rev.8/Target.md": "Canonical\n",
+        "/repo/design/rev.8/Design.md": "Legacy primary\n",
+      },
+      stats: {
+        "/repo/design/rev.8": { isDirectory: true, isFile: false },
+      },
+    });
+
+    expect(formatRevisionDesignContext(fileSystem, "/repo/design/rev.8", "Design.md")).toBe([
+      "Legacy primary",
+      "",
+      "",
+      "---",
+      "",
+      "### Target.md",
+      "",
+      "Canonical",
+    ].join("\n"));
+  });
+
+  it("formats unified per-file diff content for added, modified, and removed files", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.1": [
+          { name: "modified.md", isDirectory: false, isFile: true },
+          { name: "removed.md", isDirectory: false, isFile: true },
+          { name: "same.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/rev.2": [
+          { name: "added.md", isDirectory: false, isFile: true },
+          { name: "modified.md", isDirectory: false, isFile: true },
+          { name: "same.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/rev.1/modified.md": "keep\nold line\nend\n",
+        "/repo/design/rev.1/removed.md": "removed line 1\nremoved line 2\n",
+        "/repo/design/rev.1/same.md": "same\n",
+        "/repo/design/rev.2/added.md": "added line 1\nadded line 2\n",
+        "/repo/design/rev.2/modified.md": "keep\nnew line\nend\n",
+        "/repo/design/rev.2/same.md": "same\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.2" });
+    expect(formatDesignRevisionUnifiedDiff(fileSystem, revisionDiff)).toBe([
+      "#### added.md (added)",
+      "",
+      "```diff",
+      "+added line 1",
+      "+added line 2",
+      "```",
+      "",
+      "#### modified.md (modified)",
+      "",
+      "```diff",
+      "@@ -1,3 +1,3 @@",
+      " keep",
+      "-old line",
+      "+new line",
+      " end",
+      "```",
+      "",
+      "#### removed.md (removed)",
+      "",
+      "```diff",
+      "-removed line 1",
+      "-removed line 2",
+      "```",
+    ].join("\n"));
+  });
+
+  it("returns empty unified diff output when there are no changed files", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.1/Target.md": "same\n",
+        "/repo/design/rev.2/Target.md": "same\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const revisionDiff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.2" });
+    expect(revisionDiff.changes).toEqual([]);
+    expect(formatDesignRevisionUnifiedDiff(fileSystem, revisionDiff)).toBe("");
   });
 });
