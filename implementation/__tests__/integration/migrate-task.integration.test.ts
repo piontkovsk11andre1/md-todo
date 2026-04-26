@@ -364,6 +364,45 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")))).toBe(true);
   });
 
+  it("migrate snapshot prompt uses target revision design instead of docs/current", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldLoopMigrateProject(workspace);
+
+    const targetSentinel = "SNAPSHOT-TARGET-REV1-SENTINEL";
+    const currentOnlySentinel = "SNAPSHOT-CURRENT-ONLY-SENTINEL";
+
+    fs.writeFileSync(
+      path.join(workspace, "docs", "rev.1", "Target.md"),
+      `# Target\n\n${targetSentinel}\n`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "docs", "current", "Target.md"),
+      `# Target\n\n${currentOnlySentinel}\n`,
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildSnapshotPromptCaptureWorkerScript(["rev1-apply"]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "rev1-apply")))).toBe(true);
+
+    const capturedPromptPath = path.join(workspace, ".captured-migrate-snapshot-prompt.txt");
+    expect(fs.existsSync(capturedPromptPath)).toBe(true);
+    const capturedPrompt = fs.readFileSync(capturedPromptPath, "utf-8");
+    expect(capturedPrompt).toContain("rev.1");
+    expect(capturedPrompt).toContain(targetSentinel);
+    expect(capturedPrompt).not.toContain(currentOnlySentinel);
+  });
+
   it("migrate down rewinds one planned revision by default", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);
@@ -1772,6 +1811,40 @@ function buildPlannerPromptCaptureWorkerScript(): string {
     "}",
     "if(prompt.includes('updating the migration snapshot at the end of a migration batch')){",
     "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildSnapshotPromptCaptureWorkerScript(plannerOutputs: string[]): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const capturedPath=path.join(process.cwd(),'.captured-migrate-snapshot-prompt.txt');",
+    "const seqPath=path.join(process.cwd(),'.migrate-plan.seq');",
+    `const plannerOutputs=${JSON.stringify(plannerOutputs)};`,
+    "if(prompt.includes('You are producing the predicted whole-application snapshot at design revision')){",
+    "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current snapshot.')){",
+    "  let index=0;",
+    "  if(fs.existsSync(seqPath)){",
+    "    index=Number.parseInt(fs.readFileSync(seqPath,'utf-8'),10)||0;",
+    "  }",
+    "  const bounded=Math.min(index, Math.max(plannerOutputs.length-1, 0));",
+    "  const next=plannerOutputs.length>0?plannerOutputs[bounded]:'DONE';",
+    "  fs.writeFileSync(seqPath,String(index+1));",
+    "  console.log(next);",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
     "  process.exit(0);",
     "}",
     "console.log('applied');",
