@@ -68,6 +68,7 @@ describe("prediction workspace config", () => {
             design: "design-docs",
             specs: "quality/specs",
             migrations: "changesets",
+            prediction: "predictions-tree",
           },
         },
       }),
@@ -77,11 +78,13 @@ describe("prediction workspace config", () => {
       design: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
+      prediction: "sourcedir",
     });
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design-docs"),
       specs: path.join(workspaceRoot, "quality", "specs"),
       migrations: path.join(workspaceRoot, "changesets"),
+      prediction: path.join(workspaceRoot, "predictions-tree"),
     });
   });
 
@@ -114,6 +117,7 @@ describe("prediction workspace config", () => {
       design: "workdir",
       specs: "sourcedir",
       migrations: "sourcedir",
+      prediction: "sourcedir",
     });
   });
 
@@ -162,6 +166,7 @@ describe("prediction workspace config", () => {
       design: path.join(workspaceRoot, "design"),
       specs: path.join(workspaceRoot, "specs"),
       migrations: path.join(workspaceRoot, "migrations"),
+      prediction: path.join(workspaceRoot, "prediction"),
     });
   });
 
@@ -176,11 +181,13 @@ describe("prediction workspace config", () => {
             design: "docs",
             specs: "checks/specs",
             migrations: "history",
+            prediction: "predicted",
           },
           placement: {
             design: "sourcedir",
             specs: "workdir",
             migrations: "workdir",
+            prediction: "workdir",
           },
         },
       }),
@@ -190,6 +197,7 @@ describe("prediction workspace config", () => {
       design: path.join(workspaceRoot, "docs"),
       specs: path.join(invocationRoot, "checks", "specs"),
       migrations: path.join(invocationRoot, "history"),
+      prediction: path.join(invocationRoot, "predicted"),
     });
   });
 
@@ -204,11 +212,13 @@ describe("prediction workspace config", () => {
             design: "design",
             specs: "quality/specs",
             migrations: "changesets",
+            prediction: "predicted",
           },
           placement: {
             design: "sourcedir",
             specs: "workdir",
             migrations: "workdir",
+            prediction: "workdir",
           },
         },
       }),
@@ -218,6 +228,7 @@ describe("prediction workspace config", () => {
       design: path.join(workspaceRoot, "design"),
       specs: path.join(invocationRoot, "quality", "specs"),
       migrations: path.join(invocationRoot, "changesets"),
+      prediction: path.join(invocationRoot, "predicted"),
     });
   });
 
@@ -258,11 +269,13 @@ describe("prediction workspace config", () => {
           design: "../outside",
           specs: "specs",
           migrations: "migrations",
+          prediction: "prediction",
         },
         placement: {
           design: "workdir",
           specs: "sourcedir",
           migrations: "sourcedir",
+          prediction: "sourcedir",
         },
       }),
     ).toThrow(`Invalid project config at ${configPath}: "workspace.directories.design" escapes the project root.`);
@@ -279,11 +292,13 @@ describe("prediction workspace config", () => {
             design: "source/design",
             specs: "design",
             migrations: "migrations",
+            prediction: "prediction",
           },
           placement: {
             design: "workdir",
             specs: "sourcedir",
             migrations: "sourcedir",
+            prediction: "sourcedir",
           },
         },
       }),
@@ -305,11 +320,13 @@ describe("prediction workspace config", () => {
             design: "source/design/current",
             specs: "design",
             migrations: "migrations",
+            prediction: "prediction",
           },
           placement: {
             design: "workdir",
             specs: "sourcedir",
             migrations: "sourcedir",
+            prediction: "sourcedir",
           },
         },
       }),

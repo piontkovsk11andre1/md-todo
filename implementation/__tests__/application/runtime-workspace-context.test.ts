@@ -125,12 +125,15 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspacePredictionDir: "prediction",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: path.join("/workspace/invocation", "design"),
       workspaceSpecsPath: path.join("/workspace/invocation", "specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "migrations"),
+      workspacePredictionPath: path.join("/workspace/invocation", "prediction"),
     });
   });
 
@@ -146,6 +149,7 @@ describe("buildWorkspaceContextTemplateVars", () => {
         design: "docs/design",
         specs: "quality/specs",
         migrations: "changesets",
+        prediction: "predicted",
       },
     )).toEqual({
       invocationDir: "/workspace/invocation",
@@ -155,12 +159,15 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "docs/design",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspacePredictionDir: "predicted",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: path.join("/workspace/source", "docs/design"),
       workspaceSpecsPath: path.join("/workspace/source", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/source", "changesets"),
+      workspacePredictionPath: path.join("/workspace/source", "predicted"),
     });
   });
 
@@ -177,16 +184,19 @@ describe("buildWorkspaceContextTemplateVars", () => {
           design: "design-docs",
           specs: "quality/specs",
           migrations: "changesets",
+          prediction: "predicted",
         },
         placement: {
           design: "sourcedir",
           specs: "workdir",
           migrations: "workdir",
+          prediction: "workdir",
         },
         paths: {
           design: "/workspace/source/design-docs",
           specs: "/workspace/invocation/quality/specs",
           migrations: "/workspace/invocation/changesets",
+          prediction: "/workspace/invocation/predicted",
         },
       },
     )).toEqual({
@@ -197,12 +207,15 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "design-docs",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspacePredictionDir: "predicted",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "workdir",
       workspaceMigrationsPlacement: "workdir",
+      workspacePredictionPlacement: "workdir",
       workspaceDesignPath: "/workspace/source/design-docs",
       workspaceSpecsPath: "/workspace/invocation/quality/specs",
       workspaceMigrationsPath: "/workspace/invocation/changesets",
+      workspacePredictionPath: "/workspace/invocation/predicted",
     });
   });
 
@@ -219,11 +232,13 @@ describe("buildWorkspaceContextTemplateVars", () => {
           design: "design-docs",
           specs: "quality/specs",
           migrations: "changesets",
+          prediction: "predicted",
         },
         placement: {
           design: "sourcedir",
           specs: "workdir",
           migrations: "workdir",
+          prediction: "workdir",
         },
       },
     )).toEqual({
@@ -234,12 +249,15 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceDesignDir: "design-docs",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspacePredictionDir: "predicted",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "workdir",
       workspaceMigrationsPlacement: "workdir",
+      workspacePredictionPlacement: "workdir",
       workspaceDesignPath: path.join("/workspace/source", "design-docs"),
       workspaceSpecsPath: path.join("/workspace/invocation", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "changesets"),
+      workspacePredictionPath: path.join("/workspace/invocation", "predicted"),
     });
   });
 });
@@ -269,12 +287,15 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceDesignDir: "design-docs",
         workspaceSpecsDir: "quality/specs",
         workspaceMigrationsDir: "changesets",
+        workspacePredictionDir: "predicted",
         workspaceDesignPlacement: "sourcedir",
         workspaceSpecsPlacement: "sourcedir",
         workspaceMigrationsPlacement: "sourcedir",
+        workspacePredictionPlacement: "sourcedir",
         workspaceDesignPath: "/real/workspace/design-docs",
         workspaceSpecsPath: "/real/workspace/quality/specs",
         workspaceMigrationsPath: "/real/workspace/changesets",
+        workspacePredictionPath: "/real/workspace/predicted",
       },
     );
 
@@ -286,12 +307,15 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceDesignDir: "design-docs",
       workspaceSpecsDir: "quality/specs",
       workspaceMigrationsDir: "changesets",
+      workspacePredictionDir: "predicted",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: "/real/workspace/design-docs",
       workspaceSpecsPath: "/real/workspace/quality/specs",
       workspaceMigrationsPath: "/real/workspace/changesets",
+      workspacePredictionPath: "/real/workspace/predicted",
       source: "cli",
     });
   });
@@ -314,12 +338,15 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceDesignDir: "design",
         workspaceSpecsDir: "specs",
         workspaceMigrationsDir: "migrations",
+        workspacePredictionDir: "prediction",
         workspaceDesignPlacement: "sourcedir",
         workspaceSpecsPlacement: "sourcedir",
         workspaceMigrationsPlacement: "sourcedir",
+        workspacePredictionPlacement: "sourcedir",
         workspaceDesignPath: "/workspace/invocation/design",
         workspaceSpecsPath: "/workspace/invocation/specs",
         workspaceMigrationsPath: "/workspace/invocation/migrations",
+        workspacePredictionPath: "/workspace/invocation/prediction",
       },
     );
 
@@ -334,12 +361,15 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceDesignDir: "design",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspacePredictionDir: "prediction",
       workspaceDesignPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: "/workspace/invocation/design",
       workspaceSpecsPath: "/workspace/invocation/specs",
       workspaceMigrationsPath: "/workspace/invocation/migrations",
+      workspacePredictionPath: "/workspace/invocation/prediction",
     });
   });
 });
