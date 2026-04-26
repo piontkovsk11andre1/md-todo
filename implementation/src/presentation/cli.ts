@@ -402,6 +402,7 @@ const migrateCommand = program
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--confirm", "Show generated content and confirm before writing files", false)
   .option("--no-backlog", "Do not push removed migrations to Backlog.md when running migrate down")
+  .option("--to <revName>", "Target revision boundary for migrate down (format: rev.<n>)")
   .option("--run <id|latest>", "Choose artifact run id or 'latest' for down", "latest")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
@@ -1144,6 +1145,7 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
     validateUnsupportedDoMode(rundownArgs);
     validateUnsupportedLoopMode(rundownArgs);
     validateRunCommitModeOption(rundownArgs);
+    validateMigrateDownToOptionFormat(rundownArgs);
   } catch (error) {
     emitCliFatalError(error, runtimeState.invocationLogState, runtimeState.app?.emitOutput);
     terminate(1);
@@ -1400,6 +1402,28 @@ function validateRunCommitModeOption(argv: string[]): void {
 }
 
 /**
+ * Validates `migrate down --to <revName>` option format before commander parsing.
+ */
+function validateMigrateDownToOptionFormat(argv: string[]): void {
+  if (resolveInvocationCommand(argv) !== "migrate") {
+    return;
+  }
+
+  const toRevisionName = resolveMigrateDownToOptionValue(argv);
+  if (toRevisionName === undefined) {
+    return;
+  }
+
+  if (!/^rev\.[0-9]+$/.test(toRevisionName)) {
+    throw new Error(
+      "Invalid --to value: "
+        + toRevisionName
+        + ". Allowed: rev.<n> (for example: rev.0).",
+    );
+  }
+}
+
+/**
  * Resolves the effective --mode option value from argv tokens.
  */
 function resolveModeOptionValue(argv: string[]): string | undefined {
@@ -1457,6 +1481,36 @@ function resolveCommitModeOptionValue(argv: string[]): string | undefined {
   }
 
   return commitMode;
+}
+
+/**
+ * Resolves the effective --to option value from argv tokens.
+ */
+function resolveMigrateDownToOptionValue(argv: string[]): string | undefined {
+  let toRevisionName: string | undefined;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+
+    if (token === "--") {
+      break;
+    }
+
+    if (token === "--to") {
+      const nextToken = argv[index + 1];
+      if (nextToken !== undefined && nextToken !== "--") {
+        toRevisionName = nextToken;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (token.startsWith("--to=")) {
+      toRevisionName = token.slice("--to=".length);
+    }
+  }
+
+  return toRevisionName;
 }
 
 /**
