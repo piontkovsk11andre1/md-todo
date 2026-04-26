@@ -159,6 +159,25 @@ describe("prediction workspace config", () => {
     );
   });
 
+  it("rejects overlaps when design and prediction directories are nested", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            design: "shared",
+            prediction: "shared/inner",
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: workspace directories "design" ("shared") and "prediction" ("shared/inner") overlap.`,
+    );
+  });
+
   it("rejects non-string workspace placement values", () => {
     const workspaceRoot = path.join(path.sep, "repo");
     const configPath = path.join(workspaceRoot, ".rundown", "config.json");
