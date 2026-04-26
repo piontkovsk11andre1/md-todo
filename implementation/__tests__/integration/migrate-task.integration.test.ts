@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPredictionBaseline, type PredictionInputs } from "../../src/domain/prediction-reconciliation.js";
-import { formatMigrationFilename, formatSatelliteFilename } from "../../src/domain/migration-parser.js";
+import { formatMigrationFilename, formatSatelliteFilename, parseMigrationFilename } from "../../src/domain/migration-parser.js";
 
 const tempDirs: string[] = [];
 
@@ -267,224 +267,51 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")))).toBe(true);
   });
 
-  it("migrate up stamps migratedAt and migrate down clears it for the same run", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldLoopMigrateProject(workspace);
-
-    const upResult = await runCli([
-      "migrate",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      buildConvergentMigrateWorkerScript(["feature-a"]),
-    ], workspace);
-
-    expect(upResult.code).toBe(0);
-
-    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
-    const rev1MetaAfterUp = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    expect(rev1MetaAfterUp.migratedAt).toBeTypeOf("string");
-
-    const downResult = await runCli([
-      "migrate",
-      "down",
-      "1",
-      "--",
-      "node",
-      "-e",
-      buildConvergentMigrateWorkerScript(["DONE"]),
-    ], workspace);
-
-    const combinedOutput = stripAnsi([
-      ...downResult.logs,
-      ...downResult.errors,
-      ...downResult.stdoutWrites,
-      ...downResult.stderrWrites,
-    ].join("\n"));
-    if (combinedOutput.includes("No completed runs with task metadata found to undo.")) {
-      return;
-    }
-    if (downResult.code !== 0) {
-      throw new Error(`migrate down failed in test: ${combinedOutput}`);
-    }
-
-    expect(downResult.code).toBe(0);
-
-    const rev1MetaAfterDown = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    expect(rev1MetaAfterDown.migratedAt).toBeNull();
-  });
-
-  it("migrate down across two revisions clears both migratedAt stamps", async () => {
+  it("migrate down rewinds one planned revision by default", async () => {
     const workspace = makeTempWorkspace();
     scaffoldRevisionPlanningStampProject(workspace);
-
-    const upResult = await runCli([
-      "migrate",
-      "--dir",
-      "migrations",
-      "--",
-      "node",
-      "-e",
-      buildConvergentMigrateWorkerScript([
-        "rev1-added-file",
-        "rev2-modified-file",
-      ]),
-    ], workspace);
-
-    expect(upResult.code).toBe(0);
-
-    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
-    const rev2MetaPath = path.join(workspace, "docs", "rev.2.meta.json");
-    const rev1MetaAfterUp = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    const rev2MetaAfterUp = JSON.parse(fs.readFileSync(rev2MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    expect(rev1MetaAfterUp.migratedAt).toBeTypeOf("string");
-    expect(rev2MetaAfterUp.migratedAt).toBeTypeOf("string");
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+    ]);
 
     const downResult = await runCli([
       "migrate",
+      "--dir",
+      "migrations",
       "down",
-      "2",
       "--",
       "node",
       "-e",
       buildConvergentMigrateWorkerScript(["DONE"]),
     ], workspace);
 
-    const combinedOutput = stripAnsi([
-      ...downResult.logs,
-      ...downResult.errors,
-      ...downResult.stdoutWrites,
-      ...downResult.stderrWrites,
-    ].join("\n"));
-    if (combinedOutput.includes("No completed runs with task metadata found to undo.")) {
-      return;
-    }
-
     expect(downResult.code).toBe(0);
 
-    const rev1MetaAfterDown = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    const rev2MetaAfterDown = JSON.parse(fs.readFileSync(rev2MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    expect(rev1MetaAfterDown.migratedAt).toBeNull();
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev1MetaAfterDown.migrations ?? []).toEqual([formatMigrationFilename(2, "rev1-added-file")]);
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+    expect(rev2MetaAfterDown.migrations ?? []).toEqual([]);
     expect(rev2MetaAfterDown.migratedAt).toBeNull();
+
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "rev1-added-file")))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "rev2-modified-file")))).toBe(false);
   });
 
-  it("migrate down on legacy runs without targetRevision does not modify any meta", async () => {
+  it("migrate down 2 rewinds two revisions, updates Backlog.md, and prunes later snapshots", async () => {
     const workspace = makeTempWorkspace();
-    scaffoldLoopMigrateProject(workspace);
-
-    const upResult = await runCli([
-      "migrate",
-      "--dir",
-      "migrations",
-      "--keep-artifacts",
-      "--",
-      "node",
-      "-e",
-      buildConvergentMigrateWorkerScript(["feature-a"]),
-    ], workspace);
-
-    expect(upResult.code).toBe(0);
-
-    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
-    const rev1MetaBeforeDown = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      revision: string;
-      index: number;
-      createdAt: string;
-      plannedAt?: string | null;
-      migrations?: string[];
-      migratedAt?: string | null;
-    };
-    rev1MetaBeforeDown.migratedAt = "2026-02-01T00:00:00.000Z";
-    fs.writeFileSync(rev1MetaPath, JSON.stringify(rev1MetaBeforeDown, null, 2) + "\n", "utf-8");
-
-    const runsRoot = path.join(workspace, ".rundown", "runs");
-    const runDirectories = fs.readdirSync(runsRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-
-    const runMetadataPath = runDirectories
-      .map((runId) => path.join(runsRoot, runId, "run.json"))
-      .find((candidatePath) => {
-        if (!fs.existsSync(candidatePath)) {
-          return false;
-        }
-        const metadata = JSON.parse(fs.readFileSync(candidatePath, "utf-8")) as {
-          commandName?: string;
-          status?: string;
-          extra?: Record<string, unknown>;
-        };
-        return metadata.commandName === "migrate"
-          && metadata.status === "completed"
-          && typeof metadata.extra?.targetRevision === "string";
-      });
-    expect(runMetadataPath).toBeDefined();
-    if (!runMetadataPath) {
-      throw new Error("Expected a completed migrate run artifact with extra.targetRevision.");
-    }
-
-    const runMetadata = JSON.parse(fs.readFileSync(runMetadataPath, "utf-8")) as {
-      extra?: Record<string, unknown>;
-    };
-    if (runMetadata.extra && typeof runMetadata.extra === "object") {
-      delete runMetadata.extra.targetRevision;
-    }
-    fs.writeFileSync(runMetadataPath, JSON.stringify(runMetadata, null, 2) + "\n", "utf-8");
-
-    const downResult = await runCli([
-      "migrate",
-      "down",
-      "1",
-      "--",
-      "node",
-      "-e",
-      buildConvergentMigrateWorkerScript(["DONE"]),
-    ], workspace);
-
-    const combinedOutput = stripAnsi([
-      ...downResult.logs,
-      ...downResult.errors,
-      ...downResult.stdoutWrites,
-      ...downResult.stderrWrites,
-    ].join("\n"));
-    if (downResult.code !== 0) {
-      return;
-    }
-    if (combinedOutput.includes("No completed runs with task metadata found to undo.")) {
-      return;
-    }
-
-    expect(downResult.code).toBe(0);
-
-    const rev1MetaAfterDown = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
-      migratedAt?: string | null;
-    };
-    expect(rev1MetaAfterDown.migratedAt).toBeTypeOf("string");
-  });
-
-  it("migrate down 2 removes migrations, updates Backlog.md, and prunes later snapshots", async () => {
-    const workspace = makeTempWorkspace();
-    scaffoldLoopMigrateProject(workspace);
-    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "# 2. Feature A\n\n- [x] done\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "# 3. Feature B\n\n- [x] done\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")), "# Snapshot 2\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(3, "snapshot")), "# Snapshot 3\n", "utf-8");
+    scaffoldRevisionPlanningStampProject(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+    ]);
 
     const result = await runCli([
       "migrate",
+      "--dir",
+      "migrations",
       "down",
       "2",
       "--",
@@ -492,94 +319,151 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       "-e",
       buildConvergentMigrateWorkerScript(["DONE"]),
     ], workspace);
+
+    expect(result.code).toBe(0);
     const combinedOutput = stripAnsi([
       ...result.logs,
       ...result.errors,
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    if (combinedOutput.includes("No completed runs with task metadata found to undo.")) {
-      return;
-    }
+    expect(combinedOutput).toContain("Migrations rewound from rev.1 to rev.2.");
 
-    expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "rev1-added-file")))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "rev2-modified-file")))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "migrations", formatSatelliteFilename(3, "snapshot")))).toBe(false);
 
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1MetaAfterDown.plannedAt).toBeNull();
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+    expect(rev1MetaAfterDown.migrations ?? []).toEqual([]);
+    expect(rev2MetaAfterDown.migrations ?? []).toEqual([]);
+
     const backlog = fs.readFileSync(path.join(workspace, "migrations", "Backlog.md"), "utf-8");
-    expect(backlog).toContain("- feature-a");
-    expect(backlog).toContain("- feature-b");
+    expect(backlog).toContain("- rev1-added-file");
+    expect(backlog).toContain("- rev2-modified-file");
   });
 
-  it("migrate down lazily creates Backlog.md when absent", async () => {
+  it("migrate down --to rewinds to an explicit planned boundary", async () => {
     const workspace = makeTempWorkspace();
-    scaffoldLoopMigrateProject(workspace);
-    fs.unlinkSync(path.join(workspace, "migrations", "Backlog.md"));
-    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "# 2. Feature A\n\n- [x] done\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")), "# Snapshot 2\n", "utf-8");
+    scaffoldRevisionPlanningStampProject(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+    ]);
 
     const result = await runCli([
       "migrate",
+      "--dir",
+      "migrations",
       "down",
-      "1",
+      "--to",
+      "rev.1",
       "--",
       "node",
       "-e",
       buildConvergentMigrateWorkerScript(["DONE"]),
     ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+  });
+
+  it("migrate down --to fails when target revision is unplanned", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldRevisionPlanningStampProject(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+    ]);
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "down",
+      "--to",
+      "rev.2",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(result.code).toBe(1);
     const combinedOutput = stripAnsi([
       ...result.logs,
       ...result.errors,
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    if (combinedOutput.includes("No completed runs with task metadata found to undo.")) {
-      return;
-    }
-
-    expect(result.code).toBe(0);
-    const backlogPath = path.join(workspace, "migrations", "Backlog.md");
-    expect(fs.existsSync(backlogPath)).toBe(true);
-    const backlog = fs.readFileSync(backlogPath, "utf-8");
-    expect(backlog).toContain("# Backlog");
-    expect(backlog).toContain("- feature-a");
+    expect(combinedOutput).toContain("Target revision must be currently planned (or rev.0).");
   });
 
-  it("migrate down 2 --no-backlog removes files without updating Backlog.md", async () => {
+  it("migrate down --run warns as deprecated and still rewinds by revision", async () => {
     const workspace = makeTempWorkspace();
-    scaffoldLoopMigrateProject(workspace);
-    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "# 2. Feature A\n\n- [x] done\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "# 3. Feature B\n\n- [x] done\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(2, "snapshot")), "# Snapshot 2\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", formatSatelliteFilename(3, "snapshot")), "# Snapshot 3\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n\n- keep-existing\n", "utf-8");
+    scaffoldRevisionPlanningStampProject(workspace);
+    seedPlannedRevisionMigrations(workspace, "docs", [
+      { revision: 1, migrations: [formatMigrationFilename(2, "rev1-added-file")] },
+      { revision: 2, migrations: [formatMigrationFilename(3, "rev2-modified-file")] },
+    ]);
 
     const result = await runCli([
       "migrate",
+      "--dir",
+      "migrations",
       "down",
-      "2",
-      "--no-backlog",
+      "--run",
+      "latest",
       "--",
       "node",
       "-e",
       buildConvergentMigrateWorkerScript(["DONE"]),
     ], workspace);
+
+    expect(result.code).toBe(0);
     const combinedOutput = stripAnsi([
       ...result.logs,
       ...result.errors,
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    if (combinedOutput.includes("unknown option '--no-backlog'")) {
-      return;
-    }
+    expect(combinedOutput).toContain("--run is deprecated; migrate down now rewinds whole revisions. Will be removed in the next release.");
+
+    const rev1MetaAfterDown = readRevisionMeta(workspace, "docs", 1);
+    const rev2MetaAfterDown = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1MetaAfterDown.plannedAt).toBeTypeOf("string");
+    expect(rev2MetaAfterDown.plannedAt).toBeNull();
+  });
+
+  it("migrate down emits a baseline no-op message when nothing is planned beyond rev.0", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldLoopMigrateProject(workspace);
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "down",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
 
     expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")))).toBe(false);
-    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")))).toBe(false);
-    expect(fs.readFileSync(path.join(workspace, "migrations", "Backlog.md"), "utf-8")).toBe("# Backlog\n\n- keep-existing\n");
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Already at baseline (rev.0). Nothing to rewind.");
   });
 
   it("uses commands.migrate-slug during migrate up prediction reconciliation", async () => {
@@ -1346,6 +1230,59 @@ function scaffoldRevisionPlanningStampProject(workspace: string): void {
   fs.writeFileSync(path.join(migrationsDir, formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
   fs.writeFileSync(path.join(migrationsDir, formatSatelliteFilename(1, "snapshot")), "# Snapshot 1\n", "utf-8");
   fs.writeFileSync(path.join(migrationsDir, "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+}
+
+function seedPlannedRevisionMigrations(
+  workspace: string,
+  designDir: string,
+  entries: ReadonlyArray<{ revision: number; migrations: string[] }>,
+): void {
+  const designRoot = path.join(workspace, designDir);
+  const plannedAt = "2026-02-01T00:00:00.000Z";
+
+  for (const entry of entries) {
+    const revisionMetaPath = path.join(designRoot, `rev.${String(entry.revision)}.meta.json`);
+    const revisionMeta = JSON.parse(fs.readFileSync(revisionMetaPath, "utf-8")) as {
+      plannedAt?: string | null;
+      migrations?: string[];
+      migratedAt?: string | null;
+    };
+    revisionMeta.plannedAt = plannedAt;
+    revisionMeta.migrations = [...entry.migrations];
+    revisionMeta.migratedAt = plannedAt;
+    fs.writeFileSync(revisionMetaPath, JSON.stringify(revisionMeta, null, 2) + "\n", "utf-8");
+
+    for (const migrationFileName of entry.migrations) {
+      fs.writeFileSync(
+        path.join(workspace, "migrations", migrationFileName),
+        `# ${migrationFileName}\n\n- [x] done\n`,
+        "utf-8",
+      );
+      const parsedMigration = parseMigrationFilename(migrationFileName);
+      if (!parsedMigration) {
+        continue;
+      }
+      fs.writeFileSync(
+        path.join(workspace, "migrations", formatSatelliteFilename(parsedMigration.number, "snapshot")),
+        `# Snapshot ${String(parsedMigration.number)}\n`,
+        "utf-8",
+      );
+    }
+  }
+}
+
+function readRevisionMeta(workspace: string, designDir: string, revision: number): {
+  plannedAt?: string | null;
+  migrations?: string[];
+  migratedAt?: string | null;
+} {
+  return JSON.parse(
+    fs.readFileSync(path.join(workspace, designDir, `rev.${String(revision)}.meta.json`), "utf-8"),
+  ) as {
+    plannedAt?: string | null;
+    migrations?: string[];
+    migratedAt?: string | null;
+  };
 }
 
 function buildConvergentMigrateWorkerScript(plannerOutputs: string[]): string {
