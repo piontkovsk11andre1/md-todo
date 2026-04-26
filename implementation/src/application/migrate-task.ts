@@ -1028,6 +1028,7 @@ async function runMigrateUp(input: {
     artifactContext,
     confirm: false,
     showAgentOutput,
+    designRevisionTarget: targetRevision,
     additionalVars: {
       newMigrations: migrationsFromBatch,
     },
@@ -1572,6 +1573,7 @@ async function generateSatellite(input: {
   workerTimeoutMs?: number;
   confirm: boolean;
   showAgentOutput: boolean;
+  designRevisionTarget?: string | number;
   additionalVars?: Partial<TemplateVars>;
 }): Promise<void> {
   const {
@@ -1591,6 +1593,7 @@ async function generateSatellite(input: {
     workerTimeoutMs,
     confirm,
     showAgentOutput,
+    designRevisionTarget,
     additionalVars,
   } = input;
   const emit = dependencies.output.emit.bind(dependencies.output);
@@ -1610,6 +1613,7 @@ async function generateSatellite(input: {
       workspaceDirectories,
       workspacePlacement,
       workspacePaths,
+      designRevisionTarget,
       newMigrations: "",
     }),
     ...(additionalVars ?? {}),
