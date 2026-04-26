@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   discoverDesignRevisionDirectories,
   findLowestUnplannedRevision,
+  markRevisionPlanned,
   prepareDesignRevisionDiffContext,
   resolveDesignContext,
   resolveDesignContextSourceReferences,
@@ -212,6 +213,84 @@ describe("design-context revision metadata and immutability", () => {
     });
 
     expect(findLowestUnplannedRevision(fileSystem, "/repo")).toBeNull();
+  });
+
+  it("marks a revision planned and records migrations", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.1", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.1.meta.json": JSON.stringify({
+          revision: "rev.1",
+          index: 1,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          label: "Release 1",
+        }),
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1.meta.json": { isDirectory: false, isFile: true },
+      },
+    });
+
+    markRevisionPlanned(fileSystem, "/repo", "rev.1", ["139. Example.md", "140. Follow-up.md"]);
+
+    const persisted = JSON.parse(fileSystem.readText("/repo/design/rev.1.meta.json")) as {
+      revision: string;
+      index: number;
+      createdAt: string;
+      label?: string;
+      plannedAt?: string;
+      migrations?: string[];
+    };
+
+    expect(persisted.revision).toBe("rev.1");
+    expect(persisted.index).toBe(1);
+    expect(persisted.createdAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(persisted.label).toBe("Release 1");
+    expect(typeof persisted.plannedAt).toBe("string");
+    expect(persisted.migrations).toEqual(["139. Example.md", "140. Follow-up.md"]);
+  });
+
+  it("creates revision metadata when it is missing", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/rev.2/Target.md": "two\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+      },
+    });
+
+    markRevisionPlanned(fileSystem, "/repo", "rev.2", []);
+
+    const persisted = JSON.parse(fileSystem.readText("/repo/design/rev.2.meta.json")) as {
+      revision: string;
+      index: number;
+      createdAt: string;
+      plannedAt?: string;
+      migrations?: string[];
+    };
+
+    expect(persisted.revision).toBe("rev.2");
+    expect(persisted.index).toBe(2);
+    expect(typeof persisted.createdAt).toBe("string");
+    expect(persisted.createdAt.length).toBeGreaterThan(0);
+    expect(typeof persisted.plannedAt).toBe("string");
+    expect(persisted.migrations).toEqual([]);
   });
 
   it("saves canonical design/current into design/rev.N snapshots", () => {

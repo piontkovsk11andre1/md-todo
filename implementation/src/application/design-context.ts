@@ -305,6 +305,37 @@ export function findLowestUnplannedRevision(
   return null;
 }
 
+export function markRevisionPlanned(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+  revisionName: string,
+  migrations: readonly string[],
+): void {
+  const parsedRevision = parseDesignRevisionDirectoryName(revisionName);
+  if (!parsedRevision) {
+    throw new Error("Invalid revision name: " + revisionName + ". Expected format rev.N.");
+  }
+
+  const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot);
+  const metadataPath = getDesignRevisionMetadataPath(workspace.rootDir, revisionName);
+  const nowIso = new Date().toISOString();
+  const existingMetadata = readRevisionMetadataRecord(fileSystem, metadataPath);
+
+  const metadata: Record<string, unknown> = {
+    ...(existingMetadata ?? {}),
+    revision: revisionName,
+    index: parsedRevision.index,
+    plannedAt: nowIso,
+    migrations: [...migrations],
+  };
+  if (typeof metadata.createdAt !== "string" || metadata.createdAt.trim().length === 0) {
+    metadata.createdAt = nowIso;
+  }
+
+  const serializedMetadata = JSON.stringify(metadata, null, 2) + "\n";
+  writeTextAtomically(fileSystem, metadataPath, serializedMetadata);
+}
+
 export function parseDesignRevisionDirectoryName(name: string): { index: number } | null {
   const match = REVISION_DIRECTORY_PATTERN.exec(name.trim());
   if (!match) {
@@ -607,6 +638,55 @@ function resolveDesignDiffTarget(
 
 function getDesignRevisionMetadataPath(docsDir: string, revisionName: string): string {
   return path.join(docsDir, revisionName + REVISION_METADATA_FILE_SUFFIX);
+}
+
+function readRevisionMetadataRecord(fileSystem: FileSystem, metadataPath: string): Record<string, unknown> | null {
+  if (!isFile(fileSystem, metadataPath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fileSystem.readText(metadataPath));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function writeTextAtomically(fileSystem: FileSystem, filePath: string, content: string): void {
+  const directoryPath = path.dirname(filePath);
+  fileSystem.mkdir(directoryPath, { recursive: true });
+
+  const tempPath = `${filePath}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  fileSystem.writeText(tempPath, content);
+
+  if (typeof fileSystem.rename === "function") {
+    try {
+      fileSystem.rename(tempPath, filePath);
+      return;
+    } catch (error) {
+      const errorCode = (error as NodeJS.ErrnoException).code;
+      if (errorCode !== "EPERM" && errorCode !== "EEXIST") {
+        try {
+          fileSystem.unlink(tempPath);
+        } catch {
+          // Ignore cleanup failures while surfacing the original rename error.
+        }
+        throw error;
+      }
+    }
+  }
+
+  fileSystem.writeText(filePath, content);
+  try {
+    fileSystem.unlink(tempPath);
+  } catch {
+    // Ignore temp cleanup failures; target write succeeded.
+  }
 }
 
 function createDesignRevisionMetadata(
