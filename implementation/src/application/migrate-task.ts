@@ -43,6 +43,8 @@ import {
 import {
   discoverDesignRevisionDirectories,
   findLowestUnplannedRevision,
+  formatDesignRevisionUnifiedDiff,
+  formatRevisionDesignContext,
   markRevisionMigrated,
   markRevisionPlanned,
   markRevisionUnplanned,
@@ -1717,13 +1719,20 @@ function buildTemplateVars(input: {
     ? fileSystem.readText(state.backlogPath)
     : "";
 
-  const design = resolveDesignContext(fileSystem, projectRoot, { invocationRoot }).design;
-  const designContextSources = resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
   const revisionDiff = providedRevisionDiff
     ?? prepareDesignRevisionDiffContext(fileSystem, projectRoot, {
       invocationRoot,
       target: designRevisionTarget,
     });
+  const designContextSources = revisionDiff.toTarget.kind === "revision"
+    ? {
+      sourceReferences: [revisionDiff.toTarget.absolutePath],
+      hasManagedDocs: true,
+    }
+    : resolveDesignContextSourceReferences(fileSystem, projectRoot, { invocationRoot });
+  const design = revisionDiff.toTarget.kind === "revision"
+    ? formatRevisionDesignContext(fileSystem, revisionDiff.toTarget.absolutePath)
+    : resolveDesignContext(fileSystem, projectRoot, { invocationRoot }).design;
   const previousRevisionId = revisionDiff.fromRevision?.name ?? (revisionDiff.hasComparison ? "nothing" : "");
   const currentRevisionId = revisionDiff.toTarget.name;
   const currentRevisionCreatedAt = revisionDiff.toTarget.metadata.createdAt;
@@ -1735,6 +1744,7 @@ function buildTemplateVars(input: {
   const revisionDiffFiles = revisionDiff.changes.map((change) => {
     return "- " + change.kind + ": " + change.relativePath;
   }).join("\n");
+  const revisionDiffContent = formatDesignRevisionUnifiedDiff(fileSystem, revisionDiff);
   const revisionDiffSourceRefs = revisionDiff.sourceReferences.map((sourcePath) => "- " + sourcePath).join("\n");
   const designContextSourceRefs = designContextSources.sourceReferences.map((sourcePath) => "- " + sourcePath).join("\n");
 
@@ -1778,6 +1788,7 @@ function buildTemplateVars(input: {
     designRevisionDiffModifiedCount: revisionDiff.modifiedCount,
     designRevisionDiffRemovedCount: revisionDiff.removedCount,
     designRevisionDiffFiles: revisionDiffFiles,
+    designRevisionDiffContent: revisionDiffContent,
     designRevisionDiffSources: revisionDiffSourceRefs,
     workspaceDesignDir: workspaceDirectories.design,
     workspaceSpecsDir: workspaceDirectories.specs,
