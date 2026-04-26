@@ -39,7 +39,7 @@ jobs:
           PENDING=""
           for f in $(git diff --name-only HEAD~1 HEAD -- 'migrations/*.md' 2>/dev/null || git show --name-only --format="" HEAD -- 'migrations/*.md'); do
             if [ -f "$f" ]; then
-              UNCHECKED=$(node dist/cli.js list "$f" 2>/dev/null | wc -l || echo 0)
+              UNCHECKED=$(node implementation/dist/cli.js list "$f" 2>/dev/null | wc -l || echo 0)
               if [ "$UNCHECKED" -gt 0 ]; then
                 PENDING="$PENDING $f"
               fi
@@ -71,7 +71,7 @@ jobs:
         run: |
           for f in ${{ steps.detect.outputs.files }}; do
             echo "--- Materializing $f ---"
-            node dist/cli.js materialize "$f"
+            node implementation/dist/cli.js materialize "$f"
           done
 
       - name: Check for changes

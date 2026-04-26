@@ -43,10 +43,10 @@ jobs:
           echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
 
       - name: Release design snapshot
-        run: node dist/cli.js design release
+        run: node implementation/dist/cli.js design release
 
       - name: Generate migrations
-        run: node dist/cli.js migrate
+        run: node implementation/dist/cli.js migrate
 
       - name: Check for changes
         id: changes
