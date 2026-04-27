@@ -169,7 +169,6 @@ export function parseMigrationDirectory(files: string[], migrationsDir: string):
     migrationsDir,
     migrations,
     currentPosition: getCurrentPositionFromMigrations(migrations),
-    latestSnapshot: null,
     backlogPath: getSingletonBacklogPath(files, migrationsDir),
   };
 
