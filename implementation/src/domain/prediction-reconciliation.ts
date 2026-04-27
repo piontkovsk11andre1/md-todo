@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import {
   formatMigrationFilename,
-  formatSatelliteFilename,
+  formatSnapshotFilename,
 } from "./migration-parser.js";
 import type { FileSystem } from "./ports/index.js";
 
@@ -301,21 +301,13 @@ export function createPredictionReconciliationEntryPoint(input: {
       migrationNumber: lastCompletedMigrationNumber,
       matches: (file) => isMigrationTrackedFile(file),
     }),
-    latestContext: findLatestFileAtOrBefore({
-      files: input.current.files,
-      migrationNumber: lastCompletedMigrationNumber,
-      matches: (file) => isLegacySatelliteTrackedFile(file, "context"),
-    }),
+    latestContext: null,
     latestSnapshot: findLatestFileAtOrBefore({
       files: input.current.files,
       migrationNumber: lastCompletedMigrationNumber,
       matches: (file) => isSnapshotTrackedFile(file),
     }),
-    latestBacklog: findLatestFileAtOrBefore({
-      files: input.current.files,
-      migrationNumber: lastCompletedMigrationNumber,
-      matches: (file) => isLegacySatelliteTrackedFile(file, "backlog"),
-    }),
+    latestBacklog: null,
   };
 }
 
@@ -448,7 +440,7 @@ export function reconcilePendingPredictedItemsAtomically(input: {
     const migrationPath = existingMigrationPath
       ?? joinPrefixAndFileName(migrationPrefix, formatMigrationFilename(migrationNumber, stableMigrationName));
     const snapshotPath = existingSnapshotPath
-      ?? joinPrefixAndFileName(snapshotPrefix, formatSatelliteFilename(migrationNumber, "snapshot"));
+      ?? joinPrefixAndFileName(snapshotPrefix, formatSnapshotFilename(migrationNumber));
 
     writeFiles.push({
       relativePath: migrationPath,
@@ -889,14 +881,6 @@ function isMigrationPath(relativePath: string): boolean {
 function isSnapshotTrackedFile(file: Pick<PredictionTrackedFile, "relativePath">): boolean {
   const normalized = normalizeRelativePath(file.relativePath);
   return /\.(?:snapshot|review)\.md$/i.test(normalized);
-}
-
-function isLegacySatelliteTrackedFile(
-  file: Pick<PredictionTrackedFile, "relativePath">,
-  type: "context" | "backlog",
-): boolean {
-  const normalized = normalizeRelativePath(file.relativePath);
-  return new RegExp(`(?:--|\\.)${type}\\.md$`, "i").test(normalized);
 }
 
 function extractJsonObject(output: string): string {

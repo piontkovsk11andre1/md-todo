@@ -1,8 +1,8 @@
-export type SatelliteType = "review";
+export type MigrationReviewType = "review";
 
-export interface Satellite {
+export interface MigrationReview {
   migrationNumber: number;
-  type: SatelliteType;
+  type: MigrationReviewType;
   filePath: string;
 }
 
@@ -10,7 +10,7 @@ export interface Migration {
   number: number;
   name: string;
   filePath: string;
-  satellites: Satellite[];
+  reviews: MigrationReview[];
   isApplied: boolean;
 }
 
@@ -19,6 +19,6 @@ export interface MigrationState {
   migrationsDir: string;
   migrations: Migration[];
   currentPosition: number;
-  latestSnapshot: Satellite | null;
+  latestSnapshot: MigrationReview | null;
   backlogPath: string | null;
 }

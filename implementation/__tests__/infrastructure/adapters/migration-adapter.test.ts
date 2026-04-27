@@ -57,8 +57,8 @@ describe("createMigrationAdapter", () => {
     expect(state.projectRoot).toBe(path.dirname(migrationsDir));
     expect(state.currentPosition).toBe(3);
     expect(state.migrations.map((migration) => migration.number)).toEqual([1, 2, 3]);
-    expect(state.migrations[1]?.satellites.map((satellite) => satellite.type)).toEqual(["review"]);
-    expect(state.migrations[2]?.satellites.map((satellite) => satellite.type)).toEqual([]);
+    expect(state.migrations[1]?.reviews.map((review) => review.type)).toEqual(["review"]);
+    expect(state.migrations[2]?.reviews.map((review) => review.type)).toEqual([]);
     expect(state.latestSnapshot).toBeNull();
     expect(state.backlogPath).toBe(path.join(migrationsDir, "Backlog.md"));
   });

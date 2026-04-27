@@ -50,13 +50,13 @@ describe("parseMigrationDirectory", () => {
     const state = parseMigrationDirectory(files, migrationsDir);
     expect(state.migrations).toHaveLength(1);
     expect(state.migrations[0]?.number).toBe(1);
-    expect(state.migrations[0]?.satellites.map((satellite) => satellite.type)).toEqual(["review"]);
+    expect(state.migrations[0]?.reviews.map((review) => review.type)).toEqual(["review"]);
     expect(state.currentPosition).toBe(1);
     expect(state.latestSnapshot).toBeNull();
     expect(state.backlogPath).toBe(path.join(migrationsDir, "Backlog.md"));
   });
 
-  it("ignores legacy suffix satellite files gracefully", () => {
+  it("ignores legacy suffix auxiliary files gracefully", () => {
     const migrationsDir = path.join("/tmp", "project", "migrations");
     const files = [
       path.join(migrationsDir, "1. Initialize.md"),
@@ -74,9 +74,9 @@ describe("parseMigrationDirectory", () => {
     expect(state.currentPosition).toBe(2);
     expect(state.migrations).toHaveLength(2);
     expect(state.migrations[0]?.number).toBe(1);
-    expect(state.migrations[0]?.satellites.map((satellite) => satellite.type)).toEqual(["review"]);
+    expect(state.migrations[0]?.reviews.map((review) => review.type)).toEqual(["review"]);
     expect(state.migrations[1]?.number).toBe(2);
-    expect(state.migrations[1]?.satellites).toEqual([]);
+    expect(state.migrations[1]?.reviews).toEqual([]);
   });
 
   it("does not set backlogPath when singleton Backlog.md is absent", () => {
