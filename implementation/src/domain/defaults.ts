@@ -469,7 +469,7 @@ For this repository's own work tracking, treat \`migrations/\` as the canonical 
 - Do not manually toggle checkboxes in migration files as a completion shortcut; completion should follow successful rundown execute/verify flow.
 - Keep migration edits scoped to the selected task. Avoid rewriting unrelated checklist items, renumbering files, or reformatting migration history unless explicitly requested.
 - Treat \`migrations/.rundown/\` memory files and run metadata as managed artifacts: read them when relevant, but do not invent replacement structures.
-- Distinguish repository migration-task files from prediction-mode migration naming (for example \`7. Add Feature.md\` and \`7.1 Snapshot.md\`) used by \`rundown start\`/\`rundown migrate\` project scaffolds.
+- Distinguish repository migration-task files from prediction-mode workspace artifacts (for example \`7. Add Feature.md\` plus files under \`{{workspacePredictionPath}}\`) used by \`rundown start\`/\`rundown migrate\` project scaffolds.
 
 ## Repository docs
 
@@ -725,7 +725,7 @@ You are planning migration names for a prediction-driven project.
 
 {{designContextSourceReferences}}
 
-## Latest snapshot
+## Current prediction tree ({{workspacePredictionPath}})
 
 {{latestSnapshot}}
 
@@ -739,9 +739,9 @@ You are planning migration names for a prediction-driven project.
 
 ## Task
 
-Inventory design changes not yet reflected in the current snapshot.
+Inventory design changes not yet reflected in the current prediction tree.
 For each uncovered change, propose exactly one migration name as a kebab-case list item.
-If all design changes are already covered by the snapshot, output only: \`DONE\`
+If all design changes are already covered by the current prediction tree, output only: \`DONE\`
 
 Rules:
 - Output format must be either:
@@ -754,9 +754,9 @@ Rules:
  * Default migrate-snapshot template used for batch-end checkpoint updates.
  */
 export const DEFAULT_MIGRATE_SNAPSHOT_TEMPLATE = `\
-You are producing the predicted whole-application snapshot at design revision {{designRevisionToTarget}}.
+You are producing the next predicted implementation state at design revision {{designRevisionToTarget}}.
 
-The migrations listed below were just applied. Your task is to write the snapshot that describes the application **state after these migrations are in place**, not the delta itself. The delta is provided as evidence; the deliverable is a coherent post-state document.
+The migrations listed below were just applied. Your task is to write the predicted implementation state **after these migrations are in place**, not the delta itself. The delta is provided as evidence; the deliverable is a coherent post-state document grounded in the prediction tree.
 
 ## Position
 
@@ -770,17 +770,17 @@ The migrations listed below were just applied. Your task is to write the snapsho
 
 {{newMigrations}}
 
-## Previous snapshot (evolve from this; preserve still-true facts)
+## Current prediction tree ({{workspacePredictionPath}}) (evolve from this; preserve still-true facts)
 
 {{latestSnapshot}}
 
-## Backlog (context only; do not duplicate into the snapshot)
+## Backlog (context only; do not duplicate into the predicted state)
 
 {{backlog}}
 
 ## Output contract
 
-Produce Markdown describing the predicted application state at {{designRevisionToTarget}}. Cover:
+Produce Markdown describing the predicted application state at {{designRevisionToTarget}} using \`{{workspacePredictionPath}}\` as the canonical tree. Cover:
 
 - **Modules / packages** - what exists and its role.
 - **Public surfaces** - exported types, commands, CLI options, ports/adapters at module boundaries.
@@ -866,7 +866,7 @@ ${DEFAULT_TEST_VERIFY_TEMPLATE}
 
 Interpretation rules:
 
-- This run is in \`future\` mode. Evaluate only predicted state context (design + migration/snapshot inputs).
+- This run is in \`future\` mode. Evaluate only predicted state context (design + migration + prediction-tree inputs).
 - Do not rely on the current materialized source implementation for verdict decisions.
 `;
 
