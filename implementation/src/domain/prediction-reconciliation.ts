@@ -421,8 +421,8 @@ export function reconcilePendingPredictedItemsAtomically(input: {
   for (const migrationNumber of targetPendingMigrationNumbers) {
     const item = itemByMigrationNumber.get(migrationNumber)!;
     const stableMigrationName = getStablePendingMigrationName(currentMigrations, migrationNumber, item.migrationName);
-    const migrationPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber, "migration") ?? defaultPrefix;
-    const existingMigrationPath = getExistingPathForMigrationAndKind(currentFiles, migrationNumber, "migration");
+    const migrationPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber) ?? defaultPrefix;
+    const existingMigrationPath = getExistingPathForMigration(currentFiles, migrationNumber);
     const migrationPath = existingMigrationPath
       ?? joinPrefixAndFileName(migrationPrefix, formatMigrationFilename(migrationNumber, stableMigrationName));
 
@@ -729,7 +729,7 @@ function sortTrackedFiles(files: readonly PredictionTrackedFile[]): PredictionTr
 function inferMigrationPrefix(files: readonly PredictionTrackedFile[]): string {
   for (const file of files) {
     const normalizedPath = normalizeRelativePath(file.relativePath);
-    if (!isMigrationTrackedFile(file) && !isSnapshotTrackedFile(file)) {
+    if (!isMigrationTrackedFile(file)) {
       continue;
     }
     return getPathPrefix(normalizedPath);
@@ -741,33 +741,24 @@ function inferMigrationPrefix(files: readonly PredictionTrackedFile[]): string {
 function getPreferredPrefixForMigration(
   files: readonly PredictionTrackedFile[],
   migrationNumber: number,
-  fileType: "migration" | "snapshot",
 ): string | null {
   const candidates = files
-    .filter((file) => file.migrationNumber === migrationNumber && matchesPredictedFileType(file, fileType))
+    .filter((file) => file.migrationNumber === migrationNumber && isMigrationTrackedFile(file))
     .map((file) => normalizeRelativePath(file.relativePath))
     .sort((left, right) => left.localeCompare(right));
   const first = candidates[0];
   return first ? getPathPrefix(first) : null;
 }
 
-function getExistingPathForMigrationAndKind(
+function getExistingPathForMigration(
   files: readonly PredictionTrackedFile[],
   migrationNumber: number,
-  fileType: "migration" | "snapshot",
 ): string | null {
   const candidates = files
-    .filter((file) => file.migrationNumber === migrationNumber && matchesPredictedFileType(file, fileType))
+    .filter((file) => file.migrationNumber === migrationNumber && isMigrationTrackedFile(file))
     .map((file) => normalizeRelativePath(file.relativePath))
     .sort((left, right) => left.localeCompare(right));
   return candidates[0] ?? null;
-}
-
-function matchesPredictedFileType(
-  file: Pick<PredictionTrackedFile, "relativePath">,
-  fileType: "migration" | "snapshot",
-): boolean {
-  return fileType === "migration" ? isMigrationTrackedFile(file) : isSnapshotTrackedFile(file);
 }
 
 function getPathPrefix(relativePath: string): string {
@@ -839,11 +830,6 @@ function isMigrationPath(relativePath: string): boolean {
   }
 
   return /^(\d+)\.\s+.+\.md$/i.test(baseName) || /^\d{4}-(?!-).+\.md$/i.test(baseName);
-}
-
-function isSnapshotTrackedFile(file: Pick<PredictionTrackedFile, "relativePath">): boolean {
-  const normalized = normalizeRelativePath(file.relativePath);
-  return /\.(?:snapshot|review)\.md$/i.test(normalized);
 }
 
 function extractJsonObject(output: string): string {
