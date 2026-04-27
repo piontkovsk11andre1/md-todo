@@ -174,9 +174,7 @@ design/current/Target.md           # Current design document
 
 migrations/1. Initialization.md    # First migration
 migrations/2. Add Feature.md       # Adding a feature (changes relative to rev.0)
-migrations/2.1 Snapshot.md         # Predicted state up to this point
-migrations/2.2 Backlog.md          # Debt for continuing started migrations
-migrations/2.3 Review.md           # Prediction vs. design comparison
+migrations/3. Review.md            # Follow-up migration with refinement work
 
 specs/feature-tests.md
 specs/end-to-end-tests.md
