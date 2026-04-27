@@ -529,9 +529,6 @@ function buildPendingReResolutionPrompt(input: {
     .join("\n\n");
 
   const latestExecutedMigration = input.entryPoint.latestExecutedMigration?.content ?? "";
-  const latestContext = input.entryPoint.latestContext?.content ?? "";
-  const latestSnapshot = input.entryPoint.latestSnapshot?.content ?? "";
-  const latestBacklog = input.entryPoint.latestBacklog?.content ?? "";
 
   return [
     "Re-resolve the remaining pending migration prediction sequence.",
@@ -539,7 +536,7 @@ function buildPendingReResolutionPrompt(input: {
     "Rules:",
     "- Preserve completed migrations as immutable history.",
     "- Re-resolve ONLY pending migrations from the reconciliation start onward.",
-    "- Use the latest executed migration/context/snapshot/backlog as the source of truth.",
+    "- Read the current prediction tree at {{workspacePredictionPath}} directly when needed.",
     "- Return JSON only.",
     "",
     "Reconciliation state:",
@@ -549,15 +546,6 @@ function buildPendingReResolutionPrompt(input: {
     "",
     "Latest executed migration:",
     latestExecutedMigration || "(none)",
-    "",
-    "Latest context:",
-    latestContext || "(none)",
-    "",
-    "Latest snapshot:",
-    latestSnapshot || "(none)",
-    "",
-    "Latest backlog:",
-    latestBacklog || "(none)",
     "",
     "Current pending migration drafts to reconcile:",
     currentPendingMigrations || "(none)",
