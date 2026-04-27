@@ -46,8 +46,6 @@ interface TestContext {
   designContextSourceReferences: string;
   designContextSourceReferencesJson: string;
   designContextHasManagedDocs: string;
-  latestContext: string;
-  latestSnapshot: string;
   migrationHistory: string;
   lowContextGuidance: string;
 }
@@ -235,8 +233,6 @@ export function createTestSpecs(
         designContextSourceReferences: testContext.designContextSourceReferences,
         designContextSourceReferencesJson: testContext.designContextSourceReferencesJson,
         designContextHasManagedDocs: testContext.designContextHasManagedDocs,
-        latestContext: testContext.latestContext,
-        latestSnapshot: testContext.latestSnapshot,
         migrationHistory: testContext.migrationHistory,
       };
       const prompt = renderTemplate(verifyTemplate, vars);
@@ -380,8 +376,6 @@ function buildTestContext(
       designContextSourceReferences: "",
       designContextSourceReferencesJson: "[]",
       designContextHasManagedDocs: "false",
-      latestContext: "",
-      latestSnapshot: "",
       migrationHistory: "",
       lowContextGuidance: "",
     };
@@ -423,8 +417,6 @@ function buildTestContext(
     designContextSourceReferences,
     designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
     designContextHasManagedDocs: designContextSources.hasManagedDocs ? "true" : "false",
-    latestContext: futureScope.latestContextPath ? fileSystem.readText(futureScope.latestContextPath) : "",
-    latestSnapshot: futureScope.snapshotPath ? fileSystem.readText(futureScope.snapshotPath) : "",
     migrationHistory: futureScope.migrationPaths.map((migrationPath) => "- " + path.basename(migrationPath)).join("\n"),
     lowContextGuidance: designContext.isLowContext ? designContext.lowContextGuidance : "",
   };
@@ -524,8 +516,6 @@ function selectFutureScope(
   future: true | number,
 ): {
   targetLabel: string;
-  snapshotPath: string | null;
-  latestContextPath: string | null;
   migrationPaths: string[];
 } {
   const maxMigrationNumber = state.migrations.length > 0
@@ -538,40 +528,14 @@ function selectFutureScope(
     ? String(targetNumber)
     : (targetNumber > 0 ? String(targetNumber) : "latest");
 
-  const snapshotLookupCeiling = typeof future === "number"
-    ? Math.max(0, targetNumber - 1)
-    : targetNumber;
-  const snapshot = selectSnapshotForFutureScope(state, snapshotLookupCeiling);
-  const snapshotPath = snapshot?.filePath ?? null;
-  const snapshotMigrationNumber = snapshot?.migrationNumber ?? 0;
-
   const migrationPaths = state.migrations
-    .filter((migration) => migration.number > snapshotMigrationNumber && migration.number <= targetNumber)
+    .filter((migration) => migration.number <= targetNumber)
     .map((migration) => migration.filePath);
-
-  const latestContextPath = null;
 
   return {
     targetLabel,
-    snapshotPath,
-    latestContextPath,
     migrationPaths,
   };
-}
-
-function selectSnapshotForFutureScope(
-  state: MigrationState,
-  maxMigrationNumber: number,
-): { migrationNumber: number; filePath: string } | null {
-  const latestSnapshot = state.latestSnapshot;
-  if (latestSnapshot && latestSnapshot.migrationNumber <= maxMigrationNumber) {
-    return {
-      migrationNumber: latestSnapshot.migrationNumber,
-      filePath: latestSnapshot.filePath,
-    };
-  }
-
-  return null;
 }
 
 function readMigrationState(fileSystem: FileSystem, migrationsDir: string): MigrationState {
