@@ -340,7 +340,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(plannerCallCount).toBe(1);
   });
 
-  it("migrate up writes predicted files into prediction/", async () => {
+  it("migrate up does not mirror migration files into prediction/", async () => {
     const workspace = makeTempWorkspace();
     scaffoldPredictionProjectForReconciliation(workspace);
     fs.writeFileSync(
@@ -365,14 +365,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     const predictionMigrationsDir = path.join(workspace, "prediction", "migrations");
     const featureAPath = formatMigrationFilename(2, "feature-a");
     const featureBPath = formatMigrationFilename(3, "feature-b");
-    expect(fs.existsSync(path.join(predictionMigrationsDir, featureAPath))).toBe(true);
-    expect(fs.existsSync(path.join(predictionMigrationsDir, featureBPath))).toBe(true);
-    expect(fs.readFileSync(path.join(predictionMigrationsDir, featureAPath), "utf-8")).toBe(
-      fs.readFileSync(path.join(workspace, "migrations", featureAPath), "utf-8"),
-    );
-    expect(fs.readFileSync(path.join(predictionMigrationsDir, featureBPath), "utf-8")).toBe(
-      fs.readFileSync(path.join(workspace, "migrations", featureBPath), "utf-8"),
-    );
+    expect(fs.existsSync(path.join(predictionMigrationsDir, featureAPath))).toBe(false);
+    expect(fs.existsSync(path.join(predictionMigrationsDir, featureBPath))).toBe(false);
   });
 
   it("materialize leaves prediction/ byte-for-byte unchanged", async () => {
@@ -448,6 +442,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
 
     const removedMigration = formatMigrationFilename(3, "feature-b");
     const predictionMigrationsDir = path.join(workspace, "prediction", "migrations");
+    fs.mkdirSync(predictionMigrationsDir, { recursive: true });
+    fs.writeFileSync(path.join(predictionMigrationsDir, removedMigration), "# predicted feature-b\n", "utf-8");
 
     const firstResult = await runCli([
       "migrate",
@@ -458,7 +454,6 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(firstResult.code).toBe(0);
     expect(fs.existsSync(path.join(predictionMigrationsDir, removedMigration))).toBe(true);
 
-    fs.unlinkSync(path.join(workspace, "migrations", removedMigration));
     fs.unlinkSync(path.join(predictionMigrationsDir, removedMigration));
 
     const result = await runCli([
