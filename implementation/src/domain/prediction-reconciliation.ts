@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import {
   formatMigrationFilename,
-  formatSnapshotFilename,
 } from "./migration-parser.js";
 import type { FileSystem } from "./ports/index.js";
 
@@ -67,7 +66,6 @@ export interface ReResolvedPredictionItem {
   migrationNumber: number;
   migrationName: string;
   migrationContent: string;
-  snapshotContent: string;
 }
 
 export interface ReResolvedPredictionPlan {
@@ -424,25 +422,15 @@ export function reconcilePendingPredictedItemsAtomically(input: {
     const item = itemByMigrationNumber.get(migrationNumber)!;
     const stableMigrationName = getStablePendingMigrationName(currentMigrations, migrationNumber, item.migrationName);
     const migrationPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber, "migration") ?? defaultPrefix;
-    const snapshotPrefix = getPreferredPrefixForMigration(currentFiles, migrationNumber, "snapshot") ?? defaultPrefix;
     const existingMigrationPath = getExistingPathForMigrationAndKind(currentFiles, migrationNumber, "migration");
-    const existingSnapshotPath = getExistingPathForMigrationAndKind(currentFiles, migrationNumber, "snapshot");
     const migrationPath = existingMigrationPath
       ?? joinPrefixAndFileName(migrationPrefix, formatMigrationFilename(migrationNumber, stableMigrationName));
-    const snapshotPath = existingSnapshotPath
-      ?? joinPrefixAndFileName(snapshotPrefix, formatSnapshotFilename(migrationNumber));
 
     writeFiles.push({
       relativePath: migrationPath,
       migrationNumber,
       kind: "file",
       content: item.migrationContent,
-    });
-    writeFiles.push({
-      relativePath: snapshotPath,
-      migrationNumber,
-      kind: "file",
-      content: item.snapshotContent,
     });
   }
 
@@ -580,8 +568,7 @@ function buildPendingReResolutionPrompt(input: {
     "    {",
     '      "number": <number from pendingMigrationNumbers>,',
     '      "name": "<kebab-case-name>",',
-    '      "migration": "<markdown>",',
-    '      "snapshot": "<markdown>"',
+    '      "migration": "<markdown>"',
     "    }",
     "  ]",
     "}",
@@ -609,17 +596,15 @@ function parseReResolvedPlanItems(output: string): ReResolvedPredictionItem[] {
     const number = toInteger(migration.number);
     const name = toStringValue(migration.name);
     const migrationContent = toStringValue(migration.migration);
-    const snapshotContent = toStringValue(migration.snapshot);
 
-    if (number === null || !name || !migrationContent || !snapshotContent) {
-      throw new Error("Each migration item requires number, name, migration, and snapshot.");
+    if (number === null || !name || !migrationContent) {
+      throw new Error("Each migration item requires number, name, and migration.");
     }
 
     items.push({
       migrationNumber: number,
       migrationName: toKebabCase(name),
       migrationContent,
-      snapshotContent,
     });
   }
 

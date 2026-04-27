@@ -579,13 +579,11 @@ describe("prediction-reconciliation", () => {
             migrationNumber: 1,
             migrationName: "initialize-replanned",
             migrationContent: "# 0001 initialize-replanned\n",
-            snapshotContent: "# Snapshot 0001\n",
           },
           {
             migrationNumber: 2,
             migrationName: "feature-a-replanned",
             migrationContent: "# 0002 feature-a-replanned\n",
-            snapshotContent: "# Snapshot 0002\n",
           },
         ],
         fallback: null,
