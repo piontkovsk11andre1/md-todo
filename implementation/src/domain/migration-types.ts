@@ -19,6 +19,5 @@ export interface MigrationState {
   migrationsDir: string;
   migrations: Migration[];
   currentPosition: number;
-  latestSnapshot: MigrationReview | null;
   backlogPath: string | null;
 }
