@@ -790,13 +790,7 @@ Verify whether the selected test assertion is true.
 
 {{designContextSourceReferences}}
 
-### Latest context
-
-{{latestContext}}
-
-### Latest snapshot
-
-{{latestSnapshot}}
+Read the current prediction tree at `{{workspacePredictionPath}}` directly.
 
 ### Migration history
 
