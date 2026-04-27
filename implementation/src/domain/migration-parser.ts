@@ -7,7 +7,6 @@ const DOUBLE_DASH_AUX_PATTERN = /^(\d{4})--(.+)\.md$/;
 const MIGRATION_PATTERN = /^(\d{4})-(?!-)(.+)\.md$/;
 const DOTTED_MIGRATION_PATTERN = /^(\d+)\.\s+(.+)\.md$/;
 const DOTTED_AUX_PATTERN = /^(\d+)\.(\d+)\s+(.+)\.md$/;
-const LEGACY_SUFFIX_PATTERN = /\.(snapshot|context|backlog)\.md$/i;
 
 const DOTTED_AUX_INDEX_BY_TYPE: Record<ReviewFilenameType, number> = {
   snapshot: 1,
@@ -51,10 +50,6 @@ function formatAuxiliaryFilename(number: number, type: ReviewFilenameType): stri
 }
 
 function parseMigrationFilenameDetailed(filename: string): ParsedMigrationEntry | null {
-  if (LEGACY_SUFFIX_PATTERN.test(filename)) {
-    return null;
-  }
-
   const dottedAuxMatch = filename.match(DOTTED_AUX_PATTERN);
   if (dottedAuxMatch) {
     const number = Number.parseInt(dottedAuxMatch[1]!, 10);
