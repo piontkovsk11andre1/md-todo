@@ -56,8 +56,6 @@ const EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE = [
   "",
   "## Current prediction tree ({{workspacePredictionPath}}) (evolve from this; preserve still-true facts)",
   "",
-  "{{latestSnapshot}}",
-  "",
   "## Backlog (context only; do not duplicate into the predicted state)",
   "",
   "{{backlog}}",
@@ -121,7 +119,6 @@ describe("project-templates", () => {
       testFuture: DEFAULT_TEST_FUTURE_TEMPLATE,
       testMaterialized: DEFAULT_TEST_MATERIALIZED_TEMPLATE,
       migrate: DEFAULT_MIGRATE_TEMPLATE,
-      migrateSnapshot: EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE,
       querySeed: DEFAULT_QUERY_SEED_TEMPLATE,
       querySeedYn: DEFAULT_QUERY_YN_SEED_TEMPLATE,
       querySeedSuccessError: DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
@@ -184,7 +181,6 @@ describe("project-templates", () => {
       testFuture: DEFAULT_TEST_FUTURE_TEMPLATE,
       testMaterialized: DEFAULT_TEST_MATERIALIZED_TEMPLATE,
       migrate: DEFAULT_MIGRATE_TEMPLATE,
-      migrateSnapshot: EXPECTED_MIGRATE_SNAPSHOT_TEMPLATE,
       querySeed: DEFAULT_QUERY_SEED_TEMPLATE,
       querySeedYn: DEFAULT_QUERY_YN_SEED_TEMPLATE,
       querySeedSuccessError: DEFAULT_QUERY_SUCCESS_ERROR_SEED_TEMPLATE,
@@ -241,9 +237,6 @@ describe("project-templates", () => {
         if (filePath.endsWith("migrate.md")) {
           return "MIGRATE";
         }
-        if (filePath.endsWith("migrate-snapshot.md")) {
-          return "MIGRATE_SNAPSHOT";
-        }
         return null;
       }),
     };
@@ -259,7 +252,6 @@ describe("project-templates", () => {
     expect(templates.testFuture).toBe("TEST_FUTURE");
     expect(templates.testMaterialized).toBe("TEST_MATERIALIZED");
     expect(templates.migrate).toBe("MIGRATE");
-    expect(templates.migrateSnapshot).toBe("MIGRATE_SNAPSHOT");
   });
 
   it("loads help template override from help.md", () => {
