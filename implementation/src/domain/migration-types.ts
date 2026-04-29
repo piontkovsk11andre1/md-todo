@@ -19,5 +19,4 @@ export interface MigrationState {
   migrationsDir: string;
   migrations: Migration[];
   currentPosition: number;
-  backlogPath: string | null;
 }

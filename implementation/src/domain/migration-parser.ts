@@ -169,7 +169,6 @@ export function parseMigrationDirectory(files: string[], migrationsDir: string):
     migrationsDir,
     migrations,
     currentPosition: getCurrentPositionFromMigrations(migrations),
-    backlogPath: getSingletonBacklogPath(files, migrationsDir),
   };
 
   return state;
@@ -196,17 +195,6 @@ function getReviewTypeFromLabel(label: string): ReviewFilenameType | null {
   const normalized = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (normalized === "review") {
     return "review";
-  }
-
-  return null;
-}
-
-function getSingletonBacklogPath(files: string[], migrationsDir: string): string | null {
-  const expected = path.normalize(path.join(migrationsDir, "Backlog.md"));
-  for (const filePath of files) {
-    if (path.normalize(filePath) === expected) {
-      return filePath;
-    }
   }
 
   return null;
