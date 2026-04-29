@@ -61,7 +61,6 @@ export interface MigrateTaskOptions {
   dir?: string;
   workspace?: string;
   confirm?: boolean;
-  noBacklog?: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
   keepArtifacts?: boolean;
