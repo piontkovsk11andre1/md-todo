@@ -29,7 +29,7 @@ There is no top-level `repair` command; repair is a phase **inside** `run` / `re
 |---|---|
 | `init` | Creates `<cwd>/.rundown/` and an empty `config.json` (`{}`). With `--default-worker <command>` / `--tui-worker <command>`, also writes the matching keys. `--language <lang>` runs localization after init; `--gitignore` adds `.rundown` to `.gitignore`. |
 | `localize` | Re-localizes templates and locale intent aliases for an existing `.rundown/`. Optional `--language <lang>` selects the target language. See [../configuration/locale.md](../configuration/locale.md). |
-| `start "<desc>"` | Higher-level scaffolder; see [prediction-commands.md](prediction-commands.md). |
+| `start "<desc>"` | Higher-level scaffolder; see [lifecycle-commands.md](lifecycle-commands.md). |
 | `with <harness>` | Writes preset keys for a known harness. See [../workers/harness-presets.md](../workers/harness-presets.md). |
 
 ## Config
