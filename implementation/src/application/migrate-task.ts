@@ -842,9 +842,6 @@ function buildTemplateVars(input: {
     newMigrations,
   } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
-  const backlog = state.backlogPath && fileSystem.exists(state.backlogPath)
-    ? fileSystem.readText(state.backlogPath)
-    : "";
 
   const revisionDiff = providedRevisionDiff
     ?? prepareDesignRevisionDiffContext(fileSystem, projectRoot, {
@@ -885,7 +882,6 @@ function buildTemplateVars(input: {
     source: "",
     design,
     latestMigration: latestMigration ? fileSystem.readText(latestMigration.filePath) : "",
-    backlog,
     newMigrations: newMigrations ?? "",
     migrationHistory: historyLines.join("\n"),
     designContextSourceReferences: designContextSourceRefs,
