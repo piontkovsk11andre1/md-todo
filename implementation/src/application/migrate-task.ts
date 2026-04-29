@@ -320,96 +320,6 @@ export function createMigrateTask(
   };
 }
 
-function persistPredictionBaselineSnapshot(
-  fileSystem: FileSystem,
-  migrationsDir: string,
-  projectRoot: string,
-  options?: { writePredictionBucket?: boolean },
-): void {
-  const predictionInputs = readPredictionInputs(fileSystem, migrationsDir, projectRoot);
-  const baseline = createPredictionBaseline(predictionInputs);
-  if (options?.writePredictionBucket !== false) {
-    const predictionDir = resolveWorkspacePath({
-      fileSystem,
-      workspaceRoot: projectRoot,
-      invocationRoot: projectRoot,
-      bucket: "prediction",
-    });
-    writePredictionTree({
-      fileSystem,
-      predictionDir,
-      baseline: predictionInputs,
-    });
-  }
-  savePredictionBaseline(fileSystem, migrationsDir, baseline);
-}
-
-function writePredictionTree(input: {
-  fileSystem: FileSystem;
-  predictionDir: string;
-  baseline: { files: readonly PredictionTrackedFile[] };
-}): void {
-  const { fileSystem, predictionDir, baseline } = input;
-  if (!fileSystem.exists(predictionDir)) {
-    fileSystem.mkdir(predictionDir, { recursive: true });
-  }
-
-  const expectedRelativePaths = new Set<string>();
-  for (const file of baseline.files) {
-    const normalizedRelativePath = normalizeRelativeFilePath(file.relativePath);
-    expectedRelativePaths.add(normalizedRelativePath);
-
-    const filePath = path.join(predictionDir, file.relativePath);
-    const parentDirectory = path.dirname(filePath);
-    if (!fileSystem.exists(parentDirectory)) {
-      fileSystem.mkdir(parentDirectory, { recursive: true });
-    }
-    fileSystem.writeText(filePath, file.content);
-  }
-
-  const existingFiles = listRelativeFiles(fileSystem, predictionDir);
-  for (const relativePath of existingFiles) {
-    if (expectedRelativePaths.has(normalizeRelativeFilePath(relativePath))) {
-      continue;
-    }
-    fileSystem.unlink(path.join(predictionDir, relativePath));
-  }
-}
-
-function listRelativeFiles(fileSystem: FileSystem, rootDirectory: string): string[] {
-  if (!fileSystem.exists(rootDirectory)) {
-    return [];
-  }
-
-  const relativePaths: string[] = [];
-  const pendingDirectories = [rootDirectory];
-  while (pendingDirectories.length > 0) {
-    const currentDirectory = pendingDirectories.pop();
-    if (!currentDirectory) {
-      continue;
-    }
-
-    for (const entry of fileSystem.readdir(currentDirectory)) {
-      const entryPath = path.join(currentDirectory, entry.name);
-      if (entry.isDirectory) {
-        pendingDirectories.push(entryPath);
-        continue;
-      }
-      if (!entry.isFile) {
-        continue;
-      }
-
-      relativePaths.push(path.relative(rootDirectory, entryPath).replace(/\\/g, "/"));
-    }
-  }
-
-  return relativePaths;
-}
-
-function normalizeRelativeFilePath(relativePath: string): string {
-  return relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
-}
-
 async function reconcilePendingMigrationPredictions(input: {
   dependencies: MigrateTaskDependencies;
   migrationsDir: string;
@@ -504,7 +414,8 @@ async function reconcilePendingMigrationPredictions(input: {
       reconciled.patch.removeRelativePaths,
       reconciled.patch.writeFiles,
     );
-    persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot);
+    const nextPredictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir, workspaceRoot);
+    savePredictionBaseline(dependencies.fileSystem, migrationsDir, createPredictionBaseline(nextPredictionInputs));
   } catch (error) {
     emit({
       kind: "warn",
@@ -1039,9 +950,8 @@ async function runMigrateDown(input: {
     }
   }
 
-  persistPredictionBaselineSnapshot(dependencies.fileSystem, migrationsDir, workspaceRoot, {
-    writePredictionBucket: false,
-  });
+  const predictionInputs = readPredictionInputs(dependencies.fileSystem, migrationsDir, workspaceRoot);
+  savePredictionBaseline(dependencies.fileSystem, migrationsDir, createPredictionBaseline(predictionInputs));
 
   return EXIT_CODE_SUCCESS;
 }
