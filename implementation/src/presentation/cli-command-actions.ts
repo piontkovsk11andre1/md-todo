@@ -321,9 +321,7 @@ interface QueryActionDependencies extends WorkerActionDependencies {
   queryModes: readonly ProcessRunMode[];
 }
 
-type MigrateAction =
-  | "up"
-  | "down";
+type MigrateAction = "down";
 
 type TestAction = "new";
 
@@ -570,23 +568,8 @@ export function createMaterializeCommandAction({
     ];
   };
 
-  const getMaterializeApp = (): CliApp => {
-    const app = getApp();
-    return {
-      ...app,
-      runTask: (request) => {
-        // Materialize writes implementation only; prediction refresh stays explicit via `migrate up`.
-        const materializeRequest = {
-          ...request,
-          writePredictionBucket: false,
-        };
-        return app.runTask(materializeRequest);
-      },
-    };
-  };
-
   const runAction = createRunCommandAction({
-    getApp: getMaterializeApp,
+    getApp,
     getWorkerFromSeparator,
     runnerModes,
     getInvocationArgv: getMaterializeInvocationArgv,
@@ -1387,11 +1370,7 @@ export function createMigrateCommandAction({
 
     const normalizedAction = normalizeOptionalString(action);
     if (normalizedAction !== undefined && !isMigrateAction(normalizedAction)) {
-      throw new Error(
-        "Invalid migrate action: "
-          + normalizedAction
-          + ". Allowed: up, down.",
-      );
+      throw new Error(`unknown action: ${normalizedAction}`);
     }
 
     if (count !== undefined && normalizedAction !== "down") {
@@ -2881,8 +2860,7 @@ function formatWithConfiguredKeyLine(configuredKey: WithTaskConfiguredKeyResult)
 }
 
 function isMigrateAction(value: string): value is MigrateAction {
-  return value === "up"
-    || value === "down";
+  return value === "down";
 }
 
 function isTestAction(value: string): value is TestAction {
