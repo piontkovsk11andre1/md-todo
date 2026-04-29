@@ -11,7 +11,6 @@ import {
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_MIGRATE_TEMPLATE,
   DEFAULT_TEST_VERIFY_TEMPLATE,
-  DEFAULT_TEST_FUTURE_TEMPLATE,
   DEFAULT_TEST_MATERIALIZED_TEMPLATE,
   DEFAULT_RESEARCH_TEMPLATE,
   DEFAULT_TRACE_TEMPLATE,
@@ -43,8 +42,6 @@ export interface ProjectTemplates {
   undo: string;
   // Template used by the test verification command.
   testVerify: string;
-  // Template used by the test command in prediction/future mode.
-  testFuture: string;
   // Template used by the test command in materialized mode.
   testMaterialized: string;
   // Template used by migrate planning (.rundown/migrate.md).
@@ -70,7 +67,6 @@ export interface ProjectTemplates {
  * - `.rundown/trace.md`
  * - `.rundown/undo.md`
  * - `.rundown/test-verify.md`
- * - `.rundown/test-future.md`
  * - `.rundown/test-materialized.md`
  * - `.rundown/migrate.md`
  *
@@ -91,7 +87,6 @@ export function loadProjectTemplates(configDir?: string): ProjectTemplates {
       trace: DEFAULT_TRACE_TEMPLATE,
       undo: DEFAULT_UNDO_TEMPLATE,
       testVerify: DEFAULT_TEST_VERIFY_TEMPLATE,
-      testFuture: DEFAULT_TEST_FUTURE_TEMPLATE,
       testMaterialized: DEFAULT_TEST_MATERIALIZED_TEMPLATE,
       migrate: DEFAULT_MIGRATE_TEMPLATE,
     };
@@ -112,8 +107,6 @@ export function loadProjectTemplates(configDir?: string): ProjectTemplates {
     undo: loadFile(path.join(configDir, "undo.md")) ?? DEFAULT_UNDO_TEMPLATE,
     testVerify:
       loadFile(path.join(configDir, "test-verify.md")) ?? DEFAULT_TEST_VERIFY_TEMPLATE,
-    testFuture:
-      loadFile(path.join(configDir, "test-future.md")) ?? DEFAULT_TEST_FUTURE_TEMPLATE,
     testMaterialized:
       loadFile(path.join(configDir, "test-materialized.md")) ?? DEFAULT_TEST_MATERIALIZED_TEMPLATE,
     migrate: loadFile(path.join(configDir, "migrate.md")) ?? DEFAULT_MIGRATE_TEMPLATE,
