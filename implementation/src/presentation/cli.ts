@@ -226,7 +226,7 @@ configureRunLikeCommandOptions(callCommand)
 
 const materializeCommand = program
   .command("materialize")
-  .description("Run all tasks with revertable defaults (equivalent to `run --all --revertable`). Writes implementation/ only; refresh prediction/ with `rundown migrate up`.")
+  .description("Run all tasks with revertable defaults (equivalent to `run --all --revertable`).")
   .argument("<source>", "File, directory, or glob to scan for Markdown tasks")
   .configureHelp({ showGlobalOptions: true });
 
@@ -404,10 +404,10 @@ program
 
 const migrateCommand = program
   .command("migrate")
-  .description("Generate and manage revision-aware prediction migrations. Writes the predicted-implementation tree into prediction/.")
+  .description("Generate revision-aware migration files and manage migration rewind.")
   .argument(
     "[action]",
-    "Migration action: up | down [n]",
+    "Migration action: down [n]",
   )
   .argument("[count]", "Optional number of runs to undo for down")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
