@@ -2,6 +2,8 @@
 
 High-level framing of what `rundown` is, why it exists, and the model it operationalizes.
 
+Prediction now lives in a separate project. In this repository, `rundown` design scope is bounded to lifecycle operations in the local workspace: `design release`, planner-driven migration authoring via `migrate`, `materialize`, `undo`/`revert`, and materialised-mode `test`.
+
 ## Files
 
 | File | Topic |
