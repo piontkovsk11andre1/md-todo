@@ -266,7 +266,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     scaffoldReleasedDesignRevisions(workspace, "docs");
     fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n\n- seed-item\n", "utf-8");
 
     const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
     const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
@@ -905,7 +905,7 @@ function scaffoldPredictionProject(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSeed design context.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
   fs.writeFileSync(path.join(workspace, ".rundown", "migrate.md"), "{{design}}\n{{migrationHistory}}\n", "utf-8");
 }
@@ -914,7 +914,7 @@ function scaffoldPredictionProjectForReconciliation(workspace: string): void {
   fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nReconciliation test project.\n", "utf-8");
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 0001 initialize\n\n- [x] bootstrap\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n\n- baseline\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n\n- baseline\n", "utf-8");
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(2, "feature-a")), "# 0002 feature-a\n\n- [ ] implement feature a\n", "utf-8");
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(3, "feature-b")), "# 0003 feature-b\n\n- [ ] implement feature b\n", "utf-8");
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
@@ -925,7 +925,7 @@ function scaffoldLoopMigrateProject(workspace: string): void {
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
   scaffoldReleasedDesignRevisions(workspace, "docs");
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
-  fs.writeFileSync(path.join(workspace, "migrations", "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n\n- seed-item\n", "utf-8");
 }
 
 function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): void {
@@ -1028,7 +1028,7 @@ function scaffoldRevisionPlanningStampProject(workspace: string): void {
   }, null, 2) + "\n", "utf-8");
 
   fs.writeFileSync(path.join(migrationsDir, formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
-  fs.writeFileSync(path.join(migrationsDir, "Backlog.md"), "# Backlog\n\n- seed-item\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "Notes.md"), "# Notes\n\n- seed-item\n", "utf-8");
 }
 
 function scaffoldRevisionPlanningStampProjectThroughRev3(workspace: string): void {

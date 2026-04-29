@@ -47,7 +47,7 @@ describe("createMigrationAdapter", () => {
     fs.writeFileSync(path.join(migrationsDir, "0003-polish.md"), "- [ ] polish\n", "utf-8");
     fs.writeFileSync(path.join(migrationsDir, "0002--review.md"), "review\n", "utf-8");
     fs.writeFileSync(path.join(migrationsDir, "0004--unknown.md"), "ignore\n", "utf-8");
-    fs.writeFileSync(path.join(migrationsDir, "Backlog.md"), "debt\n", "utf-8");
+    fs.writeFileSync(path.join(migrationsDir, "Notes.md"), "debt\n", "utf-8");
     fs.writeFileSync(path.join(migrationsDir, "README.md"), "not a migration\n", "utf-8");
     fs.writeFileSync(path.join(migrationsDir, "0005-missing-extension.txt"), "ignore\n", "utf-8");
 

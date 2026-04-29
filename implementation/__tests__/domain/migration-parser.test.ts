@@ -16,7 +16,7 @@ describe("parseMigrationFilename", () => {
     expect(parseMigrationFilename("0007--backlog.md")).toBeNull();
     expect(parseMigrationFilename("0007--user-experience.md")).toBeNull();
     expect(parseMigrationFilename("7.4 Context.md")).toBeNull();
-    expect(parseMigrationFilename("7.2 Backlog.md")).toBeNull();
+    expect(parseMigrationFilename("7.2 Notes.md")).toBeNull();
   });
 
   it("parses review filenames and rejects malformed variants", () => {
@@ -42,7 +42,7 @@ describe("parseMigrationDirectory", () => {
       path.join(migrationsDir, "0001---review.md"),
       path.join(migrationsDir, "0001--review-extra.md"),
       path.join(migrationsDir, "0001--review.md.bak"),
-      path.join(migrationsDir, "Backlog.md"),
+      path.join(migrationsDir, "Notes.md"),
     ];
 
     expect(() => parseMigrationDirectory(files, migrationsDir)).not.toThrow();
@@ -63,7 +63,7 @@ describe("parseMigrationDirectory", () => {
       path.join(migrationsDir, "0002--unknown.md"),
       path.join(migrationsDir, "0002---review.md"),
       path.join(migrationsDir, "0002--review-extra.md"),
-      path.join(migrationsDir, "Backlog.md"),
+      path.join(migrationsDir, "Notes.md"),
     ];
 
     expect(() => parseMigrationDirectory(files, migrationsDir)).not.toThrow();

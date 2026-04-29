@@ -1416,7 +1416,7 @@ function validateRunCommitModeOption(argv: string[]): void {
 }
 
 /**
- * Validates `migrate down --to <revName>` option format before commander parsing.
+ * Validates legacy migrate target option format before commander parsing.
  */
 function validateMigrateDownToOptionFormat(argv: string[]): void {
   if (resolveInvocationCommand(argv) !== "migrate") {
