@@ -404,17 +404,10 @@ program
 
 const migrateCommand = program
   .command("migrate")
-  .description("Generate revision-aware migration files and manage migration rewind.")
-  .argument(
-    "[action]",
-    "Migration action: down [n]",
-  )
-  .argument("[count]", "Optional number of runs to undo for down")
+  .description("Generate revision-aware migration files.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--confirm", "Show generated content and confirm before writing files", false)
-  .option("--no-backlog", "Do not push removed migrations to Backlog.md when running migrate down")
-  .option("--to <revName>", "Target revision boundary for migrate down (format: rev.<n>)")
   .option(
     "--run <id|latest>",
     "[deprecated] Legacy down run target (ignored by revision-boundary rewind); will be removed next release",
