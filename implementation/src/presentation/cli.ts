@@ -500,7 +500,6 @@ program
   .argument("[action]", "Test action: new")
   .argument("[prompt]", "Assertion text for `test new`")
   .option("--dir <path>", "Specs directory (default: configured workspace, fallback: ./specs)")
-  .option("--future [n]", "Run prediction-mode tests using design + migrations only (optionally target migration number n)")
   .option("--run", "Immediately verify the created spec after `test new`", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
