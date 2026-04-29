@@ -33,18 +33,8 @@ describe("splitWorkerFromSeparator", () => {
 });
 
 describe("rewriteAllAlias", () => {
-  it("rewrites migrate down to undo", () => {
+  it("returns argv unchanged", () => {
     expect(rewriteAllAlias(["migrate", "down"]))
-      .toEqual(["undo"]);
-  });
-
-  it("rewrites migrate down with a count to undo --last <n>", () => {
-    expect(rewriteAllAlias(["migrate", "down", "5"]))
-      .toEqual(["undo", "--last", "5"]);
-  });
-
-  it("preserves additional migrate down flags when rewriting", () => {
-    expect(rewriteAllAlias(["migrate", "down", "3", "--force", "--worker", "opencode run"]))
-      .toEqual(["undo", "--last", "3", "--force", "--worker", "opencode run"]);
+      .toEqual(["migrate", "down"]);
   });
 });

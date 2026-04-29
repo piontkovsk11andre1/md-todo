@@ -61,38 +61,8 @@ export function splitWorkerFromSeparator(argv: string[]): { rundownArgs: string[
 
 /**
  * Rewrites supported command aliases before option parsing.
- *
- * - `migrate down [n]` -> `undo [--last n]`
- *
- * Rewriting applies only to the first positional command token before `--`.
  */
 export function rewriteAllAlias(argv: string[]): string[] {
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-
-    // Stop rewriting once argument parsing is delegated.
-    if (token === "--") {
-      break;
-    }
-
-    // Skip option flags while searching for the command token.
-    if (token.startsWith("-")) {
-      continue;
-    }
-
-    if (token === "migrate" && argv[i + 1] === "down") {
-      const maybeCount = argv[i + 2];
-      if (typeof maybeCount === "string" && /^\d+$/.test(maybeCount)) {
-        return [...argv.slice(0, i), "undo", "--last", maybeCount, ...argv.slice(i + 3)];
-      }
-
-      return [...argv.slice(0, i), "undo", ...argv.slice(i + 2)];
-    }
-
-    // Stop after the first positional token once a non-alias command is found.
-    break;
-  }
-
   return argv;
 }
 
