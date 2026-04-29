@@ -321,18 +321,12 @@ interface QueryActionDependencies extends WorkerActionDependencies {
   queryModes: readonly ProcessRunMode[];
 }
 
-type MigrateAction = "down";
-
 type TestAction = "new";
 
 interface MigrateCommandOptions {
-  action?: MigrateAction;
-  downCount?: number;
-  toRevName?: string;
   dir?: string;
   workspace?: string;
   confirm: boolean;
-  noBacklog?: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
   keepArtifacts: boolean;
@@ -1347,44 +1341,32 @@ export function createStartCommandAction({
 export function createMigrateCommandAction({
   getApp,
   getWorkerFromSeparator,
-  getInvocationArgv,
 }: WorkerActionDependencies): (
-  action: string | undefined,
-  count: string | undefined,
-  opts: CliOpts,
+  actionOrOpts: string | CliOpts | undefined,
+  countOrOpts?: string | CliOpts,
+  maybeOpts?: CliOpts,
   ) => CliActionResult {
-  return (action: string | undefined, count: string | undefined, opts: CliOpts) => {
+  return (actionOrOpts: string | CliOpts | undefined, countOrOpts?: string | CliOpts, maybeOpts?: CliOpts) => {
     const app = getApp();
-    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
-    if (hasCliOption(invocationArgv, "--run")) {
-      app.emitOutput?.({
-        kind: "warn",
-        message: "--run is deprecated; migrate down now rewinds whole revisions. Will be removed in the next release.",
-      });
+
+    if (typeof actionOrOpts === "string") {
+      throw new Error(`unknown action: ${actionOrOpts}`);
     }
 
+    if (typeof countOrOpts === "string") {
+      throw new Error(`unknown action: ${countOrOpts}`);
+    }
+
+    const opts = maybeOpts ?? (countOrOpts ?? actionOrOpts ?? {}) as CliOpts;
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const slugWorkerPattern = typeof opts.slugWorker === "string"
       ? resolveWorkerPattern(opts.slugWorker, getWorkerFromSeparator)
       : undefined;
 
-    const normalizedAction = normalizeOptionalString(action);
-    if (normalizedAction !== undefined && !isMigrateAction(normalizedAction)) {
-      throw new Error(`unknown action: ${normalizedAction}`);
-    }
-
-    if (count !== undefined && normalizedAction !== "down") {
-      throw new Error("The optional [count] argument is only supported for `migrate down [n]`.");
-    }
-
     return resolveMigrateCommandHandler(app)({
-      action: normalizedAction,
-      downCount: parseLastCount(count),
-      toRevName: normalizeOptionalString(opts.to),
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
       confirm: Boolean(opts.confirm as boolean | undefined),
-      noBacklog: opts.backlog === false,
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
       keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
@@ -2857,10 +2839,6 @@ function formatWithConfiguredKeyLine(configuredKey: WithTaskConfiguredKeyResult)
   }
 
   return `- ${configuredKey.keyPath} (preserved)`;
-}
-
-function isMigrateAction(value: string): value is MigrateAction {
-  return value === "down";
 }
 
 function isTestAction(value: string): value is TestAction {

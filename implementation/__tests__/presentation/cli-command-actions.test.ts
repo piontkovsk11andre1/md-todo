@@ -2138,7 +2138,6 @@ describe("createMigrateCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(migrateTask).toHaveBeenCalledTimes(1);
     expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
-      action: undefined,
       dir: "migrations",
       workspace: "../workspace-source",
       workerPattern: {
@@ -2198,26 +2197,16 @@ describe("createMigrateCommandAction", () => {
     expect(migrateTask).not.toHaveBeenCalled();
   });
 
-  it("emits deprecation warning when --run is passed", async () => {
+  it("rejects legacy migrate down action", () => {
     const migrateTask = vi.fn(async () => 0);
-    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const app = { migrateTask, emitOutput } as unknown as CliApp;
+    const app = { migrateTask } as unknown as CliApp;
     const action = createMigrateCommandAction({
       getApp: () => app,
       getWorkerFromSeparator: () => undefined,
-      getInvocationArgv: () => ["migrate", "down", "--run", "latest"],
     });
 
-    const exitCode = await action("down", undefined, {
-      run: "latest",
-    });
-
-    expect(exitCode).toBe(0);
-    expect(emitOutput).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "warn",
-      message: "--run is deprecated; migrate down now rewinds whole revisions. Will be removed in the next release.",
-    }));
-    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(() => action("down", undefined, {})).toThrow("unknown action: down");
+    expect(migrateTask).not.toHaveBeenCalled();
   });
 });
 
