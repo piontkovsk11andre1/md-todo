@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { FileSystem } from "../domain/ports/index.js";
 import {
+  resolveDesignCurrentPathOverride,
   resolveWorkspaceDirectories,
   resolveWorkspacePlacement,
 } from "./workspace-paths.js";
@@ -145,6 +146,7 @@ export function resolveDesignContext(
     workspaceRoot,
     configuredWorkspace.workspaceDir,
     configuredWorkspace.workspacePath,
+    configuredWorkspace.currentPathIsExternal ? configuredWorkspace.currentPath : undefined,
   );
   let firstEmptyManagedCandidate: {
     currentDir: string;
@@ -235,6 +237,7 @@ export function resolveDesignContextSourceReferences(
     workspaceRoot,
     configuredWorkspace.workspaceDir,
     configuredWorkspace.workspacePath,
+    configuredWorkspace.currentPathIsExternal ? configuredWorkspace.currentPath : undefined,
   );
   if (canonicalSourceReferences.length > 0) {
     return {
@@ -1403,15 +1406,21 @@ function getManagedCurrentWorkspaceCandidates(
   workspaceRoot: string,
   configuredWorkspaceDir: string,
   configuredWorkspacePath?: string,
+  configuredCurrentPath?: string,
 ): Array<{
   currentDir: string;
   relativeCurrentDir: string;
   primaryFileName: string;
 }> {
+  const canonicalRoot = configuredWorkspacePath ?? path.join(workspaceRoot, configuredWorkspaceDir);
+  const canonicalCurrentDir = configuredCurrentPath ?? path.join(canonicalRoot, "current");
+  const canonicalRelativeCurrentDir = configuredCurrentPath
+    ? configuredCurrentPath
+    : configuredWorkspaceDir + "/current";
   return [
     {
-      currentDir: path.join(configuredWorkspacePath ?? path.join(workspaceRoot, configuredWorkspaceDir), "current"),
-      relativeCurrentDir: configuredWorkspaceDir + "/current",
+      currentDir: canonicalCurrentDir,
+      relativeCurrentDir: canonicalRelativeCurrentDir,
       primaryFileName: CANONICAL_PRIMARY_FILE,
     },
     {
@@ -1427,9 +1436,10 @@ function collectManagedSourceReferencesForWorkspace(
   workspaceRoot: string,
   workspaceDirectory: string,
   workspacePath?: string,
+  currentPathOverride?: string,
 ): string[] {
   const rootDir = workspacePath ?? path.join(workspaceRoot, workspaceDirectory);
-  const currentDir = path.join(rootDir, "current");
+  const currentDir = currentPathOverride ?? path.join(rootDir, "current");
   const sourceReferences: string[] = [];
 
   if (isDirectory(fileSystem, currentDir)) {
@@ -1476,19 +1486,22 @@ function resolveDesignWorkspaceForRevisions(
 } {
   const configuredWorkspace = resolveConfiguredDesignWorkspace(fileSystem, workspaceRoot, invocationRoot);
   const canonicalRootDir = configuredWorkspace.workspacePath;
-  const canonicalCurrentDir = path.join(canonicalRootDir, "current");
+  const canonicalCurrentDir = configuredWorkspace.currentPath;
+  const canonicalRelativeCurrentDir = configuredWorkspace.currentPathIsExternal
+    ? canonicalCurrentDir
+    : configuredWorkspace.workspaceDir + "/current";
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     return {
       rootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
       relativeRootDir: configuredWorkspace.workspaceDir,
-      relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
+      relativeCurrentDir: canonicalRelativeCurrentDir,
     };
   }
 
   const legacyRootDir = path.join(workspaceRoot, LEGACY_WORKSPACE_DIR);
   const legacyCurrentDir = path.join(legacyRootDir, "current");
-  if (isDirectory(fileSystem, legacyCurrentDir)) {
+  if (!configuredWorkspace.currentPathIsExternal && isDirectory(fileSystem, legacyCurrentDir)) {
     return {
       rootDir: legacyRootDir,
       currentDir: legacyCurrentDir,
@@ -1502,11 +1515,11 @@ function resolveDesignWorkspaceForRevisions(
       rootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
       relativeRootDir: configuredWorkspace.workspaceDir,
-      relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
+      relativeCurrentDir: canonicalRelativeCurrentDir,
     };
   }
 
-  if (isDirectory(fileSystem, legacyRootDir)) {
+  if (!configuredWorkspace.currentPathIsExternal && isDirectory(fileSystem, legacyRootDir)) {
     return {
       rootDir: legacyRootDir,
       currentDir: legacyCurrentDir,
@@ -1517,9 +1530,9 @@ function resolveDesignWorkspaceForRevisions(
 
   return {
     rootDir: canonicalRootDir,
-    currentDir: path.join(canonicalRootDir, "current"),
+    currentDir: canonicalCurrentDir,
     relativeRootDir: configuredWorkspace.workspaceDir,
-    relativeCurrentDir: configuredWorkspace.workspaceDir + "/current",
+    relativeCurrentDir: canonicalRelativeCurrentDir,
   };
 }
 
@@ -1537,6 +1550,8 @@ function resolveConfiguredDesignWorkspace(
 ): {
   workspaceDir: string;
   workspacePath: string;
+  currentPath: string;
+  currentPathIsExternal: boolean;
 } {
   const workspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, workspaceRoot);
   const placement = resolveWorkspacePlacement({
@@ -1547,9 +1562,16 @@ function resolveConfiguredDesignWorkspace(
     placement.design === "workdir" ? (invocationRoot ?? workspaceRoot) : workspaceRoot,
     workspaceDir,
   );
+  const externalCurrentPath = resolveDesignCurrentPathOverride({
+    fileSystem,
+    workspaceRoot,
+  });
+  const currentPath = externalCurrentPath ?? path.join(workspacePath, "current");
 
   return {
     workspaceDir,
     workspacePath,
+    currentPath,
+    currentPathIsExternal: externalCurrentPath !== undefined,
   };
 }

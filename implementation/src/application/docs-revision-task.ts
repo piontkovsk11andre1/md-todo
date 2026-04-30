@@ -7,6 +7,7 @@ import {
   saveDesignRevisionSnapshot,
 } from "./design-context.js";
 import {
+  resolveDesignCurrentPathOverride,
   resolveWorkspaceDirectories,
   resolveWorkspacePath,
   resolveWorkspacePlacement,
@@ -89,12 +90,17 @@ export function createDocsRevisionTask(
     }
 
     const projectRoot = workspaceRoot;
+    const designCurrentPathOverride = resolveDesignCurrentPathOverride({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+    });
     const workspaceReady = ensureManagedDesignWorkspaceForRevisionCommands(
       dependencies.fileSystem,
       projectRoot,
       workspacePaths.design,
       workspaceDirectories.design,
       emit,
+      designCurrentPathOverride,
     );
     if (!workspaceReady.ok) {
       emit({ kind: "error", message: workspaceReady.message });
@@ -221,14 +227,15 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
   designWorkspacePath: string,
   designWorkspaceDir: string,
   emit: ApplicationOutputPort["emit"],
+  designCurrentPathOverride?: string,
 ): { ok: true } | { ok: false; message: string } {
-  const canonicalCurrentDir = path.join(designWorkspacePath, "current");
+  const canonicalCurrentDir = designCurrentPathOverride ?? path.join(designWorkspacePath, "current");
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     return { ok: true };
   }
 
   const legacyCurrentDir = path.join(workspaceRoot, LEGACY_WORKSPACE_DIR, "current");
-  if (isDirectory(fileSystem, legacyCurrentDir)) {
+  if (!designCurrentPathOverride && isDirectory(fileSystem, legacyCurrentDir)) {
     return { ok: true };
   }
 
@@ -240,7 +247,7 @@ function ensureManagedDesignWorkspaceForRevisionCommands(
       primaryFile: CANONICAL_PRIMARY_FILE,
       label: designWorkspaceDir + "/current/" + CANONICAL_PRIMARY_FILE,
     }
-    : isDirectory(fileSystem, legacyRootDir)
+    : (!designCurrentPathOverride && isDirectory(fileSystem, legacyRootDir))
       ? {
         currentDir: legacyCurrentDir,
         primaryFile: LEGACY_PRIMARY_FILE,

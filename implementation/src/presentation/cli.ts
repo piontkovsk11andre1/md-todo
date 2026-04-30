@@ -363,6 +363,7 @@ program
   .option("--specs-placement <mode>", "Specs placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)", "migrations")
   .option("--migrations-placement <mode>", "Migrations placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
+  .option("--from-design <path>", "Use an existing directory as design/current. Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/rev.N.")
   .option("--no-bootstrap", "Skip bootstrap of prediction/ from existing implementation when design/ is empty")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
@@ -399,6 +400,7 @@ program
       "  - rundown start \"Ship auth flow\" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
       "  - rundown start \"Ship auth flow\" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run",
       "  - rundown start \"Ship auth flow\" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
+      "  - rundown start \"Audit existing notes\" --dir ./audit --from-design ../my-notes -- opencode run",
     ].join("\n"),
   );
 

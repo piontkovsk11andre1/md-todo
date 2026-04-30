@@ -35,6 +35,7 @@ export interface StartProjectOptions {
   designPlacement?: string;
   specsPlacement?: string;
   migrationsPlacement?: string;
+  fromDesign?: string;
   noBootstrap?: boolean;
 }
 
@@ -68,6 +69,9 @@ interface RundownConfigDocument {
       specs: WorkspacePlacement;
       migrations: WorkspacePlacement;
       prediction: WorkspacePlacement;
+    };
+    design?: {
+      currentPath?: string;
     };
   };
   [key: string]: unknown;
@@ -112,6 +116,7 @@ export function createStartProject(
 
     let workspaceDirectories: ValidatedWorkspaceDirectories;
     let workspacePlacement: ValidatedWorkspacePlacement;
+    let externalDesignCurrentPath: string | undefined;
     try {
       workspaceDirectories = resolveAndValidateWorkspaceDirectories({
         targetDirectory,
@@ -125,6 +130,12 @@ export function createStartProject(
         specsPlacementOption: options.specsPlacement,
         migrationsPlacementOption: options.migrationsPlacement,
       });
+      externalDesignCurrentPath = resolveAndValidateFromDesign({
+        fromDesignOption: options.fromDesign,
+        invocationDirectory,
+        fileSystem: dependencies.fileSystem,
+        pathOperations: dependencies.pathOperations,
+      });
     } catch (error) {
       emit({
         kind: "error",
@@ -133,7 +144,7 @@ export function createStartProject(
       return EXIT_CODE_FAILURE;
     }
 
-    const designCurrentDir = dependencies.pathOperations.join(
+    const designCurrentDir = externalDesignCurrentPath ?? dependencies.pathOperations.join(
       targetDirectory,
       workspaceDirectories.designDir,
       "current",
@@ -194,6 +205,7 @@ export function createStartProject(
         configPath: rundownConfigPath,
         directories: workspaceDirectories,
         placement: workspacePlacement,
+        designCurrentPath: externalDesignCurrentPath,
       });
       emit({
         kind: "success",
@@ -220,7 +232,14 @@ export function createStartProject(
       emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
     }
 
-    writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
+    if (externalDesignCurrentPath) {
+      emit({
+        kind: "success",
+        message: "Using external directory as design/current: " + externalDesignCurrentPath,
+      });
+    } else {
+      writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
+    }
     writeFileIfMissing(dependencies.fileSystem, agentsPath, getAgentsTemplate(), emit);
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
@@ -263,7 +282,7 @@ export function createStartProject(
           predictionHadFilesBeforeStart,
         },
         description,
-        noBootstrap: options.noBootstrap,
+        noBootstrap: options.noBootstrap || externalDesignCurrentPath !== undefined,
       });
 
       if (bootstrapResult.bootstrapped) {
@@ -280,10 +299,13 @@ export function createStartProject(
       return EXIT_CODE_FAILURE;
     }
 
+    const exploreFiles = externalDesignCurrentPath
+      ? [initialMigrationPath]
+      : [designPath, initialMigrationPath];
     const exploreExitCode = await runExploreSteps(
       dependencies.runExplore,
       targetDirectory,
-      [designPath, initialMigrationPath],
+      exploreFiles,
       emit,
     );
     if (exploreExitCode !== EXIT_CODE_SUCCESS) {
@@ -956,6 +978,35 @@ function isAncestorOrDescendantPath(left: string, right: string): boolean {
   return left.startsWith(right + "/") || right.startsWith(left + "/");
 }
 
+function resolveAndValidateFromDesign(input: {
+  fromDesignOption: string | undefined;
+  invocationDirectory: string;
+  fileSystem: FileSystem;
+  pathOperations: PathOperationsPort;
+}): string | undefined {
+  const { fromDesignOption, invocationDirectory, fileSystem, pathOperations } = input;
+  const trimmed = fromDesignOption?.trim();
+  if (!trimmed || trimmed.length === 0) {
+    return undefined;
+  }
+
+  const resolved = pathOperations.isAbsolute(trimmed)
+    ? pathOperations.resolve(trimmed)
+    : pathOperations.resolve(invocationDirectory, trimmed);
+
+  if (!fileSystem.exists(resolved)) {
+    throw new Error(
+      `Invalid --from-design value: directory does not exist: ${resolved}.`,
+    );
+  }
+  if (fileSystem.stat(resolved)?.isDirectory !== true) {
+    throw new Error(
+      `Invalid --from-design value: ${resolved} is not a directory.`,
+    );
+  }
+  return resolved;
+}
+
 function resolveAndValidateWorkspacePlacement(input: {
   designPlacementOption: string | undefined;
   specsPlacementOption: string | undefined;
@@ -1009,8 +1060,9 @@ function persistWorkspaceConfiguration(input: {
   configPath: string;
   directories: ValidatedWorkspaceDirectories;
   placement: ValidatedWorkspacePlacement;
+  designCurrentPath?: string;
 }): void {
-  const { fileSystem, configPath, directories, placement } = input;
+  const { fileSystem, configPath, directories, placement, designCurrentPath } = input;
   const existingSource = fileSystem.exists(configPath)
     ? fileSystem.readText(configPath)
     : "{}\n";
@@ -1030,10 +1082,13 @@ function persistWorkspaceConfiguration(input: {
     );
   }
 
+  const existingWorkspace = isPlainObject(parsed.workspace) ? parsed.workspace : {};
+  const existingDesignSection = isPlainObject(existingWorkspace.design) ? existingWorkspace.design : {};
+
   const config: RundownConfigDocument = {
     ...parsed,
     workspace: {
-      ...(isPlainObject(parsed.workspace) ? parsed.workspace : {}),
+      ...existingWorkspace,
       directories: {
         design: directories.designDir,
         specs: directories.specsDir,
@@ -1046,8 +1101,20 @@ function persistWorkspaceConfiguration(input: {
         migrations: placement.migrationsPlacement,
         prediction: placement.predictionPlacement,
       },
+      design: {
+        ...existingDesignSection,
+        ...(designCurrentPath ? { currentPath: designCurrentPath } : {}),
+      },
     },
   };
+
+  // Drop empty design section to keep config tidy when no override is set.
+  if (
+    config.workspace?.design
+    && Object.keys(config.workspace.design).length === 0
+  ) {
+    delete config.workspace.design;
+  }
 
   fileSystem.writeText(configPath, JSON.stringify(config, null, 2) + "\n");
 }

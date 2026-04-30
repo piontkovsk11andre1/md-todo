@@ -728,6 +728,42 @@ describeIfStartAvailable("start-project integration", () => {
       prediction: "prediction",
     });
   });
+
+  it("uses an external directory as design/current when --from-design is provided", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "from-design-target";
+    const projectDir = path.join(workspace, projectDirName);
+    const externalDesignDir = path.join(workspace, "external-notes");
+
+    fs.mkdirSync(externalDesignDir, { recursive: true });
+    fs.writeFileSync(path.join(externalDesignDir, "Notes.md"), "# Existing notes\n", "utf-8");
+    fs.writeFileSync(path.join(externalDesignDir, "Plan.md"), "# Plan\n", "utf-8");
+
+    const result = await runCli([
+      "start",
+      "Audit existing notes",
+      "--dir",
+      projectDirName,
+      "--from-design",
+      externalDesignDir,
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    // Seed Target.md must NOT be created in the external dir
+    expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
+    // Original notes are untouched
+    expect(fs.readFileSync(path.join(externalDesignDir, "Notes.md"), "utf-8")).toBe("# Existing notes\n");
+
+    // No design/current/ scaffolding in the project dir
+    expect(fs.existsSync(path.join(projectDir, "design", "current"))).toBe(false);
+
+    // Config persists the absolute external path
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as { workspace?: { design?: { currentPath?: string } } };
+    expect(config.workspace?.design?.currentPath).toBe(path.normalize(externalDesignDir));
+  });
 });
 
 function makeTempWorkspace(): string {

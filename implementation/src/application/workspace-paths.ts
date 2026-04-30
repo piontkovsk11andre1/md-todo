@@ -31,12 +31,16 @@ export interface WorkspacePaths {
 interface WorkspaceConfig {
   directories: WorkspaceDirectories;
   placement: WorkspacePlacementMap;
+  designCurrentPath?: string;
 }
 
 interface RundownConfigDocument {
   workspace?: {
     directories?: Partial<Record<WorkspaceBucket, unknown>>;
     placement?: Partial<Record<WorkspaceBucket, unknown>>;
+    design?: {
+      currentPath?: unknown;
+    };
   };
   [key: string]: unknown;
 }
@@ -67,6 +71,20 @@ export function resolveWorkspacePlacement(input: {
   workspaceRoot: string;
 }): WorkspacePlacementMap {
   return resolveWorkspaceConfig(input).placement;
+}
+
+/**
+ * Returns the absolute path override configured for `design/current`, if any.
+ *
+ * When set, the design draft directory does not live under `<design>/current`
+ * but rather at this absolute external path. Revisions (`rev.N/`) continue to
+ * be stored under the regular design bucket.
+ */
+export function resolveDesignCurrentPathOverride(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+}): string | undefined {
+  return resolveWorkspaceConfig(input).designCurrentPath;
 }
 
 function resolveWorkspaceConfig(input: {
@@ -164,10 +182,46 @@ function resolveWorkspaceConfig(input: {
   } satisfies WorkspacePlacementMap;
 
   validateDirectoryConflicts(directories, configPath);
+
+  const designSection = workspaceSection?.design;
+  if (designSection !== undefined && !isPlainObject(designSection)) {
+    throw new Error(`Invalid project config at ${configPath}: "workspace.design" must be an object.`);
+  }
+  const designCurrentPath = normalizeDesignCurrentPathValue({
+    configPath,
+    value: designSection?.currentPath,
+  });
+
   return {
     directories,
     placement,
+    ...(designCurrentPath ? { designCurrentPath } : {}),
   };
+}
+
+function normalizeDesignCurrentPathValue(input: {
+  configPath: string;
+  value: unknown;
+}): string | undefined {
+  const { configPath, value } = input;
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.design.currentPath" must be a string.`,
+    );
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  if (!path.isAbsolute(trimmed)) {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.design.currentPath" must be an absolute path.`,
+    );
+  }
+  return path.normalize(trimmed);
 }
 
 export function resolveWorkspacePath(input: {

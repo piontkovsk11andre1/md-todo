@@ -1325,6 +1325,7 @@ export function createStartCommandAction({
       specsPlacement: normalizeOptionalString(opts.specsPlacement),
       migrationsDir: normalizeOptionalString(opts.migrationsDir),
       migrationsPlacement: normalizeOptionalString(opts.migrationsPlacement),
+      fromDesign: normalizeOptionalString(opts.fromDesign),
       noBootstrap: Boolean(opts.noBootstrap as boolean | undefined),
     });
   };
