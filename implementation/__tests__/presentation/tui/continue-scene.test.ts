@@ -129,10 +129,14 @@ describe("continue scene cockpit", () => {
           attempt 2/3
           verify failed for task 12
 
-        Run failed (exit 1). Press Esc to return to menu.
-        Verification failed in step verify
+        Run Summary
+        Counts: 0/3 tasks
+        Duration: 00:08
+        Failures: 1   Repairs: 0   Resolves: 0
+        Failure reason: Verification failed in step verify
 
-        Summary: 0/3 tasks, 00:08, 1 failures, 0 repairs, 0 resolves",
+        Run failed (exit 1).
+        Press Esc to return to menu.",
           "previewFrame": "Continue Preview
 
         Source: migrations/
@@ -267,9 +271,10 @@ describe("continue scene cockpit", () => {
     }));
 
     expect(nextUiState).toBe("done");
-    expect(lines.join("\n")).toContain("Run failed (exit 1). Press Esc to return to menu.");
+    expect(lines.join("\n")).toContain("Run failed (exit 1).");
+    expect(lines.join("\n")).toContain("Press Esc to return to menu.");
     expect(lines.join("\n")).toContain("Verification failed in step verify");
-    expect(lines.join("\n")).toContain("Summary:");
+    expect(lines.join("\n")).toContain("Run Summary");
   });
 
   it("returns to main menu only on Esc after completion", async () => {

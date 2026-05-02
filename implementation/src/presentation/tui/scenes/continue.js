@@ -533,22 +533,24 @@ export function renderContinueSceneLines({
       lines.push(pc.yellow(state.uiHint));
     }
 
-    if (uiState === "done" && runState.exitCode === 0) {
-      pushGap(lines, sectionGap);
-      lines.push(pc.green(`Run complete (exit ${runState.exitCode ?? 0}). Press Esc to return to menu.`));
-    }
-    if (uiState === "done" && runState.exitCode !== 0) {
-      pushGap(lines, sectionGap);
-      lines.push(pc.red(`Run failed (exit ${runState.exitCode ?? "?"}). Press Esc to return to menu.`));
-      if (runState.error) {
-        lines.push(pc.red(runState.error));
-      }
-    }
     if (uiState === "done") {
       pushGap(lines, sectionGap);
+      lines.push(pc.bold("Run Summary"));
       lines.push(
-        `${pc.bold("Summary:")} ${pc.white(`${completedTasks}/${totalTasks}`)} tasks, ${pc.white(formatDuration(elapsedMs))}, ${pc.white(String(runState.failures))} failures, ${pc.white(String(runState.repairs))} repairs, ${pc.white(String(runState.resolvings))} resolves`,
+        `${pc.bold("Counts:")} ${pc.white(`${completedTasks}/${totalTasks}`)} tasks`,
+        `${pc.bold("Duration:")} ${pc.white(formatDuration(elapsedMs))}`,
+        `${pc.bold("Failures:")} ${pc.white(String(runState.failures))}   ${pc.bold("Repairs:")} ${pc.white(String(runState.repairs))}   ${pc.bold("Resolves:")} ${pc.white(String(runState.resolvings))}`,
       );
+      if (runState.exitCode !== 0 && runState.error) {
+        lines.push(`${pc.bold("Failure reason:")} ${pc.red(runState.error)}`);
+      }
+      pushGap(lines, sectionGap);
+      if (runState.exitCode === 0) {
+        lines.push(pc.green(`Run complete (exit ${runState.exitCode ?? 0}).`));
+      } else {
+        lines.push(pc.red(`Run failed (exit ${runState.exitCode ?? "?"}).`));
+      }
+      lines.push(pc.dim("Press Esc to return to menu."));
     }
     return lines;
   }
