@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import pc from "picocolors";
 
 const TOOLS_DIRECTORY_NAME = "tools";
 const CONFIG_FILE_NAME = "config.json";
@@ -261,6 +262,7 @@ export function createToolsSceneState() {
     customToolWinners: [],
     loading: true,
     banner: "",
+    builtInsVisible: true,
   };
 }
 
@@ -288,4 +290,188 @@ export async function reloadToolsSceneState({
     customToolWinners: tools,
     loading: false,
   };
+}
+
+/**
+ * Hand-maintained catalog of built-in prefix handlers shipped with rundown.
+ * Mirrors the rows shown in migration 164. Each entry includes a docs anchor
+ * (under `implementation/docs/configuration.md`) that future navigation
+ * subtasks (165+) will use for read-only inspection links.
+ */
+export const BUILT_IN_TOOL_CATALOG = [
+  {
+    label: "Verify-only",
+    prefixes: ["verify:", "confirm:", "check:"],
+    docsAnchor: "verify-only-prefixes",
+  },
+  {
+    label: "Memory capture",
+    prefixes: ["memory:", "memorize:", "remember:", "inventory:"],
+    docsAnchor: "memory-capture-prefixes",
+  },
+  {
+    label: "Fast execution",
+    prefixes: ["fast:", "raw:", "quick:"],
+    docsAnchor: "fast-execution-prefixes",
+  },
+  {
+    label: "Conditional skip",
+    prefixes: ["optional:", "skip:"],
+    docsAnchor: "conditional-skip-prefixes",
+  },
+  {
+    label: "Terminal stop",
+    prefixes: ["quit:", "exit:", "end:", "break:", "return:"],
+    docsAnchor: "terminal-stop-prefixes",
+  },
+  {
+    label: "Include another md",
+    prefixes: ["include:"],
+    docsAnchor: "include-prefix",
+  },
+  {
+    label: "Outer retry wrapper",
+    prefixes: ["force:"],
+    docsAnchor: "force-prefix",
+  },
+  {
+    label: "Modifier",
+    prefixes: ["profile="],
+    docsAnchor: "profile-modifier",
+  },
+];
+
+const BUILT_IN_LABEL_COLUMN_WIDTH = 20;
+
+function withSectionGap(lines, sectionGap) {
+  const gap = Number.isInteger(sectionGap) && sectionGap > 0 ? sectionGap : 0;
+  for (let index = 0; index < gap; index += 1) {
+    lines.push("");
+  }
+}
+
+function formatToolDirsHeader(toolDirectories, configDirPath) {
+  if (!Array.isArray(toolDirectories) || toolDirectories.length === 0) {
+    return "toolDirs: []";
+  }
+  const labels = toolDirectories.map((dir) => {
+    if (typeof dir !== "string" || dir.length === 0) {
+      return "";
+    }
+    if (typeof configDirPath === "string" && configDirPath.length > 0) {
+      const relative = path.relative(configDirPath, dir);
+      if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+        return relative;
+      }
+    }
+    return dir;
+  });
+  return `toolDirs: [${labels.join(", ")}]`;
+}
+
+function formatToolPath(filePath, configDirPath) {
+  if (typeof filePath !== "string" || filePath.length === 0) {
+    return "";
+  }
+  if (typeof configDirPath === "string" && configDirPath.length > 0) {
+    const relative = path.relative(configDirPath, filePath);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return relative;
+    }
+  }
+  return filePath;
+}
+
+function paddedName(name, columnWidth) {
+  const safe = typeof name === "string" ? name : "";
+  if (safe.length >= columnWidth) {
+    return `${safe} `;
+  }
+  return safe.padEnd(columnWidth, " ");
+}
+
+function computeNameColumnWidth(winners) {
+  let width = 16;
+  if (!Array.isArray(winners)) {
+    return width;
+  }
+  for (const tool of winners) {
+    if (tool && typeof tool.name === "string" && tool.name.length > width) {
+      width = tool.name.length;
+    }
+  }
+  return width;
+}
+
+export function renderToolsSceneLines({ state, sectionGap = 1 } = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const headerSummary = formatToolDirsHeader(
+    sceneState.toolDirectories,
+    sceneState.configDirPath,
+  );
+
+  const lines = [pc.bold("Tools"), pc.dim(headerSummary)];
+
+  if (sceneState.loading) {
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("Loading custom tools..."));
+    lines.push(pc.dim("[Esc] Back to menu"));
+    return lines;
+  }
+
+  if (typeof sceneState.banner === "string" && sceneState.banner.length > 0) {
+    withSectionGap(lines, sectionGap);
+    const bannerLines = sceneState.banner.split(/\r?\n/);
+    for (let index = 0; index < bannerLines.length; index += 1) {
+      const prefix = index === 0 ? "! " : "  ";
+      lines.push(pc.red(`${prefix}${bannerLines[index]}`));
+    }
+  }
+
+  withSectionGap(lines, sectionGap);
+  lines.push(pc.bold("Custom (project)"));
+
+  const winners = Array.isArray(sceneState.customToolWinners)
+    ? sceneState.customToolWinners
+    : [];
+
+  if (winners.length === 0) {
+    lines.push(pc.dim("  No custom tools discovered."));
+  } else {
+    const nameColumnWidth = computeNameColumnWidth(winners);
+    for (const tool of winners) {
+      const namePart = paddedName(tool.name, nameColumnWidth);
+      const pathPart = formatToolPath(tool.filePath, sceneState.configDirPath);
+      lines.push(`  ${namePart} ${pathPart}`);
+      if (tool.override && typeof tool.override.description === "string") {
+        const overrideLine = tool.override.workerSummary
+          ? `${tool.override.description} (${tool.override.workerSummary})`
+          : tool.override.description;
+        lines.push(pc.cyan(`      ${overrideLine}`));
+      }
+      if (Array.isArray(tool.shadows) && tool.shadows.length > 0) {
+        for (const shadow of tool.shadows) {
+          const shadowPath = formatToolPath(shadow.filePath, sceneState.configDirPath);
+          lines.push(pc.dim(`      shadowed: ${shadowPath}`));
+        }
+      }
+    }
+  }
+
+  withSectionGap(lines, sectionGap);
+  const builtInsVisible = sceneState.builtInsVisible !== false;
+  if (builtInsVisible) {
+    lines.push(pc.bold("Built-in (read-only)"));
+    for (const row of BUILT_IN_TOOL_CATALOG) {
+      const label = row.label.padEnd(BUILT_IN_LABEL_COLUMN_WIDTH, " ");
+      lines.push(pc.dim(`  ${label}${row.prefixes.join(" ")}`));
+    }
+  } else {
+    lines.push(pc.dim("Built-in catalog hidden. [b] to show."));
+  }
+
+  withSectionGap(lines, sectionGap);
+  lines.push(pc.dim("[↵] inspect template   [e] edit prompt   [r] reload tool dirs   [b] toggle built-ins"));
+  lines.push(pc.dim("[Esc] Back to menu"));
+  return lines;
 }
