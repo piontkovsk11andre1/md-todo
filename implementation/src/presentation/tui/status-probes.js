@@ -1,5 +1,8 @@
+import { createApp } from "../../create-app.js";
+
 const UNKNOWN_PROBE_STATUS = Object.freeze({ text: "?", tone: "muted" });
 const PENDING_PROBE_STATUS = Object.freeze({ text: "...", tone: "muted" });
+const CONTINUE_SOURCE = "migrations/";
 
 const PROBE_TTLS_MS = Object.freeze({
   continue: 2000,
@@ -32,10 +35,55 @@ async function runProbeSafely(probe) {
 }
 
 function createDefaultProbe(rowId) {
+  if (rowId === "continue") {
+    return createContinueProbe();
+  }
   if (rowId === "help") {
     return () => ({ text: "docs · website · changelog · keys", tone: "muted" });
   }
   return () => PENDING_PROBE_STATUS;
+}
+
+export function createContinueProbe({ appFactory = createApp, source = CONTINUE_SOURCE } = {}) {
+  return async function runContinueProbe() {
+    const pendingFiles = new Set();
+    let pendingTasks = 0;
+    let app;
+
+    try {
+      app = appFactory({
+        ports: {
+          output: {
+            emit(event) {
+              if (event?.kind !== "task" || !event.task) {
+                return;
+              }
+              pendingTasks += 1;
+              const file = typeof event.task.file === "string" ? event.task.file : "";
+              if (file.length > 0) {
+                pendingFiles.add(file);
+              }
+            },
+          },
+        },
+      });
+
+      const exitCode = await app.listTasks({ source, sortMode: "name-sort", includeAll: false });
+      if (exitCode !== 0 && exitCode !== 3) {
+        return UNKNOWN_PROBE_STATUS;
+      }
+
+      return {
+        text: `${pendingTasks} tasks · ${pendingFiles.size} migrations pending`,
+        tone: pendingTasks > 0 ? "warn" : "ok",
+      };
+    } catch {
+      return UNKNOWN_PROBE_STATUS;
+    } finally {
+      app?.releaseAllLocks?.();
+      await app?.awaitShutdown?.();
+    }
+  };
 }
 
 export function createStatusProbeRegistry({ probes = {}, now = Date.now } = {}) {
