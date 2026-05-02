@@ -198,6 +198,10 @@ function isInteractiveTerminal(): boolean {
   return Boolean(process.stdout.isTTY) && Boolean(process.stderr.isTTY);
 }
 
+function isInteractiveHelpInvocationCommand(command: string): boolean {
+  return command === "rundown" || command === "agent";
+}
+
 /**
  * Creates the root no-args action handler.
  *
@@ -215,7 +219,7 @@ export function createHelpCommandAction({
   return async () => {
     const invocationArgv = getInvocationArgv?.() ?? process.argv.slice(2);
     const continueSession = hasRootContinueFlag(invocationArgv);
-    if (resolveInvocationCommand(invocationArgv) !== "rundown") {
+    if (!isInteractiveHelpInvocationCommand(resolveInvocationCommand(invocationArgv))) {
       outputHelp();
       return EXIT_CODE_SUCCESS;
     }
