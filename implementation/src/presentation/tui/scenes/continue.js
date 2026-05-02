@@ -478,6 +478,11 @@ export function renderContinueSceneLines({
       }
     }
 
+    if (state.uiHint) {
+      pushGap(lines, hintGap);
+      lines.push(pc.yellow(state.uiHint));
+    }
+
     if (uiState === "done" && runState.exitCode === 0) {
       pushGap(lines, sectionGap);
       lines.push(pc.green(`Run complete (exit ${runState.exitCode ?? 0}). Press Esc to return to menu.`));
