@@ -211,11 +211,14 @@ rundown with pi
 rundown
 # or the supported executable alias:
 rd
+
+# Previous no-args interactive agent-help flow:
+rundown agent
 ```
 
 `rd` is a first-class executable alias for `rundown`; both names run the same CLI entrypoint with identical behavior.
 
-Ask the agent to set everything up and start working — it will answer all your questions.
+Run `rundown` to open the root TUI for interactive navigation, or run `rundown agent` for the previous no-args interactive agent-help flow.
 
 > See [docs/cli.md](docs/cli.md) for all commands and options.
 

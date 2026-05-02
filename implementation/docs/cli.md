@@ -69,22 +69,17 @@ Cross-shell notes:
 
 ### `rundown`
 
-Running `rundown` with no subcommand and no positional arguments starts an interactive live-help session when possible.
+Running `rundown` with no subcommand and no positional arguments opens the root TUI when possible.
 
 See the command-focused reference: [cli-root.md](cli-root.md).
 
 Behavior:
 
-- On successful runtime startup, root `rundown` emits this canonical welcome line first (exact text): "Welcome to rundown. Start with `plan`, `explore`, `run`, or `help`."
-- The canonical welcome is session-scoped: it appears exactly once per root invocation before any worker-generated help/discovery output.
-- In an interactive terminal (`stdout` and `stderr` are TTY), rundown attempts to launch a TUI help session.
-- The help session uses the configured `help` worker resolution path (or falls back through command/default worker config as configured).
-- The prompt is template-backed and ordered as warmup then guidance (`agent.md` -> `help.md`), including CLI usage and repository context so you can ask follow-up questions immediately.
-- `agent.md` resolves from the active config directory (`--config-dir` when provided, otherwise discovered `.rundown/`).
-- If `agent.md` is missing, unreadable, or effectively empty, rundown uses the built-in default warmup template and continues.
-- This no-arg warmup behavior applies only to root help startup and does not change deterministic worker conventions (`run`/`plan`/`research`/`reverify` use `opencode run`; `discuss` uses interactive `opencode`).
-- If TTY is unavailable (for example CI/piped output) or no worker can be resolved, rundown falls back to static Commander help and exits `0`.
-- Worker/config launch errors for this no-arg path also degrade to static help instead of failing hard.
+- In an interactive terminal (`stdout` and `stderr` are TTY), rundown launches the root TUI.
+- If TTY is unavailable (for example CI or piped output), rundown falls back to static Commander help and exits `0`.
+- `rundown --agents` remains root-only and prints canonical AGENTS guidance without entering the TUI.
+- Use `rundown agent` for the previous no-args interactive agent-help flow.
+- This no-arg behavior applies only to root startup and does not change explicit subcommands.
 
 Compatibility notes:
 
@@ -95,9 +90,12 @@ Compatibility notes:
 Examples:
 
 ```bash
-# Interactive terminal: opens live help TUI (when worker is configured)
+# Interactive terminal: opens the root TUI
 rundown
 rd
+
+# Previous no-args interactive agent-help flow
+rundown agent
 
 # Deterministic static help output
 rundown --help
@@ -106,7 +104,7 @@ rd --help
 
 ### `rundown agent`
 
-Use `rundown agent` as the explicit, stable command name for interactive agent help, functionally matching the current root no-arg entrypoint while giving users and scripts a pinned invocation as root behavior evolves.
+Use `rundown agent` as the explicit command for interactive agent help (the behavior previously reached by running root `rundown` with no args).
 
 See the command-focused reference: [cli-agent.md](cli-agent.md).
 
