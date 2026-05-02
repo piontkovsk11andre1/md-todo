@@ -12,6 +12,7 @@ import {
   getSelectedMainMenuItem,
   jumpMainMenuSelection,
   moveMainMenuSelection,
+  refreshMainMenuStatuses,
 } from "./scenes/main-menu.js";
 import { startNewWorkSceneAction } from "./scenes/new-work.js";
 import { createWorkersSceneState, handleWorkersInput, renderWorkersSceneLines } from "./scenes/workers.js";
@@ -323,6 +324,10 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
 
       if (state.sceneId === "mainMenu") {
         state.mainMenuHint = "";
+        if (input === "r") {
+          void refreshMainMenuStatuses();
+          return;
+        }
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
           if (selected?.sceneId) {
