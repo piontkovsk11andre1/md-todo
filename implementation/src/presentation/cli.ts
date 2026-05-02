@@ -43,6 +43,7 @@ import {
   createDesignReleaseCommandAction,
   createExploreCommandAction,
   createHelpCommandAction,
+  createRootTuiAction,
   createInitCommandAction,
   createListCommandAction,
   createLogCommandAction,
@@ -163,7 +164,7 @@ program
   )
   .option("-c, --continue", "Resume the previous interactive root help/agent session")
   .option("--agents", "Print canonical AGENTS.md guidance and exit")
-  .action(withCliAction(createHelpCommandAction({
+  .action(withCliAction(createRootTuiAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
