@@ -307,7 +307,7 @@ export function renderHealthSceneLines({ state, sectionGap = 1 } = {}) {
 
   withSectionGap(lines, sectionGap);
   lines.push(pc.dim("[↵] view recent failures   [r] reset entry   [p] probe now"));
-  lines.push(pc.dim("[e] edit healthPolicy in config.json   [R] reload"));
+  lines.push(pc.dim("[e] edit healthPolicy in config.json"));
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
 }
@@ -347,12 +347,59 @@ export function handleHealthInput({ rawInput, state } = {}) {
     };
   }
 
-  if (input === "R") {
+  const selectedEntry = entries[currentIndex];
+  const selectedKey = typeof selectedEntry?.key === "string" ? selectedEntry.key : "";
+
+  if (rawInput === "\r" || rawInput === "\n") {
+    if (entries.length === 0 || !selectedEntry) {
+      return { handled: true, state: sceneState, backToParent: false };
+    }
     return {
       handled: true,
       state: sceneState,
       backToParent: false,
-      action: { type: "reload" },
+      action: { type: "view-recent-failures", index: currentIndex, key: selectedKey },
+    };
+  }
+
+  if (input === "r") {
+    if (entries.length === 0 || !selectedEntry) {
+      return {
+        handled: true,
+        state: { ...sceneState, banner: "No health entry selected to reset." },
+        backToParent: false,
+      };
+    }
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "reset-entry", index: currentIndex, key: selectedKey },
+    };
+  }
+
+  if (input === "p") {
+    if (entries.length === 0 || !selectedEntry) {
+      return {
+        handled: true,
+        state: { ...sceneState, banner: "No health entry selected to probe." },
+        backToParent: false,
+      };
+    }
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "probe-entry", index: currentIndex, key: selectedKey },
+    };
+  }
+
+  if (input === "e") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "edit-config" },
     };
   }
 
@@ -363,6 +410,7 @@ export async function runHealthSceneAction({
   action,
   state,
   currentWorkingDirectory = process.cwd(),
+  bridges,
 } = {}) {
   const sceneState = state ?? createHealthSceneState();
   if (!action || typeof action.type !== "string") {
@@ -371,5 +419,69 @@ export async function runHealthSceneAction({
   if (action.type === "reload") {
     return reloadHealthSceneState({ state: sceneState, currentWorkingDirectory, keepBanner: false });
   }
+
+  if (action.type === "reset-entry") {
+    const healthBridge = bridges?.healthBridge
+      ?? buildBridgeBundle(currentWorkingDirectory).healthBridge;
+    if (typeof healthBridge?.resetEntry !== "function") {
+      return { ...sceneState, banner: "Reset is not yet supported by the health bridge." };
+    }
+    try {
+      await healthBridge.resetEntry(action.key);
+    } catch (error) {
+      return { ...sceneState, banner: `Reset failed: ${toErrorMessage(error)}` };
+    }
+    return reloadHealthSceneState({ state: sceneState, currentWorkingDirectory, keepBanner: false });
+  }
+
+  if (action.type === "probe-entry") {
+    const healthBridge = bridges?.healthBridge
+      ?? buildBridgeBundle(currentWorkingDirectory).healthBridge;
+    if (typeof healthBridge?.probeEntry !== "function") {
+      return { ...sceneState, banner: "probe not yet supported" };
+    }
+    let outcome;
+    try {
+      outcome = await healthBridge.probeEntry(action.key);
+    } catch (error) {
+      return { ...sceneState, banner: `Probe failed: ${toErrorMessage(error)}` };
+    }
+    if (outcome && outcome.supported === false) {
+      const reason = typeof outcome.reason === "string" && outcome.reason.length > 0
+        ? outcome.reason
+        : "probe not yet supported";
+      return { ...sceneState, banner: reason };
+    }
+    return reloadHealthSceneState({ state: sceneState, currentWorkingDirectory, keepBanner: false });
+  }
+
+  if (action.type === "view-recent-failures") {
+    // Recent-failures pagination is implemented in a follow-up task; for now
+    // surface whatever scalar last-failure data is available on the entry.
+    const entries = Array.isArray(sceneState.healthStatus?.entries)
+      ? sceneState.healthStatus.entries
+      : [];
+    const entry = entries[action.index];
+    if (!entry) {
+      return { ...sceneState, banner: "No entry selected." };
+    }
+    if (typeof entry.lastFailureClass === "string" && entry.lastFailureClass.length > 0) {
+      const at = typeof entry.lastFailureAt === "string" && entry.lastFailureAt.length > 0
+        ? ` at ${entry.lastFailureAt}`
+        : "";
+      return {
+        ...sceneState,
+        banner: `Last failure: ${entry.lastFailureClass}${at} (recent-failures view not yet available).`,
+      };
+    }
+    return { ...sceneState, banner: "No recorded failures for this entry." };
+  }
+
+  if (action.type === "edit-config") {
+    // Full edit-then-reload flow is wired in a follow-up task; for now defer
+    // by surfacing a banner so the keybinding is observable end-to-end.
+    return { ...sceneState, banner: "Edit healthPolicy: not yet wired (follow-up task)." };
+  }
+
   return sceneState;
 }
