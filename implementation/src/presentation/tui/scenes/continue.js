@@ -264,6 +264,35 @@ function pushGap(lines, count) {
   }
 }
 
+function stripAnsi(text) {
+  return String(text).replace(/\u001B\[[0-9;]*m/g, "");
+}
+
+function visibleLength(text) {
+  return stripAnsi(text).length;
+}
+
+function padVisible(text, width) {
+  const value = String(text);
+  const padding = Math.max(0, width - visibleLength(value));
+  return value + " ".repeat(padding);
+}
+
+function mergeColumns(leftLines, rightLines, leftWidth, gap) {
+  const lineCount = Math.max(leftLines.length, rightLines.length);
+  const merged = [];
+  for (let index = 0; index < lineCount; index += 1) {
+    const left = leftLines[index] ?? "";
+    const right = rightLines[index] ?? "";
+    if (right.length === 0) {
+      merged.push(left);
+    } else {
+      merged.push(`${padVisible(left, leftWidth)}${" ".repeat(gap)}${right}`);
+    }
+  }
+  return merged;
+}
+
 export function createContinueSceneState() {
   return {
     activeMaterializeMode: "migrations",
@@ -404,7 +433,10 @@ export function renderContinueSceneLines({
     const timingLabelWidth = 20;
     const phaseLabelWidth = 13;
 
-    lines.push(
+    const leftLines = [];
+    const rightLines = [];
+
+    leftLines.push(
       formatLabeledValue("Action", pc.white(runState.actionLabel || "(none)"), summaryLabelWidth),
       formatLabeledValue("Target", pc.cyan(runState.sourceTarget || "(none)"), summaryLabelWidth),
       formatLabeledValue("Elapsed", pc.white(formatDuration(elapsedMs)), summaryLabelWidth),
@@ -414,8 +446,8 @@ export function renderContinueSceneLines({
         summaryLabelWidth,
       ),
     );
-    pushGap(lines, sectionGap);
-    lines.push(
+    pushGap(leftLines, sectionGap);
+    leftLines.push(
       formatLabeledValue("Run Started", pc.white(formatTimestamp(runState.runStartedAt)), timingLabelWidth),
       formatLabeledValue(
         "Current Task Started",
@@ -423,8 +455,8 @@ export function renderContinueSceneLines({
         timingLabelWidth,
       ),
     );
-    pushGap(lines, sectionGap);
-    lines.push(
+    pushGap(leftLines, sectionGap);
+    leftLines.push(
       formatLabeledValue("Operation", operationPainter(runState.currentOperation.toUpperCase()), phaseLabelWidth),
       formatLabeledValue(
         "Task Progress",
@@ -434,37 +466,40 @@ export function renderContinueSceneLines({
     );
 
     const phaseCounter = runState.currentPhaseCounter;
-    if (phaseCounter || (runState.phaseCounters && Object.keys(runState.phaseCounters).length > 0)) {
-      pushGap(lines, sectionGap);
-      lines.push(pc.bold("Phase Counters:"));
-      lines.push(formatPhaseCounterLine("current", phaseCounter));
+    const hasPhaseCounters = phaseCounter || (runState.phaseCounters && Object.keys(runState.phaseCounters).length > 0);
+    if (hasPhaseCounters) {
+      rightLines.push(pc.bold("Phase Counters:"));
+      rightLines.push(formatPhaseCounterLine("current", phaseCounter));
       const operationKey = (runState.currentOperation || "").toLowerCase();
       if (runState.phaseCounters?.attempt) {
-        lines.push(formatPhaseCounterLine("attempt", runState.phaseCounters.attempt));
+        rightLines.push(formatPhaseCounterLine("attempt", runState.phaseCounters.attempt));
       }
       if (operationKey && runState.phaseCounters?.[operationKey]) {
-        lines.push(formatPhaseCounterLine(operationKey, runState.phaseCounters[operationKey]));
+        rightLines.push(formatPhaseCounterLine(operationKey, runState.phaseCounters[operationKey]));
       }
+    } else {
+      rightLines.push(pc.bold("Phase Counters:"));
+      rightLines.push(formatPhaseCounterLine("current", null));
     }
 
     if (taskItems.length > 0) {
-      pushGap(lines, sectionGap);
-      lines.push(...previousTaskLines);
-      pushGap(lines, sectionGap);
-      lines.push(...currentTaskLines);
-      pushGap(lines, sectionGap);
-      lines.push(...nextTaskLines);
+      pushGap(leftLines, sectionGap);
+      leftLines.push(...previousTaskLines);
+      pushGap(leftLines, sectionGap);
+      leftLines.push(...currentTaskLines);
+      pushGap(leftLines, sectionGap);
+      leftLines.push(...nextTaskLines);
     }
 
-    pushGap(lines, sectionGap);
-    lines.push(
+    pushGap(leftLines, sectionGap);
+    leftLines.push(
       `${pc.bold("Failures:")} ${pc.white(String(runState.failures))}   ${pc.bold("Repairs:")} ${pc.white(String(runState.repairs))}`,
       `${pc.bold("Resolvings:")} ${pc.white(String(runState.resolvings))}   ${pc.bold("Resets:")} ${pc.white(String(runState.resets))}`,
     );
 
     if (runState.recentMessages.length > 0) {
-      pushGap(lines, sectionGap);
-      lines.push(pc.bold("Recent:"));
+      pushGap(leftLines, sectionGap);
+      leftLines.push(pc.bold("Recent:"));
       const tail = runState.recentMessages.slice(-6);
       for (const entry of tail) {
         const painter = entry.kind === "error"
@@ -474,9 +509,12 @@ export function renderContinueSceneLines({
             : entry.kind === "success"
               ? pc.green
               : pc.dim;
-        lines.push(`  ${painter(entry.message)}`);
+        leftLines.push(`  ${painter(entry.message)}`);
       }
     }
+
+    const merged = mergeColumns(leftLines, rightLines, 62, 4);
+    lines.push(...merged);
 
     if (state.uiHint) {
       pushGap(lines, hintGap);

@@ -100,10 +100,10 @@ export function applyOutputEvent(runState, event) {
     }
     case "progress": {
       const progress = event.progress ?? {};
+      const counterKey = normalizeOperationLabel(progress.label);
       if (typeof progress.label === "string" && progress.label.length > 0) {
-        const operation = normalizeOperationLabel(progress.label);
-        if (BADGE_OPERATIONS.has(operation)) {
-          runState.currentOperation = operation;
+        if (BADGE_OPERATIONS.has(counterKey)) {
+          runState.currentOperation = counterKey;
         }
       }
       const hasCurrent = typeof progress.current === "number" && Number.isFinite(progress.current);
@@ -114,7 +114,11 @@ export function applyOutputEvent(runState, event) {
           total: Math.max(1, Math.trunc(progress.total)),
         };
         runState.currentPhaseCounter = counter;
-        runState.phaseCounters[runState.currentOperation] = counter;
+        if (counterKey.length > 0) {
+          runState.phaseCounters[counterKey] = counter;
+        } else if (runState.currentOperation) {
+          runState.phaseCounters[runState.currentOperation] = counter;
+        }
       }
       if (typeof progress.detail === "string" && progress.detail.length > 0) {
         pushRecentMessage(runState, "info", progress.detail);
