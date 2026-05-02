@@ -172,4 +172,92 @@ describe("tools scene custom tool discovery", () => {
       { name: "triage", directory: tertiary, shadowed: false },
     ]);
   });
+
+  it("annotates winning tools with commands.tools.<name> worker override summary", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "post-on-gitea.md"), "primary");
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "summary");
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({
+        toolDirs: ["tools"],
+        commands: {
+          tools: {
+            "post-on-gitea": ["opencode", "run", "--model", "gpt-5.3-mini", "--no-approval"],
+          },
+        },
+      }),
+    );
+
+    const result = discoverCustomTools({ configDirPath: configDir });
+
+    const winner = result.tools.find((tool: any) => tool.name === "post-on-gitea");
+    expect(winner).toBeDefined();
+    expect(winner.override).toBeDefined();
+    expect(winner.override.key).toBe("commands.tools.post-on-gitea");
+    expect(winner.override.configuredName).toBe("post-on-gitea");
+    expect(winner.override.worker).toEqual([
+      "opencode",
+      "run",
+      "--model",
+      "gpt-5.3-mini",
+      "--no-approval",
+    ]);
+    expect(winner.override.workerSummary).toBe(
+      "opencode run --model gpt-5.3-mini --no-approval",
+    );
+    expect(winner.override.description).toBe(
+      "commands.tools.post-on-gitea overrides worker for this prefix",
+    );
+
+    const summarize = result.tools.find((tool: any) => tool.name === "summarize");
+    expect(summarize).toBeDefined();
+    expect(summarize.override).toBeUndefined();
+  });
+
+  it("annotates override even when worker tokens are empty", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "triage.md"), "triage");
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({
+        toolDirs: ["tools"],
+        commands: { tools: { triage: [] } },
+      }),
+    );
+
+    const result = discoverCustomTools({ configDirPath: configDir });
+    const winner = result.tools.find((tool: any) => tool.name === "triage");
+    expect(winner.override).toBeDefined();
+    expect(winner.override.worker).toEqual([]);
+    expect(winner.override.workerSummary).toBe("");
+    expect(winner.override.description).toBe(
+      "commands.tools.triage overrides worker for this prefix",
+    );
+  });
+
+  it("matches override key case-insensitively against discovered tool names", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "Summarize.md"), "summary");
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({
+        toolDirs: ["tools"],
+        commands: { tools: { Summarize: ["opencode"] } },
+      }),
+    );
+
+    const result = discoverCustomTools({ configDirPath: configDir });
+    const winner = result.tools.find((tool: any) => tool.name === "summarize");
+    expect(winner).toBeDefined();
+    expect(winner.override).toBeDefined();
+    expect(winner.override.configuredName).toBe("Summarize");
+    expect(winner.override.key).toBe("commands.tools.Summarize");
+  });
 });

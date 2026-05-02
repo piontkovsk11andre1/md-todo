@@ -126,6 +126,64 @@ function listToolFiles(directoryPath) {
   return files;
 }
 
+function readCommandsToolsOverrides(config) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return new Map();
+  }
+  const commands = config.commands;
+  if (!commands || typeof commands !== "object" || Array.isArray(commands)) {
+    return new Map();
+  }
+  const tools = commands.tools;
+  if (!tools || typeof tools !== "object" || Array.isArray(tools)) {
+    return new Map();
+  }
+
+  const overrides = new Map();
+  for (const [rawName, rawValue] of Object.entries(tools)) {
+    if (typeof rawName !== "string") {
+      continue;
+    }
+    const trimmedName = rawName.trim();
+    if (trimmedName.length === 0) {
+      continue;
+    }
+    const normalized = trimmedName.toLowerCase();
+    const tokens = Array.isArray(rawValue)
+      ? rawValue.filter((token) => typeof token === "string")
+      : [];
+    overrides.set(normalized, {
+      configuredName: trimmedName,
+      worker: tokens,
+    });
+  }
+  return overrides;
+}
+
+function summarizeWorkerTokens(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) {
+    return "";
+  }
+  return tokens.join(" ");
+}
+
+function buildOverrideAnnotation(toolName, overrideEntry) {
+  if (!overrideEntry) {
+    return undefined;
+  }
+  const configuredName = overrideEntry.configuredName ?? toolName;
+  const overrideKey = `commands.tools.${configuredName}`;
+  const description = `${overrideKey} overrides worker for this prefix`;
+  const workerSummary = summarizeWorkerTokens(overrideEntry.worker);
+  return {
+    key: overrideKey,
+    configuredName,
+    worker: overrideEntry.worker.slice(),
+    workerSummary,
+    description,
+  };
+}
+
 /**
  * Discovers custom tools across the resolved tool directories, in configured
  * order. Each `.md` and `.js` file becomes an entry whose `name` is the file
@@ -140,11 +198,22 @@ function listToolFiles(directoryPath) {
  *
  * The result also exposes a `tools` array containing only winning entries in
  * discovery order, suitable for direct rendering of the custom tool list.
+ *
+ * Each winning entry that has a matching `commands.tools.<name>` worker
+ * override in the configuration is annotated with an `override` object
+ * containing the override key, configured tool name, worker tokens, a
+ * concise space-joined `workerSummary`, and a human-readable `description`
+ * sub-line ("commands.tools.<name> overrides worker for this prefix").
  */
 export function discoverCustomTools({ configDirPath, config } = {}) {
   if (typeof configDirPath !== "string" || configDirPath.length === 0) {
     return { directories: [], entries: [], tools: [] };
   }
+
+  const effectiveConfig = config && typeof config === "object" && !Array.isArray(config)
+    ? config
+    : readConfigJson(configDirPath);
+  const overrides = readCommandsToolsOverrides(effectiveConfig);
 
   const directories = resolveToolDirectories(configDirPath, config);
   const entries = [];
@@ -156,10 +225,12 @@ export function discoverCustomTools({ configDirPath, config } = {}) {
     for (const file of files) {
       const winner = winnersByName.get(file.name);
       if (winner === undefined) {
+        const overrideAnnotation = buildOverrideAnnotation(file.name, overrides.get(file.name));
         const winningEntry = {
           ...file,
           shadowed: false,
           shadows: [],
+          override: overrideAnnotation,
         };
         winnersByName.set(file.name, winningEntry);
         entries.push(winningEntry);
