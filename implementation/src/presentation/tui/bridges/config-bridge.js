@@ -115,14 +115,14 @@ export function createConfigBridge({
 
   function fallbackListConfig(scope) {
     if (typeof workerConfigPort?.listValues !== "function") {
-      throw new Error("Unable to load config: app.configList failed and no fallback workerConfigPort.listValues is available.");
+      return undefined;
     }
     return workerConfigPort.listValues(effectiveConfigDirPath, scope);
   }
 
   function fallbackResolvePath(scope) {
     if (typeof workerConfigPort?.getConfigPaths !== "function") {
-      throw new Error("Unable to resolve config path: app.configPath failed and no fallback workerConfigPort.getConfigPaths is available.");
+      return undefined;
     }
 
     const paths = workerConfigPort.getConfigPaths(effectiveConfigDirPath);
@@ -135,8 +135,12 @@ export function createConfigBridge({
   async function listConfig(scope = "effective") {
     try {
       return await runConfigList({ appFactory, scope });
-    } catch {
-      return fallbackListConfig(scope);
+    } catch (error) {
+      const fallback = fallbackListConfig(scope);
+      if (fallback !== undefined) {
+        return fallback;
+      }
+      throw error;
     }
   }
 
@@ -147,8 +151,12 @@ export function createConfigBridge({
         return UNRESOLVED_PATH;
       }
       return resolved;
-    } catch {
-      return fallbackResolvePath(scope);
+    } catch (error) {
+      const fallback = fallbackResolvePath(scope);
+      if (typeof fallback === "string" && fallback.length > 0) {
+        return fallback;
+      }
+      throw error;
     }
   }
 

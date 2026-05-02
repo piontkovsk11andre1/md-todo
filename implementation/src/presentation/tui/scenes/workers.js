@@ -260,6 +260,18 @@ function editConfigFile(filePath, { currentWorkingDirectory, suspendTui, resumeT
   return launchResult;
 }
 
+function safeEditConfigFile(filePath, options) {
+  try {
+    return editConfigFile(filePath, options);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "launch-threw",
+      message: `Failed to launch editor for ${filePath}: ${toErrorMessage(error)}`,
+    };
+  }
+}
+
 function pushLabeledRow(lines, label, value, healthText = "") {
   const labelColumn = label.padEnd(18, " ");
   const base = `  ${labelColumn}${value}`;
@@ -292,7 +304,11 @@ export function renderWorkersSceneLines({ state, sectionGap = 1 } = {}) {
 
   if (typeof sceneState.banner === "string" && sceneState.banner.length > 0) {
     withSectionGap(lines, sectionGap);
-    lines.push(pc.red(`! ${sceneState.banner}`));
+    const bannerLines = sceneState.banner.split(/\r?\n/);
+    for (let index = 0; index < bannerLines.length; index += 1) {
+      const prefix = index === 0 ? "! " : "  ";
+      lines.push(pc.red(`${prefix}${bannerLines[index]}`));
+    }
   }
 
   withSectionGap(lines, sectionGap);
@@ -452,7 +468,7 @@ export async function runWorkersSceneAction({
       };
     }
 
-    const launchResult = editConfigFile(localPath, {
+    const launchResult = safeEditConfigFile(localPath, {
       currentWorkingDirectory,
       suspendTui,
       resumeTui,
@@ -506,11 +522,20 @@ export async function runWorkersSceneAction({
           banner: `Global config missing at ${globalPath}. Press [E] again to create {} and edit.`,
         };
       }
-      ensureParentDirectory(globalPath);
-      fs.writeFileSync(globalPath, EMPTY_JSON_WITH_NEWLINE, "utf8");
+      try {
+        ensureParentDirectory(globalPath);
+        fs.writeFileSync(globalPath, EMPTY_JSON_WITH_NEWLINE, "utf8");
+      } catch (error) {
+        return {
+          ...sceneState,
+          globalConfigPath: globalPath,
+          pendingGlobalBootstrap: false,
+          banner: `Failed to bootstrap global config at ${globalPath}: ${toErrorMessage(error)}`,
+        };
+      }
     }
 
-    const launchResult = editConfigFile(globalPath, {
+    const launchResult = safeEditConfigFile(globalPath, {
       currentWorkingDirectory,
       suspendTui,
       resumeTui,
