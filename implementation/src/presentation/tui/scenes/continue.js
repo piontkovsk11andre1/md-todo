@@ -8,6 +8,7 @@ import {
   formatTimestamp,
   progressBar,
 } from "../layout.js";
+import { paintOperationBadge } from "../components/badge.js";
 import { applyOutputEvent, createInitialRunState, pushRecentMessage } from "../output-bridge.js";
 
 export const MATERIALIZE_MODES = [
@@ -238,21 +239,6 @@ const CONTINUE_UI_STATES = new Set([
   "done",
 ]);
 
-const OPERATION_COLOR = {
-  scan: pc.cyan,
-  execute: pc.yellow,
-  verify: pc.blue,
-  repair: pc.red,
-  resolve: pc.magenta,
-  resolverepair: pc.magenta,
-  finalize: pc.green,
-  discuss: pc.yellow,
-  plan: pc.cyan,
-  research: pc.cyan,
-  summarize: pc.blue,
-  agent: pc.yellow,
-};
-
 function formatLabeledValue(label, value, labelWidth) {
   const key = `${label}:`.padEnd(labelWidth + 1, " ");
   return `${pc.bold(key)} ${value}`;
@@ -387,7 +373,6 @@ export function renderContinueSceneLines({
   const completedTasks = Math.min(totalTasks, runState.completedTasks);
   const elapsedMs = runState.runStartedAt > 0 ? Date.now() - runState.runStartedAt : 0;
   const completedRatio = totalTasks > 0 ? completedTasks / totalTasks : 0;
-  const operationPainter = OPERATION_COLOR[runState.currentOperation] ?? ((value) => value);
 
   if (uiState === "previewing") {
     const resolvedSource = state.sourceTarget || resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
@@ -457,7 +442,7 @@ export function renderContinueSceneLines({
     );
     pushGap(leftLines, sectionGap);
     leftLines.push(
-      formatLabeledValue("Operation", operationPainter(runState.currentOperation.toUpperCase()), phaseLabelWidth),
+      formatLabeledValue("Operation", paintOperationBadge(runState.currentOperation, runState.currentOperation.toUpperCase()), phaseLabelWidth),
       formatLabeledValue(
         "Task Progress",
         `${progressBar(40, completedRatio)} ${pc.white(`${Math.round(completedRatio * 100)}%`)}`,

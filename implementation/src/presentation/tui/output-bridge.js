@@ -1,3 +1,5 @@
+import { isBadgeOperationKey, normalizeOperationKey } from "./components/badge.js";
+
 export async function releaseApp(app) {
   if (!app) {
     return;
@@ -46,29 +48,6 @@ export function createInitialRunState() {
   };
 }
 
-const BADGE_OPERATIONS = new Set([
-  "scan",
-  "execute",
-  "verify",
-  "repair",
-  "resolve",
-  "resolverepair",
-  "plan",
-  "research",
-  "discuss",
-  "finalize",
-  "summarize",
-  "agent",
-]);
-
-function normalizeOperationLabel(label) {
-  if (typeof label !== "string" || label.trim().length === 0) {
-    return "";
-  }
-  const firstToken = label.toLowerCase().split(/\s+/)[0] || "";
-  return firstToken.replace(/[^a-z]/g, "");
-}
-
 export function applyOutputEvent(runState, event) {
   switch (event.kind) {
     case "group-start": {
@@ -100,9 +79,9 @@ export function applyOutputEvent(runState, event) {
     }
     case "progress": {
       const progress = event.progress ?? {};
-      const counterKey = normalizeOperationLabel(progress.label);
+      const counterKey = normalizeOperationKey(progress.label);
       if (typeof progress.label === "string" && progress.label.length > 0) {
-        if (BADGE_OPERATIONS.has(counterKey)) {
+        if (isBadgeOperationKey(counterKey)) {
           runState.currentOperation = counterKey;
         }
       }
