@@ -11277,6 +11277,27 @@ describe.sequential("CLI integration", () => {
     }
   });
 
+  it("root invocation accepts --trace and forwards it to TUI", async () => {
+    const workspace = makeTempWorkspace();
+    const runRootTuiMock = vi.fn(async () => 0);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
+    }));
+
+    try {
+      const result = await withTerminalTty(true, () => runCli(["--trace"], workspace));
+
+      expect(result.code).toBe(0);
+      expectCanonicalRootWelcome(result.logs);
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(runRootTuiMock).toHaveBeenCalledWith(expect.objectContaining({
+        argv: ["--trace"],
+      }));
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
+  });
+
   it("root invocation opens TUI when interactive even without local config", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });

@@ -164,6 +164,7 @@ program
   )
   .option("-c, --continue", "Resume the previous interactive root help/agent session")
   .option("--agents", "Print canonical AGENTS.md guidance and exit")
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .action(withCliAction(createRootTuiAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
