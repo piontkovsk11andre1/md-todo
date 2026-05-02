@@ -6,16 +6,19 @@ import {
   BUILT_IN_TOOL_CATALOG,
   BUILT_IN_TOOL_DOCS_PATH,
   closeToolsScenePager,
+  createBuiltInsVisibilitySession,
   createToolsSceneState,
   discoverCustomTools,
   editSelectedCustomTool,
   findBuiltInToolDocsLine,
   inspectCustomToolTemplate,
   inspectSelectedCustomTool,
+  openToolsScene,
   reloadCustomToolsAction,
   renderToolsSceneLines,
   resolveBuiltInToolDocsTarget,
   resolveToolDirectories,
+  toggleBuiltInsVisibility,
 } from "../../../src/presentation/tui/scenes/tools.js";
 
 function makeTempDir(prefix: string): string {
@@ -740,5 +743,50 @@ describe("tools scene reload action", () => {
     expect(next.banner).toContain("Reload failed");
     expect(next.banner).toContain("disk unreadable");
     expect(next.customToolWinners).toEqual(initialState.customToolWinners);
+  });
+});
+
+describe("tools scene built-ins visibility session", () => {
+  it("shows built-ins on first open and hides them on subsequent opens within the same session", () => {
+    const session = createBuiltInsVisibilitySession();
+    expect(session.openedOnce).toBe(false);
+    expect(session.explicit).toBeUndefined();
+
+    const firstOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(firstOpen.builtInsVisible).toBe(true);
+    expect(session.openedOnce).toBe(true);
+
+    const secondOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(secondOpen.builtInsVisible).toBe(false);
+
+    const thirdOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(thirdOpen.builtInsVisible).toBe(false);
+  });
+
+  it("toggleBuiltInsVisibility flips visibility and persists the choice across subsequent opens", () => {
+    const session = createBuiltInsVisibilitySession();
+    const firstOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(firstOpen.builtInsVisible).toBe(true);
+
+    const afterToggle = toggleBuiltInsVisibility({ session, state: firstOpen });
+    expect(afterToggle.builtInsVisible).toBe(false);
+    expect(session.explicit).toBe(false);
+
+    // Subsequent opens honor the explicit choice instead of the
+    // first-run/subsequent-run defaults.
+    const secondOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(secondOpen.builtInsVisible).toBe(false);
+
+    const reShown = toggleBuiltInsVisibility({ session, state: secondOpen });
+    expect(reShown.builtInsVisible).toBe(true);
+    expect(session.explicit).toBe(true);
+
+    const thirdOpen = openToolsScene({ session, state: createToolsSceneState() });
+    expect(thirdOpen.builtInsVisible).toBe(true);
+  });
+
+  it("openToolsScene treats a missing session as a first-run open", () => {
+    const opened = openToolsScene({ state: createToolsSceneState() });
+    expect(opened.builtInsVisible).toBe(true);
   });
 });

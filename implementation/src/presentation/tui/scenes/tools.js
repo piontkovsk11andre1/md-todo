@@ -273,6 +273,97 @@ export function createToolsSceneState() {
   };
 }
 
+/**
+ * Creates a fresh built-ins visibility session record. The Tools scene reads
+ * and updates this object across scene opens within the same TUI session so
+ * that:
+ *
+ * - On the first scene open in a session, built-ins are visible (so new users
+ *   discover the catalog).
+ * - On subsequent opens within the same session, built-ins default to hidden
+ *   (the catalog is reference material; experienced users don't need it
+ *   redrawn every time).
+ * - Once the user has explicitly toggled visibility with `[b]`, that choice
+ *   sticks for the remainder of the session and overrides the
+ *   first-run/subsequent-run defaults on every open.
+ *
+ * The shape is intentionally a plain object so callers (TUI runtime, tests)
+ * can persist it alongside other per-session state.
+ *
+ * - `explicit`: `undefined` until the user toggles `[b]`; thereafter `true`
+ *   (visible) or `false` (hidden) reflecting the user's choice.
+ * - `openedOnce`: `false` until the first call to `openToolsScene`; flips to
+ *   `true` after that so subsequent opens use the hidden default.
+ */
+export function createBuiltInsVisibilitySession() {
+  return {
+    explicit: undefined,
+    openedOnce: false,
+  };
+}
+
+function resolveBuiltInsVisibilityForOpen(session) {
+  if (!session || typeof session !== "object") {
+    return true;
+  }
+  if (typeof session.explicit === "boolean") {
+    return session.explicit;
+  }
+  return session.openedOnce !== true;
+}
+
+/**
+ * Computes the `builtInsVisible` value for the Tools scene state on open and
+ * advances the session record so subsequent opens use the hidden default.
+ *
+ * If the user has explicitly toggled visibility earlier in this TUI session
+ * (`session.explicit` is a boolean), that choice is honored. Otherwise the
+ * very first open returns `true` (visible) and any later open returns
+ * `false` (hidden by default).
+ *
+ * Returns a new scene state object with `builtInsVisible` set; the caller
+ * should also keep the (mutated) session for the next open and toggle calls.
+ *
+ * Both arguments are optional: when `state` is missing a default state is
+ * created; when `session` is missing the open is treated as a first run.
+ */
+export function openToolsScene({ session, state } = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const sessionRecord = session ?? createBuiltInsVisibilitySession();
+  const builtInsVisible = resolveBuiltInsVisibilityForOpen(sessionRecord);
+  if (sessionRecord && typeof sessionRecord === "object") {
+    sessionRecord.openedOnce = true;
+  }
+  return {
+    ...sceneState,
+    builtInsVisible,
+  };
+}
+
+/**
+ * Toggles built-in catalog visibility for the Tools scene and records the
+ * choice on the visibility session so it persists across subsequent scene
+ * opens within the same TUI session.
+ *
+ * Returns the updated scene state with `builtInsVisible` flipped. If a
+ * `session` object is supplied it is mutated to set `explicit` to the new
+ * visibility, which overrides the first-run/subsequent-run defaults from
+ * `openToolsScene`.
+ */
+export function toggleBuiltInsVisibility({ session, state } = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const previous = sceneState.builtInsVisible !== false;
+  const next = !previous;
+  if (session && typeof session === "object") {
+    session.explicit = next;
+    session.openedOnce = true;
+  }
+  return {
+    ...sceneState,
+    builtInsVisible: next,
+  };
+}
+
 const DEFAULT_PAGER_VIEWPORT_HEIGHT = 20;
 
 function describeToolKind(extension) {
