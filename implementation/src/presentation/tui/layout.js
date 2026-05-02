@@ -80,16 +80,44 @@ export function renderStatusBadge(sceneId, continueUiState, spinner, agentSessio
   return pc.black(pc.bgBlue(" READY "));
 }
 
-function buildHelpOverlayLines() {
+function getSceneLabel(sceneId) {
+  if (sceneId === "mainMenu") {
+    return "Main Menu";
+  }
+  if (sceneId === "continue") {
+    return "Continue";
+  }
+  if (sceneId === "newWork") {
+    return "New Work";
+  }
+  if (sceneId === "workers") {
+    return "Workers";
+  }
+  if (sceneId === "profiles") {
+    return "Profiles";
+  }
+  if (sceneId === "settings") {
+    return "Settings";
+  }
+  if (sceneId === "help") {
+    return "Help";
+  }
+  return "Unknown";
+}
+
+function buildHelpOverlayLines(sceneId) {
+  const sceneLabel = getSceneLabel(sceneId);
   return [
-    pc.bold("Help"),
-    pc.dim("Placeholder overlay for this migration."),
-    pc.dim("Up/Down or j/k: navigate menu"),
+    pc.bold("Inline Help"),
+    pc.dim("Placeholder overlay for migration 158."),
+    pc.dim(`Scene: ${sceneLabel}`),
+    pc.dim("Up/Down or j/k: navigate"),
     pc.dim("Enter: select"),
     pc.dim("Esc/Backspace: go back"),
     pc.dim("1-9: jump to item"),
     pc.dim("q or Ctrl-C: quit"),
-    pc.dim("Press Esc, Backspace, ?, or h to close help."),
+    pc.dim("?/h: open or close inline help"),
+    pc.dim("Press Esc, Backspace, ?, or h to close this overlay."),
   ];
 }
 
@@ -212,7 +240,7 @@ export function buildFrame({
 
   if (showHelpOverlay) {
     pushGap(lines, spacing.sectionGap);
-    lines.push(pc.dim("-".repeat(74)), ...buildHelpOverlayLines());
+    lines.push(pc.dim("-".repeat(74)), ...buildHelpOverlayLines(sceneId));
   }
 
   pushGap(lines, spacing.beforeFooter);
