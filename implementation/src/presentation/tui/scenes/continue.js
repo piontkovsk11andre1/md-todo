@@ -2,6 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
+import {
+  formatDuration,
+  formatMaterializeModeLine,
+  formatTaskLines,
+  formatTimestamp,
+  progressBar,
+} from "../layout.js";
+import { applyOutputEvent, createInitialRunState, pushRecentMessage } from "../output-bridge.js";
 
 export const MATERIALIZE_MODES = [
   { key: "1", id: "migrations", label: "Materialize Migrations" },
@@ -45,104 +53,6 @@ function longestCommonPrefix(values) {
   return prefix;
 }
 
-function pushRecentMessage(runState, kind, message) {
-  if (typeof message !== "string" || message.length === 0) {
-    return;
-  }
-  runState.recentMessages.push({ kind, message, at: Date.now() });
-  while (runState.recentMessages.length > 6) {
-    runState.recentMessages.shift();
-  }
-}
-
-function applyOutputEvent(runState, event) {
-  switch (event.kind) {
-    case "group-start": {
-      runState.currentTaskStartedAt = Date.now();
-      if (event.counter) {
-        if (typeof event.counter.current === "number") {
-          runState.currentTaskIndex = Math.max(0, event.counter.current - 1);
-        }
-        if (typeof event.counter.total === "number" && event.counter.total > 0) {
-          runState.totalTasks = event.counter.total;
-        }
-      }
-      runState.currentOperation = "execute";
-      runState.statusMessage = event.label ?? "";
-      return;
-    }
-    case "group-end": {
-      if (event.status === "success") {
-        runState.completedTasks += 1;
-        runState.currentOperation = "finalize";
-      } else {
-        runState.failures += 1;
-        runState.currentOperation = "repair";
-        if (event.message) {
-          pushRecentMessage(runState, "error", event.message);
-        }
-      }
-      return;
-    }
-    case "progress": {
-      const progress = event.progress ?? {};
-      if (typeof progress.label === "string" && progress.label.length > 0) {
-        runState.currentOperation = progress.label.toLowerCase().split(/\s+/)[0] || runState.currentOperation;
-      }
-      if (typeof progress.detail === "string" && progress.detail.length > 0) {
-        pushRecentMessage(runState, "info", progress.detail);
-      }
-      return;
-    }
-    case "info":
-    case "warn":
-    case "error":
-    case "success": {
-      const message = event.message ?? "";
-      if (/repair/i.test(message)) {
-        runState.repairs += 1;
-        runState.currentOperation = "repair";
-      } else if (/resolve|resolving/i.test(message)) {
-        runState.resolvings += 1;
-      } else if (/reset/i.test(message)) {
-        runState.resets += 1;
-      } else if (/verify|verifying/i.test(message)) {
-        runState.currentOperation = "verify";
-      }
-      pushRecentMessage(runState, event.kind, message);
-      return;
-    }
-    case "text":
-    case "stderr":
-      return;
-    default:
-      return;
-  }
-}
-
-export function createInitialRunState() {
-  return {
-    actionKey: null,
-    actionLabel: "",
-    sourceTarget: "",
-    runStartedAt: 0,
-    currentTaskStartedAt: 0,
-    completedTasks: 0,
-    totalTasks: 0,
-    currentTaskIndex: -1,
-    currentOperation: "scan",
-    failures: 0,
-    repairs: 0,
-    resolvings: 0,
-    resets: 0,
-    recentMessages: [],
-    statusMessage: "",
-    finished: false,
-    exitCode: null,
-    error: null,
-    app: null,
-  };
-}
 
 export function resolveMaterializeSource(activeMaterializeMode, customPath) {
   if (activeMaterializeMode === "migrations") {
@@ -332,79 +242,6 @@ const OPERATION_COLOR = {
   summarize: pc.blue,
   agent: pc.yellow,
 };
-
-function orange(text) {
-  return "\u001B[38;5;208m" + text + "\u001B[39m";
-}
-
-function formatDuration(ms) {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  const mm = String(minutes).padStart(2, "0");
-  const ss = String(remainingSeconds).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
-function formatTimestamp(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return "--";
-  }
-  const date = new Date(ms);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
-function progressBar(width, ratio) {
-  const safeRatio = Math.max(0, Math.min(1, ratio));
-  const complete = Math.round(width * safeRatio);
-  const done = "#".repeat(complete);
-  const pending = "-".repeat(Math.max(0, width - complete));
-  return `[${pc.green(done)}${pc.dim(pending)}]`;
-}
-
-function formatTaskLines(kind, task, checked, tone) {
-  const isMuted = tone === "muted";
-  const label = isMuted ? pc.dim(kind.padEnd(8, " ")) : kind.padEnd(8, " ");
-  const tokenStyle = (() => {
-    if (kind === "previous") {
-      return pc.green;
-    }
-    if (kind === "current") {
-      return orange;
-    }
-    return pc.dim;
-  })();
-  const textStyle = isMuted ? pc.dim : pc.white;
-
-  if (!task) {
-    return [`${label} ${pc.dim("(none)")}`];
-  }
-
-  const checkbox = checked ? "[x]" : "[ ]";
-  const textLines = task.textLines && task.textLines.length > 0 ? task.textLines : [""];
-  const [firstLine, ...restLines] = textLines;
-  const lines = [
-    `${label} ${tokenStyle(String(task.line).padStart(3, "0"))} ${tokenStyle("-")} ${tokenStyle(checkbox)} ${textStyle(firstLine)}`,
-  ];
-  restLines.forEach((lineText, index) => {
-    const lineNumber = task.line + index + 1;
-    lines.push(`${" ".repeat(8)} ${tokenStyle(String(lineNumber).padStart(3, "0"))}     ${textStyle(lineText)}`);
-  });
-  return lines;
-}
-
-function formatMaterializeModeLine(mode, activeMode) {
-  const isActive = mode.id === activeMode;
-  const keyToken = isActive ? pc.black(pc.bgYellow(` ${mode.key} `)) : pc.cyan(`[${mode.key}]`);
-  const label = isActive ? pc.bold(pc.yellow(mode.label)) : pc.white(mode.label);
-  return `${keyToken} ${label}`;
-}
 
 function formatLabeledValue(label, value, labelWidth) {
   const key = `${label}:`.padEnd(labelWidth + 1, " ");

@@ -3,6 +3,10 @@ import readline from "node:readline";
 
 export const SPINNER_FRAMES = ["-", "\\", "|", "/"];
 
+function orange(text) {
+  return "\u001B[38;5;208m" + text + "\u001B[39m";
+}
+
 function truncatePlain(text, maxLength) {
   const value = String(text);
   if (maxLength <= 0) {
@@ -87,6 +91,75 @@ function buildHelpOverlayLines() {
     pc.dim("q or Ctrl-C: quit"),
     pc.dim("Press Esc, Backspace, ?, or h to close help."),
   ];
+}
+
+export function formatDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(remainingSeconds).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+export function formatTimestamp(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return "--";
+  }
+  const date = new Date(ms);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+export function progressBar(width, ratio) {
+  const safeRatio = Math.max(0, Math.min(1, ratio));
+  const complete = Math.round(width * safeRatio);
+  const done = "#".repeat(complete);
+  const pending = "-".repeat(Math.max(0, width - complete));
+  return `[${pc.green(done)}${pc.dim(pending)}]`;
+}
+
+export function formatTaskLines(kind, task, checked, tone) {
+  const isMuted = tone === "muted";
+  const label = isMuted ? pc.dim(kind.padEnd(8, " ")) : kind.padEnd(8, " ");
+  const tokenStyle = (() => {
+    if (kind === "previous") {
+      return pc.green;
+    }
+    if (kind === "current") {
+      return orange;
+    }
+    return pc.dim;
+  })();
+  const textStyle = isMuted ? pc.dim : pc.white;
+
+  if (!task) {
+    return [`${label} ${pc.dim("(none)")}`];
+  }
+
+  const checkbox = checked ? "[x]" : "[ ]";
+  const textLines = task.textLines && task.textLines.length > 0 ? task.textLines : [""];
+  const [firstLine, ...restLines] = textLines;
+  const lines = [
+    `${label} ${tokenStyle(String(task.line).padStart(3, "0"))} ${tokenStyle("-")} ${tokenStyle(checkbox)} ${textStyle(firstLine)}`,
+  ];
+  restLines.forEach((lineText, index) => {
+    const lineNumber = task.line + index + 1;
+    lines.push(`${" ".repeat(8)} ${tokenStyle(String(lineNumber).padStart(3, "0"))}     ${textStyle(lineText)}`);
+  });
+  return lines;
+}
+
+export function formatMaterializeModeLine(mode, activeMode) {
+  const isActive = mode.id === activeMode;
+  const keyToken = isActive ? pc.black(pc.bgYellow(` ${mode.key} `)) : pc.cyan(`[${mode.key}]`);
+  const label = isActive ? pc.bold(pc.yellow(mode.label)) : pc.white(mode.label);
+  return `${keyToken} ${label}`;
 }
 
 export function getSceneSpacing(viewportRows) {

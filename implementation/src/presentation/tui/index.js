@@ -2,7 +2,6 @@ import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
 import {
   createContinueSceneState,
-  createInitialRunState,
   handleContinueInput,
   renderContinueSceneLines,
   updateContinueUiState,
@@ -20,7 +19,7 @@ import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines
 import { createSettingsSceneState, handleSettingsInput, renderSettingsSceneLines } from "./scenes/settings.js";
 import { createHelpSceneState, handleHelpInput, renderHelpSceneLines } from "./scenes/help.js";
 import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.js";
-import { releaseApp, resolveProcessArgv } from "./output-bridge.js";
+import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.js";
 
 function parsePositiveInteger(value, label) {
   const parsed = Number.parseInt(String(value), 10);
