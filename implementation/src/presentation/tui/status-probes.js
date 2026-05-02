@@ -1,8 +1,11 @@
 import { createApp } from "../../create-app.js";
+import fs from "node:fs";
+import path from "node:path";
 
 const UNKNOWN_PROBE_STATUS = Object.freeze({ text: "?", tone: "muted" });
 const PENDING_PROBE_STATUS = Object.freeze({ text: "...", tone: "muted" });
 const CONTINUE_SOURCE = "migrations/";
+const AGENT_MARKDOWN_PATH = ".rundown/agent.md";
 
 const PROBE_TTLS_MS = Object.freeze({
   continue: 2000,
@@ -38,10 +41,118 @@ function createDefaultProbe(rowId) {
   if (rowId === "continue") {
     return createContinueProbe();
   }
+  if (rowId === "newWork") {
+    return createNewWorkProbe();
+  }
+  if (rowId === "workers") {
+    return createWorkersProbe();
+  }
+  if (rowId === "profiles") {
+    return createProfilesProbe();
+  }
+  if (rowId === "settings") {
+    return createSettingsProbe();
+  }
   if (rowId === "help") {
     return () => ({ text: "docs · website · changelog · keys", tone: "muted" });
   }
   return () => PENDING_PROBE_STATUS;
+}
+
+function safeObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
+function extractLastJsonText(entries, fromIndex = 0) {
+  for (let index = entries.length - 1; index >= fromIndex; index -= 1) {
+    const text = entries[index];
+    if (typeof text !== "string") {
+      continue;
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Keep scanning earlier text entries.
+    }
+  }
+  return undefined;
+}
+
+function collectAppTextOutput(event, buffer) {
+  if (event?.kind === "text" && typeof event.text === "string") {
+    buffer.push(event.text);
+  }
+}
+
+function parseHealthPayload(payload) {
+  const parsed = safeObject(payload);
+  const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+  const fallbackOrderSnapshots = Array.isArray(parsed.fallbackOrderSnapshots)
+    ? parsed.fallbackOrderSnapshots
+    : [];
+  return {
+    entries,
+    fallbackOrderSnapshots,
+  };
+}
+
+function parseConfigListPayload(payload) {
+  const parsed = safeObject(payload);
+  return safeObject(parsed.config);
+}
+
+function normalizeProfileIdentity(key) {
+  if (typeof key !== "string") {
+    return "";
+  }
+  return key.startsWith("profile:") ? key.slice("profile:".length) : key;
+}
+
+function toTimestamp(value) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function describeEligibilityReason(candidate) {
+  const workerReason = candidate?.worker?.reason;
+  const profileReason = candidate?.profile?.reason;
+  if (workerReason === "unavailable" || profileReason === "unavailable") {
+    return "worker unavailable";
+  }
+  if (workerReason === "cooling_down" || profileReason === "cooling_down") {
+    return "worker cooling down";
+  }
+  return "worker not eligible";
+}
+
+async function runAppJsonCommand({ appFactory = createApp, invoke }) {
+  const textEvents = [];
+  let app;
+
+  try {
+    app = appFactory({
+      ports: {
+        output: {
+          emit(event) {
+            collectAppTextOutput(event, textEvents);
+          },
+        },
+      },
+    });
+
+    const start = textEvents.length;
+    const exitCode = await invoke(app);
+    if (exitCode !== 0) {
+      return undefined;
+    }
+    return extractLastJsonText(textEvents, start);
+  } finally {
+    app?.releaseAllLocks?.();
+    await app?.awaitShutdown?.();
+  }
 }
 
 export function createContinueProbe({ appFactory = createApp, source = CONTINUE_SOURCE } = {}) {
@@ -82,6 +193,181 @@ export function createContinueProbe({ appFactory = createApp, source = CONTINUE_
     } finally {
       app?.releaseAllLocks?.();
       await app?.awaitShutdown?.();
+    }
+  };
+}
+
+export function createNewWorkProbe({ appFactory = createApp, cwd = process.cwd() } = {}) {
+  return async function runNewWorkProbe() {
+    try {
+      const agentPath = path.join(cwd, AGENT_MARKDOWN_PATH);
+      if (!fs.existsSync(agentPath)) {
+        return { text: "agent.md missing!", tone: "error" };
+      }
+
+      const payload = await runAppJsonCommand({
+        appFactory,
+        invoke: (app) => app.viewWorkerHealthStatus({ json: true }),
+      });
+      const { fallbackOrderSnapshots } = parseHealthPayload(payload);
+      const runSnapshot = fallbackOrderSnapshots.find((snapshot) => snapshot?.commandName === "run");
+      const primaryCandidate = Array.isArray(runSnapshot?.candidates)
+        ? runSnapshot.candidates.find((candidate) => candidate?.source === "primary")
+        : undefined;
+
+      if (!primaryCandidate) {
+        return { text: "worker status unavailable", tone: "warn" };
+      }
+
+      if (primaryCandidate.eligible) {
+        return { text: "worker ready", tone: "ok" };
+      }
+
+      return {
+        text: describeEligibilityReason(primaryCandidate),
+        tone: "warn",
+      };
+    } catch {
+      return UNKNOWN_PROBE_STATUS;
+    }
+  };
+}
+
+export function createWorkersProbe({ appFactory = createApp } = {}) {
+  return async function runWorkersProbe() {
+    try {
+      const [workerConfigPayload, workerHealthPayload] = await Promise.all([
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.configList({ scope: "effective", json: true, showSource: false }),
+        }),
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.viewWorkerHealthStatus({ json: true }),
+        }),
+      ]);
+
+      const workerConfig = parseConfigListPayload(workerConfigPayload);
+      const workers = safeObject(workerConfig.workers);
+      const fallbackCount = Array.isArray(workers.fallbacks) ? workers.fallbacks.length : 0;
+
+      const { entries } = parseHealthPayload(workerHealthPayload);
+      let coolingCount = 0;
+      let unavailableCount = 0;
+      for (const entry of entries) {
+        if (entry?.status === "unavailable") {
+          unavailableCount += 1;
+          continue;
+        }
+        if (entry?.status === "cooling_down") {
+          coolingCount += 1;
+        }
+      }
+
+      const segments = [
+        `default ${Array.isArray(workers.default) && workers.default.length > 0 ? "✓" : "✗"}`,
+        `tui ${Array.isArray(workers.tui) && workers.tui.length > 0 ? "✓" : "✗"}`,
+        `${fallbackCount} fallbacks`,
+      ];
+      if (coolingCount > 0) {
+        segments.push(`${coolingCount} cooling`);
+      }
+      if (unavailableCount > 0) {
+        segments.push(`${unavailableCount} unavailable`);
+      }
+
+      const tone = unavailableCount > 0 ? "error" : coolingCount > 0 ? "warn" : "ok";
+      return {
+        text: segments.join(" · "),
+        tone,
+      };
+    } catch {
+      return UNKNOWN_PROBE_STATUS;
+    }
+  };
+}
+
+export function createProfilesProbe({ appFactory = createApp } = {}) {
+  return async function runProfilesProbe() {
+    try {
+      const [workerConfigPayload, workerHealthPayload] = await Promise.all([
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.configList({ scope: "effective", json: true, showSource: false }),
+        }),
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.viewWorkerHealthStatus({ json: true }),
+        }),
+      ]);
+
+      const workerConfig = parseConfigListPayload(workerConfigPayload);
+      const profiles = safeObject(workerConfig.profiles);
+      const profileNames = Object.keys(profiles);
+      const definedCount = profileNames.length;
+
+      const { entries } = parseHealthPayload(workerHealthPayload);
+      let latestProfileName = "";
+      let latestTimestamp = Number.NEGATIVE_INFINITY;
+      for (const entry of entries) {
+        if (entry?.source !== "profile") {
+          continue;
+        }
+        const candidateTimestamp = Math.max(
+          toTimestamp(entry.lastSuccessAt),
+          toTimestamp(entry.lastFailureAt),
+        );
+        if (candidateTimestamp <= latestTimestamp) {
+          continue;
+        }
+        latestTimestamp = candidateTimestamp;
+        latestProfileName = normalizeProfileIdentity(entry.key);
+      }
+
+      const text = latestProfileName
+        ? `${definedCount} defined · last used: ${latestProfileName}`
+        : `${definedCount} defined`;
+      return {
+        text,
+        tone: definedCount === 0 ? "muted" : "ok",
+      };
+    } catch {
+      return UNKNOWN_PROBE_STATUS;
+    }
+  };
+}
+
+export function createSettingsProbe({ appFactory = createApp } = {}) {
+  return async function runSettingsProbe() {
+    try {
+      const [localConfigPayload, globalPathPayload] = await Promise.all([
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.configList({ scope: "local", json: true, showSource: false }),
+        }),
+        runAppJsonCommand({
+          appFactory,
+          invoke: (app) => app.configPath({ scope: "global" }),
+        }),
+      ]);
+
+      const localConfig = parseConfigListPayload(localConfigPayload);
+      const commandCount = Object.keys(safeObject(localConfig.commands)).length;
+      const profileCount = Object.keys(safeObject(localConfig.profiles)).length;
+      const overrideCount = commandCount + profileCount;
+
+      const globalPath = safeObject(globalPathPayload).path;
+      const hasGlobalConfig = typeof globalPath === "string"
+        && globalPath.length > 0
+        && globalPath !== "(unresolved)"
+        && fs.existsSync(globalPath);
+
+      return {
+        text: `${hasGlobalConfig ? "local + global" : "local"} · ${overrideCount} effective overrides`,
+        tone: "muted",
+      };
+    } catch {
+      return UNKNOWN_PROBE_STATUS;
     }
   };
 }
