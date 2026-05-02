@@ -8,6 +8,7 @@ import {
   closeToolsScenePager,
   createToolsSceneState,
   discoverCustomTools,
+  editSelectedCustomTool,
   findBuiltInToolDocsLine,
   inspectCustomToolTemplate,
   inspectSelectedCustomTool,
@@ -493,5 +494,142 @@ describe("tools scene inspect template", () => {
     };
     const next = closeToolsScenePager({ state });
     expect(next.pager).toBeNull();
+  });
+});
+
+describe("tools scene edit prompt", () => {
+  let workspaceRoot: string;
+
+  beforeEach(() => {
+    workspaceRoot = makeTempDir("tools-edit-");
+  });
+
+  afterEach(() => {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  it("editSelectedCustomTool sets a banner when no custom tools exist", async () => {
+    const calls: string[] = [];
+    const next: any = await editSelectedCustomTool({
+      state: { ...createToolsSceneState(), loading: false },
+      launchEditor: () => {
+        calls.push("launched");
+        return { ok: true };
+      },
+      reload: async ({ state }) => state,
+    });
+    expect(calls).toEqual([]);
+    expect(next.banner).toContain("No custom tool");
+  });
+
+  it("editSelectedCustomTool launches the editor with the selected tool path and reloads on return", async () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    const summarizePath = path.join(toolsDir, "summarize.md");
+    fs.writeFileSync(summarizePath, "template");
+    fs.writeFileSync(path.join(toolsDir, "triage.js"), "module.exports = {};\n");
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({ toolDirs: ["tools"] }),
+    );
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+
+    const baseState = {
+      ...createToolsSceneState(),
+      configDirPath: configDir,
+      customToolWinners: tools,
+      customTools: tools,
+      loading: false,
+      selectedIndex: 0,
+    };
+
+    const events: string[] = [];
+    let launchedPath = "";
+    let reloaded = false;
+    const next: any = await editSelectedCustomTool({
+      state: baseState,
+      currentWorkingDirectory: workspaceRoot,
+      suspendTui: () => events.push("suspend"),
+      resumeTui: () => events.push("resume"),
+      launchEditor: (filePath: string) => {
+        launchedPath = filePath;
+        events.push("launch");
+        return { ok: true };
+      },
+      reload: async ({ state }: any) => {
+        reloaded = true;
+        events.push("reload");
+        return { ...state, customToolWinners: tools, customTools: tools };
+      },
+    });
+
+    expect(launchedPath).toBe(summarizePath);
+    expect(reloaded).toBe(true);
+    expect(events).toEqual(["suspend", "launch", "resume", "reload"]);
+    expect(next.banner).toBe("");
+    expect(next.selectedIndex).toBe(0);
+    expect(next.customToolWinners).toEqual(tools);
+  });
+
+  it("editSelectedCustomTool resumes the TUI even when the editor throws", async () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "template");
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+
+    const events: string[] = [];
+    let reloadCalled = false;
+    const next: any = await editSelectedCustomTool({
+      state: {
+        ...createToolsSceneState(),
+        configDirPath: configDir,
+        customToolWinners: tools,
+        loading: false,
+      },
+      suspendTui: () => events.push("suspend"),
+      resumeTui: () => events.push("resume"),
+      launchEditor: () => {
+        events.push("launch-throw");
+        throw new Error("spawn failed");
+      },
+      reload: async ({ state }: any) => {
+        reloadCalled = true;
+        return state;
+      },
+    });
+
+    expect(events).toEqual(["suspend", "launch-throw", "resume"]);
+    expect(reloadCalled).toBe(false);
+    expect(next.banner).toContain("spawn failed");
+  });
+
+  it("editSelectedCustomTool surfaces editor failure result without reloading", async () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "template");
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+
+    let reloadCalled = false;
+    const next: any = await editSelectedCustomTool({
+      state: {
+        ...createToolsSceneState(),
+        configDirPath: configDir,
+        customToolWinners: tools,
+        loading: false,
+      },
+      launchEditor: () => ({ ok: false, reason: "editor-not-found", message: "no editor available" }),
+      reload: async ({ state }: any) => {
+        reloadCalled = true;
+        return state;
+      },
+    });
+
+    expect(reloadCalled).toBe(false);
+    expect(next.banner).toBe("no editor available");
   });
 });

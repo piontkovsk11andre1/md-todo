@@ -5,6 +5,7 @@ import {
   createPagerState,
   renderPagerLines,
 } from "../components/pager.js";
+import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.js";
 
 const TOOLS_DIRECTORY_NAME = "tools";
 const CONFIG_FILE_NAME = "config.json";
@@ -392,6 +393,137 @@ export function closeToolsScenePager({ state } = {}) {
   return {
     ...sceneState,
     pager: null,
+  };
+}
+
+function describeEditorLaunchFailure(result, filePath) {
+  if (!result || typeof result !== "object") {
+    return `Failed to launch editor for ${filePath}.`;
+  }
+  if (typeof result.message === "string" && result.message.length > 0) {
+    return result.message;
+  }
+  if (typeof result.reason === "string" && result.reason.length > 0) {
+    return `Editor launch failed (${result.reason}).`;
+  }
+  return `Failed to launch editor for ${filePath}.`;
+}
+
+/**
+ * Opens the currently selected custom tool's file in `$EDITOR` (or `$VISUAL`,
+ * with platform-aware fallbacks via `editor-launch.js`). The TUI is suspended
+ * while the editor runs and resumed when the editor exits, then the tool
+ * discovery state is reloaded so any edits to the file are reflected
+ * immediately in the scene.
+ *
+ * Returns the updated scene state. When no winning custom tool is available,
+ * returns the state unchanged with a banner indicating nothing can be edited.
+ * On editor launch failure, the existing scene state is preserved (no reload)
+ * and a banner is set describing the failure.
+ *
+ * The function takes optional `suspendTui`/`resumeTui` callbacks (provided by
+ * the TUI runtime) plus `launchEditor` and `reload` overrides for testing.
+ */
+export async function editSelectedCustomTool({
+  state,
+  currentWorkingDirectory = process.cwd(),
+  suspendTui,
+  resumeTui,
+  launchEditor: launchEditorOverride,
+  reload: reloadOverride,
+} = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const winners = Array.isArray(sceneState.customToolWinners)
+    ? sceneState.customToolWinners
+    : [];
+  if (winners.length === 0) {
+    return {
+      ...sceneState,
+      banner: "No custom tool to edit.",
+    };
+  }
+  const index = clampSelectedIndex(sceneState.selectedIndex, winners.length);
+  const tool = winners[index];
+  if (!tool || typeof tool.filePath !== "string" || tool.filePath.length === 0) {
+    return {
+      ...sceneState,
+      selectedIndex: index,
+      banner: "Selected tool has no file path.",
+    };
+  }
+
+  const launcher = typeof launchEditorOverride === "function"
+    ? launchEditorOverride
+    : defaultLaunchEditor;
+
+  if (typeof suspendTui === "function") {
+    try {
+      suspendTui();
+    } catch {
+      // ignore suspend errors; we still attempt the editor launch
+    }
+  }
+
+  let launchResult;
+  let launchError;
+  try {
+    launchResult = launcher(tool.filePath, { cwd: currentWorkingDirectory });
+  } catch (caught) {
+    launchError = caught;
+  } finally {
+    if (typeof resumeTui === "function") {
+      try {
+        resumeTui();
+      } catch {
+        // ignore resume errors
+      }
+    }
+  }
+
+  if (launchError) {
+    const message = launchError && launchError.message
+      ? launchError.message
+      : String(launchError);
+    return {
+      ...sceneState,
+      selectedIndex: index,
+      banner: `Failed to launch editor for ${tool.filePath}: ${message}`,
+    };
+  }
+
+  if (!launchResult || launchResult.ok !== true) {
+    return {
+      ...sceneState,
+      selectedIndex: index,
+      banner: describeEditorLaunchFailure(launchResult, tool.filePath),
+    };
+  }
+
+  const reloader = typeof reloadOverride === "function"
+    ? reloadOverride
+    : reloadToolsSceneState;
+  let reloadedState;
+  try {
+    reloadedState = await reloader({
+      state: { ...sceneState, selectedIndex: index, banner: "" },
+      currentWorkingDirectory,
+    });
+  } catch (caught) {
+    const message = caught && caught.message ? caught.message : String(caught);
+    return {
+      ...sceneState,
+      selectedIndex: index,
+      banner: `Reload failed after edit: ${message}`,
+    };
+  }
+
+  const reloadedWinners = Array.isArray(reloadedState?.customToolWinners)
+    ? reloadedState.customToolWinners
+    : [];
+  return {
+    ...reloadedState,
+    selectedIndex: clampSelectedIndex(index, reloadedWinners.length),
+    banner: "",
   };
 }
 
