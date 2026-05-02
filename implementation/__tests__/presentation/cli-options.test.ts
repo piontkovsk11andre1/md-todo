@@ -2631,6 +2631,19 @@ describe("CLI invocation logging context", () => {
   });
 });
 
+describe("CLI root compatibility", () => {
+  it("accepts root -c as a no-op and matches bare non-interactive help behavior", async () => {
+    const continued = await invokeRootAndCaptureOutput(["-c"]);
+    const bare = await invokeRootAndCaptureOutput([]);
+
+    expect(continued.exitCode).toBe(0);
+    expect(continued.stderr).not.toContain("unknown option");
+    expect(continued.stdout).toContain("Usage: rundown");
+    expect(continued.exitCode).toBe(bare.exitCode);
+    expect(continued.stdout).toBe(bare.stdout);
+  });
+});
+
 describe("CLI lock release signal handling", () => {
   it("registers SIGINT and SIGTERM handlers that release held locks before exit", async () => {
     const previousEnv = captureEnv();
@@ -5010,6 +5023,66 @@ async function invokeRunAndCaptureCall(args: string[], runTask: ReturnType<typeo
 
   expect(runTask).toHaveBeenCalledTimes(1);
   return withLegacyWorkerCommand(runTask.mock.calls[0][0] as RunTaskCall);
+}
+
+async function invokeRootAndCaptureOutput(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const previousEnv = captureEnv();
+  let stdout = "";
+  let stderr = "";
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
+    stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    return true;
+  }) as never);
+
+  const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+    stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    return true;
+  }) as never);
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(args);
+  } catch (error) {
+    const message = String(error);
+    const match = /CLI exited with code (\d+)/.exec(message);
+    if (match) {
+      return {
+        stdout,
+        stderr,
+        exitCode: Number(match[1]),
+      };
+    }
+    if (/process\.exit unexpectedly called/.test(message)) {
+      return {
+        stdout,
+        stderr,
+        exitCode: 1,
+      };
+    }
+    throw error;
+  } finally {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+    restoreEnv(previousEnv);
+  }
+
+  throw new Error("Expected CLI exit");
 }
 
 async function invokeDiscussAndCaptureCall(
