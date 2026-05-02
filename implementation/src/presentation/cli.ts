@@ -173,6 +173,21 @@ program
     cliVersion,
   })));
 
+program
+  .command("agent")
+  .description("Open the interactive rundown agent.")
+  .option("-c, --continue", "Resume the previous interactive root help/agent session")
+  .option("--agents", "Print canonical AGENTS.md guidance and exit")
+  .action(withCliAction(createHelpCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
+    outputHelp: () => {
+      program.outputHelp();
+    },
+    cliVersion,
+  })));
+
 program.addHelpText("afterAll", EXIT_CODES_HELP_TEXT);
 
 const runCommand = program
