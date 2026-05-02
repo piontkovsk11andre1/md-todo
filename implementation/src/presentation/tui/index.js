@@ -1,8 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
 import pc from "picocolors";
 import readline from "node:readline";
-import fs from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp } from "../../create-app.js";
 import {
@@ -13,6 +11,7 @@ import {
   renderContinueSceneLines,
   updateContinueUiState,
 } from "./scenes/continue.js";
+import { isNewWorkActionKey, startNewWorkSceneAction } from "./scenes/new-work.js";
 
 const SPINNER_FRAMES = ["-", "\\", "|", "/"];
 
@@ -21,24 +20,6 @@ const MENU_ITEMS = [
   { key: "a", label: "Discuss the Agent" },
   { key: "o", label: "Open Agent" },
 ];
-
-const DEFAULT_WORKER_PATTERN = {
-  command: [],
-  usesBootstrap: false,
-  usesFile: false,
-  appendFile: true,
-};
-
-const AGENT_PROMPT_FILES = {
-  a: ".rundown/discuss-agent.md",
-  o: ".rundown/agent.md",
-};
-
-const ACTION_LABELS = {
-  m: "materialize",
-  a: "discuss-agent",
-  o: "open-agent",
-};
 
 function parsePositiveInteger(value, label) {
   const parsed = Number.parseInt(String(value), 10);
@@ -102,23 +83,6 @@ function getWorkerHealthSummary() {
   } finally {
     app.releaseAllLocks?.();
     void app.awaitShutdown?.();
-  }
-}
-
-function readAgentPrompt(actionKey, workingDirectory) {
-  const relativePath = AGENT_PROMPT_FILES[actionKey];
-  if (!relativePath) {
-    return { content: "", source: "(none)", exists: false };
-  }
-  const resolved = path.resolve(workingDirectory, relativePath);
-  if (!fs.existsSync(resolved)) {
-    return { content: "", source: relativePath, exists: false };
-  }
-  try {
-    const content = fs.readFileSync(resolved, "utf8");
-    return { content, source: relativePath, exists: true };
-  } catch (error) {
-    return { content: "", source: relativePath, exists: false, error: String(error) };
   }
 }
 
@@ -254,39 +218,6 @@ function withCursorHidden() {
   return () => {
     process.stdout.write("\u001B[?25h");
   };
-}
-
-/**
- * Run an interactive agent session via app.helpTask, using the provided prompt
- * content as a complete promptOverride. The worker takes over the terminal in
- * "tui" mode, so callers must tear down the TUI before invoking this.
- */
-async function runAgentSession(actionKey, promptContent, runState) {
-  const app = createApp();
-  runState.app = app;
-  runState.actionKey = actionKey;
-  runState.actionLabel = ACTION_LABELS[actionKey];
-  runState.sourceTarget = AGENT_PROMPT_FILES[actionKey];
-  runState.runStartedAt = Date.now();
-  runState.currentOperation = "agent";
-
-  try {
-    const exitCode = await app.helpTask({
-      workerPattern: { ...DEFAULT_WORKER_PATTERN },
-      keepArtifacts: false,
-      trace: false,
-      cliVersion: "tui",
-      promptOverride: promptContent,
-    });
-    runState.exitCode = exitCode;
-    runState.finished = true;
-    return exitCode;
-  } catch (error) {
-    runState.exitCode = 1;
-    runState.error = error instanceof Error ? error.message : String(error);
-    runState.finished = true;
-    throw error;
-  }
 }
 
 async function releaseApp(app) {
@@ -436,35 +367,30 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       runState = createInitialRunState();
     };
 
-    const startAgentMenuAction = async (actionKey) => {
-    if (agentSessionPending) {
-      return;
-    }
-    const promptResult = readAgentPrompt(actionKey, currentWorkingDirectory);
-    if (!promptResult.exists || promptResult.content.trim().length === 0) {
-      uiHint = `Prompt file not found or empty: ${promptResult.source}`;
-      return;
-    }
+    const startNewWorkMenuAction = async (actionKey) => {
+      if (agentSessionPending) {
+        return;
+      }
 
-    agentSessionPending = true;
-    uiHint = "";
-    runState = createInitialRunState();
-    teardownTuiForWorker();
+      agentSessionPending = true;
+      uiHint = "";
+      runState = createInitialRunState();
 
-    let app = null;
-    try {
-      const sessionPromise = runAgentSession(actionKey, promptResult.content, runState);
-      app = runState.app;
-      await sessionPromise;
-    } catch {
-      // Error is captured on runState.
-    } finally {
-      await releaseApp(app);
-      runState.app = null;
+      const result = await startNewWorkSceneAction({
+        actionKey,
+        currentWorkingDirectory,
+        runState,
+        teardownTuiForWorker,
+        restoreTuiAfterWorker,
+        releaseApp,
+      });
+
       agentSessionPending = false;
+      if (!result.started) {
+        uiHint = result.hint;
+        return;
+      }
       uiState = runState.exitCode === 0 ? "done" : "failed";
-      restoreTuiAfterWorker();
-    }
     };
 
     function onInput(chunk) {
@@ -521,8 +447,8 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
             uiState = "materialize-form";
             return;
           }
-        if (activeMenuKey === "a" || activeMenuKey === "o") {
-          void startAgentMenuAction(activeMenuKey);
+        if (isNewWorkActionKey(activeMenuKey)) {
+          void startNewWorkMenuAction(activeMenuKey);
           return;
         }
       }
