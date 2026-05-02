@@ -1,25 +1,26 @@
 import { Command, InvalidArgumentError } from "commander";
-import pc from "picocolors";
-import readline from "node:readline";
 import { pathToFileURL } from "node:url";
-import { createApp } from "../../create-app.js";
 import {
   createContinueSceneState,
   createInitialRunState,
   handleContinueInput,
-  isContinueUiState,
   renderContinueSceneLines,
   updateContinueUiState,
 } from "./scenes/continue.js";
-import { isNewWorkActionKey, startNewWorkSceneAction } from "./scenes/new-work.js";
-
-const SPINNER_FRAMES = ["-", "\\", "|", "/"];
-
-const MENU_ITEMS = [
-  { key: "m", label: "Materialize" },
-  { key: "a", label: "Discuss the Agent" },
-  { key: "o", label: "Open Agent" },
-];
+import {
+  createMainMenuSceneState,
+  getMainMenuRows,
+  getSelectedMainMenuItem,
+  jumpMainMenuSelection,
+  moveMainMenuSelection,
+} from "./scenes/main-menu.js";
+import { startNewWorkSceneAction } from "./scenes/new-work.js";
+import { createWorkersSceneState, handleWorkersInput, renderWorkersSceneLines } from "./scenes/workers.js";
+import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
+import { createSettingsSceneState, handleSettingsInput, renderSettingsSceneLines } from "./scenes/settings.js";
+import { createHelpSceneState, handleHelpInput, renderHelpSceneLines } from "./scenes/help.js";
+import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.js";
+import { releaseApp, resolveProcessArgv } from "./output-bridge.js";
 
 function parsePositiveInteger(value, label) {
   const parsed = Number.parseInt(String(value), 10);
@@ -37,206 +38,111 @@ function parseFps(value) {
   return parsed;
 }
 
-function formatMenuLine(item, activeKey) {
-  const isActive = item.key === activeKey;
-  const keyToken = isActive ? pc.black(pc.bgYellow(` ${item.key.toUpperCase()} `)) : pc.cyan(`[${item.key.toUpperCase()}]`);
-  const label = isActive ? pc.bold(pc.yellow(item.label)) : pc.white(item.label);
-  return `${keyToken} ${label}`;
-}
-
-function getWorkerHealthSummary() {
-  const outputLines = [];
-  const app = createApp({
-    ports: {
-      output: {
-        emit(event) {
-          if (event.kind === "text") {
-            outputLines.push(event.text);
-          }
-        },
-      },
-    },
-  });
-
-  try {
-    const exitCode = app.viewWorkerHealthStatus({ json: true });
-    if (exitCode !== 0) {
-      return "Worker health summary unavailable.";
-    }
-    const jsonPayload = outputLines.join("\n").trim();
-    if (jsonPayload.length === 0) {
-      return "Worker health: no data.";
-    }
-    const parsed = JSON.parse(jsonPayload);
-    const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
-    const fallbackOrderSnapshots = Array.isArray(parsed.fallbackOrderSnapshots) ? parsed.fallbackOrderSnapshots : [];
-    const eligibleCount = entries.filter((entry) => entry?.eligible === true).length;
-    const coolingDownCount = entries.filter((entry) => entry?.reason === "cooling_down").length;
-    const unavailableCount = entries.filter((entry) => entry?.reason === "unavailable").length;
-    return "Worker health: "
-      + `${eligibleCount}/${entries.length} eligible, `
-      + `${coolingDownCount} cooling down, `
-      + `${unavailableCount} unavailable, `
-      + `${fallbackOrderSnapshots.length} fallback snapshots.`;
-  } catch (error) {
-    return "Worker health unavailable: " + String(error);
-  } finally {
-    app.releaseAllLocks?.();
-    void app.awaitShutdown?.();
-  }
-}
-
-function renderStatusBadge(uiState, spinner) {
-  if (uiState === "running") {
-    return `${pc.black(pc.bgYellow(" RUNNING "))} ${pc.bold(spinner)}`;
-  }
-  if (uiState === "done") {
-    return pc.black(pc.bgGreen(" DONE "));
-  }
-  if (uiState === "failed") {
-    return pc.black(pc.bgRed(" FAILED "));
-  }
-  if (uiState === "materialize-form" || uiState === "materialize-confirm") {
-    return pc.black(pc.bgCyan(" WAITING INPUT "));
-  }
-  return pc.black(pc.bgBlue(" READY "));
-}
-
-function pushGap(lines, count) {
-  for (let index = 0; index < count; index += 1) {
-    lines.push("");
-  }
-}
-
-function resolveLayoutSpacing(viewportRows) {
-  if (Number.isFinite(viewportRows) && viewportRows > 0 && viewportRows < 34) {
-    return {
-      afterBanner: 1,
-      afterStatus: 0,
-      sectionGap: 1,
-      menuInstructionGap: 1,
-      hintGap: 1,
-      errorGap: 1,
-      beforeFooter: 1,
-    };
-  }
+function createSceneRouterState() {
   return {
-    afterBanner: 2,
-    afterStatus: 1,
-    sectionGap: 1,
-    menuInstructionGap: 1,
-    hintGap: 1,
-    errorGap: 1,
-    beforeFooter: 1,
+    sceneId: "mainMenu",
+    showHelpOverlay: false,
+    mainMenuHint: "",
+    mainMenuState: createMainMenuSceneState(),
+    continueUiState: "materialize-form",
+    continueSceneState: createContinueSceneState(),
+    runState: createInitialRunState(),
+    workersSceneState: createWorkersSceneState(),
+    profilesSceneState: createProfilesSceneState(),
+    settingsSceneState: createSettingsSceneState(),
+    helpSceneState: createHelpSceneState(),
+    agentSessionPending: false,
   };
 }
 
+function isArrowUp(rawInput) {
+  return rawInput === "\u001b[A";
+}
 
-function buildFrame(state) {
-  const {
-    uiState,
-    spinner,
-    activeMenuKey,
-    uiHint,
-    viewportRows,
-    currentWorkingDirectory,
-    continueSceneState,
-    runState,
-  } = state;
-  const spacing = resolveLayoutSpacing(viewportRows);
+function isArrowDown(rawInput) {
+  return rawInput === "\u001b[B";
+}
 
-  const banner = [
-    "██████  ██   ██ ███    ██ ██████   ██████  ██     ██ ███    ██",
-    "██   ██ ██   ██ ████   ██ ██   ██ ██    ██ ██     ██ ████   ██",
-    "██████  ██   ██ ██ ██  ██ ██   ██ ██    ██ ██  █  ██ ██ ██  ██",
-    "██   ██ ██   ██ ██  ██ ██ ██   ██ ██    ██ ██ ███ ██ ██  ██ ██",
-    "██   ██  █████  ██   ████ ██████   ██████   ███ ███  ██   ████",
-  ].map((line) => pc.bold(pc.magenta(line)));
-  const statusToken = renderStatusBadge(uiState, spinner);
+function isBack(rawInput) {
+  return rawInput === "\u001b" || rawInput === "\b" || rawInput === "\u007f";
+}
 
-  const lines = [...banner];
-  pushGap(lines, spacing.afterBanner);
-  lines.push(`${pc.bold("Status:")} ${statusToken}`, pc.dim("=".repeat(74)));
-  pushGap(lines, spacing.afterStatus);
+function resetToMainMenu(state) {
+  state.sceneId = "mainMenu";
+  state.showHelpOverlay = false;
+  state.mainMenuState = createMainMenuSceneState();
+  state.continueUiState = "materialize-form";
+  state.continueSceneState = createContinueSceneState();
+  state.runState = createInitialRunState();
+}
 
-  if (uiState === "menu") {
-    const menuItems = MENU_ITEMS.map((item) => formatMenuLine(item, activeMenuKey));
-    lines.push(
-      `${pc.bold("Welcome:")} ${pc.white("Choose action with hotkeys.")}`,
-      `${pc.bold("Start Menu:")} ${pc.dim("(press Enter to continue)")}`,
-    );
-    pushGap(lines, spacing.sectionGap);
-    lines.push(...menuItems);
-    pushGap(lines, spacing.menuInstructionGap);
-    lines.push(
-      pc.dim("Press M/A/O or Up/Down to select, Enter to continue, Q to quit."),
-      pc.dim("Press H for worker health summary."),
-    );
-    if (uiHint) {
-      pushGap(lines, spacing.hintGap);
-      lines.push(pc.yellow(uiHint));
-    }
+function routeFromMainMenu(state, routeTo, launchNewWork) {
+  state.showHelpOverlay = false;
+  if (routeTo === "continue") {
+    state.sceneId = "continue";
+    state.continueUiState = "materialize-form";
+    state.continueSceneState = createContinueSceneState();
+    state.runState = createInitialRunState();
+    return;
   }
+  if (routeTo === "newWork") {
+    void launchNewWork();
+    return;
+  }
+  if (routeTo === "workers" || routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
+    state.sceneId = routeTo;
+  }
+}
 
-  if (isContinueUiState(uiState)) {
-    const continueLines = renderContinueSceneLines({
-      uiState,
-      state: continueSceneState,
-      runState,
+function applySharedNavigationGrammar(state, rawInput) {
+  const input = String(rawInput).toLowerCase();
+  if (isArrowUp(rawInput) || input === "k") {
+    state.mainMenuState = moveMainMenuSelection(state.mainMenuState, -1);
+    return true;
+  }
+  if (isArrowDown(rawInput) || input === "j") {
+    state.mainMenuState = moveMainMenuSelection(state.mainMenuState, 1);
+    return true;
+  }
+  if (/^[1-9]$/.test(input)) {
+    state.mainMenuState = jumpMainMenuSelection(state.mainMenuState, input);
+    return true;
+  }
+  return false;
+}
+
+function buildSceneLines(state, spacing, currentWorkingDirectory) {
+  if (state.sceneId === "continue") {
+    return renderContinueSceneLines({
+      uiState: state.continueUiState,
+      state: state.continueSceneState,
+      runState: state.runState,
       currentWorkingDirectory,
       sectionGap: spacing.sectionGap,
       hintGap: spacing.hintGap,
       errorGap: spacing.errorGap,
     });
-    lines.push(...continueLines);
   }
-
-  pushGap(lines, spacing.beforeFooter);
-  lines.push(pc.dim("Press Ctrl+C to stop the sketch."));
-  return lines;
-}
-
-function render(lines, previousLineCount) {
-  if (!process.stdout.isTTY) {
-    process.stdout.write(lines.join("\n") + "\n");
-    return lines.length;
+  if (state.sceneId === "newWork") {
+    return [
+      "New Work",
+      "Launching existing agent flow...",
+      "Press Esc to return if launch has not started yet.",
+    ];
   }
-  if (previousLineCount > 0) {
-    readline.moveCursor(process.stdout, 0, -previousLineCount);
+  if (state.sceneId === "workers") {
+    return renderWorkersSceneLines({ state: state.workersSceneState, sectionGap: spacing.sectionGap });
   }
-  readline.cursorTo(process.stdout, 0);
-  readline.clearScreenDown(process.stdout);
-  process.stdout.write(lines.join("\n") + "\n");
-  return lines.length;
-}
-
-function withCursorHidden() {
-  if (!process.stdout.isTTY) {
-    return () => {};
+  if (state.sceneId === "profiles") {
+    return renderProfilesSceneLines({ state: state.profilesSceneState, sectionGap: spacing.sectionGap });
   }
-  process.stdout.write("\u001B[?25l");
-  return () => {
-    process.stdout.write("\u001B[?25h");
-  };
-}
-
-async function releaseApp(app) {
-  if (!app) {
-    return;
+  if (state.sceneId === "settings") {
+    return renderSettingsSceneLines({ state: state.settingsSceneState, sectionGap: spacing.sectionGap });
   }
-  try {
-    app.releaseAllLocks?.();
-    await app.awaitShutdown?.();
-  } catch {
-    // Ignore shutdown errors during cleanup.
+  if (state.sceneId === "help") {
+    return renderHelpSceneLines({ state: state.helpSceneState, sectionGap: spacing.sectionGap });
   }
-}
-
-function resolveProcessArgv(argv) {
-  if (Array.isArray(argv)) {
-    return ["node", "tui", ...argv];
-  }
-  return process.argv;
+  return [];
 }
 
 export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) {
@@ -257,41 +163,66 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
     const exitCode = typeof error?.exitCode === "number" ? error.exitCode : 1;
     return exitCode;
   }
+
   const opts = program.opts();
   const frameMs = Math.max(30, Math.round(1000 / opts.fps));
   const currentWorkingDirectory = process.cwd();
 
   return await new Promise((resolve) => {
+    const state = createSceneRouterState();
     let settled = false;
+    let finalized = false;
+    let previousLineCount = 0;
+    let frameIndex = 0;
+    let interval;
 
-    const finish = (exitCode, { newline = false } = {}) => {
-      if (settled) {
-        return;
+    const restoreCursor = withCursorHidden();
+
+    const stopRender = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
       }
-      settled = true;
-      stopRender();
-      process.off("SIGINT", onSigint);
-      process.off("SIGTERM", onSigterm);
-      process.off("exit", cleanup);
-      cleanup();
-      if (newline) {
-        process.stdout.write("\n");
-      }
-      resolve(exitCode);
     };
 
-  let previousLineCount = 0;
-  let frameIndex = 0;
-  let activeMenuKey = MENU_ITEMS[0].key;
-    let uiState = "menu";
-    let uiHint = "";
-    let continueSceneState = createContinueSceneState();
-    let runState = createInitialRunState();
-    let interval;
-    let agentSessionPending = false;
+    const startRender = () => {
+      if (!interval) {
+        interval = setInterval(renderFrame, frameMs);
+      }
+    };
 
-  const restoreCursor = withCursorHidden();
-  let finalized = false;
+    const teardownTuiForWorker = () => {
+      stopRender();
+      if (process.stdout.isTTY) {
+        process.stdout.write("\u001B[?25h");
+      }
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(false);
+        } catch {
+          // ignore
+        }
+        process.stdin.pause();
+        process.stdin.off("data", onInput);
+      }
+      previousLineCount = 0;
+    };
+
+    const restoreTuiAfterWorker = () => {
+      if (process.stdout.isTTY) {
+        process.stdout.write("\u001B[?25l");
+      }
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(true);
+        } catch {
+          // ignore
+        }
+        process.stdin.resume();
+        process.stdin.on("data", onInput);
+      }
+      startRender();
+    };
 
     const cleanup = () => {
       if (finalized) {
@@ -310,194 +241,202 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       }
     };
 
-    const stopRender = () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = undefined;
-      }
-    };
-
-    const startRender = () => {
-      if (interval) {
+    const finish = (exitCode, { newline = false } = {}) => {
+      if (settled) {
         return;
       }
-      interval = setInterval(renderFrame, frameMs);
-    };
-
-    const teardownTuiForWorker = () => {
+      settled = true;
       stopRender();
-      if (process.stdout.isTTY) {
-        readline.cursorTo(process.stdout, 0);
-        readline.clearScreenDown(process.stdout);
-        process.stdout.write("\u001B[?25h"); // show cursor
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
+      process.off("exit", cleanup);
+      cleanup();
+      if (newline) {
+        process.stdout.write("\n");
       }
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.setRawMode(false);
-        } catch {
-          // ignore
-        }
-        process.stdin.pause();
-        process.stdin.off("data", onInput);
-      }
-      previousLineCount = 0;
+      resolve(exitCode);
     };
 
-    const restoreTuiAfterWorker = () => {
-      if (process.stdout.isTTY) {
-        process.stdout.write("\u001B[?25l"); // hide cursor
-      }
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.setRawMode(true);
-        } catch {
-          // ignore
-        }
-        process.stdin.resume();
-        process.stdin.on("data", onInput);
-      }
-      startRender();
-    };
-
-    const resetToMenu = () => {
-      uiState = "menu";
-      activeMenuKey = MENU_ITEMS[0].key;
-      uiHint = "";
-      continueSceneState = createContinueSceneState();
-      runState = createInitialRunState();
-    };
-
-    const startNewWorkMenuAction = async (actionKey) => {
-      if (agentSessionPending) {
+    const launchNewWork = async () => {
+      if (state.agentSessionPending) {
         return;
       }
-
-      agentSessionPending = true;
-      uiHint = "";
-      runState = createInitialRunState();
+      state.agentSessionPending = true;
+      state.sceneId = "newWork";
+      state.showHelpOverlay = false;
+      state.mainMenuHint = "";
+      state.runState = createInitialRunState();
 
       const result = await startNewWorkSceneAction({
-        actionKey,
+        actionKey: "o",
         currentWorkingDirectory,
-        runState,
+        runState: state.runState,
         teardownTuiForWorker,
         restoreTuiAfterWorker,
         releaseApp,
       });
 
-      agentSessionPending = false;
+      state.agentSessionPending = false;
+      state.sceneId = "mainMenu";
       if (!result.started) {
-        uiHint = result.hint;
+        state.mainMenuHint = result.hint;
         return;
       }
-      uiState = runState.exitCode === 0 ? "done" : "failed";
+      state.mainMenuHint = state.runState.exitCode === 0
+        ? "New Work session ended."
+        : `New Work failed (exit ${state.runState.exitCode ?? "?"}).`;
     };
 
     function onInput(chunk) {
       const rawInput = String(chunk);
       const input = rawInput.toLowerCase();
+      const isEnter = rawInput === "\r" || rawInput === "\n";
 
       if (rawInput === "\u0003") {
         stopRender();
-        void releaseApp(runState.app).finally(() => {
+        void releaseApp(state.runState.app).finally(() => {
           finish(130, { newline: true });
         });
         return;
       }
 
-      if (input === "q" && (uiState === "menu" || uiState === "done" || uiState === "failed")) {
+      if (input === "q") {
         stopRender();
-        void releaseApp(runState.app).finally(() => {
+        void releaseApp(state.runState.app).finally(() => {
           finish(0, { newline: true });
         });
         return;
       }
 
-      const isEnter = rawInput === "\r" || rawInput === "\n";
-      const isArrowUp = rawInput === "\u001b[A";
-      const isArrowDown = rawInput === "\u001b[B";
-
-    if (uiState === "menu") {
-      if (isArrowUp || isArrowDown) {
-        const currentIndex = MENU_ITEMS.findIndex((item) => item.key === activeMenuKey);
-        const baseIndex = currentIndex >= 0 ? currentIndex : 0;
-        const direction = isArrowUp ? -1 : 1;
-        const nextIndex = (baseIndex + direction + MENU_ITEMS.length) % MENU_ITEMS.length;
-        activeMenuKey = MENU_ITEMS[nextIndex].key;
-        uiHint = "";
+      if (input === "?" || input === "h") {
+        state.showHelpOverlay = !state.showHelpOverlay;
         return;
       }
 
-      if (input === "h") {
-        uiHint = getWorkerHealthSummary();
+      if (state.showHelpOverlay) {
+        if (isBack(rawInput) || input === "?" || input === "h") {
+          state.showHelpOverlay = false;
+        }
         return;
       }
 
-      for (const item of MENU_ITEMS) {
-        if (input === item.key) {
-          activeMenuKey = item.key;
-          uiHint = "";
+      const sharedNavigationHandled = applySharedNavigationGrammar(state, rawInput);
+
+      if (state.sceneId === "mainMenu") {
+        state.mainMenuHint = "";
+        if (isEnter) {
+          const selected = getSelectedMainMenuItem(state.mainMenuState);
+          if (selected?.sceneId) {
+            routeFromMainMenu(state, selected.sceneId, launchNewWork);
+          }
+          return;
+        }
+        if (sharedNavigationHandled) {
           return;
         }
       }
 
-        if (isEnter) {
-          if (activeMenuKey === "m") {
-            continueSceneState = createContinueSceneState();
-            uiState = "materialize-form";
+      if (state.sceneId === "continue") {
+        void handleContinueInput({
+          rawInput,
+          uiState: state.continueUiState,
+          state: state.continueSceneState,
+          runState: state.runState,
+          currentWorkingDirectory,
+        }).then((result) => {
+          if (result?.handled) {
+            state.continueUiState = result.uiState;
+            state.continueSceneState = result.state;
+            state.runState = result.runState;
+            if (result.backToParent) {
+              void releaseApp(state.runState.app).finally(() => {
+                state.runState.app = null;
+                resetToMainMenu(state);
+              });
+            }
             return;
           }
-        if (isNewWorkActionKey(activeMenuKey)) {
-          void startNewWorkMenuAction(activeMenuKey);
-          return;
+          if (isBack(rawInput)) {
+            void releaseApp(state.runState.app).finally(() => {
+              state.runState.app = null;
+              resetToMainMenu(state);
+            });
+          }
+        });
+        return;
+      }
+
+      if (state.sceneId === "newWork") {
+        if (isBack(rawInput)) {
+          state.sceneId = "mainMenu";
+        }
+        return;
+      }
+
+      if (state.sceneId === "workers") {
+        const result = handleWorkersInput({ rawInput, state: state.workersSceneState });
+        state.workersSceneState = result.state;
+        if (result.backToParent || isBack(rawInput)) {
+          state.sceneId = "mainMenu";
+        }
+        return;
+      }
+
+      if (state.sceneId === "profiles") {
+        const result = handleProfilesInput({ rawInput, state: state.profilesSceneState });
+        state.profilesSceneState = result.state;
+        if (result.backToParent || isBack(rawInput)) {
+          state.sceneId = "mainMenu";
+        }
+        return;
+      }
+
+      if (state.sceneId === "settings") {
+        const result = handleSettingsInput({ rawInput, state: state.settingsSceneState });
+        state.settingsSceneState = result.state;
+        if (result.backToParent || isBack(rawInput)) {
+          state.sceneId = "mainMenu";
+        }
+        return;
+      }
+
+      if (state.sceneId === "help") {
+        const result = handleHelpInput({ rawInput, state: state.helpSceneState });
+        state.helpSceneState = result.state;
+        if (result.backToParent || isBack(rawInput)) {
+          state.sceneId = "mainMenu";
         }
       }
-      return;
-    }
-
-    if (isContinueUiState(uiState)) {
-      void handleContinueInput({
-        rawInput,
-        uiState,
-        state: continueSceneState,
-        runState,
-        currentWorkingDirectory,
-      }).then((result) => {
-        if (!result?.handled) {
-          return;
-        }
-        uiState = result.uiState;
-        continueSceneState = result.state;
-        runState = result.runState;
-        if (result.backToParent) {
-          void releaseApp(runState.app).finally(() => {
-            runState.app = null;
-            resetToMenu();
-          });
-        }
-      });
-    }
     }
 
     const renderFrame = () => {
       const spinner = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length];
+      const viewportRows = process.stdout.isTTY ? process.stdout.rows : undefined;
+      const viewportColumns = process.stdout.isTTY ? process.stdout.columns : undefined;
+      const spacing = getSceneSpacing(viewportRows);
+      const statusToken = renderStatusBadge(state.sceneId, state.continueUiState, spinner, state.agentSessionPending);
+      const sceneLines = buildSceneLines(state, spacing, currentWorkingDirectory);
       const lines = buildFrame({
-        uiState,
-        spinner,
-        activeMenuKey,
-        uiHint,
-        viewportRows: process.stdout.isTTY ? process.stdout.rows : undefined,
-        currentWorkingDirectory,
-        continueSceneState,
-        runState,
+        sceneId: state.sceneId,
+        statusToken,
+        viewportRows,
+        viewportColumns,
+        mainMenuRows: getMainMenuRows(state.mainMenuState),
+        mainMenuHint: state.mainMenuHint,
+        showHelpOverlay: state.showHelpOverlay,
+        sceneLines,
       });
       previousLineCount = render(lines, previousLineCount);
       frameIndex += 1;
-      uiState = updateContinueUiState(uiState, runState);
+      state.continueUiState = updateContinueUiState(state.continueUiState, state.runState);
     };
 
     if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
+      try {
+        process.stdin.setRawMode(true);
+      } catch {
+        // ignore raw mode errors
+      }
       process.stdin.resume();
       process.stdin.on("data", onInput);
     }
@@ -506,14 +445,14 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
 
     const onSigint = () => {
       stopRender();
-      void releaseApp(runState.app).finally(() => {
+      void releaseApp(state.runState.app).finally(() => {
         finish(130, { newline: true });
       });
     };
 
     const onSigterm = () => {
       stopRender();
-      void releaseApp(runState.app).finally(() => {
+      void releaseApp(state.runState.app).finally(() => {
         finish(143);
       });
     };
