@@ -46,6 +46,13 @@ export async function refreshMainMenuStatuses({ probeRegistry = statusProbeRegis
   await probeRegistry.refreshAllProbes();
 }
 
+export async function refreshMainMenuStatusProbe(probeId, { probeRegistry = statusProbeRegistry } = {}) {
+  if (typeof probeId !== "string" || probeId.length === 0) {
+    return;
+  }
+  await probeRegistry.refreshProbe(probeId);
+}
+
 export function getSelectedMainMenuItem(state) {
   const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0);
   return MAIN_MENU_ITEMS[selectedIndex];

@@ -13,6 +13,7 @@ import {
   getSelectedMainMenuItem,
   jumpMainMenuSelection,
   moveMainMenuSelection,
+  refreshMainMenuStatusProbe,
   refreshMainMenuStatuses,
 } from "./scenes/main-menu.js";
 import { startNewWorkSceneAction } from "./scenes/new-work.js";
@@ -75,6 +76,7 @@ function resetToMainMenu(state) {
   state.continueUiState = "previewing";
   state.continueSceneState = createContinueSceneState();
   state.runState = createInitialRunState();
+  void refreshMainMenuStatusProbe("continue");
 }
 
 function routeFromMainMenu(state, routeTo, launchNewWork) {
