@@ -178,6 +178,8 @@ program
   .description("Open the interactive rundown agent.")
   .option("-c, --continue", "Resume the previous interactive root help/agent session")
   .option("--agents", "Print canonical AGENTS.md guidance and exit")
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .action(withCliAction(createHelpCommandAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
@@ -1603,8 +1605,8 @@ function validateRootAgentsOptionUsage(argv: string[]): void {
   }
 
   const command = resolveInvocationCommand(argv);
-  if (command !== "rundown") {
-    throw new Error(`Unsupported option for \`${command}\`: --agents. Use \`rundown --agents\` at the root command.`);
+  if (command !== "rundown" && command !== "agent") {
+    throw new Error(`Unsupported option for \`${command}\`: --agents. Use \`rundown --agents\` or \`rundown agent --agents\`.`);
   }
 }
 

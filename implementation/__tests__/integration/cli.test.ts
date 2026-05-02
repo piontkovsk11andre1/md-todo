@@ -11145,6 +11145,17 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("Unsupported option for `run`: --agents"))).toBe(true);
   });
 
+  it("rundown agent --agents prints canonical AGENTS template and exits successfully", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await withTerminalTty(false, () => runCli(["agent", "--agents"], workspace));
+
+    expect(result.code).toBe(0);
+    expect(result.logs).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
+  });
+
   it("accepts root --continue shorthand flags for bare invocation", async () => {
     const workspace = makeTempWorkspace();
 

@@ -104,6 +104,12 @@ rundown --help
 rd --help
 ```
 
+### `rundown agent`
+
+Use `rundown agent` as the explicit, stable subcommand form of the interactive agent flow.
+
+See the command-focused reference: [cli-agent.md](cli-agent.md).
+
 ## Main commands
 
 ### Terminal timestamps

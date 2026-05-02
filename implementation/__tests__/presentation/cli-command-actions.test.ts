@@ -436,6 +436,35 @@ describe("createHelpCommandAction", () => {
     }
   });
 
+  it("prints AGENTS template and skips help worker for rundown agent --agents", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
+    }) as typeof process.stdout.write);
+
+    try {
+      const action = createHelpCommandAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => ["node", "-e", "process.exit(0)"],
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => true,
+        getInvocationArgv: () => ["agent", "--agents", "--", "node", "-e", "process.exit(0)"],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
+      expect(helpTask).not.toHaveBeenCalled();
+      expect(outputHelp).not.toHaveBeenCalled();
+    } finally {
+      stdoutSpy.mockRestore();
+    }
+  });
+
   it("forwards --trace to helpTask on root interactive invocation", async () => {
     const helpTask = vi.fn(async () => 0);
     const app = { helpTask } as unknown as CliApp;
@@ -609,6 +638,80 @@ describe("createHelpCommandAction", () => {
     expect(exitCode).toBe(EXIT_CODE_SUCCESS);
     expect(helpTask).not.toHaveBeenCalled();
     expect(outputHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to static help for rundown agent in non-interactive terminals", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["node", "-e", "process.exit(0)"],
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => false,
+      getInvocationArgv: () => ["agent", "--", "node", "-e", "process.exit(0)"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+    expect(helpTask).not.toHaveBeenCalled();
+    expect(outputHelp).toHaveBeenCalledTimes(1);
+  });
+
+  it("invokes helpTask for rundown agent with worker pattern from --worker", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["node", "-e", "process.exit(1)"],
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => true,
+      getInvocationArgv: () => ["agent", "--worker", "node -e process.exit(0)", "--", "node", "-e", "process.exit(1)"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(0);
+    expect(helpTask).toHaveBeenCalledTimes(1);
+    expect(helpTask).toHaveBeenCalledWith(expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: ["node", "-e", "process.exit(0)"],
+      }),
+    }));
+    expect(outputHelp).not.toHaveBeenCalled();
+  });
+
+  it("forwards rundown agent continuation with separator worker command", async () => {
+    const helpTask = vi.fn(async () => 0);
+    const app = { helpTask } as unknown as CliApp;
+    const outputHelp = vi.fn();
+
+    const action = createHelpCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["node", "-e", "process.exit(0)"],
+      outputHelp,
+      cliVersion: "1.2.3",
+      isInteractiveTerminal: () => true,
+      getInvocationArgv: () => ["agent", "-c", "--", "node", "-e", "process.exit(0)"],
+    });
+
+    const exitCode = await action();
+
+    expect(exitCode).toBe(0);
+    expect(helpTask).toHaveBeenCalledTimes(1);
+    expect(helpTask).toHaveBeenCalledWith(expect.objectContaining({
+      continueSession: true,
+      workerPattern: expect.objectContaining({
+        command: ["node", "-e", "process.exit(0)", "--continue"],
+      }),
+    }));
+    expect(outputHelp).not.toHaveBeenCalled();
   });
 
   it("falls back to static help when no worker is available", async () => {

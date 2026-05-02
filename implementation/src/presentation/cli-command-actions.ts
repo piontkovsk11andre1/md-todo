@@ -122,6 +122,29 @@ function hasCliOption(argv: string[], optionName: string): boolean {
   return false;
 }
 
+function resolveCliOptionValue(argv: string[], optionName: string): string | undefined {
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === "--") {
+      break;
+    }
+
+    if (token === optionName) {
+      const next = argv[index + 1];
+      if (typeof next === "string" && next !== "--") {
+        return next;
+      }
+      continue;
+    }
+
+    if (token.startsWith(optionName + "=")) {
+      return token.slice((optionName + "=").length);
+    }
+  }
+
+  return undefined;
+}
+
 function hasCliFlag(argv: string[], optionName: string): boolean {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -219,6 +242,7 @@ export function createHelpCommandAction({
   return async () => {
     const invocationArgv = getInvocationArgv?.() ?? process.argv.slice(2);
     const continueSession = hasRootContinueFlag(invocationArgv);
+    const workerOption = resolveCliOptionValue(invocationArgv, "--worker");
     if (!isInteractiveHelpInvocationCommand(resolveInvocationCommand(invocationArgv))) {
       outputHelp();
       return EXIT_CODE_SUCCESS;
@@ -236,10 +260,12 @@ export function createHelpCommandAction({
 
     try {
       const workerFromSeparator = getWorkerFromSeparator();
-      const workerPattern = resolveWorkerPattern(
-        continueSession && Array.isArray(workerFromSeparator)
+      const workerOverride = workerOption
+        ?? (continueSession && Array.isArray(workerFromSeparator)
           ? appendCanonicalContinueFlag(workerFromSeparator)
-          : undefined,
+          : undefined);
+      const workerPattern = resolveWorkerPattern(
+        workerOverride,
         getWorkerFromSeparator,
       );
       const exitCode = await getApp().helpTask({
