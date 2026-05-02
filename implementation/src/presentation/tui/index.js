@@ -121,7 +121,7 @@ function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene) {
     openWorkersScene();
     return;
   }
-  if (routeTo === "workers" || routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
+  if (routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
     state.sceneId = routeTo;
   }
 }
@@ -407,9 +407,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         }
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
-          if (selected?.sceneId === "workers") {
-            openWorkersScene();
-          } else if (selected?.sceneId) {
+          if (selected?.sceneId) {
             routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene);
           }
           return;
