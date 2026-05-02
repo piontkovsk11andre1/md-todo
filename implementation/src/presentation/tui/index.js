@@ -5,7 +5,7 @@ import pc from "picocolors";
 import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
-import { createApp } from "../dist/index.js";
+import { createApp } from "../../create-app.js";
 
 const SPINNER_FRAMES = ["-", "\\", "|", "/"];
 
