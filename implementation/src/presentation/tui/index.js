@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { Command, InvalidArgumentError } from "commander";
 import pc from "picocolors";
 import readline from "node:readline";

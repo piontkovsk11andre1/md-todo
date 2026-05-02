@@ -65,6 +65,7 @@ import type {
   WithTaskResult,
 } from "../application/with-task.js";
 import { hasWithTaskInteractiveWorker } from "../application/with-task.js";
+import { runRootTui } from "./tui/index.js";
 
 type CliActionResult = number | Promise<number>;
 type CliOpts = Record<string, string | string[] | boolean>;
@@ -286,6 +287,46 @@ export function createHelpCommandAction({
       outputHelp();
       return EXIT_CODE_SUCCESS;
     }
+  };
+}
+
+/**
+ * Creates the root no-args action handler that launches the TUI scaffold.
+ *
+ * The returned action keeps static help behavior for non-root/non-interactive
+ * invocations while preserving `--agents` compatibility.
+ */
+export function createRootTuiAction({
+  getApp,
+  getWorkerFromSeparator,
+  outputHelp,
+  cliVersion,
+  isInteractiveTerminal: isInteractiveTerminalOverride,
+  getInvocationArgv,
+}: HelpActionDependencies): () => CliActionResult {
+  return async () => {
+    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
+    if (resolveInvocationCommand(invocationArgv) !== "rundown") {
+      outputHelp();
+      return EXIT_CODE_SUCCESS;
+    }
+
+    if (hasCliFlag(invocationArgv, "--agents")) {
+      process.stdout.write(getAgentsTemplate());
+      return EXIT_CODE_SUCCESS;
+    }
+
+    if (!(isInteractiveTerminalOverride ?? isInteractiveTerminal)()) {
+      outputHelp();
+      return EXIT_CODE_SUCCESS;
+    }
+
+    return runRootTui({
+      app: getApp(),
+      workerPattern: resolveWorkerPattern(undefined, getWorkerFromSeparator),
+      cliVersion,
+      argv: invocationArgv,
+    });
   };
 }
 

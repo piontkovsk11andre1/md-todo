@@ -26,6 +26,7 @@ import {
   createMakeCommandAction,
   createPlanCommandAction,
   createQueryCommandAction,
+  createRootTuiAction,
   createTranslateCommandAction,
   createReverifyCommandAction,
   createRunCommandAction,
@@ -36,6 +37,7 @@ import {
 } from "../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../src/presentation/cli-app-init.js";
 import * as sleepModule from "../../src/infrastructure/cancellable-sleep.js";
+import * as tuiModule from "../../src/presentation/tui/index.js";
 import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 type RunTaskRequest = Record<string, unknown>;
@@ -777,6 +779,121 @@ describe("createHelpCommandAction", () => {
     expect(exitCode).toBe(EXIT_CODE_SUCCESS);
     expect(helpTask).not.toHaveBeenCalled();
     expect(outputHelp).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createRootTuiAction", () => {
+  it("prints AGENTS template and skips TUI when --agents is provided", async () => {
+    const app = {} as CliApp;
+    const outputHelp = vi.fn();
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
+    }) as typeof process.stdout.write);
+
+    try {
+      const action = createRootTuiAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => true,
+        getInvocationArgv: () => ["--agents"],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(outputHelp).not.toHaveBeenCalled();
+    } finally {
+      stdoutSpy.mockRestore();
+      runRootTuiSpy.mockRestore();
+    }
+  });
+
+  it("falls back to static help for non-root command invocation", async () => {
+    const app = {} as CliApp;
+    const outputHelp = vi.fn();
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
+
+    try {
+      const action = createRootTuiAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => true,
+        getInvocationArgv: () => ["run", "tasks.md"],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(outputHelp).toHaveBeenCalledTimes(1);
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
+  });
+
+  it("falls back to static help when terminal is non-interactive", async () => {
+    const app = {} as CliApp;
+    const outputHelp = vi.fn();
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
+
+    try {
+      const action = createRootTuiAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => false,
+        getInvocationArgv: () => [],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(outputHelp).toHaveBeenCalledTimes(1);
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
+  });
+
+  it("invokes runRootTui once with constructed dependencies", async () => {
+    const app = {} as CliApp;
+    const outputHelp = vi.fn();
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(7);
+
+    try {
+      const action = createRootTuiAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => ["opencode", "run"],
+        outputHelp,
+        cliVersion: "1.2.3",
+        isInteractiveTerminal: () => true,
+        getInvocationArgv: () => ["--trace", "-c"],
+      });
+
+      const exitCode = await action();
+
+      expect(exitCode).toBe(7);
+      expect(outputHelp).not.toHaveBeenCalled();
+      expect(runRootTuiSpy).toHaveBeenCalledTimes(1);
+      expect(runRootTuiSpy).toHaveBeenCalledWith(expect.objectContaining({
+        app,
+        cliVersion: "1.2.3",
+        argv: ["--trace", "-c"],
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run"],
+        }),
+      }));
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 });
 
