@@ -20,6 +20,11 @@ const ACTION_LABELS = {
   o: "open-agent",
 };
 
+const READY_ENTRY_ACTIONS = {
+  enter: "o",
+  d: "a",
+};
+
 const NEW_WORK_READINESS = {
   missingAgent: "missing-agent",
   missingWorker: "missing-worker",
@@ -186,22 +191,16 @@ export function handleNewWorkSceneInput({ rawInput, state } = {}) {
     };
   }
 
-  if (route === NEW_WORK_READINESS.ready && isEnter) {
-    return {
-      handled: true,
-      state: sceneState,
-      backToParent: false,
-      action: { type: "start-agent", actionKey: "o" },
-    };
-  }
-
-  if (route === NEW_WORK_READINESS.ready && input === "d") {
-    return {
-      handled: true,
-      state: sceneState,
-      backToParent: false,
-      action: { type: "start-agent", actionKey: "a" },
-    };
+  if (route === NEW_WORK_READINESS.ready) {
+    const actionKey = isEnter ? READY_ENTRY_ACTIONS.enter : READY_ENTRY_ACTIONS[input];
+    if (actionKey) {
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+        action: { type: "start-agent", actionKey },
+      };
+    }
   }
 
   return {
