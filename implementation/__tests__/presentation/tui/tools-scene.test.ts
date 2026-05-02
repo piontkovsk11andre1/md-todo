@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  BUILT_IN_TOOL_CATALOG,
+  BUILT_IN_TOOL_DOCS_PATH,
   discoverCustomTools,
+  findBuiltInToolDocsLine,
+  resolveBuiltInToolDocsTarget,
   resolveToolDirectories,
 } from "../../../src/presentation/tui/scenes/tools.js";
 
@@ -238,6 +242,114 @@ describe("tools scene custom tool discovery", () => {
     expect(winner.override.description).toBe(
       "commands.tools.triage overrides worker for this prefix",
     );
+  });
+
+  it("annotates every built-in catalog row with docs navigation metadata", () => {
+    expect(BUILT_IN_TOOL_DOCS_PATH).toBe("implementation/docs/configuration.md");
+    expect(BUILT_IN_TOOL_CATALOG.length).toBeGreaterThan(0);
+    for (const row of BUILT_IN_TOOL_CATALOG) {
+      expect(row.docsPath).toBe(BUILT_IN_TOOL_DOCS_PATH);
+      expect(typeof row.docsAnchor).toBe("string");
+      expect(row.docsAnchor.length).toBeGreaterThan(0);
+      expect(typeof row.docsSection).toBe("string");
+      expect(row.docsSection.length).toBeGreaterThan(0);
+      expect(typeof row.docsBulletNeedle).toBe("string");
+      expect(row.docsBulletNeedle.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("points every built-in row at the unified prefix tool chain section", () => {
+    for (const row of BUILT_IN_TOOL_CATALOG) {
+      expect(row.docsAnchor).toBe("unified-prefix-tool-chain");
+      expect(row.docsSection).toBe("Unified prefix tool chain");
+    }
+  });
+
+  it("resolveBuiltInToolDocsTarget returns the row's docs path, anchor, section, and bullet needle", () => {
+    const verify = BUILT_IN_TOOL_CATALOG.find((row) => row.label === "Verify-only");
+    expect(verify).toBeDefined();
+    const target = resolveBuiltInToolDocsTarget(verify);
+    expect(target).toEqual({
+      docsPath: BUILT_IN_TOOL_DOCS_PATH,
+      docsAnchor: "unified-prefix-tool-chain",
+      docsSection: "Unified prefix tool chain",
+      docsBulletNeedle: "verify-only:",
+      label: "Verify-only",
+    });
+  });
+
+  it("resolveBuiltInToolDocsTarget returns undefined for non-row inputs", () => {
+    expect(resolveBuiltInToolDocsTarget(undefined)).toBeUndefined();
+    expect(resolveBuiltInToolDocsTarget(null)).toBeUndefined();
+    expect(resolveBuiltInToolDocsTarget("not-a-row" as unknown as object)).toBeUndefined();
+  });
+
+  it("findBuiltInToolDocsLine locates the bullet line within the named section", () => {
+    const docs = [
+      "# Configuration",
+      "",
+      "## Other section",
+      "",
+      "- not the right place",
+      "",
+      "## Unified prefix tool chain",
+      "",
+      "Built-in handler aliases:",
+      "",
+      "- verify-only: `verify:`, `confirm:`, `check:`",
+      "- memory capture: `memory:`",
+      "",
+      "## Tool templates",
+      "- ignored",
+    ].join("\n");
+
+    const verifyRow = BUILT_IN_TOOL_CATALOG.find((row) => row.label === "Verify-only");
+    const memoryRow = BUILT_IN_TOOL_CATALOG.find((row) => row.label === "Memory capture");
+    const verifyLine = findBuiltInToolDocsLine(docs, resolveBuiltInToolDocsTarget(verifyRow));
+    const memoryLine = findBuiltInToolDocsLine(docs, resolveBuiltInToolDocsTarget(memoryRow));
+
+    expect(verifyLine).toBe(11);
+    expect(memoryLine).toBe(12);
+  });
+
+  it("findBuiltInToolDocsLine falls back to the section heading when the bullet is missing", () => {
+    const docs = [
+      "# Configuration",
+      "",
+      "## Unified prefix tool chain",
+      "",
+      "(intentionally no bullets)",
+      "",
+      "## Tool templates",
+    ].join("\n");
+
+    const target = resolveBuiltInToolDocsTarget(
+      BUILT_IN_TOOL_CATALOG.find((row) => row.label === "Verify-only"),
+    );
+    expect(findBuiltInToolDocsLine(docs, target)).toBe(3);
+  });
+
+  it("findBuiltInToolDocsLine returns line 1 when the section cannot be found", () => {
+    const docs = "# Just a title\n\nNo matching section here.\n";
+    const target = resolveBuiltInToolDocsTarget(BUILT_IN_TOOL_CATALOG[0]);
+    expect(findBuiltInToolDocsLine(docs, target)).toBe(1);
+  });
+
+  it("findBuiltInToolDocsLine ignores bullets inside later sections", () => {
+    const docs = [
+      "## Unified prefix tool chain",
+      "",
+      "(no useful bullet here)",
+      "",
+      "## Other section",
+      "",
+      "- verify-only: should NOT match here",
+    ].join("\n");
+
+    const target = resolveBuiltInToolDocsTarget(
+      BUILT_IN_TOOL_CATALOG.find((row) => row.label === "Verify-only"),
+    );
+    expect(findBuiltInToolDocsLine(docs, target)).toBe(1);
   });
 
   it("matches override key case-insensitively against discovered tool names", () => {

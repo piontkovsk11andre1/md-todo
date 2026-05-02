@@ -293,53 +293,199 @@ export async function reloadToolsSceneState({
 }
 
 /**
+ * Path to the configuration docs file used as the read-only navigation target
+ * for built-in catalog rows. Resolved against `process.cwd()` only when a
+ * caller needs the absolute filesystem path; the relative form is what the
+ * scene displays in the pager header and what `docsPath` exposes on each row.
+ */
+export const BUILT_IN_TOOL_DOCS_PATH = "implementation/docs/configuration.md";
+
+/**
  * Hand-maintained catalog of built-in prefix handlers shipped with rundown.
- * Mirrors the rows shown in migration 164. Each entry includes a docs anchor
- * (under `implementation/docs/configuration.md`) that future navigation
- * subtasks (165+) will use for read-only inspection links.
+ * Mirrors the rows shown in migration 164.
+ *
+ * Each row carries navigation metadata used by the Tools scene's read-only
+ * inspect behavior: pressing Enter on a built-in row opens the configuration
+ * docs in the pager and scrolls to the row's section/bullet:
+ *
+ * - `docsPath` is the workspace-relative path to the docs file.
+ * - `docsAnchor` is the GitHub-flavored heading slug (kebab-cased) of the
+ *   section that documents the prefix family, matching an actual `##`
+ *   heading in `implementation/docs/configuration.md`.
+ * - `docsSection` is the human-readable heading text used to locate the
+ *   section by line number when no anchor index is available.
+ * - `docsBulletNeedle` is a substring expected on the bullet line within
+ *   that section that names this row's prefix family. The pager uses it to
+ *   scroll to the precise line; if not found, navigation falls back to the
+ *   section heading.
  */
 export const BUILT_IN_TOOL_CATALOG = [
   {
     label: "Verify-only",
     prefixes: ["verify:", "confirm:", "check:"],
-    docsAnchor: "verify-only-prefixes",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "verify-only:",
   },
   {
     label: "Memory capture",
     prefixes: ["memory:", "memorize:", "remember:", "inventory:"],
-    docsAnchor: "memory-capture-prefixes",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "memory capture:",
   },
   {
     label: "Fast execution",
     prefixes: ["fast:", "raw:", "quick:"],
-    docsAnchor: "fast-execution-prefixes",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "fast execution",
   },
   {
     label: "Conditional skip",
     prefixes: ["optional:", "skip:"],
-    docsAnchor: "conditional-skip-prefixes",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "conditional sibling skip",
   },
   {
     label: "Terminal stop",
     prefixes: ["quit:", "exit:", "end:", "break:", "return:"],
-    docsAnchor: "terminal-stop-prefixes",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "terminal stop control",
   },
   {
     label: "Include another md",
     prefixes: ["include:"],
-    docsAnchor: "include-prefix",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "include task file",
   },
   {
     label: "Outer retry wrapper",
     prefixes: ["force:"],
-    docsAnchor: "force-prefix",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "outer retry wrapper",
   },
   {
     label: "Modifier",
     prefixes: ["profile="],
-    docsAnchor: "profile-modifier",
+    docsPath: BUILT_IN_TOOL_DOCS_PATH,
+    docsAnchor: "unified-prefix-tool-chain",
+    docsSection: "Unified prefix tool chain",
+    docsBulletNeedle: "Built-in modifier:",
   },
 ];
+
+function slugifyHeading(headingText) {
+  if (typeof headingText !== "string") {
+    return "";
+  }
+  return headingText
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Returns the read-only inspect navigation target for a built-in catalog row.
+ *
+ * The shape is stable for downstream callers (Tools scene Enter handler,
+ * Help scene cross-links): it identifies the docs file, the heading slug,
+ * the heading text used to locate the section by line, and the optional
+ * bullet substring used to scroll to a precise line within that section.
+ *
+ * Returns `undefined` when `row` is not a recognized catalog entry so callers
+ * can fall back to non-navigating behavior.
+ */
+export function resolveBuiltInToolDocsTarget(row) {
+  if (!row || typeof row !== "object") {
+    return undefined;
+  }
+  const docsPath = typeof row.docsPath === "string" && row.docsPath.length > 0
+    ? row.docsPath
+    : BUILT_IN_TOOL_DOCS_PATH;
+  const docsSection = typeof row.docsSection === "string" ? row.docsSection : "";
+  const explicitAnchor = typeof row.docsAnchor === "string" && row.docsAnchor.length > 0
+    ? row.docsAnchor
+    : slugifyHeading(docsSection);
+  const docsBulletNeedle = typeof row.docsBulletNeedle === "string"
+    ? row.docsBulletNeedle
+    : "";
+  return {
+    docsPath,
+    docsAnchor: explicitAnchor,
+    docsSection,
+    docsBulletNeedle,
+    label: typeof row.label === "string" ? row.label : "",
+  };
+}
+
+/**
+ * Locates the line number (1-indexed) within `docsContent` that the pager
+ * should scroll to when inspecting the given catalog row. The lookup walks
+ * the file once: first to find the matching `##` section heading, then,
+ * within that section, the first line containing the bullet needle.
+ *
+ * Returns `1` when the section cannot be found so the pager opens at the
+ * top of the document rather than failing. Returns the section heading line
+ * when the bullet needle is missing or empty.
+ */
+export function findBuiltInToolDocsLine(docsContent, target) {
+  if (typeof docsContent !== "string" || docsContent.length === 0 || !target) {
+    return 1;
+  }
+  const lines = docsContent.split(/\r?\n/);
+  const sectionHeading = typeof target.docsSection === "string"
+    ? target.docsSection.trim()
+    : "";
+  const bulletNeedle = typeof target.docsBulletNeedle === "string"
+    ? target.docsBulletNeedle.trim()
+    : "";
+
+  let sectionLine = -1;
+  let nextSectionLine = lines.length;
+  if (sectionHeading.length > 0) {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (sectionLine === -1) {
+        if (/^##\s+/.test(line) && line.replace(/^##\s+/, "").trim() === sectionHeading) {
+          sectionLine = index;
+        }
+      } else if (/^##\s+/.test(line)) {
+        nextSectionLine = index;
+        break;
+      }
+    }
+  }
+
+  if (sectionLine === -1) {
+    return 1;
+  }
+
+  if (bulletNeedle.length === 0) {
+    return sectionLine + 1;
+  }
+
+  for (let index = sectionLine + 1; index < nextSectionLine; index += 1) {
+    if (lines[index].includes(bulletNeedle)) {
+      return index + 1;
+    }
+  }
+  return sectionLine + 1;
+}
 
 const BUILT_IN_LABEL_COLUMN_WIDTH = 20;
 
