@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import {
+  createPagerState,
+  renderPagerLines,
+} from "../components/pager.js";
 
 const TOOLS_DIRECTORY_NAME = "tools";
 const CONFIG_FILE_NAME = "config.json";
@@ -263,6 +267,131 @@ export function createToolsSceneState() {
     loading: true,
     banner: "",
     builtInsVisible: true,
+    selectedIndex: 0,
+    pager: null,
+  };
+}
+
+const DEFAULT_PAGER_VIEWPORT_HEIGHT = 20;
+
+function describeToolKind(extension) {
+  if (extension === TOOL_JS_EXTENSION) {
+    return "source";
+  }
+  if (extension === TOOL_TEMPLATE_EXTENSION) {
+    return "template";
+  }
+  return "file";
+}
+
+/**
+ * Reads the given custom tool's file from disk and produces a pager state for
+ * a paginated read-only view. Both `.md` templates and `.js` sources use the
+ * same pager, with the title reflecting the tool kind.
+ *
+ * Returns `{ pager }` on success or `{ error }` when the file cannot be read.
+ *
+ * - `tool` must be a discovered custom tool entry (with `name`, `filePath`,
+ *   `extension`).
+ * - `readFile` is injectable for testing; defaults to `fs.readFileSync` in
+ *   utf-8 mode.
+ * - `viewportHeight` is forwarded to the pager (clamped by the pager itself).
+ */
+export function inspectCustomToolTemplate({
+  tool,
+  viewportHeight = DEFAULT_PAGER_VIEWPORT_HEIGHT,
+  readFile,
+} = {}) {
+  if (!tool || typeof tool !== "object") {
+    return { error: "No tool selected." };
+  }
+  if (typeof tool.filePath !== "string" || tool.filePath.length === 0) {
+    return { error: "Selected tool has no file path." };
+  }
+  const reader = typeof readFile === "function"
+    ? readFile
+    : (p) => fs.readFileSync(p, "utf8");
+  let content;
+  try {
+    content = reader(tool.filePath);
+  } catch (caught) {
+    const message = caught && caught.message ? caught.message : String(caught);
+    return { error: `Failed to read ${tool.filePath}: ${message}` };
+  }
+  const safeContent = typeof content === "string" ? content : String(content ?? "");
+  const kind = describeToolKind(tool.extension);
+  const title = `Tool ${kind}: ${tool.name}`;
+  const pager = createPagerState({
+    content: safeContent,
+    title,
+    filePath: tool.filePath,
+    viewportHeight,
+  });
+  return { pager };
+}
+
+function clampSelectedIndex(index, length) {
+  if (length <= 0) {
+    return 0;
+  }
+  if (!Number.isInteger(index) || index < 0) {
+    return 0;
+  }
+  if (index >= length) {
+    return length - 1;
+  }
+  return index;
+}
+
+/**
+ * Opens the currently selected custom tool in the pager. Returns the updated
+ * scene state. When no winning custom tool is available, returns the state
+ * unchanged with a banner indicating nothing can be inspected.
+ */
+export function inspectSelectedCustomTool({
+  state,
+  viewportHeight = DEFAULT_PAGER_VIEWPORT_HEIGHT,
+  readFile,
+} = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const winners = Array.isArray(sceneState.customToolWinners)
+    ? sceneState.customToolWinners
+    : [];
+  if (winners.length === 0) {
+    return {
+      ...sceneState,
+      banner: "No custom tool to inspect.",
+    };
+  }
+  const index = clampSelectedIndex(sceneState.selectedIndex, winners.length);
+  const tool = winners[index];
+  const result = inspectCustomToolTemplate({ tool, viewportHeight, readFile });
+  if (result.error) {
+    return {
+      ...sceneState,
+      selectedIndex: index,
+      banner: result.error,
+    };
+  }
+  return {
+    ...sceneState,
+    selectedIndex: index,
+    banner: "",
+    pager: result.pager,
+  };
+}
+
+/**
+ * Closes any active inspect pager and returns to the Tools scene listing.
+ */
+export function closeToolsScenePager({ state } = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  if (!sceneState.pager) {
+    return sceneState;
+  }
+  return {
+    ...sceneState,
+    pager: null,
   };
 }
 
@@ -551,6 +680,9 @@ function computeNameColumnWidth(winners) {
 
 export function renderToolsSceneLines({ state, sectionGap = 1 } = {}) {
   const sceneState = state ?? createToolsSceneState();
+  if (sceneState.pager) {
+    return renderPagerLines({ state: sceneState.pager });
+  }
   const headerSummary = formatToolDirsHeader(
     sceneState.toolDirectories,
     sceneState.configDirPath,

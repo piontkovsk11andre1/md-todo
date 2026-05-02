@@ -5,8 +5,13 @@ import path from "node:path";
 import {
   BUILT_IN_TOOL_CATALOG,
   BUILT_IN_TOOL_DOCS_PATH,
+  closeToolsScenePager,
+  createToolsSceneState,
   discoverCustomTools,
   findBuiltInToolDocsLine,
+  inspectCustomToolTemplate,
+  inspectSelectedCustomTool,
+  renderToolsSceneLines,
   resolveBuiltInToolDocsTarget,
   resolveToolDirectories,
 } from "../../../src/presentation/tui/scenes/tools.js";
@@ -371,5 +376,122 @@ describe("tools scene custom tool discovery", () => {
     expect(winner.override).toBeDefined();
     expect(winner.override.configuredName).toBe("Summarize");
     expect(winner.override.key).toBe("commands.tools.Summarize");
+  });
+});
+
+describe("tools scene inspect template", () => {
+  let workspaceRoot: string;
+
+  beforeEach(() => {
+    workspaceRoot = makeTempDir("tools-inspect-");
+  });
+
+  afterEach(() => {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  it("inspectCustomToolTemplate reads .md template into a pager state", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    const filePath = path.join(toolsDir, "summarize.md");
+    const content = "# Summarize\n\nLine A\nLine B\n";
+    fs.writeFileSync(filePath, content);
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+    const result: any = inspectCustomToolTemplate({ tool: tools[0], viewportHeight: 10 });
+
+    expect(result.error).toBeUndefined();
+    expect(result.pager).toBeDefined();
+    expect(result.pager.title).toBe("Tool template: summarize");
+    expect(result.pager.filePath).toBe(filePath);
+    expect(result.pager.totalLines).toBeGreaterThan(0);
+    expect(result.pager.lines.join("\n")).toContain("Summarize");
+    expect(result.pager.viewportHeight).toBe(10);
+    expect(result.pager.offset).toBe(0);
+  });
+
+  it("inspectCustomToolTemplate opens .js source the same way as templates", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    const filePath = path.join(toolsDir, "triage.js");
+    fs.writeFileSync(filePath, "module.exports = {};\n");
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+    const result: any = inspectCustomToolTemplate({ tool: tools[0] });
+
+    expect(result.pager).toBeDefined();
+    expect(result.pager.title).toBe("Tool source: triage");
+    expect(result.pager.filePath).toBe(filePath);
+  });
+
+  it("inspectCustomToolTemplate returns an error when the file cannot be read", () => {
+    const result: any = inspectCustomToolTemplate({
+      tool: { name: "missing", filePath: "/nope/missing.md", extension: ".md" },
+    });
+    expect(result.pager).toBeUndefined();
+    expect(typeof result.error).toBe("string");
+    expect(result.error).toContain("missing.md");
+  });
+
+  it("inspectSelectedCustomTool sets pager state on the scene state", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "template");
+    fs.writeFileSync(path.join(toolsDir, "triage.js"), "module.exports = {};\n");
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+
+    const baseState = {
+      ...createToolsSceneState(),
+      configDirPath: configDir,
+      customToolWinners: tools,
+      loading: false,
+      selectedIndex: 1,
+    };
+    const next: any = inspectSelectedCustomTool({ state: baseState });
+    expect(next.pager).toBeDefined();
+    expect(next.pager.title).toBe("Tool source: triage");
+    expect(next.banner).toBe("");
+  });
+
+  it("inspectSelectedCustomTool sets a banner when there are no custom tools", () => {
+    const next: any = inspectSelectedCustomTool({ state: { ...createToolsSceneState(), loading: false } });
+    expect(next.pager).toBeNull();
+    expect(next.banner).toContain("No custom tool");
+  });
+
+  it("renderToolsSceneLines delegates to the pager when one is active", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "template body");
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+    const { tools } = discoverCustomTools({ configDirPath: configDir });
+
+    const baseState = {
+      ...createToolsSceneState(),
+      configDirPath: configDir,
+      customToolWinners: tools,
+      loading: false,
+    };
+    const next: any = inspectSelectedCustomTool({ state: baseState });
+    const lines = renderToolsSceneLines({ state: next });
+    const text = lines.join("\n");
+    expect(text).toContain("Tool template: summarize");
+    expect(text).toContain("template body");
+  });
+
+  it("closeToolsScenePager clears the pager from the scene state", () => {
+    const state: any = {
+      ...createToolsSceneState(),
+      pager: { title: "x", filePath: "x", lines: [], totalLines: 0, offset: 0, viewportHeight: 10 },
+    };
+    const next = closeToolsScenePager({ state });
+    expect(next.pager).toBeNull();
   });
 });
