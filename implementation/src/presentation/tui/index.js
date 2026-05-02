@@ -5,6 +5,7 @@ import pc from "picocolors";
 import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createApp } from "../../create-app.js";
 
 const SPINNER_FRAMES = ["-", "\\", "|", "/"];
@@ -850,16 +851,53 @@ async function releaseApp(app) {
   }
 }
 
-async function run() {
+function resolveProcessArgv(argv) {
+  if (Array.isArray(argv)) {
+    return ["node", "tui", ...argv];
+  }
+  return process.argv;
+}
+
+export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) {
+  void app;
+  void workerPattern;
+  void cliVersion;
+
   const program = new Command();
   program
     .name("tui")
     .description("Interactive TUI bound to the rundown app surface (createApp).")
+    .allowUnknownOption(true)
     .option("--fps <n>", "Render frames per second", parseFps, 12);
-  program.parse(process.argv);
+  try {
+    program.exitOverride();
+    program.parse(resolveProcessArgv(argv));
+  } catch (error) {
+    const exitCode = typeof error?.exitCode === "number" ? error.exitCode : 1;
+    return exitCode;
+  }
   const opts = program.opts();
   const frameMs = Math.max(30, Math.round(1000 / opts.fps));
   const currentWorkingDirectory = process.cwd();
+
+  return await new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (exitCode, { newline = false } = {}) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      stopRender();
+      process.off("SIGINT", onSigint);
+      process.off("SIGTERM", onSigterm);
+      process.off("exit", cleanup);
+      cleanup();
+      if (newline) {
+        process.stdout.write("\n");
+      }
+      resolve(exitCode);
+    };
 
   let previousLineCount = 0;
   let frameIndex = 0;
@@ -878,104 +916,104 @@ async function run() {
   const restoreCursor = withCursorHidden();
   let finalized = false;
 
-  const cleanup = () => {
-    if (finalized) {
-      return;
-    }
-    finalized = true;
-    restoreCursor();
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.setRawMode(false);
-      } catch {
-        // ignore
-      }
-      process.stdin.pause();
-      process.stdin.off("data", onInput);
-    }
-  };
-
-  const stopRender = () => {
-    if (interval) {
-      clearInterval(interval);
-      interval = undefined;
-    }
-  };
-
-  const startRender = () => {
-    if (interval) {
-      return;
-    }
-    interval = setInterval(renderFrame, frameMs);
-  };
-
-  const teardownTuiForWorker = () => {
-    stopRender();
-    if (process.stdout.isTTY) {
-      readline.cursorTo(process.stdout, 0);
-      readline.clearScreenDown(process.stdout);
-      process.stdout.write("\u001B[?25h"); // show cursor
-    }
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.setRawMode(false);
-      } catch {
-        // ignore
-      }
-      process.stdin.pause();
-      process.stdin.off("data", onInput);
-    }
-    previousLineCount = 0;
-  };
-
-  const restoreTuiAfterWorker = () => {
-    if (process.stdout.isTTY) {
-      process.stdout.write("\u001B[?25l"); // hide cursor
-    }
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.setRawMode(true);
-      } catch {
-        // ignore
-      }
-      process.stdin.resume();
-      process.stdin.on("data", onInput);
-    }
-    startRender();
-  };
-
-  const resetToMenu = () => {
-    uiState = "menu";
-    activeMenuKey = MENU_ITEMS[0].key;
-    activeMaterializeMode = "migrations";
-    materializePathInput = "";
-    materializePathError = "";
-    uiHint = "";
-    taskItems = [];
-    runState = createInitialRunState();
-  };
-
-  const startMaterialize = () => {
-    const resolvedSource = resolveMaterializeSource(activeMaterializeMode, materializePathInput);
-    if (activeMaterializeMode === "path") {
-      const pathError = validateMaterializePath(materializePathInput, currentWorkingDirectory);
-      if (pathError) {
-        materializePathError = pathError;
+    const cleanup = () => {
+      if (finalized) {
         return;
       }
-    } else if (!resolvedSource) {
-      materializePathError = "Specific path is empty. Type a path before pressing Enter.";
-      return;
-    }
-    materializePathError = "";
-    uiHint = "";
-    runState = createInitialRunState();
-    runState.totalTasks = taskItems.length;
-    uiState = "running";
-    startMaterializeRun(resolvedSource, runState);
-  };
+      finalized = true;
+      restoreCursor();
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(false);
+        } catch {
+          // ignore
+        }
+        process.stdin.pause();
+        process.stdin.off("data", onInput);
+      }
+    };
 
-  const prepareMaterializeConfirm = async () => {
+    const stopRender = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const startRender = () => {
+      if (interval) {
+        return;
+      }
+      interval = setInterval(renderFrame, frameMs);
+    };
+
+    const teardownTuiForWorker = () => {
+      stopRender();
+      if (process.stdout.isTTY) {
+        readline.cursorTo(process.stdout, 0);
+        readline.clearScreenDown(process.stdout);
+        process.stdout.write("\u001B[?25h"); // show cursor
+      }
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(false);
+        } catch {
+          // ignore
+        }
+        process.stdin.pause();
+        process.stdin.off("data", onInput);
+      }
+      previousLineCount = 0;
+    };
+
+    const restoreTuiAfterWorker = () => {
+      if (process.stdout.isTTY) {
+        process.stdout.write("\u001B[?25l"); // hide cursor
+      }
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.setRawMode(true);
+        } catch {
+          // ignore
+        }
+        process.stdin.resume();
+        process.stdin.on("data", onInput);
+      }
+      startRender();
+    };
+
+    const resetToMenu = () => {
+      uiState = "menu";
+      activeMenuKey = MENU_ITEMS[0].key;
+      activeMaterializeMode = "migrations";
+      materializePathInput = "";
+      materializePathError = "";
+      uiHint = "";
+      taskItems = [];
+      runState = createInitialRunState();
+    };
+
+    const startMaterialize = () => {
+      const resolvedSource = resolveMaterializeSource(activeMaterializeMode, materializePathInput);
+      if (activeMaterializeMode === "path") {
+        const pathError = validateMaterializePath(materializePathInput, currentWorkingDirectory);
+        if (pathError) {
+          materializePathError = pathError;
+          return;
+        }
+      } else if (!resolvedSource) {
+        materializePathError = "Specific path is empty. Type a path before pressing Enter.";
+        return;
+      }
+      materializePathError = "";
+      uiHint = "";
+      runState = createInitialRunState();
+      runState.totalTasks = taskItems.length;
+      uiState = "running";
+      startMaterializeRun(resolvedSource, runState);
+    };
+
+    const prepareMaterializeConfirm = async () => {
     if (estimationPending) {
       return;
     }
@@ -1006,9 +1044,9 @@ async function run() {
     } finally {
       estimationPending = false;
     }
-  };
+    };
 
-  const startAgentMenuAction = async (actionKey) => {
+    const startAgentMenuAction = async (actionKey) => {
     if (agentSessionPending) {
       return;
     }
@@ -1037,41 +1075,37 @@ async function run() {
       uiState = runState.exitCode === 0 ? "done" : "failed";
       restoreTuiAfterWorker();
     }
-  };
+    };
 
-  function onInput(chunk) {
-    const rawInput = String(chunk);
-    const input = rawInput.toLowerCase();
+    function onInput(chunk) {
+      const rawInput = String(chunk);
+      const input = rawInput.toLowerCase();
 
-    if (rawInput === "\u0003") {
-      stopRender();
-      void releaseApp(runState.app).finally(() => {
-        cleanup();
-        process.stdout.write("\n");
-        process.exit(130);
-      });
-      return;
-    }
+      if (rawInput === "\u0003") {
+        stopRender();
+        void releaseApp(runState.app).finally(() => {
+          finish(130, { newline: true });
+        });
+        return;
+      }
 
-    if (input === "q" && (uiState === "menu" || uiState === "done" || uiState === "failed")) {
-      stopRender();
-      void releaseApp(runState.app).finally(() => {
-        cleanup();
-        process.stdout.write("\n");
-        process.exit(0);
-      });
-      return;
-    }
+      if (input === "q" && (uiState === "menu" || uiState === "done" || uiState === "failed")) {
+        stopRender();
+        void releaseApp(runState.app).finally(() => {
+          finish(0, { newline: true });
+        });
+        return;
+      }
 
-    const isEnter = rawInput === "\r" || rawInput === "\n";
-    const isEscape = rawInput === "\u001b";
-    const isBackspace = rawInput === "\b" || rawInput === "\u007f";
-    const isTab = rawInput === "\t";
-    const isCtrlU = rawInput === "\u0015";
-    const isArrowUp = rawInput === "\u001b[A";
-    const isArrowDown = rawInput === "\u001b[B";
-    const isArrowRight = rawInput === "\u001b[C";
-    const isArrowLeft = rawInput === "\u001b[D";
+      const isEnter = rawInput === "\r" || rawInput === "\n";
+      const isEscape = rawInput === "\u001b";
+      const isBackspace = rawInput === "\b" || rawInput === "\u007f";
+      const isTab = rawInput === "\t";
+      const isCtrlU = rawInput === "\u0015";
+      const isArrowUp = rawInput === "\u001b[A";
+      const isArrowDown = rawInput === "\u001b[B";
+      const isArrowRight = rawInput === "\u001b[C";
+      const isArrowLeft = rawInput === "\u001b[D";
 
     if (uiState === "menu") {
       if (isArrowUp || isArrowDown) {
@@ -1192,57 +1226,61 @@ async function run() {
         resetToMenu();
       });
     }
-  }
-
-  const renderFrame = () => {
-    const spinner = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length];
-    const lines = buildFrame({
-      uiState,
-      spinner,
-      activeMenuKey,
-      activeMaterializeMode,
-      materializePathInput,
-      materializePathError,
-      uiHint,
-      viewportRows: process.stdout.isTTY ? process.stdout.rows : undefined,
-      currentWorkingDirectory,
-      taskItems,
-      runState,
-    });
-    previousLineCount = render(lines, previousLineCount);
-    frameIndex += 1;
-
-    if (uiState === "running" && runState.finished) {
-      uiState = runState.exitCode === 0 ? "done" : "failed";
     }
-  };
 
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-    process.stdin.resume();
-    process.stdin.on("data", onInput);
-  }
+    const renderFrame = () => {
+      const spinner = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length];
+      const lines = buildFrame({
+        uiState,
+        spinner,
+        activeMenuKey,
+        activeMaterializeMode,
+        materializePathInput,
+        materializePathError,
+        uiHint,
+        viewportRows: process.stdout.isTTY ? process.stdout.rows : undefined,
+        currentWorkingDirectory,
+        taskItems,
+        runState,
+      });
+      previousLineCount = render(lines, previousLineCount);
+      frameIndex += 1;
 
-  startRender();
+      if (uiState === "running" && runState.finished) {
+        uiState = runState.exitCode === 0 ? "done" : "failed";
+      }
+    };
 
-  process.on("SIGINT", () => {
-    stopRender();
-    void releaseApp(runState.app).finally(() => {
-      cleanup();
-      process.stdout.write("\n");
-      process.exit(130);
-    });
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.on("data", onInput);
+    }
+
+    startRender();
+
+    const onSigint = () => {
+      stopRender();
+      void releaseApp(runState.app).finally(() => {
+        finish(130, { newline: true });
+      });
+    };
+
+    const onSigterm = () => {
+      stopRender();
+      void releaseApp(runState.app).finally(() => {
+        finish(143);
+      });
+    };
+
+    process.on("SIGINT", onSigint);
+    process.on("SIGTERM", onSigterm);
+    process.on("exit", cleanup);
   });
-
-  process.on("SIGTERM", () => {
-    stopRender();
-    void releaseApp(runState.app).finally(() => {
-      cleanup();
-      process.exit(143);
-    });
-  });
-
-  process.on("exit", cleanup);
 }
 
-void run();
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  void runRootTui().then((exitCode) => {
+    process.exit(exitCode);
+  });
+}
