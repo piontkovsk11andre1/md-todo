@@ -106,7 +106,7 @@ rd --help
 
 ### `rundown agent`
 
-Use `rundown agent` as the explicit, stable subcommand form of the interactive agent flow.
+Use `rundown agent` as the explicit, stable command name for interactive agent help, functionally matching the current root no-arg entrypoint while giving users and scripts a pinned invocation as root behavior evolves.
 
 See the command-focused reference: [cli-agent.md](cli-agent.md).
 
