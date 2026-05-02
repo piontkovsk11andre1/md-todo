@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import {
   createContinueSceneState,
   handleContinueInput,
+  primeContinuePreview,
   renderContinueSceneLines,
   updateContinueUiState,
 } from "./scenes/continue.js";
@@ -44,7 +45,7 @@ function createSceneRouterState() {
     showHelpOverlay: false,
     mainMenuHint: "",
     mainMenuState: createMainMenuSceneState(),
-    continueUiState: "materialize-form",
+    continueUiState: "previewing",
     continueSceneState: createContinueSceneState(),
     runState: createInitialRunState(),
     workersSceneState: createWorkersSceneState(),
@@ -71,7 +72,7 @@ function resetToMainMenu(state) {
   state.sceneId = "mainMenu";
   state.showHelpOverlay = false;
   state.mainMenuState = createMainMenuSceneState();
-  state.continueUiState = "materialize-form";
+  state.continueUiState = "previewing";
   state.continueSceneState = createContinueSceneState();
   state.runState = createInitialRunState();
 }
@@ -80,9 +81,16 @@ function routeFromMainMenu(state, routeTo, launchNewWork) {
   state.showHelpOverlay = false;
   if (routeTo === "continue") {
     state.sceneId = "continue";
-    state.continueUiState = "materialize-form";
-    state.continueSceneState = createContinueSceneState();
+    state.continueUiState = "previewing";
+    state.continueSceneState = {
+      ...createContinueSceneState(),
+      estimationPending: true,
+      uiHint: "Loading task list...",
+    };
     state.runState = createInitialRunState();
+    void primeContinuePreview(state.continueSceneState, process.cwd()).then((nextState) => {
+      state.continueSceneState = nextState;
+    });
     return;
   }
   if (routeTo === "newWork") {

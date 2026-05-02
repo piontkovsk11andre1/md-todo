@@ -4,7 +4,6 @@ import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
 import {
   formatDuration,
-  formatMaterializeModeLine,
   formatTaskLines,
   formatTimestamp,
   progressBar,
@@ -127,6 +126,19 @@ export function buildMaterializeCommand(sourceTarget) {
   return `rundown materialize ${sourceTarget}`;
 }
 
+async function stopMaterializeRun(runState) {
+  const app = runState.app;
+  try {
+    app?.releaseAllLocks?.();
+    await app?.awaitShutdown?.();
+  } finally {
+    runState.finished = true;
+    runState.exitCode = typeof runState.exitCode === "number" ? runState.exitCode : 130;
+    runState.currentOperation = "finalize";
+    pushRecentMessage(runState, "warn", "Stop requested. Run closed.");
+  }
+}
+
 export async function listTasksFromSource(source) {
   const items = [];
   const app = createApp({
@@ -221,11 +233,9 @@ export function startMaterializeRun(source, runState) {
 }
 
 const CONTINUE_UI_STATES = new Set([
-  "materialize-form",
-  "materialize-confirm",
+  "previewing",
   "running",
   "done",
-  "failed",
 ]);
 
 const OPERATION_COLOR = {
@@ -258,10 +268,11 @@ export function createContinueSceneState() {
   return {
     activeMaterializeMode: "migrations",
     materializePathInput: "",
-    materializePathError: "",
     uiHint: "",
     taskItems: [],
     estimationPending: false,
+    sourceTarget: "migrations/",
+    previewLoaded: false,
   };
 }
 
@@ -271,9 +282,64 @@ export function isContinueUiState(uiState) {
 
 export function updateContinueUiState(uiState, runState) {
   if (uiState === "running" && runState?.finished) {
-    return runState.exitCode === 0 ? "done" : "failed";
+    return "done";
   }
   return uiState;
+}
+
+function formatPreviewItem(label, task) {
+  const labelToken = pc.bold(`${label}:`);
+  if (!task) {
+    return `${labelToken} ${pc.dim("(none)")}`;
+  }
+  const firstLine = Array.isArray(task.textLines) && task.textLines.length > 0
+    ? task.textLines[0]
+    : "";
+  return `${labelToken} ${pc.white(String(task.line).padStart(3, "0"))} ${pc.dim("-")} ${pc.white(firstLine)}`;
+}
+
+function formatPhaseCounterLine(label, counter) {
+  if (!counter || typeof counter.current !== "number" || typeof counter.total !== "number") {
+    return `${pc.bold(label + ":")} ${pc.dim("n/a")}`;
+  }
+  return `${pc.bold(label + ":")} ${pc.white(`${counter.current}/${counter.total}`)}`;
+}
+
+export async function primeContinuePreview(state, currentWorkingDirectory) {
+  const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
+  if (state.activeMaterializeMode === "path") {
+    const pathError = validateMaterializePath(state.materializePathInput, currentWorkingDirectory);
+    if (pathError) {
+      return {
+        ...state,
+        sourceTarget: resolvedSource,
+        previewLoaded: true,
+        estimationPending: false,
+        taskItems: [],
+        uiHint: pathError,
+      };
+    }
+  }
+  try {
+    const result = await listTasksFromSource(resolvedSource);
+    return {
+      ...state,
+      sourceTarget: resolvedSource,
+      previewLoaded: true,
+      estimationPending: false,
+      taskItems: result.taskItems,
+      uiHint: result.ok ? "" : `listTasks exited with code ${result.exitCode ?? "?"}.`,
+    };
+  } catch (error) {
+    return {
+      ...state,
+      sourceTarget: resolvedSource,
+      previewLoaded: true,
+      estimationPending: false,
+      taskItems: [],
+      uiHint: "Failed to list tasks: " + String(error),
+    };
+  }
 }
 
 export function renderContinueSceneLines({
@@ -285,6 +351,7 @@ export function renderContinueSceneLines({
   hintGap,
   errorGap,
 }) {
+  void currentWorkingDirectory;
   const lines = [];
   const taskItems = state.taskItems;
   const totalTasks = runState.totalTasks > 0 ? runState.totalTasks : taskItems.length;
@@ -293,74 +360,35 @@ export function renderContinueSceneLines({
   const completedRatio = totalTasks > 0 ? completedTasks / totalTasks : 0;
   const operationPainter = OPERATION_COLOR[runState.currentOperation] ?? ((value) => value);
 
-  if (uiState === "materialize-form") {
-    const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
-    const pathCheck = evaluateMaterializePath(state.materializePathInput, currentWorkingDirectory);
-    const commandPreview = (() => {
-      if (state.activeMaterializeMode !== "path") {
-        return pc.cyan(buildMaterializeCommand(resolvedSource));
-      }
-      const commandPrefix = "rundown materialize ";
-      if (state.materializePathInput.trim().length === 0) {
-        return `${pc.cyan(commandPrefix)}${pc.dim("<path>")}`;
-      }
-      const pathToken = pathCheck.exists ? pc.green(resolvedSource) : pc.red(resolvedSource);
-      return `${pc.cyan(commandPrefix)}${pathToken}`;
-    })();
-
-    const pathDisplay = (() => {
-      if (state.activeMaterializeMode !== "path") {
-        return pc.dim("(not used)");
-      }
-      if (state.materializePathInput.length > 0) {
-        return `${pc.white(state.materializePathInput)}${pc.yellow("▌")}`;
-      }
-      return `${pc.yellow("▌")} ${pc.dim("(type target path...)")}`;
-    })();
-
-    lines.push(`${pc.bold("Materialize target:")} ${pc.dim("(confirm before run starts)")}`);
-    pushGap(lines, sectionGap);
-    lines.push(...MATERIALIZE_MODES.map((mode) => formatMaterializeModeLine(mode, state.activeMaterializeMode)));
-    pushGap(lines, sectionGap);
-    lines.push(`${pc.bold("Path input:")} ${pathDisplay}`);
-    pushGap(lines, sectionGap);
-    lines.push(`${pc.bold("Command:")} ${commandPreview}`);
+  if (uiState === "previewing") {
+    const resolvedSource = state.sourceTarget || resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
+    const previewTasks = taskItems.slice(0, 3);
+    lines.push(pc.bold("Continue Preview"));
     pushGap(lines, sectionGap);
     lines.push(
-      pc.dim("Left/Right: choose target. Type path for option 2."),
-      pc.dim("Tab: complete path. Ctrl+U: clear. Enter: confirm. Esc: cancel."),
+      `${pc.bold("Source:")} ${pc.cyan(resolvedSource)}`,
+      `${pc.bold("Task count:")} ${pc.white(String(taskItems.length))}`,
     );
-    if (state.materializePathError) {
-      pushGap(lines, errorGap);
-      lines.push(pc.red(state.materializePathError));
+    pushGap(lines, sectionGap);
+    lines.push(
+      formatPreviewItem("next", previewTasks[0]),
+      formatPreviewItem("after", previewTasks[1]),
+      formatPreviewItem("later", previewTasks[2]),
+    );
+    pushGap(lines, sectionGap);
+    if (state.estimationPending || !state.previewLoaded) {
+      lines.push(pc.yellow("Loading task list..."));
+    } else {
+      lines.push(pc.dim("Enter: start run. r: refresh list. Esc: back."));
     }
     if (state.uiHint) {
-      pushGap(lines, hintGap);
-      lines.push(pc.yellow(state.uiHint));
+      pushGap(lines, state.uiHint.startsWith("Path ") ? errorGap : hintGap);
+      lines.push(state.uiHint.startsWith("Path ") ? pc.red(state.uiHint) : pc.yellow(state.uiHint));
     }
     return lines;
   }
 
-  if (uiState === "materialize-confirm") {
-    const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
-    lines.push(`${pc.bold("Confirm materialize run:")}`);
-    pushGap(lines, sectionGap);
-    lines.push(
-      `${pc.bold("Target mode:")} ${pc.white(state.activeMaterializeMode)}`,
-      `${pc.bold("Resolved source:")} ${pc.cyan(resolvedSource)}`,
-      `${pc.bold("Discovered tasks:")} ${pc.white(String(state.taskItems.length))}`,
-      `${pc.bold("Command:")} ${pc.cyan(buildMaterializeCommand(resolvedSource))}`,
-    );
-    pushGap(lines, sectionGap);
-    lines.push(pc.dim("Press Enter to run, Esc to edit."));
-    if (state.uiHint) {
-      pushGap(lines, hintGap);
-      lines.push(pc.yellow(state.uiHint));
-    }
-    return lines;
-  }
-
-  if (uiState === "running" || uiState === "done" || uiState === "failed") {
+  if (uiState === "running" || uiState === "done") {
     const isComplete = runState.finished || (totalTasks > 0 && completedTasks >= totalTasks);
     const taskListIndex = runState.currentTaskIndex >= 0 ? runState.currentTaskIndex : completedTasks;
     const previousTask = isComplete
@@ -405,6 +433,20 @@ export function renderContinueSceneLines({
       ),
     );
 
+    const phaseCounter = runState.currentPhaseCounter;
+    if (phaseCounter || (runState.phaseCounters && Object.keys(runState.phaseCounters).length > 0)) {
+      pushGap(lines, sectionGap);
+      lines.push(pc.bold("Phase Counters:"));
+      lines.push(formatPhaseCounterLine("current", phaseCounter));
+      const operationKey = (runState.currentOperation || "").toLowerCase();
+      if (runState.phaseCounters?.attempt) {
+        lines.push(formatPhaseCounterLine("attempt", runState.phaseCounters.attempt));
+      }
+      if (operationKey && runState.phaseCounters?.[operationKey]) {
+        lines.push(formatPhaseCounterLine(operationKey, runState.phaseCounters[operationKey]));
+      }
+    }
+
     if (taskItems.length > 0) {
       pushGap(lines, sectionGap);
       lines.push(...previousTaskLines);
@@ -423,7 +465,7 @@ export function renderContinueSceneLines({
     if (runState.recentMessages.length > 0) {
       pushGap(lines, sectionGap);
       lines.push(pc.bold("Recent:"));
-      const tail = runState.recentMessages.slice(-4);
+      const tail = runState.recentMessages.slice(-6);
       for (const entry of tail) {
         const painter = entry.kind === "error"
           ? pc.red
@@ -436,16 +478,22 @@ export function renderContinueSceneLines({
       }
     }
 
-    if (uiState === "done") {
+    if (uiState === "done" && runState.exitCode === 0) {
       pushGap(lines, sectionGap);
-      lines.push(pc.green(`Run complete (exit ${runState.exitCode ?? 0}). Press Enter to return to menu.`));
+      lines.push(pc.green(`Run complete (exit ${runState.exitCode ?? 0}). Press Esc to return to menu.`));
     }
-    if (uiState === "failed") {
+    if (uiState === "done" && runState.exitCode !== 0) {
       pushGap(lines, sectionGap);
-      lines.push(pc.red(`Run failed (exit ${runState.exitCode ?? "?"}). Press Enter to return to menu.`));
+      lines.push(pc.red(`Run failed (exit ${runState.exitCode ?? "?"}). Press Esc to return to menu.`));
       if (runState.error) {
         lines.push(pc.red(runState.error));
       }
+    }
+    if (uiState === "done") {
+      pushGap(lines, sectionGap);
+      lines.push(
+        `${pc.bold("Summary:")} ${pc.white(`${completedTasks}/${totalTasks}`)} tasks, ${pc.white(formatDuration(elapsedMs))}, ${pc.white(String(runState.failures))} failures, ${pc.white(String(runState.repairs))} repairs, ${pc.white(String(runState.resolvings))} resolves`,
+      );
     }
     return lines;
   }
@@ -468,10 +516,9 @@ export async function handleContinueInput({
   const isCtrlU = rawInput === "\u0015";
   const isArrowUp = rawInput === "\u001b[A";
   const isArrowDown = rawInput === "\u001b[B";
-  const isArrowRight = rawInput === "\u001b[C";
-  const isArrowLeft = rawInput === "\u001b[D";
+  const isSpace = rawInput === " ";
 
-  if (uiState === "materialize-form") {
+  if (uiState === "previewing") {
     if (isEscape) {
       return {
         handled: true,
@@ -482,194 +529,76 @@ export async function handleContinueInput({
       };
     }
 
-    if (isArrowLeft || isArrowRight || isArrowUp || isArrowDown) {
-      const currentIndex = MATERIALIZE_MODES.findIndex((mode) => mode.id === state.activeMaterializeMode);
-      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
-      const direction = (isArrowLeft || isArrowUp) ? -1 : 1;
-      const nextIndex = (baseIndex + direction + MATERIALIZE_MODES.length) % MATERIALIZE_MODES.length;
-      return {
-        handled: true,
-        uiState,
-        state: {
-          ...state,
-          activeMaterializeMode: MATERIALIZE_MODES[nextIndex].id,
-          materializePathError: "",
-          uiHint: "",
-        },
-        runState,
-        backToParent: false,
-      };
-    }
-
-    if (state.activeMaterializeMode === "path") {
-      if (isCtrlU) {
-        return {
-          handled: true,
-          uiState,
-          state: { ...state, materializePathInput: "", materializePathError: "", uiHint: "" },
-          runState,
-          backToParent: false,
-        };
-      }
-      if (isBackspace) {
-        return {
-          handled: true,
-          uiState,
-          state: {
-            ...state,
-            materializePathInput: state.materializePathInput.slice(0, -1),
-            materializePathError: "",
-            uiHint: "",
-          },
-          runState,
-          backToParent: false,
-        };
-      }
-      if (isTab) {
-        const completion = completeMaterializePathInput(state.materializePathInput, currentWorkingDirectory);
-        return {
-          handled: true,
-          uiState,
-          state: {
-            ...state,
-            materializePathInput: completion.nextInput,
-            materializePathError: "",
-            uiHint: completion.hint,
-          },
-          runState,
-          backToParent: false,
-        };
-      }
-      if (/^[\x20-\x7E]$/.test(rawInput)) {
-        return {
-          handled: true,
-          uiState,
-          state: {
-            ...state,
-            materializePathInput: state.materializePathInput + rawInput,
-            materializePathError: "",
-            uiHint: "",
-          },
-          runState,
-          backToParent: false,
-        };
-      }
-    }
-
-    if (input === "1") {
-      return {
-        handled: true,
-        uiState,
-        state: { ...state, activeMaterializeMode: "migrations", materializePathError: "", uiHint: "" },
-        runState,
-        backToParent: false,
-      };
-    }
-    if (input === "2") {
-      return {
-        handled: true,
-        uiState,
-        state: { ...state, activeMaterializeMode: "path", materializePathError: "", uiHint: "" },
-        runState,
-        backToParent: false,
-      };
-    }
-
-    if (isEnter) {
-      if (state.estimationPending) {
-        return { handled: true, uiState, state, runState, backToParent: false };
-      }
-      const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
-      if (state.activeMaterializeMode === "path") {
-        const pathError = validateMaterializePath(state.materializePathInput, currentWorkingDirectory);
-        if (pathError) {
-          return {
-            handled: true,
-            uiState,
-            state: { ...state, materializePathError: pathError },
-            runState,
-            backToParent: false,
-          };
-        }
-      }
-
-      const nextState = {
+    if (input === "r") {
+      const pendingState = {
         ...state,
-        materializePathError: "",
         estimationPending: true,
         uiHint: "Loading task list...",
       };
-      try {
-        const result = await listTasksFromSource(resolvedSource);
-        return {
-          handled: true,
-          uiState: "materialize-confirm",
-          state: {
-            ...nextState,
-            estimationPending: false,
-            taskItems: result.taskItems,
-            uiHint: result.ok ? "" : `listTasks exited with code ${result.exitCode ?? "?"}.`,
-          },
-          runState,
-          backToParent: false,
-        };
-      } catch (error) {
-        return {
-          handled: true,
-          uiState,
-          state: {
-            ...nextState,
-            estimationPending: false,
-            uiHint: "Failed to list tasks: " + String(error),
-          },
-          runState,
-          backToParent: false,
-        };
-      }
-    }
-
-    return { handled: false, uiState, state, runState, backToParent: false };
-  }
-
-  if (uiState === "materialize-confirm") {
-    if (isEscape) {
       return {
         handled: true,
-        uiState: "materialize-form",
-        state: { ...state, uiHint: "" },
+        uiState,
+        state: await primeContinuePreview(pendingState, currentWorkingDirectory),
         runState,
         backToParent: false,
       };
     }
+
     if (isEnter) {
-      const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
-      if (state.activeMaterializeMode === "path") {
-        const pathError = validateMaterializePath(state.materializePathInput, currentWorkingDirectory);
-        if (pathError) {
-          return {
-            handled: true,
-            uiState: "materialize-form",
-            state: { ...state, materializePathError: pathError },
-            runState,
-            backToParent: false,
-          };
-        }
+      if (state.estimationPending || !state.previewLoaded) {
+        return { handled: true, uiState, state, runState, backToParent: false };
       }
+      if (state.taskItems.length === 0) {
+        return {
+          handled: true,
+          uiState,
+          state: { ...state, uiHint: "No unchecked tasks found." },
+          runState,
+          backToParent: false,
+        };
+      }
+      const resolvedSource = state.sourceTarget || resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
       const nextRunState = createInitialRunState();
       nextRunState.totalTasks = state.taskItems.length;
       startMaterializeRun(resolvedSource, nextRunState);
       return {
         handled: true,
         uiState: "running",
-        state: { ...state, materializePathError: "", uiHint: "" },
+        state: { ...state, uiHint: "" },
         runState: nextRunState,
         backToParent: false,
       };
     }
+
     return { handled: false, uiState, state, runState, backToParent: false };
   }
 
-  if ((uiState === "done" || uiState === "failed") && isEnter) {
+  if (uiState === "running") {
+    if (isSpace) {
+      return {
+        handled: true,
+        uiState,
+        state: { ...state, uiHint: "Pause not yet supported." },
+        runState,
+        backToParent: false,
+      };
+    }
+    if (input === "s") {
+      await stopMaterializeRun(runState);
+      return {
+        handled: true,
+        uiState: "done",
+        state: { ...state, uiHint: "Stop requested." },
+        runState,
+        backToParent: false,
+      };
+    }
+    if (isArrowUp || isArrowDown || isBackspace || isTab || isCtrlU) {
+      return { handled: true, uiState, state, runState, backToParent: false };
+    }
+  }
+
+  if (uiState === "done" && isEscape) {
     return {
       handled: true,
       uiState,

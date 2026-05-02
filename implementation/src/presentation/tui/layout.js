@@ -83,10 +83,7 @@ export function renderStatusBadge(sceneId, continueUiState, spinner, agentSessio
     if (continueUiState === "done") {
       return pc.black(pc.bgGreen(" DONE "));
     }
-    if (continueUiState === "failed") {
-      return pc.black(pc.bgRed(" FAILED "));
-    }
-    if (continueUiState === "materialize-form" || continueUiState === "materialize-confirm") {
+    if (continueUiState === "previewing") {
       return pc.black(pc.bgCyan(" WAITING INPUT "));
     }
   }

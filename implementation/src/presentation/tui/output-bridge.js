@@ -31,6 +31,8 @@ export function createInitialRunState() {
     totalTasks: 0,
     currentTaskIndex: -1,
     currentOperation: "scan",
+    currentPhaseCounter: null,
+    phaseCounters: {},
     failures: 0,
     repairs: 0,
     resolvings: 0,
@@ -42,6 +44,29 @@ export function createInitialRunState() {
     error: null,
     app: null,
   };
+}
+
+const BADGE_OPERATIONS = new Set([
+  "scan",
+  "execute",
+  "verify",
+  "repair",
+  "resolve",
+  "resolverepair",
+  "plan",
+  "research",
+  "discuss",
+  "finalize",
+  "summarize",
+  "agent",
+]);
+
+function normalizeOperationLabel(label) {
+  if (typeof label !== "string" || label.trim().length === 0) {
+    return "";
+  }
+  const firstToken = label.toLowerCase().split(/\s+/)[0] || "";
+  return firstToken.replace(/[^a-z]/g, "");
 }
 
 export function applyOutputEvent(runState, event) {
@@ -76,7 +101,20 @@ export function applyOutputEvent(runState, event) {
     case "progress": {
       const progress = event.progress ?? {};
       if (typeof progress.label === "string" && progress.label.length > 0) {
-        runState.currentOperation = progress.label.toLowerCase().split(/\s+/)[0] || runState.currentOperation;
+        const operation = normalizeOperationLabel(progress.label);
+        if (BADGE_OPERATIONS.has(operation)) {
+          runState.currentOperation = operation;
+        }
+      }
+      const hasCurrent = typeof progress.current === "number" && Number.isFinite(progress.current);
+      const hasTotal = typeof progress.total === "number" && Number.isFinite(progress.total) && progress.total > 0;
+      if (hasCurrent && hasTotal) {
+        const counter = {
+          current: Math.max(0, Math.trunc(progress.current)),
+          total: Math.max(1, Math.trunc(progress.total)),
+        };
+        runState.currentPhaseCounter = counter;
+        runState.phaseCounters[runState.currentOperation] = counter;
       }
       if (typeof progress.detail === "string" && progress.detail.length > 0) {
         pushRecentMessage(runState, "info", progress.detail);
