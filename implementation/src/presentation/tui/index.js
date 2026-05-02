@@ -26,7 +26,13 @@ import {
   resetNewWorkWorkerHealth,
   startNewWorkSceneAction,
 } from "./scenes/new-work.js";
-import { createWorkersSceneState, handleWorkersInput, renderWorkersSceneLines } from "./scenes/workers.js";
+import {
+  createWorkersSceneState,
+  handleWorkersInput,
+  reloadWorkersSceneState,
+  renderWorkersSceneLines,
+  runWorkersSceneAction,
+} from "./scenes/workers.js";
 import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
 import { createSettingsSceneState, handleSettingsInput, renderSettingsSceneLines } from "./scenes/settings.js";
 import { createHelpSceneState, handleHelpInput, renderHelpSceneLines } from "./scenes/help.js";
@@ -64,6 +70,7 @@ function createSceneRouterState() {
     helpSceneState: createHelpSceneState(),
     newWorkSceneState: createNewWorkSceneState(),
     agentSessionPending: false,
+    workersActionPending: false,
   };
 }
 
@@ -90,7 +97,7 @@ function resetToMainMenu(state) {
   void refreshMainMenuStatusProbe("continue");
 }
 
-function routeFromMainMenu(state, routeTo, openNewWorkScene) {
+function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene) {
   state.showHelpOverlay = false;
   if (routeTo === "continue") {
     state.sceneId = "continue";
@@ -108,6 +115,10 @@ function routeFromMainMenu(state, routeTo, openNewWorkScene) {
   }
   if (routeTo === "newWork") {
     openNewWorkScene();
+    return;
+  }
+  if (routeTo === "workers") {
+    openWorkersScene();
     return;
   }
   if (routeTo === "workers" || routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
@@ -278,6 +289,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
     };
 
     let newWorkLoadToken = 0;
+    let workersLoadToken = 0;
 
     const openNewWorkScene = () => {
       state.sceneId = "newWork";
@@ -292,6 +304,27 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           return;
         }
         state.newWorkSceneState = nextState;
+      });
+    };
+
+    const openWorkersScene = () => {
+      state.sceneId = "workers";
+      state.showHelpOverlay = false;
+      state.workersSceneState = {
+        ...createWorkersSceneState(),
+        loading: true,
+        banner: "",
+      };
+
+      const loadToken = ++workersLoadToken;
+      void reloadWorkersSceneState({
+        state: state.workersSceneState,
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== workersLoadToken || state.sceneId !== "workers") {
+          return;
+        }
+        state.workersSceneState = nextState;
       });
     };
 
@@ -374,8 +407,10 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         }
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
-          if (selected?.sceneId) {
-            routeFromMainMenu(state, selected.sceneId, openNewWorkScene);
+          if (selected?.sceneId === "workers") {
+            openWorkersScene();
+          } else if (selected?.sceneId) {
+            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene);
           }
           return;
         }
@@ -514,7 +549,36 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         const result = handleWorkersInput({ rawInput, state: state.workersSceneState });
         state.workersSceneState = result.state;
         if (result.backToParent || isBack(rawInput)) {
+          workersLoadToken += 1;
           state.sceneId = "mainMenu";
+          state.workersActionPending = false;
+          state.workersSceneState = {
+            ...state.workersSceneState,
+            pendingGlobalBootstrap: false,
+          };
+          return;
+        }
+
+        if (result.action && !state.workersActionPending) {
+          state.workersActionPending = true;
+          void runWorkersSceneAction({
+            action: result.action,
+            state: state.workersSceneState,
+            currentWorkingDirectory,
+            suspendTui: teardownTuiForWorker,
+            resumeTui: restoreTuiAfterWorker,
+          }).then((nextState) => {
+            state.workersSceneState = nextState;
+          }).catch((error) => {
+            state.workersSceneState = {
+              ...state.workersSceneState,
+              loading: false,
+              pendingGlobalBootstrap: false,
+              banner: error instanceof Error ? error.message : String(error),
+            };
+          }).finally(() => {
+            state.workersActionPending = false;
+          });
         }
         return;
       }

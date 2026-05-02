@@ -1,4 +1,9 @@
 import pc from "picocolors";
+import fs from "node:fs";
+import path from "node:path";
+import { createConfigBridge } from "../bridges/config-bridge.js";
+import { createHealthBridge } from "../bridges/health-bridge.js";
+import { launchEditor } from "../components/editor-launch.js";
 
 const COMMAND_OVERRIDE_ORDER = [
   "run",
@@ -12,6 +17,19 @@ const COMMAND_OVERRIDE_ORDER = [
 ];
 
 const ROUTING_PHASE_ORDER = ["execute", "verify", "repair", "resolve", "resolveRepair", "reset"];
+const EMPTY_JSON_WITH_NEWLINE = "{}\n";
+
+function buildBridgeBundle(currentWorkingDirectory) {
+  const configBridge = createConfigBridge({ cwd: currentWorkingDirectory });
+  const healthBridge = createHealthBridge({
+    cwd: currentWorkingDirectory,
+    configDirPath: configBridge.configDirPath,
+  });
+  return {
+    configBridge,
+    healthBridge,
+  };
+}
 
 export function createWorkersSceneState() {
   return {
@@ -20,7 +38,10 @@ export function createWorkersSceneState() {
       entries: [],
     },
     configPath: ".rundown/config.json",
+    globalConfigPath: "(unresolved)",
     banner: "",
+    loading: true,
+    pendingGlobalBootstrap: false,
   };
 }
 
@@ -140,6 +161,105 @@ function formatRoutingSummary(phase, routeConfig) {
   return pc.yellow("⚙ overridden");
 }
 
+function toErrorMessage(error, fallback = "Unexpected error.") {
+  if (error instanceof Error && typeof error.message === "string" && error.message.length > 0) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+  return fallback;
+}
+
+function ensureParentDirectory(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+async function resolveLocalConfigPath(sceneState, currentWorkingDirectory) {
+  if (typeof sceneState.configPath === "string" && sceneState.configPath.length > 0) {
+    return sceneState.configPath;
+  }
+  const bridges = buildBridgeBundle(currentWorkingDirectory);
+  return bridges.configBridge.resolveConfigPath("local");
+}
+
+async function resolveGlobalConfigPath(sceneState, currentWorkingDirectory) {
+  if (typeof sceneState.globalConfigPath === "string" && sceneState.globalConfigPath.length > 0) {
+    return sceneState.globalConfigPath;
+  }
+  const bridges = buildBridgeBundle(currentWorkingDirectory);
+  return bridges.configBridge.resolveGlobalConfigPath();
+}
+
+export async function reloadWorkersSceneState({
+  state,
+  currentWorkingDirectory = process.cwd(),
+  keepBanner = false,
+} = {}) {
+  const sceneState = {
+    ...(state ?? createWorkersSceneState()),
+    loading: true,
+    pendingGlobalBootstrap: false,
+  };
+  if (!keepBanner) {
+    sceneState.banner = "";
+  }
+
+  const { configBridge, healthBridge } = buildBridgeBundle(currentWorkingDirectory);
+  const [configResult, healthResult, localPathResult, globalPathResult] = await Promise.allSettled([
+    configBridge.loadWorkerConfig(),
+    healthBridge.loadHealthStatus(),
+    configBridge.resolveConfigPath("local"),
+    configBridge.resolveGlobalConfigPath(),
+  ]);
+
+  if (configResult.status === "fulfilled") {
+    sceneState.config = safeObject(configResult.value);
+  }
+  if (healthResult.status === "fulfilled") {
+    sceneState.healthStatus = safeObject(healthResult.value);
+  }
+  if (localPathResult.status === "fulfilled" && typeof localPathResult.value === "string" && localPathResult.value.length > 0) {
+    sceneState.configPath = localPathResult.value;
+  }
+  if (globalPathResult.status === "fulfilled" && typeof globalPathResult.value === "string" && globalPathResult.value.length > 0) {
+    sceneState.globalConfigPath = globalPathResult.value;
+  }
+
+  const errors = [];
+  if (configResult.status === "rejected") {
+    errors.push(`Config load failed: ${toErrorMessage(configResult.reason)}`);
+  }
+  if (healthResult.status === "rejected") {
+    errors.push(`Health load failed: ${toErrorMessage(healthResult.reason)}`);
+  }
+  if (localPathResult.status === "rejected") {
+    errors.push(`Local config path failed: ${toErrorMessage(localPathResult.reason)}`);
+  }
+  if (globalPathResult.status === "rejected") {
+    errors.push(`Global config path failed: ${toErrorMessage(globalPathResult.reason)}`);
+  }
+
+  if (errors.length > 0) {
+    sceneState.banner = errors.join(" | ");
+  }
+
+  sceneState.loading = false;
+  return sceneState;
+}
+
+function editConfigFile(filePath, { currentWorkingDirectory, suspendTui, resumeTui } = {}) {
+  ensureParentDirectory(filePath);
+  suspendTui?.();
+  let launchResult;
+  try {
+    launchResult = launchEditor(filePath, { cwd: currentWorkingDirectory });
+  } finally {
+    resumeTui?.();
+  }
+  return launchResult;
+}
+
 function pushLabeledRow(lines, label, value, healthText = "") {
   const labelColumn = label.padEnd(18, " ");
   const base = `  ${labelColumn}${value}`;
@@ -162,6 +282,13 @@ export function renderWorkersSceneLines({ state, sectionGap = 1 } = {}) {
     pc.bold("Workers"),
     pc.dim(sceneState.configPath || ".rundown/config.json"),
   ];
+
+  if (sceneState.loading) {
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("Loading worker configuration..."));
+    lines.push(pc.dim("[Esc] Back to menu"));
+    return lines;
+  }
 
   if (typeof sceneState.banner === "string" && sceneState.banner.length > 0) {
     withSectionGap(lines, sectionGap);
@@ -240,18 +367,173 @@ export function renderWorkersSceneLines({ state, sectionGap = 1 } = {}) {
 }
 
 export function handleWorkersInput({ rawInput, state } = {}) {
+  const sceneState = state ?? createWorkersSceneState();
+  const input = String(rawInput ?? "");
+  const normalized = input.toLowerCase();
   const isEscape = rawInput === "\u001b";
   const isBackspace = rawInput === "\b" || rawInput === "\u007f";
   if (isEscape || isBackspace) {
     return {
       handled: true,
-      state: state ?? createWorkersSceneState(),
+      state: sceneState,
       backToParent: true,
     };
   }
+
+  if (normalized === "r") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "reload" },
+    };
+  }
+
+  if (input === "e") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        pendingGlobalBootstrap: false,
+      },
+      backToParent: false,
+      action: { type: "edit-local" },
+    };
+  }
+
+  if (input === "E") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "edit-global" },
+    };
+  }
+
   return {
     handled: false,
-    state: state ?? createWorkersSceneState(),
+    state: sceneState,
     backToParent: false,
   };
+}
+
+export async function runWorkersSceneAction({
+  action,
+  state,
+  currentWorkingDirectory = process.cwd(),
+  suspendTui,
+  resumeTui,
+} = {}) {
+  const sceneState = state ?? createWorkersSceneState();
+  if (!action || typeof action.type !== "string") {
+    return sceneState;
+  }
+
+  if (action.type === "reload") {
+    return reloadWorkersSceneState({
+      state: {
+        ...sceneState,
+        pendingGlobalBootstrap: false,
+      },
+      currentWorkingDirectory,
+      keepBanner: false,
+    });
+  }
+
+  if (action.type === "edit-local") {
+    let localPath;
+    try {
+      localPath = await resolveLocalConfigPath(sceneState, currentWorkingDirectory);
+    } catch (error) {
+      return {
+        ...sceneState,
+        pendingGlobalBootstrap: false,
+        banner: `Unable to resolve local config path: ${toErrorMessage(error)}`,
+      };
+    }
+
+    const launchResult = editConfigFile(localPath, {
+      currentWorkingDirectory,
+      suspendTui,
+      resumeTui,
+    });
+    if (!launchResult.ok) {
+      return {
+        ...sceneState,
+        configPath: localPath,
+        pendingGlobalBootstrap: false,
+        banner: launchResult.message || "Failed to open editor.",
+      };
+    }
+
+    return reloadWorkersSceneState({
+      state: {
+        ...sceneState,
+        configPath: localPath,
+      },
+      currentWorkingDirectory,
+      keepBanner: false,
+    });
+  }
+
+  if (action.type === "edit-global") {
+    let globalPath;
+    try {
+      globalPath = await resolveGlobalConfigPath(sceneState, currentWorkingDirectory);
+    } catch (error) {
+      return {
+        ...sceneState,
+        pendingGlobalBootstrap: false,
+        banner: `Unable to resolve global config path: ${toErrorMessage(error)}`,
+      };
+    }
+
+    if (typeof globalPath !== "string" || globalPath.length === 0 || globalPath === "(unresolved)") {
+      return {
+        ...sceneState,
+        globalConfigPath: globalPath,
+        pendingGlobalBootstrap: false,
+        banner: "Global config path is unresolved.",
+      };
+    }
+
+    if (!fs.existsSync(globalPath)) {
+      if (!sceneState.pendingGlobalBootstrap) {
+        return {
+          ...sceneState,
+          globalConfigPath: globalPath,
+          pendingGlobalBootstrap: true,
+          banner: `Global config missing at ${globalPath}. Press [E] again to create {} and edit.`,
+        };
+      }
+      ensureParentDirectory(globalPath);
+      fs.writeFileSync(globalPath, EMPTY_JSON_WITH_NEWLINE, "utf8");
+    }
+
+    const launchResult = editConfigFile(globalPath, {
+      currentWorkingDirectory,
+      suspendTui,
+      resumeTui,
+    });
+    if (!launchResult.ok) {
+      return {
+        ...sceneState,
+        globalConfigPath: globalPath,
+        pendingGlobalBootstrap: false,
+        banner: launchResult.message || "Failed to open editor.",
+      };
+    }
+
+    return reloadWorkersSceneState({
+      state: {
+        ...sceneState,
+        globalConfigPath: globalPath,
+        pendingGlobalBootstrap: false,
+      },
+      currentWorkingDirectory,
+      keepBanner: false,
+    });
+  }
+
+  return sceneState;
 }
