@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
 
 const DEFAULT_WORKER_PATTERN = {
@@ -27,6 +28,188 @@ const NEW_WORK_READINESS = {
 };
 
 const AGENT_MARKDOWN_PATH = ".rundown/agent.md";
+const WORKER_HEALTH_PATH = ".rundown/worker-health.json";
+const WORKER_HEALTH_SCHEMA_VERSION = 1;
+
+export function createNewWorkSceneState() {
+  return {
+    loading: true,
+    readiness: undefined,
+    hint: "Checking New Work readiness...",
+  };
+}
+
+function withSectionGap(lines, sectionGap) {
+  const gap = Number.isInteger(sectionGap) && sectionGap > 0 ? sectionGap : 0;
+  for (let index = 0; index < gap; index += 1) {
+    lines.push("");
+  }
+}
+
+function normalizeCandidateRow(candidate) {
+  const workerLabel = typeof candidate?.workerLabel === "string" && candidate.workerLabel.length > 0
+    ? candidate.workerLabel
+    : "(unknown worker)";
+  const source = typeof candidate?.source === "string" && candidate.source.length > 0
+    ? candidate.source
+    : "(unknown source)";
+  const reason = typeof candidate?.reason === "string" && candidate.reason.length > 0
+    ? candidate.reason
+    : "worker not eligible";
+  return `${workerLabel} [${source}] - ${reason}`;
+}
+
+export function renderNewWorkSceneLines({ state, sectionGap = 1 } = {}) {
+  const sceneState = state ?? createNewWorkSceneState();
+  const readiness = sceneState.readiness;
+  const lines = [pc.bold("New Work")];
+
+  if (sceneState.loading) {
+    lines.push(pc.dim(sceneState.hint || "Checking New Work readiness..."));
+    return lines;
+  }
+
+  if (readiness?.route === NEW_WORK_READINESS.missingWorker) {
+    lines.push("No worker is configured.");
+    withSectionGap(lines, sectionGap);
+    lines.push("Configure a worker to run agent sessions:");
+    lines.push("  rundown init --worker <command>");
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("[Esc] Back to menu"));
+    return lines;
+  }
+
+  if (readiness?.route === NEW_WORK_READINESS.noEligibleWorker) {
+    lines.push("No eligible worker is available right now.");
+    withSectionGap(lines, sectionGap);
+    lines.push("Worker health failures:");
+    const candidates = Array.isArray(readiness.candidates) ? readiness.candidates : [];
+    if (candidates.length === 0) {
+      lines.push("  (no failing entries available)");
+    } else {
+      for (const candidate of candidates) {
+        lines.push(`  - ${normalizeCandidateRow(candidate)}`);
+      }
+    }
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("[r] Reset worker health"));
+    lines.push(pc.dim("[Esc] Back to menu"));
+    return lines;
+  }
+
+  if (readiness?.route === NEW_WORK_READINESS.ready) {
+    lines.push("Select agent flow:");
+    lines.push("  [Enter] Open agent (.rundown/agent.md)");
+    lines.push("  [d] Discuss agent (.rundown/discuss-agent.md)");
+    lines.push(pc.dim("[Esc] Back to menu"));
+    return lines;
+  }
+
+  if (typeof sceneState.hint === "string" && sceneState.hint.length > 0) {
+    lines.push(sceneState.hint);
+  } else {
+    lines.push(pc.dim("New Work state unavailable."));
+  }
+  lines.push(pc.dim("[Esc] Back to menu"));
+  return lines;
+}
+
+export async function loadNewWorkSceneState({ currentWorkingDirectory, cliWorkerCommand = [] }) {
+  const readiness = await resolveNewWorkReadiness({
+    currentWorkingDirectory,
+    cliWorkerCommand,
+  });
+
+  return {
+    loading: false,
+    readiness,
+    hint: readiness.hint,
+  };
+}
+
+export async function resetNewWorkWorkerHealth({ currentWorkingDirectory }) {
+  const filePath = path.join(currentWorkingDirectory, WORKER_HEALTH_PATH);
+  let removedEntries = 0;
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+      if (Array.isArray(parsed?.entries)) {
+        removedEntries = parsed.entries.length;
+      }
+    } catch {
+      removedEntries = 0;
+    }
+  }
+
+  const payload = {
+    schemaVersion: WORKER_HEALTH_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+    entries: [],
+  };
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+
+  return { removedEntries };
+}
+
+export function handleNewWorkSceneInput({ rawInput, state } = {}) {
+  const sceneState = state ?? createNewWorkSceneState();
+  const input = String(rawInput ?? "").toLowerCase();
+  const isEnter = rawInput === "\r" || rawInput === "\n";
+  const isEscape = rawInput === "\u001b";
+  const isBackspace = rawInput === "\b" || rawInput === "\u007f";
+
+  if (isEscape || isBackspace) {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: true,
+    };
+  }
+
+  if (sceneState.loading) {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+    };
+  }
+
+  const route = sceneState.readiness?.route;
+  if (route === NEW_WORK_READINESS.noEligibleWorker && input === "r") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "reset-worker-health" },
+    };
+  }
+
+  if (route === NEW_WORK_READINESS.ready && isEnter) {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "start-agent", actionKey: "o" },
+    };
+  }
+
+  if (route === NEW_WORK_READINESS.ready && input === "d") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "start-agent", actionKey: "a" },
+    };
+  }
+
+  return {
+    handled: false,
+    state: sceneState,
+    backToParent: false,
+  };
+}
 
 export function isNewWorkActionKey(actionKey) {
   return actionKey === "a" || actionKey === "o";

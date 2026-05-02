@@ -16,7 +16,14 @@ import {
   refreshMainMenuStatusProbe,
   refreshMainMenuStatuses,
 } from "./scenes/main-menu.js";
-import { startNewWorkSceneAction } from "./scenes/new-work.js";
+import {
+  createNewWorkSceneState,
+  handleNewWorkSceneInput,
+  loadNewWorkSceneState,
+  renderNewWorkSceneLines,
+  resetNewWorkWorkerHealth,
+  startNewWorkSceneAction,
+} from "./scenes/new-work.js";
 import { createWorkersSceneState, handleWorkersInput, renderWorkersSceneLines } from "./scenes/workers.js";
 import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
 import { createSettingsSceneState, handleSettingsInput, renderSettingsSceneLines } from "./scenes/settings.js";
@@ -53,6 +60,7 @@ function createSceneRouterState() {
     profilesSceneState: createProfilesSceneState(),
     settingsSceneState: createSettingsSceneState(),
     helpSceneState: createHelpSceneState(),
+    newWorkSceneState: createNewWorkSceneState(),
     agentSessionPending: false,
   };
 }
@@ -75,11 +83,12 @@ function resetToMainMenu(state) {
   state.mainMenuState = createMainMenuSceneState();
   state.continueUiState = "previewing";
   state.continueSceneState = createContinueSceneState();
+  state.newWorkSceneState = createNewWorkSceneState();
   state.runState = createInitialRunState();
   void refreshMainMenuStatusProbe("continue");
 }
 
-function routeFromMainMenu(state, routeTo, launchNewWork) {
+function routeFromMainMenu(state, routeTo, openNewWorkScene) {
   state.showHelpOverlay = false;
   if (routeTo === "continue") {
     state.sceneId = "continue";
@@ -96,7 +105,7 @@ function routeFromMainMenu(state, routeTo, launchNewWork) {
     return;
   }
   if (routeTo === "newWork") {
-    void launchNewWork();
+    openNewWorkScene();
     return;
   }
   if (routeTo === "workers" || routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
@@ -134,11 +143,10 @@ function buildSceneLines(state, spacing, currentWorkingDirectory) {
     });
   }
   if (state.sceneId === "newWork") {
-    return [
-      "New Work",
-      "Launching existing agent flow...",
-      "Press Esc to return if launch has not started yet.",
-    ];
+    return renderNewWorkSceneLines({
+      state: state.newWorkSceneState,
+      sectionGap: spacing.sectionGap,
+    });
   }
   if (state.sceneId === "workers") {
     return renderWorkersSceneLines({ state: state.workersSceneState, sectionGap: spacing.sectionGap });
@@ -267,7 +275,25 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       resolve(exitCode);
     };
 
-    const launchNewWork = async () => {
+    let newWorkLoadToken = 0;
+
+    const openNewWorkScene = () => {
+      state.sceneId = "newWork";
+      state.showHelpOverlay = false;
+      state.mainMenuHint = "";
+      state.newWorkSceneState = createNewWorkSceneState();
+      const loadToken = ++newWorkLoadToken;
+      void loadNewWorkSceneState({
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== newWorkLoadToken || state.sceneId !== "newWork") {
+          return;
+        }
+        state.newWorkSceneState = nextState;
+      });
+    };
+
+    const launchNewWork = async (actionKey) => {
       if (state.agentSessionPending) {
         return;
       }
@@ -278,7 +304,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       state.runState = createInitialRunState();
 
       const result = await startNewWorkSceneAction({
-        actionKey: "o",
+        actionKey,
         currentWorkingDirectory,
         runState: state.runState,
         teardownTuiForWorker,
@@ -287,14 +313,20 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       });
 
       state.agentSessionPending = false;
-      state.sceneId = "mainMenu";
       if (!result.started) {
-        state.mainMenuHint = result.hint;
+        state.newWorkSceneState = {
+          loading: false,
+          readiness: result.readiness,
+          hint: result.hint,
+        };
         return;
       }
       state.mainMenuHint = state.runState.exitCode === 0
         ? "New Work session ended."
         : `New Work failed (exit ${state.runState.exitCode ?? "?"}).`;
+      state.sceneId = "mainMenu";
+      state.newWorkSceneState = createNewWorkSceneState();
+      void refreshMainMenuStatusProbe("newWork");
     };
 
     function onInput(chunk) {
@@ -341,7 +373,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
           if (selected?.sceneId) {
-            routeFromMainMenu(state, selected.sceneId, launchNewWork);
+            routeFromMainMenu(state, selected.sceneId, openNewWorkScene);
           }
           return;
         }
@@ -381,8 +413,51 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       }
 
       if (state.sceneId === "newWork") {
-        if (isBack(rawInput)) {
+        const result = handleNewWorkSceneInput({
+          rawInput,
+          state: state.newWorkSceneState,
+        });
+        state.newWorkSceneState = result.state;
+
+        if (result.backToParent || isBack(rawInput)) {
           state.sceneId = "mainMenu";
+          state.newWorkSceneState = createNewWorkSceneState();
+          void refreshMainMenuStatusProbe("newWork");
+          return;
+        }
+
+        const action = result.action;
+        if (action?.type === "start-agent") {
+          void launchNewWork(action.actionKey);
+          return;
+        }
+
+        if (action?.type === "reset-worker-health") {
+          state.newWorkSceneState = {
+            ...state.newWorkSceneState,
+            loading: true,
+            hint: "Resetting worker health...",
+          };
+          void resetNewWorkWorkerHealth({ currentWorkingDirectory })
+            .then(({ removedEntries }) => {
+              state.newWorkSceneState = {
+                ...state.newWorkSceneState,
+                loading: true,
+                hint: `Reset worker health (${removedEntries} entries). Re-checking...`,
+              };
+              return loadNewWorkSceneState({ currentWorkingDirectory });
+            })
+            .then((nextState) => {
+              state.newWorkSceneState = nextState;
+              void refreshMainMenuStatusProbe("newWork");
+            })
+            .catch((error) => {
+              state.newWorkSceneState = {
+                ...state.newWorkSceneState,
+                loading: false,
+                hint: `Failed to reset worker health: ${error instanceof Error ? error.message : String(error)}`,
+              };
+            });
         }
         return;
       }
