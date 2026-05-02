@@ -46,6 +46,7 @@ export function createStatusProbeRegistry({ probes = {}, now = Date.now } = {}) 
     cache.set(rowId, {
       status: PENDING_PROBE_STATUS,
       updatedAt: 0,
+      stale: true,
     });
   }
 
@@ -72,7 +73,7 @@ export function createStatusProbeRegistry({ probes = {}, now = Date.now } = {}) 
 
     const probe = typeof probes[rowId] === "function" ? probes[rowId] : createDefaultProbe(rowId);
     const refreshPromise = runProbeSafely(probe).then((status) => {
-      cache.set(rowId, { status, updatedAt: now() });
+      cache.set(rowId, { status, updatedAt: now(), stale: false });
       inFlight.delete(rowId);
       return status;
     });
@@ -85,8 +86,16 @@ export function createStatusProbeRegistry({ probes = {}, now = Date.now } = {}) 
     if (!ROW_IDS.includes(rowId)) {
       return UNKNOWN_PROBE_STATUS;
     }
-    const entry = cache.get(rowId) ?? { status: PENDING_PROBE_STATUS, updatedAt: 0 };
-    if (isStale(rowId, entry.updatedAt)) {
+    const entry = cache.get(rowId) ?? { status: PENDING_PROBE_STATUS, updatedAt: 0, stale: true };
+    const stale = isStale(rowId, entry.updatedAt);
+    if (entry.stale !== stale) {
+      cache.set(rowId, {
+        status: entry.status,
+        updatedAt: entry.updatedAt,
+        stale,
+      });
+    }
+    if (stale) {
       void refreshProbe(rowId);
     }
     return entry.status;
