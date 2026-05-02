@@ -26,6 +26,94 @@ describe("continue scene cockpit", () => {
     vi.clearAllMocks();
   });
 
+  it("renders golden frames for previewing, running transitions, and done-with-failure", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-05-02T21:56:50.000Z"));
+
+      const state = {
+        ...createContinueSceneState(),
+        previewLoaded: true,
+        sourceTarget: "migrations/",
+        taskItems: [
+          { line: 12, textLines: ["First unchecked task"] },
+          { line: 24, textLines: ["Second unchecked task"] },
+          { line: 48, textLines: ["Third unchecked task"] },
+        ],
+      };
+
+      const runState = createInitialRunState();
+      runState.actionLabel = "materialize";
+      runState.sourceTarget = "migrations/";
+      runState.totalTasks = state.taskItems.length;
+      runState.runStartedAt = Date.now();
+
+      const previewFrame = stripAnsi(renderContinueSceneLines({
+        uiState: "previewing",
+        state,
+        runState,
+        currentWorkingDirectory: process.cwd(),
+        sectionGap: 1,
+        hintGap: 1,
+        errorGap: 1,
+      })).join("\n");
+
+      applyOutputEvent(runState, {
+        kind: "group-start",
+        label: "Task 1",
+        counter: { current: 1, total: 3 },
+      });
+      applyOutputEvent(runState, {
+        kind: "progress",
+        progress: { label: "scan", current: 1, total: 4, detail: "scan 1/4" },
+      });
+      applyOutputEvent(runState, {
+        kind: "progress",
+        progress: { label: "resolveRepair", current: 2, total: 3, detail: "attempt 2/3" },
+      });
+
+      const runningFrame = stripAnsi(renderContinueSceneLines({
+        uiState: "running",
+        state,
+        runState,
+        currentWorkingDirectory: process.cwd(),
+        sectionGap: 1,
+        hintGap: 1,
+        errorGap: 1,
+      })).join("\n");
+
+      vi.setSystemTime(new Date("2026-05-02T21:56:58.000Z"));
+      applyOutputEvent(runState, {
+        kind: "group-end",
+        status: "failure",
+        message: "verify failed for task 12",
+      });
+      runState.finished = true;
+      runState.exitCode = 1;
+      runState.error = "Verification failed in step verify";
+
+      const doneFrame = stripAnsi(renderContinueSceneLines({
+        uiState: updateContinueUiState("running", runState),
+        state,
+        runState,
+        currentWorkingDirectory: process.cwd(),
+        sectionGap: 1,
+        hintGap: 1,
+        errorGap: 1,
+      })).join("\n");
+
+      expect({ previewFrame, runningFrame, doneFrame }).toMatchInlineSnapshot(`
+        {
+          "doneFrame": "Action:  materialize                                                    Phase Counters:\n+Target:  migrations/                                                   current: 2/3\n+Elapsed: 00:08\n+Tasks:   0 / 3\n+\n+Run Started:           2026-05-02 21:56:50\n+Current Task Started:  n/a (run complete)\n+\n+Operation:      REPAIR\n+Task Progress:  [----------------------------------------] 0%\n+\n+previous 048 - [x] Third unchecked task\n+\n+current  (none)\n+\n+next     (none)\n+\n+Failures: 1   Repairs: 0\n+Resolvings: 0   Resets: 0\n+\n+Recent:\n+  scan 1/4\n+  attempt 2/3\n+  verify failed for task 12\n+\n+Run failed (exit 1). Press Esc to return to menu.\n+Verification failed in step verify\n+\n+Summary: 0/3 tasks, 00:08, 1 failures, 0 repairs, 0 resolves",
+          "previewFrame": "Continue Preview\n+\n+Source: migrations/\n+Task count: 3\n+\n+next: 012 - First unchecked task\n+after: 024 - Second unchecked task\n+later: 048 - Third unchecked task\n+\n+Enter: start run. r: refresh list. Esc: back.",
+          "runningFrame": "Action:  materialize                                                    Phase Counters:\n+Target:  migrations/                                                   current: 2/3\n+Elapsed: 00:00\n+Tasks:   0 / 3\n+\n+Run Started:           2026-05-02 21:56:50\n+Current Task Started:  2026-05-02 21:56:50\n+\n+Operation:      RESOLVEREPAIR\n+Task Progress:  [----------------------------------------] 0%\n+\n+previous (none)\n+\n+current  012 - [ ] First unchecked task\n+\n+next     024 - [ ] Second unchecked task\n+\n+Failures: 0   Repairs: 0\n+Resolvings: 0   Resets: 0\n+\n+Recent:\n+  scan 1/4\n+  attempt 2/3",
+        }
+      `);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders task preview with next unchecked task and 3-line preview", () => {
     const state = {
       ...createContinueSceneState(),
