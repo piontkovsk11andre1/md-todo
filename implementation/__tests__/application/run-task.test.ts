@@ -632,7 +632,6 @@ describe("run-task orchestration", () => {
     const fileSystem = createInMemoryFileSystem({
       [taskFile]: [
         "- [ ] cli: echo hello",
-        "  - fix: stale verification note",
         "  - skipped: stale skip note",
         "  - total time: 3s",
         "    - execution: 2s",
@@ -661,7 +660,6 @@ describe("run-task orchestration", () => {
     const fileSystem = createInMemoryFileSystem({
       [taskFile]: [
         "- [x] cli: echo hello",
-        "  - fix: stale verification note",
         "  - skipped: stale skip note",
         "  - total time: 5s",
         "    - execution: 4s",
@@ -707,7 +705,6 @@ describe("run-task orchestration", () => {
     const fileSystem = createInMemoryFileSystem({
       [taskFile]: [
         "- [ ] cli: echo hello",
-        "  - fix: stale verification note",
         "  - skipped: stale skip note",
         "  - total time: 1s",
         "    - execution: 1s",

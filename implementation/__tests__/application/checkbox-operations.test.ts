@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../src/domain/parser.js";
 import type { FileSystem } from "../../src/domain/ports/index.js";
-import * as checkboxDomainModule from "../../src/domain/checkbox.js";
-import * as plannerDomainModule from "../../src/domain/planner.js";
 
 import {
   advanceForLoopUsingFileSystem,
@@ -13,7 +11,6 @@ import {
   maybeResetFileCheckboxes,
   resetFileCheckboxes,
   skipRemainingSiblingsUsingFileSystem,
-  writeFixAnnotationToFile,
 } from "../../src/application/checkbox-operations.js";
 
 function createTask(overrides: Partial<Task> = {}): Task {
@@ -256,188 +253,6 @@ describe("checkbox-operations", () => {
       "  ```md",
       "  - [x] Example fenced checkbox",
       "  ```",
-    ].join("\n"));
-  });
-
-  it("writes fix annotation after marking task checked", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] First task\n- [ ] Second task\n",
-    });
-    const task = createTask({ text: "First task", line: 1 });
-
-    writeFixAnnotationToFile(task, "Cannot be verified because this is missing", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: Cannot be verified because this is missing",
-      "- [ ] Second task",
-      "",
-    ].join("\n"));
-  });
-
-  it("applies markChecked before insertSubitems so task line references stay stable", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] First task\n- [ ] Second task\n- [ ] Third task\n",
-    });
-    const task = createTask({ text: "Second task", line: 2 });
-    const markCheckedSpy = vi.spyOn(checkboxDomainModule, "markChecked");
-    const insertSubitemsSpy = vi.spyOn(plannerDomainModule, "insertSubitems");
-
-    try {
-      writeFixAnnotationToFile(task, "failed", fileSystem);
-
-      expect(markCheckedSpy).toHaveBeenCalledTimes(1);
-      expect(insertSubitemsSpy).toHaveBeenCalledTimes(1);
-      expect(markCheckedSpy.mock.invocationCallOrder[0]).toBeLessThan(insertSubitemsSpy.mock.invocationCallOrder[0] ?? 0);
-      expect(insertSubitemsSpy).toHaveBeenCalledWith(
-        "- [ ] First task\n- [x] Second task\n- [ ] Third task\n",
-        expect.objectContaining({ line: 2, text: "Second task" }),
-        ["fix: failed"],
-      );
-      expect(fileSystem.readText("todo.md")).toBe([
-        "- [ ] First task",
-        "- [x] Second task",
-        "  - fix: failed",
-        "- [ ] Third task",
-        "",
-      ].join("\n"));
-    } finally {
-      markCheckedSpy.mockRestore();
-      insertSubitemsSpy.mockRestore();
-    }
-  });
-
-  it("writes fallback fix annotation when failure reason is null", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] First task\n",
-    });
-    const task = createTask({ text: "First task", line: 1 });
-
-    writeFixAnnotationToFile(task, null, fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: Verification failed (no details).",
-      "",
-    ].join("\n"));
-  });
-
-  it("preserves CRLF when writing fix annotation", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] First task\r\n- [ ] Second task\r\n",
-    });
-    const task = createTask({ text: "First task", line: 1 });
-
-    writeFixAnnotationToFile(task, "failed", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: failed",
-      "- [ ] Second task",
-      "",
-    ].join("\r\n"));
-  });
-
-  it("preserves multi-line reasons as multiple indented fix sub-items", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] First task\n- [ ] Second task\n",
-    });
-    const task = createTask({ text: "First task", line: 1 });
-
-    writeFixAnnotationToFile(task, "failed line one\nfailed line two", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: failed line one",
-      "  - fix: failed line two",
-      "- [ ] Second task",
-      "",
-    ].join("\n"));
-  });
-
-  it("indents fix annotation for top-level tasks", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] Top task\n- [ ] Next task\n",
-    });
-    const task = createTask({ text: "Top task", line: 1, depth: 0 });
-
-    writeFixAnnotationToFile(task, "failed", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] Top task",
-      "  - fix: failed",
-      "- [ ] Next task",
-      "",
-    ].join("\n"));
-  });
-
-  it("indents fix annotation for 2-space nested tasks", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] Parent\n  - [ ] Child task\n",
-    });
-    const task = createTask({ text: "Child task", line: 2, depth: 1 });
-
-    writeFixAnnotationToFile(task, "failed", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [ ] Parent",
-      "  - [x] Child task",
-      "    - fix: failed",
-      "",
-    ].join("\n"));
-  });
-
-  it("indents fix annotation for 4-space nested tasks", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [ ] Parent\n  - [ ] Child\n    - [ ] Grandchild task\n",
-    });
-    const task = createTask({ text: "Grandchild task", line: 3, depth: 2 });
-
-    writeFixAnnotationToFile(task, "failed", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [ ] Parent",
-      "  - [ ] Child",
-      "    - [x] Grandchild task",
-      "      - fix: failed",
-      "",
-    ].join("\n"));
-  });
-
-  it("still inserts fix annotation when task is already checked", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": "- [x] First task\n- [ ] Second task\n",
-    });
-    const task = createTask({ text: "First task", line: 1, checked: true });
-
-    expect(() => writeFixAnnotationToFile(task, "failed", fileSystem)).not.toThrow();
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: failed",
-      "- [ ] Second task",
-      "",
-    ].join("\n"));
-  });
-
-  it("stacks fix annotations by inserting newest entry directly under the task", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": [
-        "- [x] First task",
-        "  - fix: previous verification failure",
-        "- [ ] Second task",
-        "",
-      ].join("\n"),
-    });
-    const task = createTask({ text: "First task", line: 1, checked: true });
-
-    writeFixAnnotationToFile(task, "latest verification failure", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [x] First task",
-      "  - fix: latest verification failure",
-      "  - fix: previous verification failure",
-      "- [ ] Second task",
-      "",
     ].join("\n"));
   });
 
@@ -1033,12 +848,11 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
-  it("removes fix and skipped runtime annotations during checkbox reset", () => {
+  it("removes skipped runtime annotations during checkbox reset", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
         "- [x] Parent",
         "  - note: keep this",
-        "  - fix: retry with smaller batch",
         "  - skipped: already satisfied",
         "- [x] Next task",
         "  - skipped: no output",
@@ -1194,15 +1008,13 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
-  it("removes mixed trace statistics, fix, and skipped annotations under one parent", () => {
+  it("removes mixed trace statistics and skipped annotations under one parent", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
         "- [x] Parent",
         "  - note: keep this user note",
         "  - total time: 5s",
         "    - execution: 2s",
-        "  - fix: retry with smaller batch",
-        "    - verify: 1.5s",
         "  - skipped: no output",
         "  - [ ] Keep this actionable child",
         "    - note: keep nested child note",
@@ -1231,8 +1043,6 @@ describe("checkbox-operations", () => {
         "  - [ ] Keep this user child TODO",
         "    - note: keep nested user note",
         "    - detail: skipped: phrase in note should remain",
-        "  - fix: generated repair hint",
-        "    - repair: 1s",
         "  - skipped: no output",
         "  - observation: verify attempts: phrase in note should remain",
         "- [x] Sibling",
@@ -1259,7 +1069,6 @@ describe("checkbox-operations", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
         "- [x] Parent",
-        "  - [x] fix: generated annotation",
         "  + [ ] skipped: generated annotation",
         "  * [x] verify attempts: 2",
         "    - execution: 1s",
@@ -1280,7 +1089,7 @@ describe("checkbox-operations", () => {
       "todo.md": [
         "- [x] Parent",
         "  - note: keep this note",
-        "  - fix: generated annotation",
+        "  - skipped: generated annotation",
         "    - [ ] Generated stale child task",
         "      - skipped: generated child annotation",
         "    - note: nested stale note",
@@ -1304,7 +1113,7 @@ describe("checkbox-operations", () => {
       "todo.md": [
         "- [x] Root A",
         "  - [x] Branch A1",
-        "    - fix: generated for branch",
+        "    - skipped: generated for branch",
         "      - verify: 1s",
         "    - [ ] Keep branch child task",
         "      - note: keep branch child note",
@@ -1343,7 +1152,7 @@ describe("checkbox-operations", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
         "- [x] Parent",
-        "  - fix: generated annotation",
+        "  - skipped: generated annotation",
         "    - repair: 1s",
         "  - [ ] Keep child",
         "    - note: keep this",

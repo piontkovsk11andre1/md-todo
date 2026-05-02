@@ -2316,6 +2316,229 @@ describe("verify-repair-loop output", () => {
   });
 });
 
+describe("verify-repair-loop progress events", () => {
+  it("emits a progress event with label 'verify' before initial verification", async () => {
+    const output = { emit: vi.fn() };
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: true })),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: vi.fn(() => null),
+        remove: vi.fn(),
+      },
+      traceWriter: { write: vi.fn(), flush: vi.fn() },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 2,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-progress-verify" },
+      trace: false,
+    });
+
+    const progressEvents = output.emit.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.kind === "progress");
+
+    expect(progressEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "progress",
+          progress: expect.objectContaining({ label: "verify" }),
+        }),
+      ]),
+    );
+
+    // Verify event is emitted before the verify call resolves (i.e., before any success message).
+    const firstProgressIndex = output.emit.mock.calls.findIndex(
+      (call) => call[0]?.kind === "progress" && call[0]?.progress?.label === "verify",
+    );
+    const firstVerifySuccessIndex = output.emit.mock.calls.findIndex(
+      (call) => call[0]?.kind === "success",
+    );
+    expect(firstProgressIndex).toBeGreaterThanOrEqual(0);
+    if (firstVerifySuccessIndex >= 0) {
+      expect(firstProgressIndex).toBeLessThan(firstVerifySuccessIndex);
+    }
+  });
+
+  it("emits a progress event with label 'repair' before each repair attempt", async () => {
+    const output = { emit: vi.fn() };
+
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("first failure")
+      .mockReturnValueOnce("first failure")
+      .mockReturnValueOnce("first failure");
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false })),
+      },
+      taskRepair: {
+        repair: vi.fn()
+          .mockResolvedValueOnce({ valid: false, attempts: 1 })
+          .mockResolvedValueOnce({ valid: true, attempts: 1 }),
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: { write: vi.fn(), flush: vi.fn() },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 3,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-progress-repair" },
+      trace: false,
+    });
+
+    const repairProgressEvents = output.emit.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.kind === "progress" && event.progress?.label === "repair");
+
+    expect(repairProgressEvents).toHaveLength(2);
+    expect(repairProgressEvents[0].progress).toMatchObject({
+      label: "repair",
+      current: 1,
+      total: 3,
+      unit: "attempt",
+    });
+    expect(repairProgressEvents[1].progress).toMatchObject({
+      label: "repair",
+      current: 2,
+      total: 3,
+    });
+  });
+
+  it("emits the verify progress event even when verbose is disabled", async () => {
+    const output = { emit: vi.fn() };
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: true })),
+      },
+      taskRepair: {
+        repair: vi.fn(async () => ({ valid: false, attempts: 0 })),
+      },
+      verificationStore: {
+        write: vi.fn(),
+        read: vi.fn(() => null),
+        remove: vi.fn(),
+      },
+      traceWriter: { write: vi.fn(), flush: vi.fn() },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 0,
+      allowRepair: false,
+      templateVars: {},
+      artifactContext: { runId: "run-progress-non-verbose" },
+      trace: false,
+      verbose: false,
+    });
+
+    const verifyProgress = output.emit.mock.calls
+      .map((call) => call[0])
+      .find((event) => event?.kind === "progress" && event.progress?.label === "verify");
+
+    expect(verifyProgress).toBeDefined();
+  });
+
+  it("emits 'resolve' and 'resolveRepair' progress events when resolve-informed repair runs", async () => {
+    const output = { emit: vi.fn() };
+
+    const repair = vi.fn()
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "r1", verificationStdout: "v1" })
+      .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "r2", verificationStdout: "v2" })
+      .mockResolvedValueOnce({ valid: true, attempts: 1, repairStdout: "rr1", verificationStdout: "rv-ok" });
+    const resolve = vi.fn(async () => ({
+      resolved: true,
+      diagnosis: "Root cause: stale context.",
+    }));
+    const verificationStoreRead = vi.fn()
+      .mockReturnValueOnce("initial failure")
+      .mockReturnValueOnce("initial failure")
+      .mockReturnValueOnce("initial failure")
+      .mockReturnValueOnce("repair failed 1")
+      .mockReturnValueOnce("repair failed 1")
+      .mockReturnValueOnce("repair failed 2")
+      .mockReturnValueOnce("repair failed 2");
+
+    await runVerifyRepairLoop({
+      taskVerification: {
+        verify: vi.fn(async () => ({ valid: false, stdout: "NOT_OK" })),
+      },
+      taskRepair: { repair, resolve },
+      verificationStore: {
+        write: vi.fn(),
+        read: verificationStoreRead,
+        remove: vi.fn(),
+      },
+      traceWriter: { write: vi.fn(), flush: vi.fn() },
+      output,
+    }, {
+      task: createTask(),
+      source: "- [ ] ship release",
+      contextBefore: "",
+      verifyTemplate: "{{task}}",
+      repairTemplate: "{{task}}",
+      resolveTemplate: "{{task}}",
+      executionStdout: "execution output",
+      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      maxRepairAttempts: 2,
+      maxResolveRepairAttempts: 1,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext: { runId: "run-progress-resolve" },
+      trace: false,
+    });
+
+    const progressLabels = output.emit.mock.calls
+      .map((call) => call[0])
+      .filter((event) => event?.kind === "progress")
+      .map((event) => event.progress?.label);
+
+    expect(progressLabels).toEqual(
+      expect.arrayContaining(["verify", "repair", "resolve", "resolveRepair"]),
+    );
+
+    const resolveRepairProgress = output.emit.mock.calls
+      .map((call) => call[0])
+      .find((event) => event?.kind === "progress" && event.progress?.label === "resolveRepair");
+    expect(resolveRepairProgress.progress).toMatchObject({
+      label: "resolveRepair",
+      current: 1,
+      total: 1,
+      unit: "attempt",
+    });
+  });
+});
+
 describe("output similarity utilities", () => {
   describe("normalizeWorkerOutput", () => {
     it("normalizes whitespace", () => {

@@ -51,6 +51,13 @@ export interface HelpTaskOptions {
   trace: boolean;
   cliVersion: string;
   continueSession?: boolean;
+  /**
+   * When set, the rendered help template is replaced verbatim with this string
+   * before template-variable substitution and CLI block expansion. Used by
+   * embedded TUIs to launch an interactive worker session driven by a custom
+   * prompt file (e.g. `.rundown/agent.md`, `.rundown/discuss-agent.md`).
+   */
+  promptOverride?: string;
 }
 
 function isContinueFlagToken(token: string): boolean {
@@ -132,7 +139,9 @@ export function createHelpTask(
         dependencies.templateLoader,
         dependencies.pathOperations,
       );
-      const helpTemplate = buildRootHelpTemplate(templates.agent, templates.help);
+      const helpTemplate = options.promptOverride && options.promptOverride.length > 0
+        ? options.promptOverride
+        : buildRootHelpTemplate(templates.agent, templates.help);
       const renderedPrompt = renderHelpPrompt(helpTemplate, {
         cliVersion: options.cliVersion,
         workingDirectory: cwd,

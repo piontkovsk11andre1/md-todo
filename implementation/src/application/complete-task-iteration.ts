@@ -11,7 +11,6 @@ import {
   insertTraceStatisticsUsingFileSystem,
   skipRemainingSiblingsUsingFileSystem,
   syncForLoopMetadataItemsUsingFileSystem,
-  writeFixAnnotationToFile,
 } from "./checkbox-operations.js";
 import {
   afterTaskComplete,
@@ -153,7 +152,6 @@ export async function completeTaskIteration(params: {
   forLoopItems?: string[];
   terminalStop?: TerminalStopSignal;
   failOnCompleteHookError?: boolean;
-  persistFailureAnnotation?: boolean;
   traceStatisticsConfig?: TraceStatisticsConfig;
   currentRound?: number;
   totalRounds?: number;
@@ -220,7 +218,6 @@ export async function completeTaskIteration(params: {
     forLoopItems,
     terminalStop,
     failOnCompleteHookError,
-    persistFailureAnnotation = true,
     traceStatisticsConfig,
     currentRound = 1,
     totalRounds = 1,
@@ -372,16 +369,6 @@ export async function completeTaskIteration(params: {
           exitCode: 2,
           usageLimitDetected,
         });
-      if (persistFailureAnnotation) {
-        try {
-          writeFixAnnotationToFile(task, failureReason, dependencies.fileSystem);
-        } catch (error) {
-          emit({
-            kind: "warn",
-            message: msg("complete.write-fix-error", { error: String(error) }, localeMessages),
-          });
-        }
-      }
       // Surface verification details, trigger failure hooks, and terminate the run.
       emit({ kind: "error", message: surfacedFailureMessage });
       await afterTaskFailed(

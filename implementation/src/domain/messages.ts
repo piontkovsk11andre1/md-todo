@@ -138,7 +138,6 @@ export const MESSAGES = {
   "discuss.artifacts-saved": "Runtime artifacts saved at {{path}}.",
   "discuss.checkbox-changed": "Discussion changed checkbox state in {{filePath}}. Discuss mode may rewrite task text, but must not mark/unmark checkboxes.",
 
-  "complete.write-fix-error": "Failed to write verification fix annotation: {{error}}",
   "complete.parallel-blocked": "Parallel-group parent cannot auto-complete while unchecked descendants remain.",
   "complete.loop-item-done": "Loop item completed: {{item}}.",
   "complete.loop-advanced": "Loop advanced to item: {{item}} ({{remaining}} remaining).",

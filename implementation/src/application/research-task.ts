@@ -628,6 +628,7 @@ export function createResearchTask(
           });
         }
 
+        emit({ kind: "progress", progress: { label: "research" } });
         const runResult = await dependencies.workerExecutor.runWorker({
           workerPattern: resolvedWorkerPattern,
           prompt,

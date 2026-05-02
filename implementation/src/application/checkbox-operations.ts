@@ -33,7 +33,7 @@ function relocateTask(source: string, task: Task): Task {
   );
 }
 const TRACE_STATISTICS_GRANDCHILD_LABEL_PATTERN = /^(?:execution|verify|repair):\s+\S/i;
-const RUNTIME_STALE_CHILD_LABEL_PATTERN = /^(?:total time|execution|verify|repair|idle|tokens estimated|phases|verify attempts|repair attempts|fix|skip|skipped|answer|get-result|for-item|for-current):(?:\s+\S.*)?$/i;
+const RUNTIME_STALE_CHILD_LABEL_PATTERN = /^(?:total time|execution|verify|repair|idle|tokens estimated|phases|verify attempts|repair attempts|skip|skipped|answer|get-result|for-item|for-current):(?:\s+\S.*)?$/i;
 
 interface FileMutationQueue {
   locked: boolean;
@@ -566,38 +566,6 @@ export function advanceForLoopUsingFileSystem(
   });
 
   return outcome;
-}
-
-/**
- * Marks a task checked and appends a verification failure fix annotation.
- */
-export function writeFixAnnotationToFile(task: Task, failureReason: string | null, fileSystem: FileSystem): void {
-  const reason = failureReason?.trim().length ? failureReason.trim() : "Verification failed (no details).";
-  const reasonLines = reason
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const annotationLines = reasonLines.length > 0
-    ? reasonLines.map((line) => `fix: ${line}`)
-    : ["fix: Verification failed (no details)."];
-
-  withSerializedFileMutation(task.file, () => {
-    const source = fileSystem.readText(task.file);
-    const effectiveTask = relocateTask(source, task);
-    let checkedSource = source;
-    try {
-      checkedSource = markChecked(source, effectiveTask);
-    } catch (error) {
-      const lines = source.split(/\r?\n/);
-      const taskLine = lines[effectiveTask.line - 1] ?? "";
-      const taskLineAlreadyChecked = /\[[xX]\]/.test(taskLine);
-      if (!taskLineAlreadyChecked) {
-        throw error;
-      }
-    }
-    const updated = insertSubitems(checkedSource, effectiveTask, annotationLines);
-    fileSystem.writeText(task.file, updated);
-  });
 }
 
 /**

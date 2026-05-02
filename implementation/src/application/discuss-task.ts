@@ -655,6 +655,7 @@ export function createDiscussTask(
 
       try {
         // Invoke worker in TUI mode to collect discussion output.
+        emit({ kind: "progress", progress: { label: "discuss" } });
         if (verbose) {
           emit({
             kind: "info",

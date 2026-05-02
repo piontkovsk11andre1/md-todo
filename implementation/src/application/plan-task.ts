@@ -873,6 +873,16 @@ export function createPlanTask(
               });
             }
             const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
+            emit({
+              kind: "progress",
+              progress: {
+                label: "plan",
+                detail: scanLabel,
+                current: scanIndex,
+                total: scanStrategy.mode === "bounded" ? scanStrategy.scanCount : undefined,
+                unit: "scan",
+              },
+            });
             const runResult = await dependencies.workerExecutor.runWorker({
               workerPattern: resolvedWorkerPattern,
               prompt: scanPrompt,
@@ -1137,6 +1147,16 @@ export function createPlanTask(
               }
 
               const planPhaseTrace = beginPlanPhaseTrace(resolvedWorkerCommand);
+              emit({
+                kind: "progress",
+                progress: {
+                  label: "plan",
+                  detail: deepTaskLabel,
+                  current: deepTaskIndex + 1,
+                  total: deepCandidates.length,
+                  unit: "deep-task",
+                },
+              });
               const runResult = await dependencies.workerExecutor.runWorker({
                 workerPattern: resolvedWorkerPattern,
                 prompt: deepPrompt,

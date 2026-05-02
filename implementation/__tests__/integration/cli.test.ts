@@ -8940,7 +8940,7 @@ describe.sequential("CLI integration", () => {
     expect(stderrOutput.includes("MIDDLE_STDERR_OMIT")).toBe(false);
   });
 
-  it("run returns 2 on verification failure, skips completion side effects, and writes fix annotation", async () => {
+  it("run returns 2 on verification failure and skips completion side effects", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     fs.writeFileSync(roadmapPath, "- [ ] cli: echo hello\n", "utf-8");
@@ -8970,11 +8970,7 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("Verification failed"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Committed:"))).toBe(false);
     expect(result.logs.some((line) => line.includes("hook-ran"))).toBe(false);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] cli: echo hello",
-      "  - fix: Verification worker returned empty output. Expected OK or a short failure reason.",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] cli: echo hello\n");
   });
 
   it("run surfaces verification reason after failed repair attempts", async () => {
@@ -8998,14 +8994,10 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("Last validation error: release validation still failing"))).toBe(true);
     const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
     expect(stderrOutput.includes("release validation still failing")).toBe(true);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] Write docs",
-      "  - fix: release validation still failing",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Write docs\n");
   });
 
-  it("run writes checked task with fix annotation when verification fails", async () => {
+  it("run leaves task unchecked when verification fails", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     fs.writeFileSync(roadmapPath, "- [ ] Write docs\n", "utf-8");
@@ -9021,14 +9013,10 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(2);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] Write docs",
-      "  - fix: release validation still failing",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Write docs\n");
   });
 
-  it("run still returns exit code 2 when verification fails after writing fix annotation", async () => {
+  it("run still returns exit code 2 when verification fails", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     fs.writeFileSync(roadmapPath, "- [ ] Verify release docs\n", "utf-8");
@@ -9044,14 +9032,10 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(2);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] Verify release docs",
-      "  - fix: release verification failed",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Verify release docs\n");
   });
 
-  it("run writes fallback fix annotation when verification has no details", async () => {
+  it("run leaves task unchecked when verification has no details", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     fs.writeFileSync(roadmapPath, "- [ ] Write docs\n", "utf-8");
@@ -9067,11 +9051,7 @@ describe.sequential("CLI integration", () => {
     ], workspace);
 
     expect(result.code).toBe(2);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] Write docs",
-      "  - fix: Verification failed (no details).",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Write docs\n");
   });
 
   it("run surfaces the no-details verification sentinel in end-to-end console output", async () => {
@@ -9094,11 +9074,7 @@ describe.sequential("CLI integration", () => {
     expect(result.errors.some((line) => line.includes("Verification failed (no details)."))).toBe(true);
     const stderrOutput = stripAnsi([...result.errors, ...result.stderrWrites].join("\n"));
     expect(stderrOutput.includes("Verification failed (no details).")).toBe(true);
-    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe([
-      "- [x] Write docs",
-      "  - fix: Verification failed (no details).",
-      "",
-    ].join("\n"));
+    expect(fs.readFileSync(roadmapPath, "utf-8")).toBe("- [ ] Write docs\n");
   });
 
   it("run forwards --commit-message template when used with --commit", async () => {
@@ -10035,19 +10011,27 @@ describe.sequential("CLI integration", () => {
     expect(sourceAfterFailure).toContain("- [ ] for: Alpha, Beta");
     expect(sourceAfterFailure).toContain("  - for-current: Beta");
     expect(sourceAfterFailure).not.toContain("for-current: Alpha");
-    expect(sourceAfterFailure).toContain("  - [x] Do that");
-    expect(sourceAfterFailure).toContain("beta still failing verification");
+    expect(sourceAfterFailure).toContain("  - [ ] Do that");
+    expect(firstResult.errors.some((line) => line.includes("beta still failing verification"))).toBe(true);
 
-    const retryResult = await runCli([
-      "run",
-      "roadmap.md",
-      "--no-repair",
-      "--worker",
-      "node",
-      workerScriptPath.replace(/\\/g, "/"),
-    ], workspace);
+    let retryCode: number | null = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const retryResult = await runCli([
+        "run",
+        "roadmap.md",
+        "--no-repair",
+        "--worker",
+        "node",
+        workerScriptPath.replace(/\\/g, "/"),
+      ], workspace);
+      retryCode = retryResult.code;
+      const sourceNow = fs.readFileSync(roadmapPath, "utf-8");
+      if (sourceNow.includes("- [x] for: Alpha, Beta")) {
+        break;
+      }
+    }
 
-    expect(retryResult.code).toBe(0);
+    expect(retryCode).toBe(0);
     const finalSource = fs.readFileSync(roadmapPath, "utf-8");
     expect(finalSource).toContain("- [x] for: Alpha, Beta");
     expect(finalSource).not.toContain("for-current:");

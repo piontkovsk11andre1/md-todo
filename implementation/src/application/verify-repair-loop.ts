@@ -428,6 +428,7 @@ export async function runVerifyRepairLoop(
   }
 
   // Always run one initial verification before considering repairs.
+  emit({ kind: "progress", progress: { label: "verify", detail: "initial", current: 1, unit: "attempt" } });
   if (input.verbose) {
     emit({ kind: "info", message: msg("verify.initial-verbose", {}, localeMessages) });
     emit({ kind: "info", message: msg("verify.running-verbose", {}, localeMessages) });
@@ -544,6 +545,16 @@ export async function runVerifyRepairLoop(
     repairAttempts = attempts;
     totalRepairAttempts = attempts;
     emitRepairAttempt(attempts, previousFailure);
+    emit({
+      kind: "progress",
+      progress: {
+        label: "repair",
+        detail: `attempt ${attempts}/${input.maxRepairAttempts}`,
+        current: attempts,
+        total: input.maxRepairAttempts,
+        unit: "attempt",
+      },
+    });
     emit({
       kind: "info",
       message: msg("verify.repair-attempt-start", {
@@ -683,6 +694,7 @@ export async function runVerifyRepairLoop(
   let resolveDiagnosis = seededResolveDiagnosis;
   if (!resolveDiagnosis && input.maxRepairAttempts >= 2 && input.resolveTemplate && dependencies.taskRepair.resolve) {
     emitResolveAttempt(previousFailure, attempts);
+    emit({ kind: "progress", progress: { label: "resolve", detail: "diagnosing" } });
     emit({
       kind: "warn",
       message: msg("verify.repair-exhausted", {}, localeMessages),
@@ -778,6 +790,16 @@ export async function runVerifyRepairLoop(
       resolveRepairAttempts += 1;
       repairAttempts = attempts + resolveRepairAttempts;
       totalRepairAttempts = repairAttempts;
+      emit({
+        kind: "progress",
+        progress: {
+          label: "resolveRepair",
+          detail: `attempt ${resolveRepairAttempts}/${maxResolveRepairAttempts}`,
+          current: resolveRepairAttempts,
+          total: maxResolveRepairAttempts,
+          unit: "attempt",
+        },
+      });
       emit({
         kind: "info",
         message: indentRepairMessage("Applying resolve diagnosis to repair attempt "
