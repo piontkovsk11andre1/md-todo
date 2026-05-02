@@ -1,11 +1,15 @@
+import { createStatusProbeRegistry } from "../status-probes.js";
+
 const MAIN_MENU_ITEMS = Object.freeze([
-  { sceneId: "continue", label: "Continue", statusText: "loading..." },
-  { sceneId: "newWork", label: "New Work", statusText: "..." },
-  { sceneId: "workers", label: "Workers", statusText: "..." },
-  { sceneId: "profiles", label: "Profiles", statusText: "..." },
-  { sceneId: "settings", label: "Settings", statusText: "..." },
-  { sceneId: "help", label: "Help", statusText: "..." },
+  { sceneId: "continue", label: "Continue", probeId: "continue" },
+  { sceneId: "newWork", label: "New Work", probeId: "newWork" },
+  { sceneId: "workers", label: "Workers", probeId: "workers" },
+  { sceneId: "profiles", label: "Profiles", probeId: "profiles" },
+  { sceneId: "settings", label: "Settings", probeId: "settings" },
+  { sceneId: "help", label: "Help", probeId: "help" },
 ]);
+
+const statusProbeRegistry = createStatusProbeRegistry();
 
 function normalizeSelectionIndex(index) {
   if (!Number.isInteger(index) || MAIN_MENU_ITEMS.length === 0) {
@@ -23,15 +27,23 @@ export function getMainMenuItems() {
   return MAIN_MENU_ITEMS;
 }
 
-export function getMainMenuRows(state) {
+export function getMainMenuRows(state, { probeRegistry = statusProbeRegistry } = {}) {
   const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0);
-  return MAIN_MENU_ITEMS.map((item, index) => ({
-    sceneId: item.sceneId,
-    label: item.label,
-    statusText: item.statusText,
-    isActive: index === selectedIndex,
-    index,
-  }));
+  return MAIN_MENU_ITEMS.map((item, index) => {
+    const status = probeRegistry.getProbeStatus(item.probeId);
+    return {
+      sceneId: item.sceneId,
+      label: item.label,
+      statusText: status.text,
+      statusTone: status.tone,
+      isActive: index === selectedIndex,
+      index,
+    };
+  });
+}
+
+export async function refreshMainMenuStatuses({ probeRegistry = statusProbeRegistry } = {}) {
+  await probeRegistry.refreshAllProbes();
 }
 
 export function getSelectedMainMenuItem(state) {

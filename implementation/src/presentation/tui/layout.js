@@ -16,9 +16,22 @@ function truncatePlain(text, maxLength) {
     return value;
   }
   if (maxLength === 1) {
-    return ".";
+    return "…";
   }
-  return `${value.slice(0, maxLength - 1)}...`;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function getStatusToneColor(tone) {
+  if (tone === "ok") {
+    return pc.green;
+  }
+  if (tone === "warn") {
+    return pc.yellow;
+  }
+  if (tone === "error") {
+    return pc.red;
+  }
+  return pc.dim;
 }
 
 function formatMainMenuLine(row, viewportColumns) {
@@ -27,11 +40,14 @@ function formatMainMenuLine(row, viewportColumns) {
   const leftRaw = `${marker} ${row.index + 1}. ${row.label}`;
   const rightRaw = row.statusText || "...";
   const minGap = 2;
-  const maxLeft = Math.max(12, width - rightRaw.length - minGap);
+  const maxRight = Math.max(1, Math.floor(width * 0.55));
+  const right = truncatePlain(rightRaw, maxRight);
+  const maxLeft = Math.max(12, width - right.length - minGap);
   const left = truncatePlain(leftRaw, maxLeft);
-  const gap = Math.max(minGap, width - left.length - rightRaw.length);
-  const line = `${left}${" ".repeat(gap)}${rightRaw}`;
-  return row.isActive ? pc.yellow(pc.bold(line)) : pc.white(line);
+  const gap = Math.max(minGap, width - left.length - right.length);
+  const leftColored = row.isActive ? pc.yellow(pc.bold(left)) : pc.white(left);
+  const rightColored = getStatusToneColor(row.statusTone)(right);
+  return `${leftColored}${" ".repeat(gap)}${rightColored}`;
 }
 
 function pushGap(lines, count) {
