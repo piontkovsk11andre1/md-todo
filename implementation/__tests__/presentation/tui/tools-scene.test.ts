@@ -12,6 +12,7 @@ import {
   findBuiltInToolDocsLine,
   inspectCustomToolTemplate,
   inspectSelectedCustomTool,
+  reloadCustomToolsAction,
   renderToolsSceneLines,
   resolveBuiltInToolDocsTarget,
   resolveToolDirectories,
@@ -631,5 +632,113 @@ describe("tools scene edit prompt", () => {
 
     expect(reloadCalled).toBe(false);
     expect(next.banner).toBe("no editor available");
+  });
+});
+
+describe("tools scene reload action", () => {
+  let workspaceRoot: string;
+
+  beforeEach(() => {
+    workspaceRoot = makeTempDir("tools-scene-reload-");
+  });
+
+  afterEach(() => {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  it("reloadCustomToolsAction re-runs discovery and surfaces the new entries", async () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const toolsDir = path.join(configDir, "tools");
+    fs.mkdirSync(toolsDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({ toolDirs: ["tools"] }));
+    fs.writeFileSync(path.join(toolsDir, "summarize.md"), "template");
+
+    const initialState = {
+      ...createToolsSceneState(),
+      configDirPath: configDir,
+      loading: false,
+      customToolWinners: [],
+      customTools: [],
+      toolDirectories: [toolsDir],
+      builtInsVisible: false,
+      selectedIndex: 0,
+    };
+
+    // Add another tool on disk after initial discovery to simulate a change.
+    fs.writeFileSync(path.join(toolsDir, "triage.js"), "module.exports = {};\n");
+
+    const reload = async ({ state }: any) => {
+      const { directories, entries, tools } = discoverCustomTools({ configDirPath: configDir });
+      return {
+        ...state,
+        loading: false,
+        configDirPath: configDir,
+        toolDirectories: directories,
+        customTools: entries,
+        customToolWinners: tools,
+      };
+    };
+
+    const next: any = await reloadCustomToolsAction({
+      state: initialState,
+      currentWorkingDirectory: workspaceRoot,
+      reload,
+    });
+
+    expect(next.loading).toBe(false);
+    expect(next.customToolWinners.map((tool: any) => tool.name)).toEqual([
+      "summarize",
+      "triage",
+    ]);
+    expect(next.builtInsVisible).toBe(false);
+    expect(next.banner).toContain("Reloaded 2 custom tools");
+    expect(next.banner).toContain("0 shadowed");
+    expect(next.banner).toContain("1 directory");
+  });
+
+  it("reloadCustomToolsAction clamps selectedIndex when the winner list shrinks", async () => {
+    const initialState = {
+      ...createToolsSceneState(),
+      loading: false,
+      selectedIndex: 5,
+      builtInsVisible: true,
+    };
+
+    const reload = async ({ state }: any) => ({
+      ...state,
+      loading: false,
+      customToolWinners: [{ name: "alpha" }],
+      customTools: [{ name: "alpha" }],
+      toolDirectories: ["/tmp/tools"],
+    });
+
+    const next: any = await reloadCustomToolsAction({
+      state: initialState,
+      reload,
+    });
+
+    expect(next.selectedIndex).toBe(0);
+    expect(next.banner).toContain("Reloaded 1 custom tool");
+  });
+
+  it("reloadCustomToolsAction surfaces failure without resetting state", async () => {
+    const initialState = {
+      ...createToolsSceneState(),
+      loading: false,
+      customToolWinners: [{ name: "kept" }],
+      customTools: [{ name: "kept" }],
+      toolDirectories: ["/tmp/tools"],
+    };
+
+    const next: any = await reloadCustomToolsAction({
+      state: initialState,
+      reload: async () => {
+        throw new Error("disk unreadable");
+      },
+    });
+
+    expect(next.banner).toContain("Reload failed");
+    expect(next.banner).toContain("disk unreadable");
+    expect(next.customToolWinners).toEqual(initialState.customToolWinners);
   });
 });

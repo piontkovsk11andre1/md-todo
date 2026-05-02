@@ -527,6 +527,70 @@ export async function editSelectedCustomTool({
   };
 }
 
+/**
+ * Forces re-discovery of custom tools from the configured `toolDirs` and
+ * refreshes the visible custom/shadowed entries. Bound to the `[r] reload
+ * tool dirs` action in the Tools scene.
+ *
+ * Returns the updated scene state with `loading` cleared, the freshly
+ * discovered `customTools`/`customToolWinners`/`toolDirectories`, the
+ * previous `selectedIndex` clamped against the new winner list, and a
+ * concise confirmation banner summarizing how many tools, shadowed entries,
+ * and directories were rediscovered. Built-in catalog visibility is left
+ * untouched so the user's `[b]` choice persists across reloads.
+ *
+ * The optional `reload` argument is injectable for testing; it defaults to
+ * `reloadToolsSceneState` which performs the actual filesystem discovery.
+ * On reload failure, the previous scene state is preserved (no reset of
+ * the visible entries) and a banner describes the failure.
+ */
+export async function reloadCustomToolsAction({
+  state,
+  currentWorkingDirectory = process.cwd(),
+  reload: reloadOverride,
+} = {}) {
+  const sceneState = state ?? createToolsSceneState();
+  const reloader = typeof reloadOverride === "function"
+    ? reloadOverride
+    : reloadToolsSceneState;
+
+  let reloaded;
+  try {
+    reloaded = await reloader({
+      state: { ...sceneState, banner: "" },
+      currentWorkingDirectory,
+    });
+  } catch (caught) {
+    const message = caught && caught.message ? caught.message : String(caught);
+    return {
+      ...sceneState,
+      banner: `Reload failed: ${message}`,
+    };
+  }
+
+  const winners = Array.isArray(reloaded?.customToolWinners)
+    ? reloaded.customToolWinners
+    : [];
+  const entries = Array.isArray(reloaded?.customTools)
+    ? reloaded.customTools
+    : [];
+  const directories = Array.isArray(reloaded?.toolDirectories)
+    ? reloaded.toolDirectories
+    : [];
+  const shadowedCount = entries.length - winners.length;
+
+  const directoryWord = directories.length === 1 ? "directory" : "directories";
+  const toolsWord = winners.length === 1 ? "tool" : "tools";
+  const banner = `Reloaded ${winners.length} custom ${toolsWord} (${shadowedCount} shadowed) from ${directories.length} ${directoryWord}.`;
+
+  return {
+    ...reloaded,
+    selectedIndex: clampSelectedIndex(sceneState.selectedIndex, winners.length),
+    builtInsVisible: sceneState.builtInsVisible !== false,
+    banner,
+  };
+}
+
 export async function reloadToolsSceneState({
   state,
   currentWorkingDirectory = process.cwd(),
