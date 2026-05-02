@@ -824,7 +824,7 @@ async function runAgentSession(actionKey, promptContent, runState) {
       workerPattern: { ...DEFAULT_WORKER_PATTERN },
       keepArtifacts: false,
       trace: false,
-      cliVersion: "cli-sketch",
+      cliVersion: "tui",
       promptOverride: promptContent,
     });
     runState.exitCode = exitCode;
@@ -853,7 +853,7 @@ async function releaseApp(app) {
 async function run() {
   const program = new Command();
   program
-    .name("cli-sketch")
+    .name("tui")
     .description("Interactive TUI bound to the rundown app surface (createApp).")
     .option("--fps <n>", "Render frames per second", parseFps, 12);
   program.parse(process.argv);
