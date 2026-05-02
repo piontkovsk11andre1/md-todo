@@ -122,4 +122,54 @@ describe("tools scene custom tool discovery", () => {
     expect(result.entries).toEqual([]);
     expect(result.directories).toEqual([path.join(configDir, "does-not-exist")]);
   });
+
+  it("marks duplicate tool names as shadowed and groups them under the winner", () => {
+    const configDir = path.join(workspaceRoot, ".rundown");
+    const primary = path.join(configDir, "tools");
+    const secondary = path.join(configDir, "shared-tools");
+    const tertiary = path.join(configDir, "extra-tools");
+    fs.mkdirSync(primary, { recursive: true });
+    fs.mkdirSync(secondary, { recursive: true });
+    fs.mkdirSync(tertiary, { recursive: true });
+    fs.writeFileSync(path.join(primary, "post-on-gitea.md"), "primary");
+    fs.writeFileSync(path.join(primary, "summarize.md"), "summary");
+    fs.writeFileSync(path.join(secondary, "post-on-gitea.md"), "secondary");
+    fs.writeFileSync(path.join(tertiary, "post-on-gitea.md"), "tertiary");
+    fs.writeFileSync(path.join(tertiary, "triage.js"), "module.exports = {}\n");
+    fs.writeFileSync(
+      path.join(configDir, "config.json"),
+      JSON.stringify({ toolDirs: ["tools", "shared-tools", "extra-tools"] }),
+    );
+
+    const result = discoverCustomTools({ configDirPath: configDir });
+
+    // tools array contains only winners in discovery order
+    expect(result.tools.map((tool: any) => ({ name: tool.name, directory: tool.directory }))).toEqual([
+      { name: "post-on-gitea", directory: primary },
+      { name: "summarize", directory: primary },
+      { name: "triage", directory: tertiary },
+    ]);
+
+    const winner = result.tools.find((tool: any) => tool.name === "post-on-gitea");
+    expect(winner).toBeDefined();
+    expect(winner.shadowed).toBe(false);
+    expect(winner.shadows).toHaveLength(2);
+    expect(winner.shadows.map((entry: any) => entry.directory)).toEqual([secondary, tertiary]);
+    for (const shadow of winner.shadows) {
+      expect(shadow.shadowed).toBe(true);
+      expect(shadow.shadowedBy.filePath).toBe(winner.filePath);
+    }
+
+    const summarize = result.tools.find((tool: any) => tool.name === "summarize");
+    expect(summarize.shadows).toEqual([]);
+
+    // flat entries still contains every discovered file in discovery order
+    expect(result.entries.map((entry: any) => ({ name: entry.name, directory: entry.directory, shadowed: entry.shadowed }))).toEqual([
+      { name: "post-on-gitea", directory: primary, shadowed: false },
+      { name: "summarize", directory: primary, shadowed: false },
+      { name: "post-on-gitea", directory: secondary, shadowed: true },
+      { name: "post-on-gitea", directory: tertiary, shadowed: true },
+      { name: "triage", directory: tertiary, shadowed: false },
+    ]);
+  });
 });

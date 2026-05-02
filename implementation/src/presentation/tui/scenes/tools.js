@@ -129,24 +129,57 @@ function listToolFiles(directoryPath) {
 /**
  * Discovers custom tools across the resolved tool directories, in configured
  * order. Each `.md` and `.js` file becomes an entry whose `name` is the file
- * basename without extension (lowercased). Discovery preserves directory order
- * so callers can apply first-wins precedence in later steps.
+ * basename without extension (lowercased). Discovery preserves directory order.
+ *
+ * First-wins precedence: when the same tool name appears in multiple
+ * directories, the first one encountered wins (`shadowed: false`) and any
+ * later duplicates are marked `shadowed: true`. Each winning entry receives a
+ * `shadows` array holding shadowed duplicates in discovery order so the scene
+ * can render them grouped beneath the winner. The flat `entries` array still
+ * contains every discovered file in discovery order for callers that need it.
+ *
+ * The result also exposes a `tools` array containing only winning entries in
+ * discovery order, suitable for direct rendering of the custom tool list.
  */
 export function discoverCustomTools({ configDirPath, config } = {}) {
   if (typeof configDirPath !== "string" || configDirPath.length === 0) {
-    return { directories: [], entries: [] };
+    return { directories: [], entries: [], tools: [] };
   }
 
   const directories = resolveToolDirectories(configDirPath, config);
   const entries = [];
+  const winnersByName = new Map();
+  const tools = [];
+
   for (const directory of directories) {
     const files = listToolFiles(directory);
     for (const file of files) {
-      entries.push(file);
+      const winner = winnersByName.get(file.name);
+      if (winner === undefined) {
+        const winningEntry = {
+          ...file,
+          shadowed: false,
+          shadows: [],
+        };
+        winnersByName.set(file.name, winningEntry);
+        entries.push(winningEntry);
+        tools.push(winningEntry);
+      } else {
+        const shadowedEntry = {
+          ...file,
+          shadowed: true,
+          shadowedBy: {
+            filePath: winner.filePath,
+            directory: winner.directory,
+          },
+        };
+        winner.shadows.push(shadowedEntry);
+        entries.push(shadowedEntry);
+      }
     }
   }
 
-  return { directories, entries };
+  return { directories, entries, tools };
 }
 
 export function createToolsSceneState() {
@@ -154,6 +187,7 @@ export function createToolsSceneState() {
     configDirPath: "",
     toolDirectories: [],
     customTools: [],
+    customToolWinners: [],
     loading: true,
     banner: "",
   };
@@ -173,13 +207,14 @@ export async function reloadToolsSceneState({
   const configBridge = createConfigBridge({ cwd: currentWorkingDirectory });
   const configDirPath = configBridge.configDirPath;
 
-  const { directories, entries } = discoverCustomTools({ configDirPath });
+  const { directories, entries, tools } = discoverCustomTools({ configDirPath });
 
   return {
     ...sceneState,
     configDirPath,
     toolDirectories: directories,
     customTools: entries,
+    customToolWinners: tools,
     loading: false,
   };
 }
