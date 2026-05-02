@@ -1,0 +1,171 @@
+import path from "node:path";
+import { createApp } from "../../../create-app.js";
+
+const UNRESOLVED_PATH = "(unresolved)";
+
+function safeObject(value) {
+  return value && typeof value === "object" ? value : {};
+}
+
+function resolveConfigDirCandidate(value) {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  if (value && typeof value === "object" && typeof value.configDir === "string" && value.configDir.length > 0) {
+    return value.configDir;
+  }
+  return undefined;
+}
+
+function collectAppTextOutput(event, buffer) {
+  if (event?.kind === "text" && typeof event.text === "string") {
+    buffer.push(event.text);
+  }
+}
+
+function extractLastJsonText(entries, fromIndex = 0) {
+  for (let index = entries.length - 1; index >= fromIndex; index -= 1) {
+    const text = entries[index];
+    if (typeof text !== "string") {
+      continue;
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      // Keep scanning earlier text entries.
+    }
+  }
+  return undefined;
+}
+
+async function runAppJsonCommand({ appFactory = createApp, invoke }) {
+  const textEvents = [];
+  let app;
+
+  try {
+    app = appFactory({
+      ports: {
+        output: {
+          emit(event) {
+            collectAppTextOutput(event, textEvents);
+          },
+        },
+      },
+    });
+
+    const start = textEvents.length;
+    const exitCode = await invoke(app);
+    if (typeof exitCode !== "number") {
+      throw new Error("App command returned an invalid exit code.");
+    }
+    if (exitCode !== 0) {
+      throw new Error(`App command failed with exit code ${exitCode}.`);
+    }
+
+    const payload = extractLastJsonText(textEvents, start);
+    if (payload === undefined) {
+      throw new Error("App command did not return JSON output.");
+    }
+    return payload;
+  } finally {
+    app?.releaseAllLocks?.();
+    await app?.awaitShutdown?.();
+  }
+}
+
+async function runConfigList({ appFactory, scope }) {
+  const payload = await runAppJsonCommand({
+    appFactory,
+    invoke: (app) => app.configList({
+      scope,
+      json: true,
+      showSource: false,
+    }),
+  });
+  const envelope = safeObject(payload);
+  return envelope.config;
+}
+
+async function runConfigPath({ appFactory, scope }) {
+  const payload = await runAppJsonCommand({
+    appFactory,
+    invoke: (app) => app.configPath({ scope }),
+  });
+
+  const envelope = safeObject(payload);
+  const pathValue = envelope.path;
+  if (typeof pathValue !== "string" || pathValue.length === 0) {
+    throw new Error(`App command returned invalid path for scope ${scope}.`);
+  }
+  return pathValue;
+}
+
+export function createConfigBridge({
+  appFactory = createApp,
+  cwd = process.cwd(),
+  configDirPath,
+  workerConfigPort,
+  configDirResolver,
+} = {}) {
+  const effectiveConfigDirPath = typeof configDirPath === "string" && configDirPath.length > 0
+    ? configDirPath
+    : resolveConfigDirCandidate(
+      typeof configDirResolver === "function" ? configDirResolver(cwd) : undefined,
+    ) ?? path.join(cwd, ".rundown");
+
+  function fallbackListConfig(scope) {
+    if (typeof workerConfigPort?.listValues !== "function") {
+      throw new Error("Unable to load config: app.configList failed and no fallback workerConfigPort.listValues is available.");
+    }
+    return workerConfigPort.listValues(effectiveConfigDirPath, scope);
+  }
+
+  function fallbackResolvePath(scope) {
+    if (typeof workerConfigPort?.getConfigPaths !== "function") {
+      throw new Error("Unable to resolve config path: app.configPath failed and no fallback workerConfigPort.getConfigPaths is available.");
+    }
+
+    const paths = workerConfigPort.getConfigPaths(effectiveConfigDirPath);
+    if (scope === "global") {
+      return paths.globalConfigPath ?? paths.globalCanonicalPath ?? UNRESOLVED_PATH;
+    }
+    return paths.localConfigPath;
+  }
+
+  async function listConfig(scope = "effective") {
+    try {
+      return await runConfigList({ appFactory, scope });
+    } catch {
+      return fallbackListConfig(scope);
+    }
+  }
+
+  async function resolveConfigPath(scope = "local") {
+    try {
+      const resolved = await runConfigPath({ appFactory, scope });
+      if (scope === "global" && resolved === UNRESOLVED_PATH) {
+        return UNRESOLVED_PATH;
+      }
+      return resolved;
+    } catch {
+      return fallbackResolvePath(scope);
+    }
+  }
+
+  async function resolveGlobalConfigPath() {
+    return resolveConfigPath("global");
+  }
+
+  async function loadWorkerConfig() {
+    return listConfig("effective");
+  }
+
+  return {
+    configDirPath: effectiveConfigDirPath,
+    unresolvedPathMarker: UNRESOLVED_PATH,
+    listConfig,
+    loadWorkerConfig,
+    resolveConfigPath,
+    resolveGlobalConfigPath,
+  };
+}
