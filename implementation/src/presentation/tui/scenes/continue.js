@@ -320,6 +320,29 @@ function formatPhaseCounterLine(label, counter) {
   return `${pc.bold(label + ":")} ${pc.white(`${counter.current}/${counter.total}`)}`;
 }
 
+function formatActiveProfile(state) {
+  const profileName = typeof state.activeProfileName === "string"
+    ? state.activeProfileName.trim()
+    : "";
+  return profileName.length > 0 ? profileName : "(default)";
+}
+
+function formatActiveWorker(state) {
+  const workerLabel = typeof state.activeWorkerLabel === "string"
+    ? state.activeWorkerLabel.trim()
+    : "";
+  if (workerLabel.length > 0) {
+    return workerLabel;
+  }
+  const workerPattern = state.workerPattern && typeof state.workerPattern === "object"
+    ? state.workerPattern
+    : DEFAULT_WORKER_PATTERN;
+  if (Array.isArray(workerPattern.command) && workerPattern.command.length > 0) {
+    return workerPattern.command.join(" ");
+  }
+  return "(default resolver)";
+}
+
 export async function primeContinuePreview(state, currentWorkingDirectory) {
   const resolvedSource = resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
   if (state.activeMaterializeMode === "path") {
@@ -376,11 +399,15 @@ export function renderContinueSceneLines({
 
   if (uiState === "previewing") {
     const resolvedSource = state.sourceTarget || resolveMaterializeSource(state.activeMaterializeMode, state.materializePathInput);
+    const sourcePath = resolvedSource || "(none)";
     const previewTasks = taskItems.slice(0, 3);
     lines.push(pc.bold("Continue Preview"));
     pushGap(lines, sectionGap);
     lines.push(
       `${pc.bold("Source:")} ${pc.cyan(resolvedSource)}`,
+      `${pc.bold("Source path:")} ${pc.white(sourcePath)}`,
+      `${pc.bold("Profile:")} ${pc.white(formatActiveProfile(state))}`,
+      `${pc.bold("Worker:")} ${pc.white(formatActiveWorker(state))}`,
       `${pc.bold("Task count:")} ${pc.white(String(taskItems.length))}`,
     );
     pushGap(lines, sectionGap);

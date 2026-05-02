@@ -104,9 +104,71 @@ describe("continue scene cockpit", () => {
 
       expect({ previewFrame, runningFrame, doneFrame }).toMatchInlineSnapshot(`
         {
-          "doneFrame": "Action:  materialize                                                    Phase Counters:\n+Target:  migrations/                                                   current: 2/3\n+Elapsed: 00:08\n+Tasks:   0 / 3\n+\n+Run Started:           2026-05-02 21:56:50\n+Current Task Started:  n/a (run complete)\n+\n+Operation:      REPAIR\n+Task Progress:  [----------------------------------------] 0%\n+\n+previous 048 - [x] Third unchecked task\n+\n+current  (none)\n+\n+next     (none)\n+\n+Failures: 1   Repairs: 0\n+Resolvings: 0   Resets: 0\n+\n+Recent:\n+  scan 1/4\n+  attempt 2/3\n+  verify failed for task 12\n+\n+Run failed (exit 1). Press Esc to return to menu.\n+Verification failed in step verify\n+\n+Summary: 0/3 tasks, 00:08, 1 failures, 0 repairs, 0 resolves",
-          "previewFrame": "Continue Preview\n+\n+Source: migrations/\n+Task count: 3\n+\n+next: 012 - First unchecked task\n+after: 024 - Second unchecked task\n+later: 048 - Third unchecked task\n+\n+Enter: start run. r: refresh list. Esc: back.",
-          "runningFrame": "Action:  materialize                                                    Phase Counters:\n+Target:  migrations/                                                   current: 2/3\n+Elapsed: 00:00\n+Tasks:   0 / 3\n+\n+Run Started:           2026-05-02 21:56:50\n+Current Task Started:  2026-05-02 21:56:50\n+\n+Operation:      RESOLVEREPAIR\n+Task Progress:  [----------------------------------------] 0%\n+\n+previous (none)\n+\n+current  012 - [ ] First unchecked task\n+\n+next     024 - [ ] Second unchecked task\n+\n+Failures: 0   Repairs: 0\n+Resolvings: 0   Resets: 0\n+\n+Recent:\n+  scan 1/4\n+  attempt 2/3",
+          "doneFrame": "Action:  materialize                                              Phase Counters:
+        Target:  migrations/                                              current: 2/3
+        Elapsed: 00:08
+        Tasks:   0 / 3
+
+        Run Started:          2026-05-02 17:56:50
+        Current Task Started: n/a (run complete)
+
+        Operation:     REPAIR
+        Task Progress: [----------------------------------------] 0%
+
+        previous 048 - [x] Third unchecked task
+
+        current  (none)
+
+        next     (none)
+
+        Failures: 1   Repairs: 0
+        Resolvings: 0   Resets: 0
+
+        Recent:
+          scan 1/4
+          attempt 2/3
+          verify failed for task 12
+
+        Run failed (exit 1). Press Esc to return to menu.
+        Verification failed in step verify
+
+        Summary: 0/3 tasks, 00:08, 1 failures, 0 repairs, 0 resolves",
+          "previewFrame": "Continue Preview
+
+        Source: migrations/
+        Source path: migrations/
+        Profile: (default)
+        Worker: (default resolver)
+        Task count: 3
+
+        next: 012 - First unchecked task
+        after: 024 - Second unchecked task
+        later: 048 - Third unchecked task
+
+        Enter: start run. r: refresh list. Esc: back.",
+          "runningFrame": "Action:  materialize                                              Phase Counters:
+        Target:  migrations/                                              current: 2/3
+        Elapsed: 00:00                                                    resolverepair: 2/3
+        Tasks:   0 / 3
+
+        Run Started:          2026-05-02 17:56:50
+        Current Task Started: 2026-05-02 17:56:50
+
+        Operation:     RESOLVEREPAIR
+        Task Progress: [----------------------------------------] 0%
+
+        previous (none)
+
+        current  012 - [ ] First unchecked task
+
+        next     024 - [ ] Second unchecked task
+
+        Failures: 0   Repairs: 0
+        Resolvings: 0   Resets: 0
+
+        Recent:
+          scan 1/4
+          attempt 2/3",
         }
       `);
     } finally {
