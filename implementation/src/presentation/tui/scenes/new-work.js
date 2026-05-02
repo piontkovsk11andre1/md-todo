@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
+import { getAgentsTemplate } from "../../../domain/agents-template.js";
+import { openDirectory } from "../../../infrastructure/open-directory.js";
+import { renderMissingAgentPanelLines } from "../components/missing-agent-panel.js";
 
 const DEFAULT_WORKER_PATTERN = {
   command: [],
@@ -71,6 +74,11 @@ export function renderNewWorkSceneLines({ state, sectionGap = 1 } = {}) {
 
   if (sceneState.loading) {
     lines.push(pc.dim(sceneState.hint || "Checking New Work readiness..."));
+    return lines;
+  }
+
+  if (readiness?.route === NEW_WORK_READINESS.missingAgent) {
+    lines.push(...renderMissingAgentPanelLines({ sectionGap }));
     return lines;
   }
 
@@ -182,6 +190,25 @@ export function handleNewWorkSceneInput({ rawInput, state } = {}) {
   }
 
   const route = sceneState.readiness?.route;
+  if (route === NEW_WORK_READINESS.missingAgent) {
+    if (input === "g") {
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+        action: { type: "generate-agent-template" },
+      };
+    }
+    if (input === "o") {
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+        action: { type: "open-rundown-directory" },
+      };
+    }
+  }
+
   if (route === NEW_WORK_READINESS.noEligibleWorker && input === "r") {
     return {
       handled: true,
@@ -212,6 +239,20 @@ export function handleNewWorkSceneInput({ rawInput, state } = {}) {
 
 export function isNewWorkActionKey(actionKey) {
   return actionKey === "a" || actionKey === "o";
+}
+
+export function generateNewWorkAgentPrompt({ currentWorkingDirectory }) {
+  const promptPath = path.join(currentWorkingDirectory, AGENT_MARKDOWN_PATH);
+  fs.mkdirSync(path.dirname(promptPath), { recursive: true });
+  fs.writeFileSync(promptPath, getAgentsTemplate(), "utf8");
+  return { promptPath };
+}
+
+export function openNewWorkRundownDirectory({ currentWorkingDirectory }) {
+  const rundownDirectoryPath = path.join(currentWorkingDirectory, ".rundown");
+  fs.mkdirSync(rundownDirectoryPath, { recursive: true });
+  openDirectory(rundownDirectoryPath);
+  return { rundownDirectoryPath };
 }
 
 function safeObject(value) {

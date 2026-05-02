@@ -18,8 +18,10 @@ import {
 } from "./scenes/main-menu.js";
 import {
   createNewWorkSceneState,
+  generateNewWorkAgentPrompt,
   handleNewWorkSceneInput,
   loadNewWorkSceneState,
+  openNewWorkRundownDirectory,
   renderNewWorkSceneLines,
   resetNewWorkWorkerHealth,
   startNewWorkSceneAction,
@@ -429,6 +431,52 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         const action = result.action;
         if (action?.type === "start-agent") {
           void launchNewWork(action.actionKey);
+          return;
+        }
+
+        if (action?.type === "generate-agent-template") {
+          state.newWorkSceneState = {
+            ...state.newWorkSceneState,
+            loading: true,
+            hint: "Generating .rundown/agent.md from template...",
+          };
+          void Promise.resolve()
+            .then(() => generateNewWorkAgentPrompt({ currentWorkingDirectory }))
+            .then(() => {
+              state.newWorkSceneState = {
+                ...state.newWorkSceneState,
+                loading: true,
+                hint: "Generated .rundown/agent.md. Re-checking...",
+              };
+              return loadNewWorkSceneState({ currentWorkingDirectory });
+            })
+            .then((nextState) => {
+              state.newWorkSceneState = nextState;
+              void refreshMainMenuStatusProbe("newWork");
+            })
+            .catch((error) => {
+              state.newWorkSceneState = {
+                ...state.newWorkSceneState,
+                loading: false,
+                hint: `Failed to generate .rundown/agent.md: ${error instanceof Error ? error.message : String(error)}`,
+              };
+            });
+          return;
+        }
+
+        if (action?.type === "open-rundown-directory") {
+          try {
+            openNewWorkRundownDirectory({ currentWorkingDirectory });
+            state.newWorkSceneState = {
+              ...state.newWorkSceneState,
+              hint: "Opened .rundown/ in your editor.",
+            };
+          } catch (error) {
+            state.newWorkSceneState = {
+              ...state.newWorkSceneState,
+              hint: `Failed to open .rundown/: ${error instanceof Error ? error.message : String(error)}`,
+            };
+          }
           return;
         }
 
