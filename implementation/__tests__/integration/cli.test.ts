@@ -335,12 +335,17 @@ async function runCliFromEntrypoint(
 async function withTerminalTty<T>(isTTY: boolean, callback: () => Promise<T>): Promise<T> {
   const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
   const stderrDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
 
   Object.defineProperty(process.stdout, "isTTY", {
     configurable: true,
     get: () => isTTY,
   });
   Object.defineProperty(process.stderr, "isTTY", {
+    configurable: true,
+    get: () => isTTY,
+  });
+  Object.defineProperty(process.stdin, "isTTY", {
     configurable: true,
     get: () => isTTY,
   });
@@ -358,6 +363,12 @@ async function withTerminalTty<T>(isTTY: boolean, callback: () => Promise<T>): P
       Object.defineProperty(process.stderr, "isTTY", stderrDescriptor);
     } else {
       Reflect.deleteProperty(process.stderr, "isTTY");
+    }
+
+    if (stdinDescriptor) {
+      Object.defineProperty(process.stdin, "isTTY", stdinDescriptor);
+    } else {
+      Reflect.deleteProperty(process.stdin, "isTTY");
     }
   }
 }
@@ -11175,234 +11186,115 @@ describe.sequential("CLI integration", () => {
     expect(duplicateResult.stdoutWrites.join("\n")).toContain("Usage: rundown");
   });
 
-  it("root interactive help forwards continuation once when both root flags and separator continue are provided", async () => {
+  it("root interactive invocation forwards root args to runRootTui", async () => {
     const workspace = makeTempWorkspace();
-    const spawnMock = vi.fn().mockImplementation(() => {
-      const child = new EventEmitter() as EventEmitter & { unref: () => void };
-      child.unref = vi.fn();
-      process.nextTick(() => {
-        child.emit("close", 0);
-      });
-      return child;
-    });
-
-    vi.doMock("cross-spawn", () => ({
-      default: spawnMock,
+    const runRootTuiMock = vi.fn(async () => 0);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
     }));
 
-    const result = await withTerminalTty(true, () => runCli([
-      "-c",
-      "--continue",
-      "--",
-      "node",
-      "-e",
-      "process.exit(0)",
-      "-c",
-    ], workspace));
+    const args = ["-c", "--continue"];
 
-    vi.doUnmock("cross-spawn");
+    try {
+      const result = await withTerminalTty(true, () => runCli(args, workspace));
 
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { stdio?: string }];
-    expect(cmd).toBe("node");
-    expect(options.stdio).toBe("inherit");
-    const continuationArgs = args.filter((token) => token === "-c" || token === "--continue");
-    expect(continuationArgs).toEqual(["-c"]);
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+      expect(result.code).toBe(0);
+      expectCanonicalRootWelcome(result.logs);
+      expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(runRootTuiMock).toHaveBeenCalledWith(expect.objectContaining({
+        cliVersion: expect.any(String),
+        argv: args,
+        workerPattern: expect.any(Object),
+      }));
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
   });
 
-  it("root invocation launches live help session in interactive terminals when a help worker is configured", async () => {
+  it("root interactive invocation exits 0 when TUI quits cleanly", async () => {
     const workspace = makeTempWorkspace();
-    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      workers: {
-        tui: ["node", "-e", "process.exit(0)"],
-      },
-    }, null, 2), "utf-8");
-
-    const spawnMock = vi.fn().mockImplementation(() => {
-      const child = new EventEmitter() as EventEmitter & { unref: () => void };
-      child.unref = vi.fn();
-      process.nextTick(() => {
-        child.emit("close", 0);
-      });
-      return child;
-    });
-
-    vi.doMock("cross-spawn", () => ({
-      default: spawnMock,
+    const runRootTuiMock = vi.fn(async () => 0);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
     }));
 
-    const result = await withTerminalTty(true, () => runCli([], workspace));
+    try {
+      const result = await withTerminalTty(true, () => runCli([], workspace));
 
-    vi.doUnmock("cross-spawn");
+      expect(result.code).toBe(0);
+      expectCanonicalRootWelcome(result.logs);
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
+  });
 
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [cmd, args, options] = spawnMock.mock.calls[0] as [string, string[], { stdio?: string }];
-    expect(cmd).toBe("node");
-    expect(options.stdio).toBe("inherit");
-    expect(args.some((arg) => arg.endsWith(".md"))).toBe(true);
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+  it("root interactive invocation maps SIGINT-style TUI exit to current CLI signal code", async () => {
+    const workspace = makeTempWorkspace();
+    const runRootTuiMock = vi.fn(async () => 130);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
+    }));
+
+    try {
+      const result = await withTerminalTty(true, () => runCli([], workspace));
+
+      expect(result.code).toBe(1);
+      expectCanonicalRootWelcome(result.logs);
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
   });
 
   it("root invocation honors --config-dir for help worker config and help template discovery", async () => {
     const workspace = makeTempWorkspace();
     const customConfigDir = path.join(workspace, "custom-config");
-    const workspaceConfigDir = path.join(workspace, ".rundown");
-    const workerScriptPath = path.join(workspace, "capture-help-prompt.cjs");
-    const promptCapturePath = path.join(workspace, "captured-help-prompt.txt");
-
     fs.mkdirSync(customConfigDir, { recursive: true });
-    fs.writeFileSync(path.join(customConfigDir, "config.json"), JSON.stringify({
-      workers: {
-        tui: ["node", workerScriptPath.replace(/\\/g, "/")],
-      },
-    }, null, 2), "utf-8");
-    fs.writeFileSync(path.join(customConfigDir, "help.md"), [
-      "# Custom Help Template",
-      "",
-      "marker: CONFIG_DIR_OVERRIDE_MARKER",
-      "cwd={{workingDirectory}}",
-    ].join("\n"), "utf-8");
-
-    fs.mkdirSync(workspaceConfigDir, { recursive: true });
-    fs.writeFileSync(path.join(workspaceConfigDir, "config.json"), JSON.stringify({
-      workers: {
-        tui: ["node", "-e", "process.exit(12)"],
-      },
-    }, null, 2), "utf-8");
-    fs.writeFileSync(path.join(workspaceConfigDir, "help.md"), "marker: WORKSPACE_CONFIG_MARKER\n", "utf-8");
-
-    fs.writeFileSync(workerScriptPath, [
-      "const fs = require('node:fs');",
-      "const promptPath = process.argv[process.argv.length - 1];",
-      `const capturePath = ${JSON.stringify(promptCapturePath.replace(/\\/g, "/"))};`,
-      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
-      "fs.writeFileSync(capturePath, prompt, 'utf-8');",
-      "process.exit(0);",
-      "",
-    ].join("\n"), "utf-8");
-
-    const result = await withTerminalTty(true, () => runCli([
-      "--config-dir",
-      customConfigDir,
-    ], workspace));
-
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    expect(fs.existsSync(promptCapturePath)).toBe(true);
-    const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
-    expect(capturedPrompt).toContain("CONFIG_DIR_OVERRIDE_MARKER");
-    expect(capturedPrompt).not.toContain("WORKSPACE_CONFIG_MARKER");
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
-  });
-
-  it("root interactive help expands rundown --help --everything in help templates", async () => {
-    const workspace = makeTempWorkspace();
-    const customConfigDir = path.join(workspace, "custom-config");
-    const workerScriptPath = path.join(workspace, "capture-help-prompt-from-cli-block.cjs");
-    const promptCapturePath = path.join(workspace, "captured-help-prompt-from-cli-block.txt");
-
-    fs.mkdirSync(customConfigDir, { recursive: true });
-    fs.writeFileSync(path.join(customConfigDir, "config.json"), JSON.stringify({
-      workers: {
-        tui: ["node", workerScriptPath.replace(/\\/g, "/")],
-      },
-    }, null, 2), "utf-8");
-    fs.writeFileSync(path.join(customConfigDir, "help.md"), [
-      "# Help Template",
-      "",
-      "before-cli-help-output",
-      "```cli",
-      "rundown --help --everything",
-      "```",
-      "after-cli-help-output",
-      "",
-    ].join("\n"), "utf-8");
-
-    fs.writeFileSync(workerScriptPath, [
-      "const fs = require('node:fs');",
-      "const promptPath = process.argv[process.argv.length - 1];",
-      `const capturePath = ${JSON.stringify(promptCapturePath.replace(/\\/g, "/"))};`,
-      "const prompt = fs.readFileSync(promptPath, 'utf-8');",
-      "fs.writeFileSync(capturePath, prompt, 'utf-8');",
-      "process.exit(0);",
-      "",
-    ].join("\n"), "utf-8");
-
-    const result = await withTerminalTty(true, () => runCli([
-      "--config-dir",
-      customConfigDir,
-    ], workspace));
-
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    expect(fs.existsSync(promptCapturePath)).toBe(true);
-    const capturedPrompt = fs.readFileSync(promptCapturePath, "utf-8");
-    expect(capturedPrompt).toContain("before-cli-help-output");
-    expect(capturedPrompt).toContain("<command>rundown --help --everything</command>");
-    expect(capturedPrompt).toContain("Usage: rundown [options] [command]");
-    expect(capturedPrompt).toContain("Commands:\n");
-    expect(capturedPrompt).toContain("Options:\n");
-    expect(capturedPrompt).toContain("after-cli-help-output");
-    expect(capturedPrompt).not.toContain("```cli");
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
-  });
-
-  it("root invocation falls back to static help when no interactive worker is configured", async () => {
-    const workspace = makeTempWorkspace();
-    const spawnMock = createWaitModeSpawnMock({ exitCode: 0 });
-    vi.doMock("cross-spawn", () => ({
-      default: spawnMock,
+    const runRootTuiMock = vi.fn(async () => 0);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
     }));
 
-    const result = await withTerminalTty(true, () => runCli([], workspace));
+    try {
+      const result = await withTerminalTty(true, () => runCli([
+        "--config-dir",
+        customConfigDir,
+      ], workspace));
 
-    vi.doUnmock("cross-spawn");
-
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    const normalizedEvents = normalizeOutputEvents(result.outputEvents);
-    const outputOpeningSequence = normalizedEvents.slice(0, 4).map((event) => (
-      event === `[log] ${ROOT_COMMAND_WELCOME_MESSAGE}`
-        ? "[log] <canonical-welcome>"
-        : event
-    ));
-    expect(outputOpeningSequence).toMatchInlineSnapshot(`
-      [
-        "[log] <canonical-welcome>",
-        "[log] ℹ No interactive help worker is configured. Falling back to static help output.",
-        "[stdout] Usage: rundown [options] [command]",
-        "A Markdown-native task runtime for agentic workflows.",
-      ]
-    `);
-    expect(spawnMock).not.toHaveBeenCalled();
-    const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("Usage: rundown");
+      expect(result.code).toBe(0);
+      expectCanonicalRootWelcome(result.logs);
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(runRootTuiMock).toHaveBeenCalledWith(expect.objectContaining({
+        argv: ["--config-dir", customConfigDir],
+      }));
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
   });
 
-  it("root invocation does not fail when .rundown exists without config.json", async () => {
+  it("root invocation opens TUI when interactive even without local config", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-
-    const spawnMock = createWaitModeSpawnMock({ exitCode: 0 });
-    vi.doMock("cross-spawn", () => ({
-      default: spawnMock,
+    const runRootTuiMock = vi.fn(async () => 0);
+    vi.doMock("../../src/presentation/tui/index.js", () => ({
+      runRootTui: runRootTuiMock,
     }));
 
-    const result = await withTerminalTty(true, () => runCli([], workspace));
+    try {
+      const result = await withTerminalTty(true, () => runCli([], workspace));
 
-    vi.doUnmock("cross-spawn");
-
-    expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
-    expect(spawnMock).not.toHaveBeenCalled();
-    const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("Usage: rundown");
+      expect(result.code).toBe(0);
+      expectCanonicalRootWelcome(result.logs);
+      expect(runRootTuiMock).toHaveBeenCalledTimes(1);
+      expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
+    } finally {
+      vi.doUnmock("../../src/presentation/tui/index.js");
+    }
   });
 
   it("root --help remains static and non-interactive", async () => {
