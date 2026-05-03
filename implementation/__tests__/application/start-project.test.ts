@@ -167,6 +167,7 @@ function createHarness(workspaceRoot: string): {
         },
       },
       pathOperations,
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
       workingDirectory,
     }),
     events,

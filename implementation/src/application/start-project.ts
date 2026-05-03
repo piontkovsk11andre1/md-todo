@@ -82,7 +82,7 @@ export interface StartProjectDependencies {
   gitClient: GitClient;
   output: ApplicationOutputPort;
   pathOperations: PathOperationsPort;
-  runExplore?: (source: string, cwd: string) => Promise<number>;
+  runExplore: (source: string, cwd: string) => Promise<number>;
   workingDirectory: WorkingDirectoryPort;
 }
 
@@ -822,20 +822,12 @@ function writeFileIfMissing(
 }
 
 async function runExploreSteps(
-  runExplore: StartProjectDependencies["runExplore"],
+  runExplore: (source: string, cwd: string) => Promise<number>,
   cwd: string,
   files: string[],
   emit: ApplicationOutputPort["emit"],
 ): Promise<number> {
   for (const filePath of files) {
-    if (!runExplore) {
-      emit({
-        kind: "warn",
-        message: "Explore integration is not configured; skipping enrichment for " + filePath,
-      });
-      continue;
-    }
-
     const exploreExitCode = await runExplore(filePath, cwd);
     if (exploreExitCode !== EXIT_CODE_SUCCESS) {
       emit({ kind: "error", message: "Explore failed for " + filePath });
