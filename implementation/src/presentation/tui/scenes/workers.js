@@ -426,6 +426,24 @@ export function handleWorkersInput({ rawInput, state } = {}) {
     };
   }
 
+  if (input === "H") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "open-health" },
+    };
+  }
+
+  if (input === "T") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "open-tools" },
+    };
+  }
+
   return {
     handled: false,
     state: sceneState,
