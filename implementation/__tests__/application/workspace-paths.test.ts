@@ -148,6 +148,31 @@ describe("prediction workspace config", () => {
     });
   });
 
+  it("falls back implementation directory to default when omitted from config", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            design: "docs",
+            specs: "quality/specs",
+            migrations: "changesets",
+            prediction: "predictions",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toEqual({
+      design: "docs",
+      implementation: "implementation",
+      specs: "quality/specs",
+      migrations: "changesets",
+      prediction: "predictions",
+    });
+  });
+
   it("rejects collisions when design and prediction directories are identical", () => {
     const workspaceRoot = path.join(path.sep, "repo");
     const configPath = path.join(workspaceRoot, ".rundown", "config.json");
@@ -201,6 +226,24 @@ describe("prediction workspace config", () => {
 
     expect(() => resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toThrow(
       `Invalid project config at ${configPath}: "workspace.placement.design" must be a string.`,
+    );
+  });
+
+  it("rejects non-string workspace directory values for implementation", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            implementation: 123,
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: "workspace.directories.implementation" must be a string.`,
     );
   });
 
