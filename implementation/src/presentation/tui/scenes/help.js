@@ -1,6 +1,7 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { getAgentsTemplate } from "../../../domain/agents-template.js";
 import { createConfigBridge } from "../bridges/config-bridge.js";
 import {
@@ -16,6 +17,56 @@ const EXTERNAL_LINKS = Object.freeze([
   { id: "changelog", label: "Changelog", url: "https://github.com" },
   { id: "issues", label: "Issue tracker", url: "https://github.com/issues" },
 ]);
+
+function getExternalLinkById(linkId) {
+  if (typeof linkId !== "string" || linkId.length === 0) {
+    return null;
+  }
+  for (const link of EXTERNAL_LINKS) {
+    if (link.id === linkId) {
+      return link;
+    }
+  }
+  return null;
+}
+
+function openExternalUrl(url) {
+  if (typeof url !== "string" || url.length === 0) {
+    return false;
+  }
+
+  if (process.platform === "win32") {
+    const child = spawn("cmd", ["/c", "start", "", url], {
+      detached: true,
+      stdio: "ignore",
+      shell: false,
+    });
+    child.unref();
+    return true;
+  }
+
+  if (process.platform === "darwin") {
+    const child = spawn("open", [url], {
+      detached: true,
+      stdio: "ignore",
+      shell: false,
+    });
+    child.unref();
+    return true;
+  }
+
+  if (process.platform === "linux") {
+    const child = spawn("xdg-open", [url], {
+      detached: true,
+      stdio: "ignore",
+      shell: false,
+    });
+    child.unref();
+    return true;
+  }
+
+  return false;
+}
 
 function withSectionGap(lines, sectionGap) {
   const gap = Number.isInteger(sectionGap) && sectionGap > 0 ? sectionGap : 0;
@@ -169,7 +220,7 @@ function buildHelpRows(workspaceRoot) {
       keyHint: "[o]",
       label: link.label,
       kind: "external-link",
-      target: link.url,
+      target: link.id,
     });
   }
 
@@ -231,6 +282,26 @@ export async function runHelpSceneAction({ action, state } = {}) {
     }
   }
 
+  if (action.type === "open-external-link") {
+    const link = getExternalLinkById(action.linkId);
+    if (!link) {
+      return sceneState;
+    }
+
+    try {
+      const opened = openExternalUrl(link.url);
+      return {
+        ...sceneState,
+        banner: opened ? `Opened ${link.label} in your browser.` : `Open this URL manually: ${link.url}`,
+      };
+    } catch {
+      return {
+        ...sceneState,
+        banner: `Open this URL manually: ${link.url}`,
+      };
+    }
+  }
+
   return sceneState;
 }
 
@@ -267,6 +338,10 @@ export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
   }
 
   withSectionGap(lines, sectionGap);
+  if (typeof sceneState.banner === "string" && sceneState.banner.length > 0) {
+    lines.push(pc.dim(sceneState.banner));
+    withSectionGap(lines, sectionGap);
+  }
   lines.push(pc.dim("[↵] view in pager   [o] open in browser   [Esc] back"));
   return lines;
 }
@@ -384,6 +459,32 @@ export function handleHelpInput({ rawInput, state } = {}) {
     return {
       handled: false,
       state: sceneState,
+      backToParent: false,
+    };
+  }
+
+  if (input === "o" || input === "O") {
+    const selectedRow = rows[selectedIndex];
+    if (selectedRow?.kind === "external-link" && typeof selectedRow.target === "string") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          banner: "",
+        },
+        backToParent: false,
+        action: {
+          type: "open-external-link",
+          linkId: selectedRow.target,
+        },
+      };
+    }
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        banner: "",
+      },
       backToParent: false,
     };
   }
