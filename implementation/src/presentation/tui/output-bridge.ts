@@ -1,6 +1,39 @@
 import { isBadgeOperationKey, normalizeOperationKey } from "./components/badge.ts";
+import type { App } from "../../create-app.js";
+import type { ApplicationOutputEvent } from "../../domain/ports/output-port.js";
 
-export async function releaseApp(app) {
+type RecentMessageKind = Extract<ApplicationOutputEvent, { kind: "info" | "warn" | "error" | "success" }>["kind"];
+
+type RunPhaseCounter = {
+  current: number;
+  total: number;
+};
+
+export type TuiRunState = {
+  actionKey: string | null;
+  actionLabel: string;
+  sourceTarget: string;
+  runStartedAt: number;
+  currentTaskStartedAt: number;
+  completedTasks: number;
+  totalTasks: number;
+  currentTaskIndex: number;
+  currentOperation: string;
+  currentPhaseCounter: RunPhaseCounter | null;
+  phaseCounters: Record<string, RunPhaseCounter>;
+  failures: number;
+  repairs: number;
+  resolvings: number;
+  resets: number;
+  recentMessages: Array<{ kind: RecentMessageKind; message: string; at: number }>;
+  statusMessage: string;
+  finished: boolean;
+  exitCode: number | null;
+  error: string | null;
+  app: App | null;
+};
+
+export async function releaseApp(app: App | null | undefined): Promise<void> {
   if (!app) {
     return;
   }
@@ -12,7 +45,7 @@ export async function releaseApp(app) {
   }
 }
 
-export function pushRecentMessage(runState, kind, message) {
+export function pushRecentMessage(runState: TuiRunState, kind: RecentMessageKind, message: string): void {
   if (typeof message !== "string" || message.length === 0) {
     return;
   }
@@ -22,7 +55,7 @@ export function pushRecentMessage(runState, kind, message) {
   }
 }
 
-export function createInitialRunState() {
+export function createInitialRunState(): TuiRunState {
   return {
     actionKey: null,
     actionLabel: "",
@@ -48,7 +81,7 @@ export function createInitialRunState() {
   };
 }
 
-export function applyOutputEvent(runState, event) {
+export function applyOutputEvent(runState: TuiRunState, event: ApplicationOutputEvent): void {
   switch (event.kind) {
     case "group-start": {
       runState.currentTaskStartedAt = Date.now();
@@ -85,12 +118,14 @@ export function applyOutputEvent(runState, event) {
           runState.currentOperation = counterKey;
         }
       }
-      const hasCurrent = typeof progress.current === "number" && Number.isFinite(progress.current);
-      const hasTotal = typeof progress.total === "number" && Number.isFinite(progress.total) && progress.total > 0;
+      const current = progress.current;
+      const total = progress.total;
+      const hasCurrent = typeof current === "number" && Number.isFinite(current);
+      const hasTotal = typeof total === "number" && Number.isFinite(total) && total > 0;
       if (hasCurrent && hasTotal) {
         const counter = {
-          current: Math.max(0, Math.trunc(progress.current)),
-          total: Math.max(1, Math.trunc(progress.total)),
+          current: Math.max(0, Math.trunc(current)),
+          total: Math.max(1, Math.trunc(total)),
         };
         runState.currentPhaseCounter = counter;
         if (counterKey.length > 0) {
@@ -130,7 +165,7 @@ export function applyOutputEvent(runState, event) {
   }
 }
 
-export function resolveProcessArgv(argv) {
+export function resolveProcessArgv(argv?: string[]): string[] {
   if (Array.isArray(argv)) {
     return ["node", "tui", ...argv];
   }

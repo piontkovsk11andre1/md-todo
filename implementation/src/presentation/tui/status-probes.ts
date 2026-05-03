@@ -1,6 +1,10 @@
 import { createApp } from "../../create-app.js";
+import type { App, CreateAppDependencies } from "../../create-app.js";
+import type { ApplicationOutputEvent } from "../../domain/ports/output-port.js";
 import fs from "node:fs";
 import path from "node:path";
+
+type AppFactory = (dependencies?: CreateAppDependencies) => App;
 
 const UNKNOWN_PROBE_STATUS = Object.freeze({ text: "?", tone: "muted" });
 const PENDING_PROBE_STATUS = Object.freeze({ text: "...", tone: "muted" });
@@ -78,7 +82,7 @@ function extractLastJsonText(entries, fromIndex = 0) {
   return undefined;
 }
 
-function collectAppTextOutput(event, buffer) {
+function collectAppTextOutput(event: ApplicationOutputEvent, buffer: string[]): void {
   if (event?.kind === "text" && typeof event.text === "string") {
     buffer.push(event.text);
   }
@@ -128,15 +132,15 @@ function describeEligibilityReason(candidate) {
   return "worker not eligible";
 }
 
-async function runAppJsonCommand({ appFactory = createApp, invoke }) {
+async function runAppJsonCommand({ appFactory = createApp, invoke }: { appFactory?: AppFactory; invoke: (app: App) => Promise<number> | number }) {
   const textEvents = [];
-  let app;
+  let app: App | undefined;
 
   try {
     app = appFactory({
       ports: {
         output: {
-          emit(event) {
+          emit(event: ApplicationOutputEvent) {
             collectAppTextOutput(event, textEvents);
           },
         },
@@ -155,7 +159,7 @@ async function runAppJsonCommand({ appFactory = createApp, invoke }) {
   }
 }
 
-export function createContinueProbe({ appFactory = createApp, source = CONTINUE_SOURCE } = {}) {
+export function createContinueProbe({ appFactory = createApp, source = CONTINUE_SOURCE }: { appFactory?: AppFactory; source?: string } = {}) {
   return async function runContinueProbe() {
     const pendingFiles = new Set();
     let pendingTasks = 0;
@@ -165,7 +169,7 @@ export function createContinueProbe({ appFactory = createApp, source = CONTINUE_
       app = appFactory({
         ports: {
           output: {
-            emit(event) {
+            emit(event: ApplicationOutputEvent) {
               if (event?.kind !== "task" || !event.task) {
                 return;
               }
@@ -197,7 +201,7 @@ export function createContinueProbe({ appFactory = createApp, source = CONTINUE_
   };
 }
 
-export function createNewWorkProbe({ appFactory = createApp, cwd = process.cwd() } = {}) {
+export function createNewWorkProbe({ appFactory = createApp, cwd = process.cwd() }: { appFactory?: AppFactory; cwd?: string } = {}) {
   return async function runNewWorkProbe() {
     try {
       const agentPath = path.join(cwd, AGENT_MARKDOWN_PATH);
@@ -233,7 +237,7 @@ export function createNewWorkProbe({ appFactory = createApp, cwd = process.cwd()
   };
 }
 
-export function createWorkersProbe({ appFactory = createApp } = {}) {
+export function createWorkersProbe({ appFactory = createApp }: { appFactory?: AppFactory } = {}) {
   return async function runWorkersProbe() {
     try {
       const [workerConfigPayload, workerHealthPayload] = await Promise.all([
@@ -287,7 +291,7 @@ export function createWorkersProbe({ appFactory = createApp } = {}) {
   };
 }
 
-export function createProfilesProbe({ appFactory = createApp } = {}) {
+export function createProfilesProbe({ appFactory = createApp }: { appFactory?: AppFactory } = {}) {
   return async function runProfilesProbe() {
     try {
       const [workerConfigPayload, workerHealthPayload] = await Promise.all([
@@ -337,7 +341,7 @@ export function createProfilesProbe({ appFactory = createApp } = {}) {
   };
 }
 
-export function createSettingsProbe({ appFactory = createApp } = {}) {
+export function createSettingsProbe({ appFactory = createApp }: { appFactory?: AppFactory } = {}) {
   return async function runSettingsProbe() {
     try {
       const [localConfigPayload, globalPathPayload] = await Promise.all([

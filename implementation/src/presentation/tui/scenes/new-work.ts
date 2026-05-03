@@ -2,9 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
+import type { App, CreateAppDependencies } from "../../../create-app.js";
+import type { ApplicationOutputEvent } from "../../../domain/ports/output-port.js";
 import { getAgentsTemplate } from "../../../domain/agents-template.js";
 import { openDirectory } from "../../../infrastructure/open-directory.js";
 import { renderMissingAgentPanelLines } from "../components/missing-agent-panel.ts";
+import type { TuiRunState } from "../output-bridge.ts";
+
+type AppFactory = (dependencies?: CreateAppDependencies) => App;
 
 const DEFAULT_WORKER_PATTERN = {
   command: [],
@@ -274,21 +279,21 @@ function extractLastJsonText(entries, fromIndex = 0) {
   return undefined;
 }
 
-function collectAppTextOutput(event, buffer) {
+function collectAppTextOutput(event: ApplicationOutputEvent, buffer: string[]): void {
   if (event?.kind === "text" && typeof event.text === "string") {
     buffer.push(event.text);
   }
 }
 
-async function runAppJsonCommand({ appFactory = createApp, invoke }) {
+async function runAppJsonCommand({ appFactory = createApp, invoke }: { appFactory?: AppFactory; invoke: (app: App) => Promise<number> | number }) {
   const textEvents = [];
-  let app;
+  let app: App | undefined;
 
   try {
     app = appFactory({
       ports: {
         output: {
-          emit(event) {
+          emit(event: ApplicationOutputEvent) {
             collectAppTextOutput(event, textEvents);
           },
         },
@@ -396,7 +401,7 @@ function readAgentPrompt(actionKey, workingDirectory) {
   }
 }
 
-async function runAgentSession(actionKey, promptContent, runState) {
+async function runAgentSession(actionKey: string, promptContent: string, runState: TuiRunState): Promise<number> {
   const app = createApp();
   runState.app = app;
   runState.actionKey = actionKey;
@@ -457,7 +462,7 @@ export async function startNewWorkSceneAction({
 
   teardownTuiForWorker();
 
-  let app = null;
+  let app: App | null = null;
   try {
     const sessionPromise = runAgentSession(actionKey, promptResult.content, runState);
     app = runState.app;

@@ -1,5 +1,9 @@
 import path from "node:path";
 import { createApp } from "../../../create-app.js";
+import type { App, CreateAppDependencies } from "../../../create-app.js";
+import type { ApplicationOutputEvent } from "../../../domain/ports/output-port.js";
+
+type AppFactory = (dependencies?: CreateAppDependencies) => App;
 
 const UNRESOLVED_PATH = "(unresolved)";
 
@@ -17,7 +21,7 @@ function resolveConfigDirCandidate(value) {
   return undefined;
 }
 
-function collectAppTextOutput(event, buffer) {
+function collectAppTextOutput(event: ApplicationOutputEvent, buffer: string[]): void {
   if (event?.kind === "text" && typeof event.text === "string") {
     buffer.push(event.text);
   }
@@ -38,15 +42,15 @@ function extractLastJsonText(entries, fromIndex = 0) {
   return undefined;
 }
 
-async function runAppJsonCommand({ appFactory = createApp, invoke }) {
+async function runAppJsonCommand({ appFactory = createApp, invoke }: { appFactory?: AppFactory; invoke: (app: App) => Promise<number> | number }) {
   const textEvents = [];
-  let app;
+  let app: App | undefined;
 
   try {
     app = appFactory({
       ports: {
         output: {
-          emit(event) {
+          emit(event: ApplicationOutputEvent) {
             collectAppTextOutput(event, textEvents);
           },
         },

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
+import type { App } from "../../../create-app.js";
+import type { ApplicationOutputEvent } from "../../../domain/ports/output-port.js";
 import {
   formatDuration,
   formatTaskLines,
@@ -9,7 +11,7 @@ import {
   progressBar,
 } from "../layout.ts";
 import { paintOperationBadge } from "../components/badge.ts";
-import { applyOutputEvent, createInitialRunState, pushRecentMessage } from "../output-bridge.ts";
+import { applyOutputEvent, createInitialRunState, pushRecentMessage, type TuiRunState } from "../output-bridge.ts";
 
 export const MATERIALIZE_MODES = [
   { key: "1", id: "migrations", label: "Materialize Migrations" },
@@ -127,7 +129,7 @@ export function buildMaterializeCommand(sourceTarget) {
   return `rundown materialize ${sourceTarget}`;
 }
 
-async function stopMaterializeRun(runState) {
+async function stopMaterializeRun(runState: TuiRunState): Promise<void> {
   const app = runState.app;
   try {
     app?.releaseAllLocks?.();
@@ -145,7 +147,7 @@ export async function listTasksFromSource(source) {
   const app = createApp({
     ports: {
       output: {
-        emit(event) {
+        emit(event: ApplicationOutputEvent) {
           if (event.kind === "task" && event.task) {
             const task = event.task;
             items.push({
@@ -171,11 +173,11 @@ export async function listTasksFromSource(source) {
   }
 }
 
-export function startMaterializeRun(source, runState) {
+export function startMaterializeRun(source: string, runState: TuiRunState): App {
   const app = createApp({
     ports: {
       output: {
-        emit(event) {
+        emit(event: ApplicationOutputEvent) {
           applyOutputEvent(runState, event);
         },
       },
