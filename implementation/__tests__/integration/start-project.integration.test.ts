@@ -165,7 +165,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(fs.existsSync(path.join(projectDir, "Design.md"))).toBe(false);
     expect(fs.existsSync(path.join(projectDir, "design", "current", "Target.md"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(false);
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "implementation"))).toBe(true);
@@ -1023,7 +1023,6 @@ async function runCli(args: string[], cwd: string): Promise<{
 }
 
 function readScaffoldState(projectDir: string): {
-  agentsExists: boolean;
   targetSource: string;
   migrationEntries: string[];
   implementationEntries: string[];
@@ -1077,7 +1076,6 @@ function readScaffoldState(projectDir: string): {
   const readmePath = path.join(projectDir, "README.md");
 
   return {
-    agentsExists: fs.existsSync(path.join(projectDir, "AGENTS.md")),
     targetSource: fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8"),
     migrationEntries: fs.readdirSync(path.join(projectDir, "migrations")),
     implementationEntries: fs.readdirSync(path.join(projectDir, "implementation")),

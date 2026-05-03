@@ -4,7 +4,6 @@ import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
 } from "../domain/exit-codes.js";
-import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   parseWorkspaceLinkSchema,
   serializeWorkspaceLinkSchema,
@@ -135,7 +134,6 @@ export function createStartProject(
       return EXIT_CODE_FAILURE;
     }
 
-    const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
     const rundownConfigDir = dependencies.pathOperations.join(targetDirectory, ".rundown");
     const rundownConfigPath = dependencies.pathOperations.join(rundownConfigDir, "config.json");
     const migrationsDir = dependencies.pathOperations.join(
@@ -237,8 +235,6 @@ export function createStartProject(
         emit,
       );
     }
-    writeFileIfMissing(dependencies.fileSystem, agentsPath, getAgentsTemplate(), emit);
-
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       dependencies.fileSystem.mkdir(migrationsDir, { recursive: true });
       emit({ kind: "success", message: "Created " + migrationsDir + "/" });
