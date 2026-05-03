@@ -148,6 +148,39 @@ describe("prediction workspace config", () => {
     });
   });
 
+  it("parses implementation placement override when configured", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const invocationRoot = path.join(path.sep, "repo", "work");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            implementation: "implementation-src",
+          },
+          placement: {
+            implementation: "workdir",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
+      design: "sourcedir",
+      implementation: "workdir",
+      specs: "sourcedir",
+      migrations: "sourcedir",
+      prediction: "sourcedir",
+    });
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+      design: path.join(workspaceRoot, "design"),
+      implementation: path.join(invocationRoot, "implementation-src"),
+      specs: path.join(workspaceRoot, "specs"),
+      migrations: path.join(workspaceRoot, "migrations"),
+      prediction: path.join(workspaceRoot, "prediction"),
+    });
+  });
+
   it("falls back implementation directory to default when omitted from config", () => {
     const workspaceRoot = path.join(path.sep, "repo");
     const configPath = path.join(workspaceRoot, ".rundown", "config.json");
@@ -189,6 +222,25 @@ describe("prediction workspace config", () => {
 
     expect(() => resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toThrow(
       `Invalid project config at ${configPath}: workspace directories "design" and "prediction" both resolve to "shared".`,
+    );
+  });
+
+  it("rejects collisions when implementation and specs directories are identical", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            implementation: "shared",
+            specs: "shared",
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: workspace directories "implementation" and "specs" both resolve to "shared".`,
     );
   });
 
