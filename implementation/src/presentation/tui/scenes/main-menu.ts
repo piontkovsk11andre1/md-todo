@@ -80,7 +80,16 @@ export function getMainMenuRows(state: MainMenuState, { probeRegistry = statusPr
 }
 
 export async function refreshMainMenuStatuses({ probeRegistry = statusProbeRegistry } = {}) {
-  await probeRegistry.refreshAllProbes();
+  await refreshVisibleMainMenuStatuses(undefined, { probeRegistry });
+}
+
+export async function refreshVisibleMainMenuStatuses(
+  state?: MainMenuState,
+  { probeRegistry = statusProbeRegistry } = {},
+) {
+  const menuItems = getMainMenuItems(state);
+  const visibleProbeIds = Array.from(new Set(menuItems.map((item) => item.probeId)));
+  await Promise.all(visibleProbeIds.map((probeId) => probeRegistry.refreshProbe(probeId)));
 }
 
 export async function refreshMainMenuStatusProbe(probeId: string, { probeRegistry = statusProbeRegistry } = {}) {

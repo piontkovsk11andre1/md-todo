@@ -16,7 +16,7 @@ import {
   jumpMainMenuSelection,
   moveMainMenuSelection,
   refreshMainMenuStatusProbe,
-  refreshMainMenuStatuses,
+  refreshVisibleMainMenuStatuses,
 } from "../../../src/presentation/tui/scenes/main-menu.ts";
 import {
   createNewWorkSceneState,
@@ -516,7 +516,7 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     if (state.sceneId === "mainMenu") {
       state.mainMenuHint = "";
       if (input === "r") {
-        track(refreshMainMenuStatuses({ probeRegistry }));
+        track(refreshVisibleMainMenuStatuses(state.mainMenuState, { probeRegistry }));
         return;
       }
       if (isEnter) {

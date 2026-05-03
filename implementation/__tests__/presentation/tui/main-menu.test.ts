@@ -3,6 +3,7 @@ import { createTuiHarness } from "./harness.ts";
 import {
   createMainMenuSceneState,
   getMainMenuRows,
+  refreshVisibleMainMenuStatuses,
 } from "../../../src/presentation/tui/scenes/main-menu.ts";
 import { ROW_IDS, createStatusProbeRegistry } from "../../../src/presentation/tui/status-probes.ts";
 
@@ -57,5 +58,27 @@ describe("tui main menu integration", () => {
     }
 
     expect(probeCalls.start).not.toHaveBeenCalled();
+  });
+
+  it("refreshes only visible probes for empty bootstrap menu", async () => {
+    const probeCalls = Object.fromEntries(
+      ROW_IDS.map((rowId) => [rowId, vi.fn(async () => ({ text: `${rowId}-ok`, tone: "ok" }))]),
+    ) as Record<string, ReturnType<typeof vi.fn>>;
+
+    const probeRegistry = createStatusProbeRegistry({
+      probes: probeCalls,
+      now: () => 100_000,
+    });
+
+    const state = createMainMenuSceneState({ variant: "emptyBootstrap" });
+    await refreshVisibleMainMenuStatuses(state, { probeRegistry });
+
+    expect(probeCalls.start).toHaveBeenCalledTimes(1);
+    expect(probeCalls.workers).toHaveBeenCalledTimes(1);
+    expect(probeCalls.help).toHaveBeenCalledTimes(1);
+    expect(probeCalls.continue).not.toHaveBeenCalled();
+    expect(probeCalls.newWork).not.toHaveBeenCalled();
+    expect(probeCalls.profiles).not.toHaveBeenCalled();
+    expect(probeCalls.settings).not.toHaveBeenCalled();
   });
 });

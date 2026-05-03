@@ -52,4 +52,14 @@ describe("main menu scene", () => {
     const selected = handleMainMenuInput(jumped.state, "\r");
     expect(selected.routeTo).toBe("help");
   });
+
+  it("ignores numeric jump targets outside visible bootstrap rows", () => {
+    const state = createMainMenuSceneState({ variant: "emptyBootstrap" });
+
+    const result = handleMainMenuInput(state, "4");
+
+    expect(result.state.selectedIndex).toBe(0);
+    const selected = handleMainMenuInput(result.state, "\r");
+    expect(selected.routeTo).toBe("start");
+  });
 });

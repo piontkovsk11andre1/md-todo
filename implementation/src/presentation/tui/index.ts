@@ -15,7 +15,7 @@ import {
   jumpMainMenuSelection,
   moveMainMenuSelection,
   refreshMainMenuStatusProbe,
-  refreshMainMenuStatuses,
+  refreshVisibleMainMenuStatuses,
 } from "./scenes/main-menu.ts";
 import type { MainMenuSceneId, MainMenuState } from "./scenes/main-menu.ts";
 import { detectRootWorkspaceState, type RootWorkspaceState } from "./root-workspace-state.ts";
@@ -134,7 +134,7 @@ export async function runMainMenuStartAction({
   state,
   app,
   currentWorkingDirectory,
-  refreshStatuses = refreshMainMenuStatuses,
+  refreshStatuses,
 }: {
   state: SceneRouterState;
   app: unknown;
@@ -160,7 +160,11 @@ export async function runMainMenuStartAction({
       state.mainMenuHint = workspaceState.isEmptyBootstrap
         ? "Start completed, but workspace is still not initialized."
         : "Project initialized.";
-      await refreshStatuses();
+      if (typeof refreshStatuses === "function") {
+        await refreshStatuses();
+      } else {
+        await refreshVisibleMainMenuStatuses(state.mainMenuState);
+      }
       return;
     }
 
@@ -730,7 +734,7 @@ export async function runRootTui(
       if (state.sceneId === "mainMenu") {
         state.mainMenuHint = "";
         if (input === "r") {
-          void refreshMainMenuStatuses();
+          void refreshVisibleMainMenuStatuses(state.mainMenuState);
           return;
         }
         if (isEnter) {
