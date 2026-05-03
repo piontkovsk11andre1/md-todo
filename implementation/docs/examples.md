@@ -35,8 +35,8 @@ rundown with opencode
 
 What this configures:
 
-1. `workers.default` for deterministic execution (`opencode run --file $file $bootstrap`),
-2. `workers.tui` and `commands.discuss` for interactive discussion sessions (`opencode`),
+1. `workers.default` for deterministic execution (`opencode run $bootstrap`),
+2. `workers.tui` for interactive TUI sessions (`opencode --prompt $bootstrap`) and `commands.discuss` for direct discuss sessions (`opencode`),
 3. while preserving unrelated `.rundown/config.json` keys.
 
 What happens right after configuration:
@@ -49,8 +49,8 @@ Persisted local config fragment:
 ```json
 {
   "workers": {
-    "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
-    "tui": ["opencode"]
+    "default": ["opencode", "run", "$bootstrap"],
+    "tui": ["opencode", "--prompt", "$bootstrap"]
   },
   "commands": {
     "discuss": ["opencode"]
@@ -63,7 +63,7 @@ Alias inputs such as `rundown with OpenCode` and `rundown with open-code` normal
 OpenCode behavior after this setup:
 
 1. Deterministic commands (`run`, `plan`, `research`, `reverify`) resolve to `opencode run` via `workers.default`.
-2. Interactive discussion (`discuss`) resolves to `opencode` via `workers.tui`/`commands.discuss`.
+2. Interactive discussion (`discuss`) resolves to `opencode` via `commands.discuss`, while TUI mode uses `workers.tui`.
 
 After this, worker flags are optional for standard OpenCode usage:
 

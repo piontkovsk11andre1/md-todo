@@ -61,7 +61,8 @@ rundown with Claude-Code
 
 OpenCode conventions applied by `rundown with opencode`:
 
-- Deterministic commands (`run`, `plan`, `research`, `reverify`) use `opencode run` with file-first prompt transport (`$file` + `$bootstrap`).
+- Deterministic commands (`run`, `plan`, `research`, `reverify`) use `opencode run $bootstrap`.
+- Interactive TUI sessions use prompt-first OpenCode transport (`opencode --prompt $bootstrap`).
 - Interactive discussion (`discuss`) uses base `opencode`.
 - The deterministic/interactive split is persisted via `workers.default`, `workers.tui`, and `commands.discuss`.
 
@@ -70,8 +71,8 @@ Persisted local config shape (merged into existing JSON without removing unrelat
 ```json
 {
   "workers": {
-    "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
-    "tui": ["opencode"]
+    "default": ["opencode", "run", "$bootstrap"],
+    "tui": ["opencode", "--prompt", "$bootstrap"]
   },
   "commands": {
     "discuss": ["opencode"]

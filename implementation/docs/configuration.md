@@ -37,8 +37,8 @@ Fast onboarding option:
 ```json
 {
   "workers": {
-    "default": ["opencode", "run", "--file", "$file", "$bootstrap"],
-    "tui": ["opencode"]
+    "default": ["opencode", "run", "$bootstrap"],
+    "tui": ["opencode", "--prompt", "$bootstrap"]
   },
   "commands": {
     "discuss": ["opencode"]
