@@ -952,7 +952,7 @@ describe("migrate-task", () => {
           fs.mkdirSync(draftDir, { recursive: true });
           fs.writeFileSync(
             path.join(draftDir, formatMigrationFilename(position + 1, "billing-ops-change")),
-            "# 2. Billing Ops Change\n\n- [ ] Update billing ops flow for Target.md changes.\n",
+            "# 2. Billing Ops Change\n\n- [ ] Update BillingFlow.md and Target.md handling for the translated thread brief.\n",
             "utf-8",
           );
         }
