@@ -295,7 +295,7 @@ describe("design-context revision metadata and immutability", () => {
     expect(persisted.migrations).toEqual([]);
   });
 
-  it("saves canonical design/current into design/rev.N snapshots", () => {
+  it("saves canonical design/current into design/revisions/rev.N snapshots", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
         "/repo/design": [
@@ -328,10 +328,10 @@ describe("design-context revision metadata and immutability", () => {
       },
     });
     if (saved.kind === "saved") {
-      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/design/rev.3");
+      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/design/revisions/rev.3");
       expect(normalizePath(saved.revision.sourcePath)).toBe("/repo/design/current");
     }
-    expect(fileSystem.readText("/repo/design/rev.3/Target.md")).toBe("current\n");
+    expect(fileSystem.readText("/repo/design/revisions/rev.3/Target.md")).toBe("current\n");
   });
 
   it("falls back to legacy docs/current for revisions when canonical design/current is missing", () => {
@@ -497,7 +497,7 @@ describe("design-context revision metadata and immutability", () => {
     });
 
     expect(saved.kind).toBe("saved");
-    expect(JSON.parse(fileSystem.readText("/repo/design/rev.0.meta.json"))).toEqual({
+    expect(JSON.parse(fileSystem.readText("/repo/design/revisions/rev.0.meta.json"))).toEqual({
       revision: "rev.0",
       index: 0,
       createdAt: "2026-01-02T03:04:05.000Z",
@@ -523,7 +523,7 @@ describe("design-context revision metadata and immutability", () => {
         "/repo/design": { isDirectory: true, isFile: false },
         "/repo/design/current": { isDirectory: true, isFile: false },
         "/repo/design/rev.2": { isDirectory: true, isFile: false },
-        "/repo/design/rev.3": { isDirectory: false, isFile: true },
+        "/repo/design/revisions/rev.3": { isDirectory: false, isFile: true },
       },
     });
 
@@ -543,13 +543,13 @@ describe("design-context revision metadata and immutability", () => {
       },
       files: {
         "/repo/design/current/Target.md": "draft\n",
-        "/repo/design/rev.3.meta.json": "{}\n",
+        "/repo/design/revisions/rev.3.meta.json": "{}\n",
       },
       stats: {
         "/repo/design": { isDirectory: true, isFile: false },
         "/repo/design/current": { isDirectory: true, isFile: false },
         "/repo/design/rev.2": { isDirectory: true, isFile: false },
-        "/repo/design/rev.3.meta.json": { isDirectory: false, isFile: true },
+        "/repo/design/revisions/rev.3.meta.json": { isDirectory: false, isFile: true },
       },
     });
 
@@ -593,7 +593,7 @@ describe("design-context revision metadata and immutability", () => {
       },
     });
     if (saved.kind === "saved") {
-      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/blueprint/rev.0");
+      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/blueprint/revisions/rev.0");
       expect(normalizePath(saved.revision.sourcePath)).toBe("/repo/blueprint/current");
     }
 
