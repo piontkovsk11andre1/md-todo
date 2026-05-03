@@ -79,6 +79,10 @@ import {
   releaseApp,
 } from "../../../src/presentation/tui/output-bridge.ts";
 import {
+  buildSceneLines as buildRootSceneLines,
+  createSceneRouterState,
+} from "../../../src/presentation/tui/index.ts";
+import {
   ROW_IDS,
   createStatusProbeRegistry,
 } from "../../../src/presentation/tui/status-probes.ts";
@@ -211,30 +215,7 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     getTtl: (rowId: string) => baseProbeRegistry.getTtl(rowId),
   };
 
-  const state = {
-    sceneId: "mainMenu" as SceneId,
-    sceneStack: ["mainMenu"] as SceneId[],
-    showHelpOverlay: false,
-    mainMenuHint: "",
-    mainMenuState: createMainMenuSceneState(),
-    continueUiState: "previewing" as "previewing" | "running" | "done",
-    continueSceneState: createContinueSceneState(),
-    runState: createInitialRunState(),
-    workersSceneState: createWorkersSceneState(),
-    healthSceneState: createHealthSceneState(),
-    toolsSceneState: createToolsSceneState(),
-    toolsBuiltInsVisibilitySession: createBuiltInsVisibilitySession(),
-    profilesSceneState: createProfilesSceneState(),
-    settingsSceneState: createSettingsSceneState(),
-    helpSceneState: createHelpSceneState(),
-    newWorkSceneState: createNewWorkSceneState(),
-    agentSessionPending: false,
-    workersActionPending: false,
-    healthActionPending: false,
-    toolsActionPending: false,
-    settingsActionPending: false,
-    helpActionPending: false,
-  };
+  const state = createSceneRouterState();
 
   let frameIndex = 0;
   let lastRawFrame = "";
@@ -445,51 +426,11 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     }
   }
 
-  function buildSceneLines(spacing: { sectionGap: number; hintGap: number; errorGap: number }): string[] {
-    if (state.sceneId === "continue") {
-      return renderContinueSceneLines({
-        uiState: state.continueUiState,
-        state: state.continueSceneState,
-        runState: state.runState,
-        currentWorkingDirectory,
-        sectionGap: spacing.sectionGap,
-        hintGap: spacing.hintGap,
-        errorGap: spacing.errorGap,
-      });
-    }
-    if (state.sceneId === "newWork") {
-      return renderNewWorkSceneLines({ state: state.newWorkSceneState, sectionGap: spacing.sectionGap });
-    }
-    if (state.sceneId === "workers") {
-      return renderWorkersSceneLines({ state: state.workersSceneState, sectionGap: spacing.sectionGap });
-    }
-    if (state.sceneId === "health") {
-      return renderHealthSceneLines({ state: state.healthSceneState, sectionGap: spacing.sectionGap });
-    }
-    if (state.sceneId === "tools") {
-      return renderToolsSceneLines({ state: state.toolsSceneState, sectionGap: spacing.sectionGap });
-    }
-    if (state.sceneId === "profiles") {
-      return renderProfilesSceneLines({ state: state.profilesSceneState, sectionGap: spacing.sectionGap });
-    }
-    if (state.sceneId === "settings") {
-      return renderSettingsSceneLines({
-        state: state.settingsSceneState,
-        sectionGap: spacing.sectionGap,
-        viewportColumns,
-      });
-    }
-    if (state.sceneId === "help") {
-      return renderHelpSceneLines({ state: state.helpSceneState, sectionGap: spacing.sectionGap });
-    }
-    return [];
-  }
-
   function renderFrameNow(): void {
     const spinner = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length];
     const spacing = getSceneSpacing(viewportRows);
     const statusToken = renderStatusBadge(state.sceneId, state.continueUiState, spinner, state.agentSessionPending);
-    const sceneLines = buildSceneLines(spacing);
+    const sceneLines = buildRootSceneLines(state, spacing, currentWorkingDirectory, viewportColumns);
     const lines = buildFrame({
       sceneId: state.sceneId,
       statusToken,

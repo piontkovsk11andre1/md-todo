@@ -122,7 +122,7 @@ function parseFps(value: unknown): number {
   return parsed;
 }
 
-function createSceneRouterState(): SceneRouterState {
+export function createSceneRouterState(): SceneRouterState {
   return {
     sceneId: "mainMenu",
     sceneStack: ["mainMenu"],
@@ -244,7 +244,7 @@ function applySharedNavigationGrammar(state: SceneRouterState, rawInput: string)
   return false;
 }
 
-function buildSceneLines(
+export function buildSceneLines(
   state: SceneRouterState,
   spacing: { sectionGap: number; hintGap: number; errorGap: number },
   currentWorkingDirectory: string,
