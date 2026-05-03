@@ -165,6 +165,62 @@ describe("design-context revision metadata and immutability", () => {
     });
   });
 
+  it("falls back to flat design/rev.N revisions when design/revisions exists but has no revision entries", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "revisions", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/revisions": [{ name: "notes", isDirectory: true, isFile: false }],
+        "/repo/design/revisions/notes": [{ name: "README.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/current/Target.md": "current\n",
+        "/repo/design/revisions/notes/README.md": "archive notes\n",
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.2/Target.md": "two\n",
+        "/repo/design/rev.1.meta.json": JSON.stringify({
+          revision: "rev.1",
+          index: 1,
+          createdAt: "2026-01-02T00:00:00.000Z",
+          plannedAt: "2026-01-02T00:00:00.000Z",
+          migrations: ["1. Existing.md"],
+        }),
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/revisions": { isDirectory: true, isFile: false },
+        "/repo/design/revisions/notes": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1.meta.json": { isDirectory: false, isFile: true },
+      },
+    });
+
+    const revisions = discoverDesignRevisionDirectories(fileSystem, "/repo");
+    expect(revisions.map((revision) => normalizePath(revision.absolutePath))).toEqual([
+      "/repo/design/rev.1",
+      "/repo/design/rev.2",
+    ]);
+    expect(revisions[0]?.metadata).toEqual({
+      createdAt: "2026-01-02T00:00:00.000Z",
+      label: "",
+      plannedAt: "2026-01-02T00:00:00.000Z",
+      migrations: ["1. Existing.md"],
+    });
+    expect(normalizePath(revisions[0]?.metadataPath ?? "")).toBe("/repo/design/rev.1.meta.json");
+
+    const unplanned = findLowestUnplannedRevision(fileSystem, "/repo");
+    expect(unplanned?.name).toBe("rev.2");
+  });
+
   it("returns null when all released revisions are already planned", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
@@ -676,6 +732,70 @@ describe("design-context revision metadata and immutability", () => {
       metadataPath: expect.stringMatching(/(?:\\|\/)repo(?:\\|\/)docs(?:\\|\/)rev\.4\.meta\.json$/),
     });
     expect(diff.summary).toBe("Compared rev.2 -> rev.4: 0 added 1 modified 0 removed");
+  });
+
+  it("uses flat design/rev.N metadata for explicit diff targets when design/revisions has no revisions", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "revisions", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.3", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/revisions": [{ name: "scratch", isDirectory: true, isFile: false }],
+        "/repo/design/revisions/scratch": [{ name: "ignore.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.1": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.3": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/current/Target.md": "current\n",
+        "/repo/design/revisions/scratch/ignore.md": "ignore\n",
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.3/Target.md": "three\n",
+        "/repo/design/rev.1.meta.json": JSON.stringify({
+          revision: "rev.1",
+          index: 1,
+          createdAt: "2026-01-02T03:04:05.000Z",
+          label: "baseline",
+        }),
+        "/repo/design/rev.3.meta.json": JSON.stringify({
+          revision: "rev.3",
+          index: 3,
+          createdAt: "2026-01-03T04:05:06.000Z",
+          label: "candidate",
+        }),
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/revisions": { isDirectory: true, isFile: false },
+        "/repo/design/revisions/scratch": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.3": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.3" });
+
+    expect(diff.fromRevision).toMatchObject({
+      name: "rev.1",
+      metadata: {
+        createdAt: "2026-01-02T03:04:05.000Z",
+        label: "baseline",
+      },
+      metadataPath: expect.stringMatching(/(?:\\|\/)repo(?:\\|\/)design(?:\\|\/)rev\.1\.meta\.json$/),
+    });
+    expect(diff.toTarget).toMatchObject({
+      name: "rev.3",
+      absolutePath: expect.stringMatching(/(?:\\|\/)repo(?:\\|\/)design(?:\\|\/)rev\.3$/),
+      metadata: {
+        createdAt: "2026-01-03T04:05:06.000Z",
+        label: "candidate",
+      },
+      metadataPath: expect.stringMatching(/(?:\\|\/)repo(?:\\|\/)design(?:\\|\/)rev\.3\.meta\.json$/),
+    });
   });
 
   it("uses legacy docs revisions for diff when canonical design/current is unavailable", () => {
