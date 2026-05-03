@@ -447,6 +447,15 @@ async function runMigrateLoop(input: {
       throw new Error(stagedValidationError);
     }
 
+    const stagedCoverageError = verifyStagedDraftCoverage({
+      fileSystem: dependencies.fileSystem,
+      drafts: stagedDrafts,
+      revisionDiff,
+    });
+    if (stagedCoverageError) {
+      throw new Error(stagedCoverageError);
+    }
+
     emit({
       kind: "info",
       message: "Promoting "
@@ -513,6 +522,20 @@ interface StagedDraftMigration {
 }
 
 const DRAFTED_MIGRATIONS_SUBDIR = "drafted-migrations";
+const PLACEHOLDER_DRAFT_LINE_PATTERN = /^(?:[-*]\s*\[[ xX]\]\s*)?(?:todo|to do|tbd|placeholder|implement this migration|implement migration|pending)\b/i;
+const COVERAGE_TOKEN_IGNORE = new Set([
+  "md",
+  "docs",
+  "doc",
+  "design",
+  "target",
+  "current",
+  "rev",
+  "spec",
+  "specs",
+  "src",
+  "file",
+]);
 
 function stagedDraftMigrationDirForRevision(
   artifactRunRootDir: string,
@@ -608,6 +631,141 @@ function validateStagedDraftMigrations(
   }
 
   return null;
+}
+
+function verifyStagedDraftCoverage(input: {
+  fileSystem: FileSystem;
+  drafts: readonly StagedDraftMigration[];
+  revisionDiff: DesignRevisionDiffContext;
+}): string | null {
+  const { fileSystem, drafts, revisionDiff } = input;
+  if (drafts.length === 0) {
+    return null;
+  }
+
+  const draftTexts = drafts.map((draft) => {
+    const content = fileSystem.readText(draft.filePath);
+    return {
+      fileName: draft.fileName,
+      content,
+      normalized: content.toLowerCase(),
+    };
+  });
+
+  const lowValueDrafts = draftTexts
+    .filter((draft) => !isMateriallyMeaningfulDraftContent(draft.content))
+    .map((draft) => draft.fileName);
+  if (lowValueDrafts.length > 0) {
+    return "Drafted migrations must contain materially meaningful content. Replace placeholder-only drafts: "
+      + lowValueDrafts.join(", ")
+      + ".";
+  }
+
+  const mergedDraftText = draftTexts.map((draft) => draft.normalized).join("\n");
+  const uncoveredChanges = revisionDiff.changes
+    .map((change) => change.relativePath)
+    .filter((relativePath) => !isDiffPathCoveredByDrafts(relativePath, mergedDraftText));
+  if (uncoveredChanges.length > 0) {
+    return "Drafted migrations do not appear to cover all changed design areas. Uncovered diff paths: "
+      + uncoveredChanges.join(", ")
+      + ".";
+  }
+
+  const overlappingPairs: string[] = [];
+  for (let leftIndex = 0; leftIndex < draftTexts.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < draftTexts.length; rightIndex += 1) {
+      const left = draftTexts[leftIndex]!;
+      const right = draftTexts[rightIndex]!;
+      if (areDraftsExcessivelyOverlapping(left.content, right.content)) {
+        overlappingPairs.push(left.fileName + " <-> " + right.fileName);
+      }
+    }
+  }
+
+  if (overlappingPairs.length > 0) {
+    return "Drafted migrations are excessively overlapping; split or de-duplicate responsibilities: "
+      + overlappingPairs.join(", ")
+      + ".";
+  }
+
+  return null;
+}
+
+function isMateriallyMeaningfulDraftContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.length < 40) {
+    return false;
+  }
+
+  const lines = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+  if (lines.length === 0) {
+    return false;
+  }
+
+  const nonPlaceholderLines = lines.filter((line) => !PLACEHOLDER_DRAFT_LINE_PATTERN.test(line));
+  if (nonPlaceholderLines.length === 0) {
+    return false;
+  }
+
+  return nonPlaceholderLines.some((line) => line.length >= 16);
+}
+
+function isDiffPathCoveredByDrafts(relativePath: string, mergedDraftText: string): boolean {
+  const normalizedPath = relativePath.toLowerCase().replace(/\\/g, "/");
+  if (normalizedPath.length > 0 && mergedDraftText.includes(normalizedPath)) {
+    return true;
+  }
+
+  const tokens = normalizedPath
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3)
+    .filter((token) => !COVERAGE_TOKEN_IGNORE.has(token));
+  if (tokens.length === 0) {
+    return true;
+  }
+
+  const matched = tokens.filter((token) => mergedDraftText.includes(token));
+  const requiredMatches = tokens.length >= 2 ? 2 : 1;
+  return matched.length >= requiredMatches;
+}
+
+function areDraftsExcessivelyOverlapping(leftContent: string, rightContent: string): boolean {
+  const leftTerms = collectDraftTerms(leftContent);
+  const rightTerms = collectDraftTerms(rightContent);
+  if (leftTerms.size === 0 || rightTerms.size === 0) {
+    return false;
+  }
+
+  let intersectionCount = 0;
+  for (const term of leftTerms) {
+    if (rightTerms.has(term)) {
+      intersectionCount += 1;
+    }
+  }
+
+  const smallerSize = Math.min(leftTerms.size, rightTerms.size);
+  if (smallerSize < 20) {
+    return false;
+  }
+
+  return intersectionCount / smallerSize >= 0.92;
+}
+
+function collectDraftTerms(content: string): Set<string> {
+  const terms = new Set<string>();
+  for (const token of content.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (token.length < 4) {
+      continue;
+    }
+    if (COVERAGE_TOKEN_IGNORE.has(token)) {
+      continue;
+    }
+    terms.add(token);
+  }
+  return terms;
 }
 
 

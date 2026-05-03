@@ -275,6 +275,131 @@ describe("migrate-task", () => {
       process.chdir(previousCwd);
     }
   });
+
+  it("fails before promotion when staged drafts do not cover changed diff areas", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "design", "rev.1", "BillingFlow.md"),
+      "# Billing\n\nNew billing workflow requirements.\n",
+      "utf-8",
+    );
+
+    const events: ApplicationOutputEvent[] = [];
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt }) => {
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "api-migration")),
+            "# 2. Api Migration\n\n- [ ] Update API handlers and request contracts for migrated endpoints.\n",
+            "utf-8",
+          );
+
+          return {
+            exitCode: 0,
+            stdout: "drafted migration files",
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => {
+        throw new Error("not used");
+      }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const sourceResolver: SourceResolverPort = {
+      resolveSources: vi.fn(async () => []),
+    };
+
+    const interactiveInput: InteractiveInputPort = {
+      isTTY: () => false,
+      prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      templateLoader: {
+        load: () => undefined,
+      },
+      sourceResolver,
+      workerConfigPort: {
+        load: () => undefined,
+      },
+      artifactStore,
+      interactiveInput,
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(runExplore).not.toHaveBeenCalled();
+      expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "api-migration")))).toBe(false);
+
+      const errorMessages = events
+        .filter((event) => event.kind === "error")
+        .map((event) => event.message)
+        .join("\n");
+      expect(errorMessages).toContain("Drafted migrations do not appear to cover all changed design areas");
+      expect(errorMessages).toContain("BillingFlow.md");
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
 });
 
 function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): void {
