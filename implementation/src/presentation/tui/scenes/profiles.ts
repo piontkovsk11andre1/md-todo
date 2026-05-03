@@ -546,14 +546,23 @@ export async function runProfilesSceneAction({
       };
     }
 
-    return reloadProfilesSceneStateFn({
-      state: {
+    try {
+      return await reloadProfilesSceneStateFn({
+        state: {
+          ...sceneState,
+          configPath,
+        },
+        currentWorkingDirectory,
+        keepBanner: false,
+      });
+    } catch (error) {
+      return {
         ...sceneState,
         configPath,
-      },
-      currentWorkingDirectory,
-      keepBanner: false,
-    });
+        loading: false,
+        banner: `Config load failed: ${toErrorMessage(error)}`,
+      };
+    }
   }
 
   return state ?? createProfilesSceneState();
