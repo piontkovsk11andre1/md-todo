@@ -1,5 +1,5 @@
 import { getTraceInstructions } from "../domain/defaults.js";
-import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
+import { extractCliBlocks } from "../domain/cli-block.js";
 import { type Task, parseTasks } from "../domain/parser.js";
 import {
   buildMemoryTemplateVars,
@@ -12,6 +12,7 @@ import {
   withSourceCliFailureWarning,
   withTemplateCliFailureAbort,
 } from "./cli-block-handlers.js";
+import { expandCliBlocksWithOptions } from "./cli-block-expansion.js";
 import {
   loadProjectTemplatesFromPorts,
   type ProjectTemplates,
@@ -31,89 +32,6 @@ import {
 import type { RunTaskDependencies } from "./run-task-execution.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
-
-type ExpandCliBlocksWithOptionsResult =
-  | { expandedContent: string }
-  | { earlyExitCode: number };
-
-/**
- * Expands CLI blocks for a prompt/source payload while consistently applying
- * trace and artifact options and optionally mapping expansion failures to
- * an early exit code.
- */
-async function expandCliBlocksWithOptions(params: {
-  content: string;
-  cliExpansionEnabled: boolean;
-  cliBlockExecutor: CommandExecutor;
-  cwd: string;
-  baseCliExpansionOptions: CommandExecutionOptions | undefined;
-  artifactContext: ArtifactRunContext | null;
-  traceWriter: TraceWriterPort;
-  cliTraceRunId: string | undefined;
-  nowIso: () => string;
-  artifactPhaseLabel: "cli-source" | "cli-task-template" | "cli-verify-template";
-  artifactPromptType: "source" | "task-template" | "verify-template";
-  wrapExecutionOptions: (
-    options: CommandExecutionOptions | undefined,
-  ) => CommandExecutionOptions | undefined;
-  onCliExpansionFailure?: (error: unknown) => Promise<number | null>;
-}): Promise<ExpandCliBlocksWithOptionsResult> {
-  const {
-    content,
-    cliExpansionEnabled,
-    cliBlockExecutor,
-    cwd,
-    baseCliExpansionOptions,
-    artifactContext,
-    traceWriter,
-    cliTraceRunId,
-    nowIso,
-    artifactPhaseLabel,
-    artifactPromptType,
-    wrapExecutionOptions,
-    onCliExpansionFailure,
-  } = params;
-
-  if (!cliExpansionEnabled) {
-    // Skip expansion entirely when CLI blocks are disabled.
-    return { expandedContent: content };
-  }
-
-  // Attach artifact metadata so CLI block outputs are grouped by phase and prompt type.
-  const optionsWithArtifactContext = artifactContext?.keepArtifacts
-    ? {
-      ...baseCliExpansionOptions,
-      artifactPhaseLabel,
-      artifactExtra: { promptType: artifactPromptType },
-    }
-    : baseCliExpansionOptions;
-  const optionsWithTrace = withCliTrace(
-    optionsWithArtifactContext,
-    traceWriter,
-    cliTraceRunId,
-    nowIso,
-  );
-
-  try {
-    // Expand all embedded CLI blocks before templates are consumed downstream.
-    const expandedContent = await expandCliBlocks(
-      content,
-      cliBlockExecutor,
-      cwd,
-      wrapExecutionOptions(optionsWithTrace),
-    );
-    return { expandedContent };
-  } catch (error) {
-    if (onCliExpansionFailure) {
-      // Allow callers to convert template/source expansion failures into controlled exits.
-      const failureCode = await onCliExpansionFailure(error);
-      if (failureCode !== null) {
-        return { earlyExitCode: failureCode };
-      }
-    }
-    throw error;
-  }
-}
 
 export interface PrepareTaskPromptsResult {
   expandedSource: string;
