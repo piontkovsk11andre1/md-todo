@@ -673,14 +673,20 @@ Do not modify the source Markdown task file or change its checkbox state.
 `;
 
 /**
- * Default migrate planning template used by the convergence scan loop.
+ * Default migrate drafting template used by the convergence scan loop.
  */
 export const DEFAULT_MIGRATE_TEMPLATE = `\
-You are planning migration names for a prediction-driven project.
+You are drafting staged migration documents for a prediction-driven project.
 
 ## Position
 
 - Current migration number: {{position}}
+
+## Draft staging
+
+- Write new draft migration files only in this staging directory: {{migrationDraftDir}}
+- Do not write directly to the real migrations directory: {{workspaceMigrationsPath}}
+- Do not modify existing migration files.
 
 ## Design diff ({{designRevisionFromRevision}} → {{designRevisionToTarget}})
 
@@ -719,14 +725,15 @@ You are planning migration names for a prediction-driven project.
 ## Task
 
 Inventory design changes not yet reflected in the current prediction tree.
-For each uncovered change, propose exactly one migration name as a kebab-case list item.
-If all design changes are already covered by the current prediction tree, output only: \`DONE\`
+Draft one or more candidate migration Markdown files in the staging directory so the set of drafts covers the uncovered design change for this revision.
+If all design changes are already covered by the current prediction tree, create no files and output only: \`DONE\`
 
-Rules:
-- Output format must be either:
-  - Plain list items containing only kebab-case migration names, one per line, or
-  - The single token \`DONE\`
-- Do not include titles, explanations, numbering metadata, or any extra commentary.
+Filename and content rules:
+- Draft files must use canonical migration filenames: \`N. Title.md\`.
+- Use numbers strictly greater than the current migration number.
+- If drafting multiple files, use a continuous forward range with no gaps.
+- Each file must contain materially useful migration seed content (not placeholders like "to do" only).
+- Stdout may include short status text, but do not output slug-only planning lists.
 `;
 
 /**
