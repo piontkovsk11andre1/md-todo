@@ -520,6 +520,8 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
+    expect(fs.existsSync(path.join(projectDir, "implementation"))).toBe(true);
+    expect(fs.statSync(path.join(projectDir, "implementation")).isDirectory()).toBe(true);
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
@@ -547,6 +549,8 @@ describeIfStartAvailable("start-project integration", () => {
     ], workspace);
 
     expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(projectDir, "implementation"))).toBe(true);
+    expect(fs.statSync(path.join(projectDir, "implementation")).isDirectory()).toBe(true);
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
