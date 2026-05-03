@@ -482,7 +482,8 @@ This keeps completion logic explicit and inspectable.
 
 ## Command-output blocks
 
-You can place `cli` fenced blocks in both task source Markdown files and `.rundown/` templates.
+You can place `cli` fenced blocks in both task source Markdown files and `.rundown/` templates,
+including `.rundown/tools/<name>.md` tool templates.
 
 Syntax:
 
@@ -500,6 +501,7 @@ Each non-empty, non-comment line is treated as one shell command.
 When command execution is enabled, rundown expands each `cli` block into XML before sending prompts to workers.
 
 Source files are expanded before task parsing; templates are expanded after template variables are rendered.
+This includes tool-template expansion from `.rundown/tools/<name>.md` before the corresponding tool worker run.
 
 For `run`/`discuss`/`plan`/`reverify`/`research` flows that stage worker input as `prompt.md`, the staged prompt file receives the same expanded XML content. Prompt-file handling is not a separate variant; it uses the same source/template `cli` expansion pipeline and options.
 
@@ -535,8 +537,8 @@ fatal: ambiguous argument 'does-not-exist': unknown revision or path not in the 
 
 ### CLI flags
 
-- `--ignore-cli-block` skips `cli` block execution entirely and leaves the fenced blocks unexpanded.
-- `--cli-block-timeout <ms>` sets per-command timeout in milliseconds (default `30000`; `0` disables timeout).
+- `--ignore-cli-block` skips `cli` block execution entirely and leaves the fenced blocks unexpanded (including in tool templates).
+- `--cli-block-timeout <ms>` sets per-command timeout in milliseconds (default `30000`; `0` disables timeout), including commands from tool templates.
 
 ### Shell behavior
 
