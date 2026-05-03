@@ -12,7 +12,86 @@ const CONFIG_FILE_NAME = "config.json";
 const TOOL_TEMPLATE_EXTENSION = ".md";
 const TOOL_JS_EXTENSION = ".js";
 
-function readConfigJson(configDirPath) {
+type JsonRecord = Record<string, unknown>;
+type PagerState = ReturnType<typeof createPagerState>;
+type LaunchEditorResult = ReturnType<typeof defaultLaunchEditor>;
+
+type CommandsToolsOverride = {
+  configuredName: string;
+  worker: string[];
+};
+
+type OverrideAnnotation = {
+  key: string;
+  configuredName: string;
+  worker: string[];
+  workerSummary: string;
+  description: string;
+};
+
+type ToolFileEntry = {
+  name: string;
+  extension: typeof TOOL_JS_EXTENSION | typeof TOOL_TEMPLATE_EXTENSION;
+  fileName: string;
+  filePath: string;
+  directory: string;
+};
+
+type ShadowedToolEntry = ToolFileEntry & {
+  shadowed: true;
+  shadowedBy: {
+    filePath: string;
+    directory: string;
+  };
+};
+
+type WinningToolEntry = ToolFileEntry & {
+  shadowed: false;
+  shadows: ShadowedToolEntry[];
+  override?: OverrideAnnotation;
+};
+
+type ToolsDiscoveryResult = {
+  directories: string[];
+  entries: Array<WinningToolEntry | ShadowedToolEntry>;
+  tools: WinningToolEntry[];
+};
+
+type BuiltInsVisibilitySession = {
+  explicit?: boolean;
+  openedOnce: boolean;
+};
+
+type BuiltInToolDocsTarget = {
+  docsPath: string;
+  docsAnchor: string;
+  docsSection: string;
+  docsBulletNeedle: string;
+  label: string;
+};
+
+type BuiltInToolCatalogRow = {
+  label: string;
+  prefixes: string[];
+  docsPath: string;
+  docsAnchor: string;
+  docsSection: string;
+  docsBulletNeedle: string;
+};
+
+type ToolsSceneState = {
+  configDirPath: string;
+  toolDirectories: string[];
+  customTools: Array<WinningToolEntry | ShadowedToolEntry>;
+  customToolWinners: WinningToolEntry[];
+  loading: boolean;
+  banner: string;
+  builtInsVisible: boolean;
+  selectedIndex: number;
+  pager: PagerState | null;
+};
+
+function readConfigJson(configDirPath: string): JsonRecord | undefined {
   if (typeof configDirPath !== "string" || configDirPath.length === 0) {
     return undefined;
   }
@@ -42,13 +121,13 @@ function readConfigJson(configDirPath) {
  * preserved as given in the configuration. When `toolDirs` is missing or empty,
  * the default `<config-dir>/tools` directory is returned.
  */
-export function resolveToolDirectories(configDirPath, configValue) {
+export function resolveToolDirectories(configDirPath: string, configValue?: unknown): string[] {
   if (typeof configDirPath !== "string" || configDirPath.length === 0) {
     return [];
   }
 
   const config = configValue && typeof configValue === "object" && !Array.isArray(configValue)
-    ? configValue
+    ? (configValue as JsonRecord)
     : readConfigJson(configDirPath);
 
   const candidates = config && Array.isArray(config.toolDirs) ? config.toolDirs : undefined;
@@ -77,7 +156,7 @@ export function resolveToolDirectories(configDirPath, configValue) {
   return resolved;
 }
 
-function listToolFiles(directoryPath) {
+function listToolFiles(directoryPath: string): ToolFileEntry[] {
   let entries;
   try {
     entries = fs.readdirSync(directoryPath, { withFileTypes: true });
@@ -132,11 +211,12 @@ function listToolFiles(directoryPath) {
   return files;
 }
 
-function readCommandsToolsOverrides(config) {
+function readCommandsToolsOverrides(config: unknown): Map<string, CommandsToolsOverride> {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     return new Map();
   }
-  const commands = config.commands;
+  const configRecord = config as JsonRecord;
+  const commands = configRecord.commands;
   if (!commands || typeof commands !== "object" || Array.isArray(commands)) {
     return new Map();
   }
@@ -166,14 +246,14 @@ function readCommandsToolsOverrides(config) {
   return overrides;
 }
 
-function summarizeWorkerTokens(tokens) {
+function summarizeWorkerTokens(tokens: string[]): string {
   if (!Array.isArray(tokens) || tokens.length === 0) {
     return "";
   }
   return tokens.join(" ");
 }
 
-function buildOverrideAnnotation(toolName, overrideEntry) {
+function buildOverrideAnnotation(toolName: string, overrideEntry?: CommandsToolsOverride): OverrideAnnotation | undefined {
   if (!overrideEntry) {
     return undefined;
   }
@@ -211,13 +291,19 @@ function buildOverrideAnnotation(toolName, overrideEntry) {
  * concise space-joined `workerSummary`, and a human-readable `description`
  * sub-line ("commands.tools.<name> overrides worker for this prefix").
  */
-export function discoverCustomTools({ configDirPath, config } = {}) {
+export function discoverCustomTools({
+  configDirPath,
+  config,
+}: {
+  configDirPath?: string;
+  config?: unknown;
+} = {}): ToolsDiscoveryResult {
   if (typeof configDirPath !== "string" || configDirPath.length === 0) {
     return { directories: [], entries: [], tools: [] };
   }
 
   const effectiveConfig = config && typeof config === "object" && !Array.isArray(config)
-    ? config
+    ? (config as JsonRecord)
     : readConfigJson(configDirPath);
   const overrides = readCommandsToolsOverrides(effectiveConfig);
 
@@ -295,14 +381,14 @@ export function createToolsSceneState() {
  * - `openedOnce`: `false` until the first call to `openToolsScene`; flips to
  *   `true` after that so subsequent opens use the hidden default.
  */
-export function createBuiltInsVisibilitySession() {
+export function createBuiltInsVisibilitySession(): BuiltInsVisibilitySession {
   return {
     explicit: undefined,
     openedOnce: false,
   };
 }
 
-function resolveBuiltInsVisibilityForOpen(session) {
+function resolveBuiltInsVisibilityForOpen(session?: BuiltInsVisibilitySession): boolean {
   if (!session || typeof session !== "object") {
     return true;
   }
@@ -327,7 +413,13 @@ function resolveBuiltInsVisibilityForOpen(session) {
  * Both arguments are optional: when `state` is missing a default state is
  * created; when `session` is missing the open is treated as a first run.
  */
-export function openToolsScene({ session, state } = {}) {
+export function openToolsScene({
+  session,
+  state,
+}: {
+  session?: BuiltInsVisibilitySession;
+  state?: ToolsSceneState;
+} = {}): ToolsSceneState {
   const sceneState = state ?? createToolsSceneState();
   const sessionRecord = session ?? createBuiltInsVisibilitySession();
   const builtInsVisible = resolveBuiltInsVisibilityForOpen(sessionRecord);
@@ -350,7 +442,13 @@ export function openToolsScene({ session, state } = {}) {
  * visibility, which overrides the first-run/subsequent-run defaults from
  * `openToolsScene`.
  */
-export function toggleBuiltInsVisibility({ session, state } = {}) {
+export function toggleBuiltInsVisibility({
+  session,
+  state,
+}: {
+  session?: BuiltInsVisibilitySession;
+  state?: ToolsSceneState;
+} = {}): ToolsSceneState {
   const sceneState = state ?? createToolsSceneState();
   const previous = sceneState.builtInsVisible !== false;
   const next = !previous;
@@ -366,7 +464,7 @@ export function toggleBuiltInsVisibility({ session, state } = {}) {
 
 const DEFAULT_PAGER_VIEWPORT_HEIGHT = 20;
 
-function describeToolKind(extension) {
+function describeToolKind(extension: string): "source" | "template" | "file" {
   if (extension === TOOL_JS_EXTENSION) {
     return "source";
   }
@@ -393,7 +491,11 @@ export function inspectCustomToolTemplate({
   tool,
   viewportHeight = DEFAULT_PAGER_VIEWPORT_HEIGHT,
   readFile,
-} = {}) {
+}: {
+  tool?: WinningToolEntry;
+  viewportHeight?: number;
+  readFile?: (filePath: string) => string;
+} = {}): { pager: PagerState } | { error: string } {
   if (!tool || typeof tool !== "object") {
     return { error: "No tool selected." };
   }
@@ -402,7 +504,7 @@ export function inspectCustomToolTemplate({
   }
   const reader = typeof readFile === "function"
     ? readFile
-    : (p) => fs.readFileSync(p, "utf8");
+    : (p: string) => fs.readFileSync(p, "utf8");
   let content;
   try {
     content = reader(tool.filePath);
@@ -422,7 +524,7 @@ export function inspectCustomToolTemplate({
   return { pager };
 }
 
-function clampSelectedIndex(index, length) {
+function clampSelectedIndex(index: number, length: number): number {
   if (length <= 0) {
     return 0;
   }
@@ -444,7 +546,11 @@ export function inspectSelectedCustomTool({
   state,
   viewportHeight = DEFAULT_PAGER_VIEWPORT_HEIGHT,
   readFile,
-} = {}) {
+}: {
+  state?: ToolsSceneState;
+  viewportHeight?: number;
+  readFile?: (filePath: string) => string;
+} = {}): ToolsSceneState {
   const sceneState = state ?? createToolsSceneState();
   const winners = Array.isArray(sceneState.customToolWinners)
     ? sceneState.customToolWinners
@@ -458,7 +564,7 @@ export function inspectSelectedCustomTool({
   const index = clampSelectedIndex(sceneState.selectedIndex, winners.length);
   const tool = winners[index];
   const result = inspectCustomToolTemplate({ tool, viewportHeight, readFile });
-  if (result.error) {
+  if ("error" in result) {
     return {
       ...sceneState,
       selectedIndex: index,
@@ -476,7 +582,7 @@ export function inspectSelectedCustomTool({
 /**
  * Closes any active inspect pager and returns to the Tools scene listing.
  */
-export function closeToolsScenePager({ state } = {}) {
+export function closeToolsScenePager({ state }: { state?: ToolsSceneState } = {}): ToolsSceneState {
   const sceneState = state ?? createToolsSceneState();
   if (!sceneState.pager) {
     return sceneState;
@@ -487,7 +593,7 @@ export function closeToolsScenePager({ state } = {}) {
   };
 }
 
-function describeEditorLaunchFailure(result, filePath) {
+function describeEditorLaunchFailure(result: LaunchEditorResult | undefined, filePath: string): string {
   if (!result || typeof result !== "object") {
     return `Failed to launch editor for ${filePath}.`;
   }
@@ -522,7 +628,14 @@ export async function editSelectedCustomTool({
   resumeTui,
   launchEditor: launchEditorOverride,
   reload: reloadOverride,
-} = {}) {
+}: {
+  state?: ToolsSceneState;
+  currentWorkingDirectory?: string;
+  suspendTui?: () => void;
+  resumeTui?: () => void;
+  launchEditor?: typeof defaultLaunchEditor;
+  reload?: typeof reloadToolsSceneState;
+} = {}): Promise<ToolsSceneState> {
   const sceneState = state ?? createToolsSceneState();
   const winners = Array.isArray(sceneState.customToolWinners)
     ? sceneState.customToolWinners
@@ -555,8 +668,8 @@ export async function editSelectedCustomTool({
     }
   }
 
-  let launchResult;
-  let launchError;
+  let launchResult: LaunchEditorResult | undefined;
+  let launchError: unknown;
   try {
     launchResult = launcher(tool.filePath, { cwd: currentWorkingDirectory });
   } catch (caught) {
@@ -572,8 +685,8 @@ export async function editSelectedCustomTool({
   }
 
   if (launchError) {
-    const message = launchError && launchError.message
-      ? launchError.message
+    const message = launchError && typeof launchError === "object" && "message" in launchError
+      ? String((launchError as { message?: unknown }).message ?? "")
       : String(launchError);
     return {
       ...sceneState,
@@ -600,7 +713,9 @@ export async function editSelectedCustomTool({
       currentWorkingDirectory,
     });
   } catch (caught) {
-    const message = caught && caught.message ? caught.message : String(caught);
+    const message = caught && typeof caught === "object" && "message" in caught
+      ? String((caught as { message?: unknown }).message ?? "")
+      : String(caught);
     return {
       ...sceneState,
       selectedIndex: index,
@@ -639,7 +754,11 @@ export async function reloadCustomToolsAction({
   state,
   currentWorkingDirectory = process.cwd(),
   reload: reloadOverride,
-} = {}) {
+}: {
+  state?: ToolsSceneState;
+  currentWorkingDirectory?: string;
+  reload?: typeof reloadToolsSceneState;
+} = {}): Promise<ToolsSceneState> {
   const sceneState = state ?? createToolsSceneState();
   const reloader = typeof reloadOverride === "function"
     ? reloadOverride
@@ -685,7 +804,10 @@ export async function reloadCustomToolsAction({
 export async function reloadToolsSceneState({
   state,
   currentWorkingDirectory = process.cwd(),
-} = {}) {
+}: {
+  state?: ToolsSceneState;
+  currentWorkingDirectory?: string;
+} = {}): Promise<ToolsSceneState> {
   const sceneState = {
     ...(state ?? createToolsSceneState()),
     loading: true,
@@ -735,7 +857,7 @@ export const BUILT_IN_TOOL_DOCS_PATH = "implementation/docs/configuration.md";
  *   scroll to the precise line; if not found, navigation falls back to the
  *   section heading.
  */
-export const BUILT_IN_TOOL_CATALOG = [
+export const BUILT_IN_TOOL_CATALOG: BuiltInToolCatalogRow[] = [
   {
     label: "Verify-only",
     prefixes: ["verify:", "confirm:", "check:"],
@@ -802,7 +924,7 @@ export const BUILT_IN_TOOL_CATALOG = [
   },
 ];
 
-function slugifyHeading(headingText) {
+function slugifyHeading(headingText: string): string {
   if (typeof headingText !== "string") {
     return "";
   }
@@ -826,26 +948,27 @@ function slugifyHeading(headingText) {
  * Returns `undefined` when `row` is not a recognized catalog entry so callers
  * can fall back to non-navigating behavior.
  */
-export function resolveBuiltInToolDocsTarget(row) {
+export function resolveBuiltInToolDocsTarget(row: unknown): BuiltInToolDocsTarget | undefined {
   if (!row || typeof row !== "object") {
     return undefined;
   }
-  const docsPath = typeof row.docsPath === "string" && row.docsPath.length > 0
-    ? row.docsPath
+  const rowRecord = row as JsonRecord;
+  const docsPath = typeof rowRecord.docsPath === "string" && rowRecord.docsPath.length > 0
+    ? rowRecord.docsPath
     : BUILT_IN_TOOL_DOCS_PATH;
-  const docsSection = typeof row.docsSection === "string" ? row.docsSection : "";
-  const explicitAnchor = typeof row.docsAnchor === "string" && row.docsAnchor.length > 0
-    ? row.docsAnchor
+  const docsSection = typeof rowRecord.docsSection === "string" ? rowRecord.docsSection : "";
+  const explicitAnchor = typeof rowRecord.docsAnchor === "string" && rowRecord.docsAnchor.length > 0
+    ? rowRecord.docsAnchor
     : slugifyHeading(docsSection);
-  const docsBulletNeedle = typeof row.docsBulletNeedle === "string"
-    ? row.docsBulletNeedle
+  const docsBulletNeedle = typeof rowRecord.docsBulletNeedle === "string"
+    ? rowRecord.docsBulletNeedle
     : "";
   return {
     docsPath,
     docsAnchor: explicitAnchor,
     docsSection,
     docsBulletNeedle,
-    label: typeof row.label === "string" ? row.label : "",
+    label: typeof rowRecord.label === "string" ? rowRecord.label : "",
   };
 }
 
@@ -859,7 +982,7 @@ export function resolveBuiltInToolDocsTarget(row) {
  * top of the document rather than failing. Returns the section heading line
  * when the bullet needle is missing or empty.
  */
-export function findBuiltInToolDocsLine(docsContent, target) {
+export function findBuiltInToolDocsLine(docsContent: string, target: BuiltInToolDocsTarget | undefined): number {
   if (typeof docsContent !== "string" || docsContent.length === 0 || !target) {
     return 1;
   }
@@ -905,14 +1028,14 @@ export function findBuiltInToolDocsLine(docsContent, target) {
 
 const BUILT_IN_LABEL_COLUMN_WIDTH = 20;
 
-function withSectionGap(lines, sectionGap) {
+function withSectionGap(lines: string[], sectionGap: number): void {
   const gap = Number.isInteger(sectionGap) && sectionGap > 0 ? sectionGap : 0;
   for (let index = 0; index < gap; index += 1) {
     lines.push("");
   }
 }
 
-function formatToolDirsHeader(toolDirectories, configDirPath) {
+function formatToolDirsHeader(toolDirectories: string[], configDirPath: string): string {
   if (!Array.isArray(toolDirectories) || toolDirectories.length === 0) {
     return "toolDirs: []";
   }
@@ -931,7 +1054,7 @@ function formatToolDirsHeader(toolDirectories, configDirPath) {
   return `toolDirs: [${labels.join(", ")}]`;
 }
 
-function formatToolPath(filePath, configDirPath) {
+function formatToolPath(filePath: string, configDirPath: string): string {
   if (typeof filePath !== "string" || filePath.length === 0) {
     return "";
   }
@@ -944,7 +1067,7 @@ function formatToolPath(filePath, configDirPath) {
   return filePath;
 }
 
-function paddedName(name, columnWidth) {
+function paddedName(name: string, columnWidth: number): string {
   const safe = typeof name === "string" ? name : "";
   if (safe.length >= columnWidth) {
     return `${safe} `;
@@ -952,7 +1075,7 @@ function paddedName(name, columnWidth) {
   return safe.padEnd(columnWidth, " ");
 }
 
-function computeNameColumnWidth(winners) {
+function computeNameColumnWidth(winners: WinningToolEntry[]): number {
   let width = 16;
   if (!Array.isArray(winners)) {
     return width;
@@ -965,7 +1088,13 @@ function computeNameColumnWidth(winners) {
   return width;
 }
 
-export function renderToolsSceneLines({ state, sectionGap = 1 } = {}) {
+export function renderToolsSceneLines({
+  state,
+  sectionGap = 1,
+}: {
+  state?: ToolsSceneState;
+  sectionGap?: number;
+} = {}): string[] {
   const sceneState = state ?? createToolsSceneState();
   if (sceneState.pager) {
     return renderPagerLines({ state: sceneState.pager });
