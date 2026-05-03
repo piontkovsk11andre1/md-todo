@@ -34,7 +34,13 @@ import {
   runWorkersSceneAction,
 } from "./scenes/workers.js";
 import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
-import { createSettingsSceneState, handleSettingsInput, renderSettingsSceneLines } from "./scenes/settings.js";
+import {
+  createSettingsSceneState,
+  handleSettingsInput,
+  reloadSettingsSceneState,
+  renderSettingsSceneLines,
+  runSettingsSceneAction,
+} from "./scenes/settings.js";
 import { createHelpSceneState, handleHelpInput, renderHelpSceneLines } from "./scenes/help.js";
 import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.js";
 import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.js";
@@ -71,6 +77,7 @@ function createSceneRouterState() {
     newWorkSceneState: createNewWorkSceneState(),
     agentSessionPending: false,
     workersActionPending: false,
+    settingsActionPending: false,
   };
 }
 
@@ -97,7 +104,7 @@ function resetToMainMenu(state) {
   void refreshMainMenuStatusProbe("continue");
 }
 
-function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene) {
+function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene, openSettingsScene) {
   state.showHelpOverlay = false;
   if (routeTo === "continue") {
     state.sceneId = "continue";
@@ -121,7 +128,11 @@ function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene) {
     openWorkersScene();
     return;
   }
-  if (routeTo === "profiles" || routeTo === "settings" || routeTo === "help") {
+  if (routeTo === "settings") {
+    openSettingsScene();
+    return;
+  }
+  if (routeTo === "profiles" || routeTo === "help") {
     state.sceneId = routeTo;
   }
 }
@@ -294,6 +305,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
 
     let newWorkLoadToken = 0;
     let workersLoadToken = 0;
+    let settingsLoadToken = 0;
 
     const openNewWorkScene = () => {
       state.sceneId = "newWork";
@@ -329,6 +341,27 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           return;
         }
         state.workersSceneState = nextState;
+      });
+    };
+
+    const openSettingsScene = () => {
+      state.sceneId = "settings";
+      state.showHelpOverlay = false;
+      state.settingsSceneState = {
+        ...createSettingsSceneState(),
+        loading: true,
+        banner: "",
+      };
+
+      const loadToken = ++settingsLoadToken;
+      void reloadSettingsSceneState({
+        state: state.settingsSceneState,
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== settingsLoadToken || state.sceneId !== "settings") {
+          return;
+        }
+        state.settingsSceneState = nextState;
       });
     };
 
@@ -412,7 +445,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
           if (selected?.sceneId) {
-            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene);
+            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene, openSettingsScene);
           }
           return;
         }
@@ -599,6 +632,25 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         state.settingsSceneState = result.state;
         if (result.backToParent || isBack(rawInput)) {
           state.sceneId = "mainMenu";
+        }
+
+        if (result.action && !state.settingsActionPending) {
+          state.settingsActionPending = true;
+          void runSettingsSceneAction({
+            action: result.action,
+            state: state.settingsSceneState,
+            currentWorkingDirectory,
+          }).then((nextState) => {
+            state.settingsSceneState = nextState;
+          }).catch((error) => {
+            state.settingsSceneState = {
+              ...state.settingsSceneState,
+              loading: false,
+              banner: error instanceof Error ? error.message : String(error),
+            };
+          }).finally(() => {
+            state.settingsActionPending = false;
+          });
         }
         return;
       }

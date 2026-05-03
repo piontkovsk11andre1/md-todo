@@ -3,6 +3,14 @@ import { createConfigBridge } from "../bridges/config-bridge.js";
 
 const SUPPORTED_SCOPES = ["effective", "local", "global"];
 
+function getNextScope(scope) {
+  const currentIndex = SUPPORTED_SCOPES.indexOf(scope);
+  if (currentIndex < 0) {
+    return SUPPORTED_SCOPES[0];
+  }
+  return SUPPORTED_SCOPES[(currentIndex + 1) % SUPPORTED_SCOPES.length];
+}
+
 function isSupportedScope(value) {
   return typeof value === "string" && SUPPORTED_SCOPES.includes(value);
 }
@@ -174,6 +182,29 @@ export async function reloadSettingsSceneState({
   }
 }
 
+export async function runSettingsSceneAction({
+  action,
+  state,
+  currentWorkingDirectory = process.cwd(),
+} = {}) {
+  const sceneState = state ?? createSettingsSceneState();
+  if (!action || typeof action !== "object") {
+    return sceneState;
+  }
+
+  if (action.type === "reload") {
+    return reloadSettingsSceneState({
+      state: {
+        ...sceneState,
+        loading: true,
+      },
+      currentWorkingDirectory,
+    });
+  }
+
+  return sceneState;
+}
+
 function buildHeaderLine(scope) {
   const scopeLabel = isSupportedScope(scope) ? scope : "effective";
   const provenanceSuffix = scopeLabel === "effective" ? " ─ provenance shown" : "";
@@ -264,6 +295,26 @@ export function handleSettingsInput({ rawInput, state } = {}) {
       backToParent: true,
     };
   }
+
+  const input = typeof rawInput === "string" ? rawInput : "";
+  const normalized = input.toLowerCase();
+  if (normalized === "s") {
+    const nextScope = getNextScope(sceneState.scope);
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        scope: nextScope,
+        loading: true,
+        selectedIndex: 0,
+        banner: "",
+        hint: "",
+      },
+      backToParent: false,
+      action: { type: "reload" },
+    };
+  }
+
   return {
     handled: false,
     state: sceneState,
