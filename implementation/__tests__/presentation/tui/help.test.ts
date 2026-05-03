@@ -13,9 +13,14 @@ describe("tui help integration", () => {
     expect(frame).toMatch(/docs\/[\w.-]+\.md/);
   });
 
-  it("does not expose an AGENTS template entry", async () => {
+  it("shows synthesized and external help rows", async () => {
     const harness = await createTuiHarness({ initialScene: "help" });
-    expect(harness.frame()).not.toContain("AGENTS.md template");
+
+    const frame = harness.frame();
+    expect(frame).toContain("Synthesized references");
+    expect(frame).toContain("Effective config dump (current workspace)");
+    expect(frame).toContain("External");
+    expect(frame).toContain("Project website");
   });
 
   it("renders keybindings overlay with [k]", async () => {
