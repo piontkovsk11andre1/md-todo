@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const DOMAIN_DIR = path.resolve("implementation/src/domain");
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const IMPLEMENTATION_ROOT = path.resolve(TEST_DIR, "..", "..");
+const DOMAIN_DIR = path.join(IMPLEMENTATION_ROOT, "src", "domain");
 const DOMAIN_TRACE_FILES = [
   "trace.ts",
   "trace-parser.ts",

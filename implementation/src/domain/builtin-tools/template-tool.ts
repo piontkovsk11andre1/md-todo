@@ -2,12 +2,12 @@ import type { ToolHandlerFn } from "../ports/tool-handler-port.js";
 import type { ProcessRunMode } from "../ports/process-runner.js";
 import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } from "../template.js";
 import { parseUncheckedTodoLines } from "../todo-lines.js";
-import { expandCliBlocksWithOptions } from "../../application/cli-block-expansion.js";
+import { expandCliBlocksWithOptions } from "../cli-block-expansion.js";
 import {
   mapTemplateCliFailureToExitCode,
   TemplateCliBlockExecutionError,
   withTemplateCliFailureAbort,
-} from "../../application/cli-block-handlers.js";
+} from "../cli-block-handlers.js";
 
 const NOOP_TRACE_WRITER = {
   write: () => {},

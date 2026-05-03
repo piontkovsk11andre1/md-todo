@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const APPLICATION_DIR = path.resolve("implementation/src/application");
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const IMPLEMENTATION_ROOT = path.resolve(TEST_DIR, "..", "..");
+const APPLICATION_DIR = path.join(IMPLEMENTATION_ROOT, "src", "application");
 const USE_CASE_FILES = [
   "run-task.ts",
   "discuss-task.ts",
