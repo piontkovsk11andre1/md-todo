@@ -927,6 +927,102 @@ describe("migrate-task", () => {
     });
     expect(outputEvents).toEqual([]);
   });
+
+  it("creates per-thread staged draft directories under the run artifact root", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "Billing Ops.md"), "# Billing Ops\n", "utf-8");
+
+    const runRootDir = path.join(workspace, ".rundown", "runs", "run-test");
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt }) => {
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "billing-ops-change")),
+            "# 2. Billing Ops Change\n\n- [ ] Update billing ops flow for Target.md changes.\n",
+            "utf-8",
+          );
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "drafted migration files",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: runRootDir,
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => {
+        throw new Error("not used");
+      }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(fs.existsSync(path.join(runRootDir, "drafted-migrations", "rev.1", "threads", "billing-ops"))).toBe(true);
+      expect(fs.existsSync(path.join(runRootDir, "drafted-migrations", "rev.1"))).toBe(true);
+      expect(code).not.toBe(EXIT_CODE_FAILURE);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
 });
 
 function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): void {

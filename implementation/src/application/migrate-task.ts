@@ -428,7 +428,6 @@ async function runMigrateLoop(input: {
     }
     processedAnyRevision = true;
 
-    const latestState = readMigrationState(dependencies.fileSystem, migrationsDir);
     const revisionDiff = prepareDesignRevisionDiffContext(dependencies.fileSystem, projectRoot, {
       invocationRoot,
       target: targetRevision.name,
@@ -464,213 +463,89 @@ async function runMigrateLoop(input: {
       })));
       artifactRunExtra.threadTranslations = threadTranslationHistory;
     }
-    const migrationDraftDir = prepareStagedDraftMigrationDir(
-      dependencies.fileSystem,
-      artifactContext.rootDir,
-      targetRevision.name,
-    );
+    const rootState = readMigrationState(dependencies.fileSystem, migrationsDir);
+    const laneStates = discoveredThreads.length > 0
+      ? loadedThreadStates.map((lane) => ({
+        kind: "thread" as const,
+        thread: lane.thread,
+        migrationsDir: lane.migrationsDir,
+        state: lane.state,
+        migrationDraftDir: prepareStagedDraftMigrationDir(
+          dependencies.fileSystem,
+          artifactContext.rootDir,
+          targetRevision.name,
+          lane.thread.threadSlug,
+        ),
+      }))
+      : [{
+        kind: "root" as const,
+        migrationsDir,
+        state: rootState,
+        migrationDraftDir: prepareStagedDraftMigrationDir(
+          dependencies.fileSystem,
+          artifactContext.rootDir,
+          targetRevision.name,
+        ),
+      }];
     artifactRunExtra.stagedDraftMigrationDirPrepared = true;
-    artifactRunExtra.stagedDraftMigrationDir = migrationDraftDir;
+    artifactRunExtra.stagedDraftMigrationDir = laneStates[0]?.migrationDraftDir;
+    artifactRunExtra.stagedDraftMigrationDirs = laneStates.map((lane) => ({
+      kind: lane.kind,
+      migrationDraftDir: lane.migrationDraftDir,
+      ...(lane.kind === "thread"
+        ? { threadSlug: lane.thread.threadSlug, threadName: lane.thread.threadName }
+        : {}),
+    }));
     artifactRunExtra.stagedDraftRevision = targetRevision.name;
 
-    const vars = buildTemplateVars({
-      fileSystem: dependencies.fileSystem,
-      state: latestState,
-      projectRoot,
-      invocationRoot,
-      workspaceDirectories,
-      workspacePlacement,
-      workspacePaths,
-      designRevisionTarget: targetRevision.name,
-      revisionDiff,
-      migrationDraftDir,
-      newMigrations: "",
-    });
-    const prompt = renderTemplate(planningTemplate, vars);
-    emit({
-      kind: "info",
-      message: "Planning migrations for "
-        + (revisionDiff.fromRevision?.name ?? "nothing")
-        + " → "
-        + targetRevision.name
-        + " (position "
-        + String(latestState.currentPosition)
-        + ")...",
-    });
-    const result = await dependencies.workerExecutor.runWorker({
-      workerPattern: slugWorkerPattern,
-      prompt,
-      mode: "wait",
-      cwd: workspaceRoot,
-      timeoutMs: workerTimeoutMs,
-      artifactContext,
-      artifactPhase: "worker",
-      artifactPhaseLabel: "migrate-plan",
-    });
-    if ((result.exitCode ?? 1) !== 0) {
-      throw new Error("Worker failed to generate migration plan.");
-    }
-    if (showAgentOutput && result.stderr.length > 0) {
-      emit({ kind: "stderr", text: result.stderr });
-    }
+    const laneResults: Array<{
+      migrationsDir: string;
+      promotedMigrationMetadataPaths: string[];
+      promotedMigrationPaths: string[];
+      state: ReturnType<typeof readMigrationState>;
+      migrationDraftDir: string;
+      thread?: DiscoveredMigrationThread;
+    }> = [];
 
-    const syntheticTask = createSyntheticMigrateTask(
-      path.join(migrationDraftDir, "_staged-migration-verification.md"),
-      targetRevision.name,
-    );
-    const stagedVerificationStore = createInMemoryVerificationStore();
-    const verifyStagedDraftTaskSet = async (): Promise<{ valid: boolean; stdout?: string }> => {
-      const verification = verifyCurrentStagedDraftSet({
-        fileSystem: dependencies.fileSystem,
-        artifactRunRootDir: artifactContext.rootDir,
-        revisionName: targetRevision.name,
+    for (const lane of laneStates) {
+      const result = await runMigrationLaneDrafting({
+        dependencies,
+        planningTemplate,
+        workspaceRoot,
+        projectRoot,
+        invocationRoot,
+        workspaceDirectories,
+        workspacePlacement,
+        workspacePaths,
+        slugWorkerPattern,
+        artifactContext,
+        workerTimeoutMs,
+        showAgentOutput,
+        confirm,
+        emit,
+        targetRevisionName: targetRevision.name,
         revisionDiff,
-        currentPosition: latestState.currentPosition,
-        migrationDraftDir,
+        migrationsDir: lane.migrationsDir,
+        state: lane.state,
+        migrationDraftDir: lane.migrationDraftDir,
+        thread: lane.kind === "thread" ? lane.thread : undefined,
       });
-      const resultText = verification.valid
-        ? "OK"
-        : (verification.failureReason ?? "Verification failed (no details).");
-      stagedVerificationStore.write(syntheticTask, resultText);
-      return {
-        valid: verification.valid,
-        stdout: resultText,
-      };
-    };
-    const stagedTaskVerification: TaskVerificationPort = {
-      verify: async ({ onWorkerOutput }) => {
-        const verification = await verifyStagedDraftTaskSet();
-        if (onWorkerOutput) {
-          onWorkerOutput(verification.stdout ?? "", "");
-        }
-        return verification;
-      },
-    };
-    const stagedTaskRepair: TaskRepairPort = {
-      repair: async ({ onWorkerOutput }) => {
-        const previousFailure = stagedVerificationStore.read(syntheticTask)
-          ?? "Verification failed (no details).";
-        const repairPrompt = buildMigrateRepairPrompt({
-          revisionName: targetRevision.name,
-          migrationDraftDir,
-          migrationsDir,
-          currentPosition: latestState.currentPosition,
-          failureReason: previousFailure,
-          revisionDiff,
-        });
-        const migrationsDirSnapshotBeforeRepair = snapshotDirectoryContents(
-          dependencies.fileSystem,
-          migrationsDir,
-        );
-        const repairRunResult = await dependencies.workerExecutor.runWorker({
-          workerPattern: slugWorkerPattern,
-          prompt: repairPrompt,
-          mode: "wait",
-          cwd: workspaceRoot,
-          timeoutMs: workerTimeoutMs,
-          artifactContext,
-          artifactPhase: "repair",
-          artifactPhaseLabel: "migrate-staged-repair",
-          artifactExtra: {
-            revision: targetRevision.name,
-            migrationDraftDir,
-          },
-        });
-        if (onWorkerOutput) {
-          onWorkerOutput(repairRunResult.stdout, repairRunResult.stderr);
-        }
-        if ((repairRunResult.exitCode ?? 1) !== 0) {
-          const failureReason = "Staged migration repair worker failed.";
-          stagedVerificationStore.write(syntheticTask, failureReason);
-          return {
-            valid: false,
-            attempts: 1,
-            repairStdout: repairRunResult.stdout,
-            verificationStdout: failureReason,
-          };
-        }
-        const migrationsDirSnapshotAfterRepair = snapshotDirectoryContents(
-          dependencies.fileSystem,
-          migrationsDir,
-        );
-        const migrationsMutation = diffDirectorySnapshots(
-          migrationsDirSnapshotBeforeRepair,
-          migrationsDirSnapshotAfterRepair,
-        );
-        if (migrationsMutation) {
-          const failureReason = "Repair must mutate staged drafts only; real migrations directory changed ("
-            + migrationsMutation
-            + ").";
-          stagedVerificationStore.write(syntheticTask, failureReason);
-          return {
-            valid: false,
-            attempts: 1,
-            repairStdout: repairRunResult.stdout,
-            verificationStdout: failureReason,
-          };
-        }
-        const verification = await verifyStagedDraftTaskSet();
-        return {
-          valid: verification.valid,
-          attempts: 1,
-          repairStdout: repairRunResult.stdout,
-          verificationStdout: verification.stdout,
-        };
-      },
-    };
+      if (!result.ok) {
+        throw new Error(result.errorMessage);
+      }
 
-    const stagedVerifyRepair = await runVerifyRepairLoop({
-      taskVerification: stagedTaskVerification,
-      taskRepair: stagedTaskRepair,
-      verificationStore: stagedVerificationStore,
-      traceWriter: dependencies.traceWriter,
-      output: dependencies.output,
-    }, {
-      task: syntheticTask,
-      source: "",
-      contextBefore: "",
-      verifyTemplate: "",
-      repairTemplate: "",
-      workerPattern: slugWorkerPattern,
-      configDir: dependencies.configDir,
-      maxRepairAttempts: MIGRATE_MAX_REPAIR_ATTEMPTS,
-      allowRepair: true,
-      templateVars: {},
-      artifactContext,
-      trace: false,
-      showAgentOutput,
-      runMode: "wait",
-      executionOutputCaptured: true,
-      isInlineCliTask: false,
-      isToolExpansionTask: false,
-    });
-
-    if (!stagedVerifyRepair.valid) {
-      throw new Error(
-        "Staged migration drafts failed verification after repair attempts: "
-        + (stagedVerifyRepair.failureReason ?? "Verification failed (no details).")
-        + " Staged drafts preserved in "
-        + migrationDraftDir
-        + ".",
-      );
+      laneResults.push({
+        migrationsDir: lane.migrationsDir,
+        promotedMigrationMetadataPaths: result.promotedMigrationMetadataPaths,
+        promotedMigrationPaths: result.promotedMigrationPaths,
+        state: lane.state,
+        migrationDraftDir: lane.migrationDraftDir,
+        thread: lane.kind === "thread" ? lane.thread : undefined,
+      });
     }
 
-    const stagedDraftVerificationAfterRepair = verifyCurrentStagedDraftSet({
-      fileSystem: dependencies.fileSystem,
-      artifactRunRootDir: artifactContext.rootDir,
-      revisionName: targetRevision.name,
-      revisionDiff,
-      currentPosition: latestState.currentPosition,
-      migrationDraftDir,
-    });
-    if (!stagedDraftVerificationAfterRepair.valid) {
-      throw new Error(
-        stagedDraftVerificationAfterRepair.failureReason
-        ?? "Staged migration drafts failed verification after repair.",
-      );
-    }
-    const stagedDrafts = stagedDraftVerificationAfterRepair.drafts;
-    if (stagedDrafts.length === 0 && revisionDiff.changes.length === 0) {
+    const promotedMigrationMetadataPaths = laneResults.flatMap((lane) => lane.promotedMigrationMetadataPaths);
+    if (promotedMigrationMetadataPaths.length === 0 && revisionDiff.changes.length === 0) {
       emit({
         kind: "info",
         message: "Planner drafted no migrations for " + targetRevision.name + ": no diff changes detected.",
@@ -684,58 +559,6 @@ async function runMigrateLoop(input: {
       continue;
     }
 
-    emit({
-      kind: "info",
-      message: "Promoting "
-        + String(stagedDrafts.length)
-        + " staged migration file(s): "
-        + stagedDrafts.map((draft) => draft.name).join(", "),
-    });
-
-    const stateBeforeCreate = readMigrationState(dependencies.fileSystem, migrationsDir);
-    const stagedValidationErrorBeforePromotion = validateStagedDraftMigrations(
-      stagedDrafts,
-      stateBeforeCreate.currentPosition,
-    );
-    if (stagedValidationErrorBeforePromotion) {
-      throw new Error(stagedValidationErrorBeforePromotion);
-    }
-    const promotedMigrationPaths: string[] = [];
-    const promotedMigrationMetadataPaths: string[] = [];
-    for (const draft of stagedDrafts) {
-      const migrationPath = path.join(migrationsDir, draft.fileName);
-      const migrationContent = dependencies.fileSystem.readText(draft.filePath);
-      dependencies.fileSystem.writeText(migrationPath, migrationContent);
-      promotedMigrationPaths.push(migrationPath);
-      promotedMigrationMetadataPaths.push(toWorkspaceRelativeMigrationPath(workspaceRoot, migrationPath));
-    }
-
-    for (const migrationPath of promotedMigrationPaths) {
-      await runExploreForMigration({
-        runExplore: dependencies.runExplore,
-        migrationPath,
-        projectRoot,
-      });
-    }
-
-    if (confirm) {
-      if (dependencies.interactiveInput.prepareForPrompt) {
-        await dependencies.interactiveInput.prepareForPrompt();
-      }
-      const answer = await dependencies.interactiveInput.prompt({
-        kind: "confirm",
-        message: "Migration files created. Review or edit them, then confirm to continue prediction.",
-        defaultValue: true,
-      });
-      if (answer.value.trim().toLowerCase() !== "true") {
-        emit({
-          kind: "info",
-          message: "Stopped at migration file checkpoint before prediction continuation.",
-        });
-        return EXIT_CODE_SUCCESS;
-      }
-    }
-
     markRevisionPlanned(
       dependencies.fileSystem,
       workspaceRoot,
@@ -743,6 +566,371 @@ async function runMigrateLoop(input: {
       promotedMigrationMetadataPaths,
     );
   }
+}
+
+async function runMigrationLaneDrafting(input: {
+  dependencies: MigrateTaskDependencies;
+  planningTemplate: string;
+  workspaceRoot: string;
+  projectRoot: string;
+  invocationRoot: string;
+  workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>;
+  workspacePlacement: ReturnType<typeof resolveWorkspacePlacement>;
+  workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
+  slugWorkerPattern: ParsedWorkerPattern;
+  artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
+  showAgentOutput: boolean;
+  confirm: boolean;
+  emit: ApplicationOutputPort["emit"];
+  targetRevisionName: string;
+  revisionDiff: DesignRevisionDiffContext;
+  migrationsDir: string;
+  state: ReturnType<typeof readMigrationState>;
+  migrationDraftDir: string;
+  thread?: DiscoveredMigrationThread;
+}): Promise<{
+  ok: boolean;
+  errorMessage: string;
+  promotedMigrationPaths: string[];
+  promotedMigrationMetadataPaths: string[];
+}> {
+  const {
+    dependencies,
+    planningTemplate,
+    workspaceRoot,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+    slugWorkerPattern,
+    artifactContext,
+    workerTimeoutMs,
+    showAgentOutput,
+    confirm,
+    emit,
+    targetRevisionName,
+    revisionDiff,
+    migrationsDir,
+    state,
+    migrationDraftDir,
+    thread,
+  } = input;
+
+  const vars = buildTemplateVars({
+    fileSystem: dependencies.fileSystem,
+    state,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePlacement,
+    workspacePaths,
+    designRevisionTarget: targetRevisionName,
+    revisionDiff,
+    migrationDraftDir,
+    newMigrations: "",
+    threadContext: thread
+      ? {
+        mode: true,
+        name: thread.threadName,
+        slug: thread.threadSlug,
+        sourcePathFromWorkspace: thread.sourcePathFromWorkspace,
+        briefPathFromWorkspace: path.relative(workspaceRoot, path.join(artifactContext.rootDir, "thread-briefs", targetRevisionName, thread.threadSlug + ".md")).replace(/\\/g, "/"),
+        translatedBrief: dependencies.fileSystem.exists(path.join(artifactContext.rootDir, "thread-briefs", targetRevisionName, thread.threadSlug + ".md"))
+          ? dependencies.fileSystem.readText(path.join(artifactContext.rootDir, "thread-briefs", targetRevisionName, thread.threadSlug + ".md"))
+          : "",
+      }
+      : undefined,
+  });
+  const prompt = renderTemplate(planningTemplate, vars);
+  emit({
+    kind: "info",
+    message: "Planning migrations for "
+      + (revisionDiff.fromRevision?.name ?? "nothing")
+      + " → "
+      + targetRevisionName
+      + " (position "
+      + String(state.currentPosition)
+      + (thread ? ", thread " + thread.threadSlug : "")
+      + ")...",
+  });
+
+  const result = await dependencies.workerExecutor.runWorker({
+    workerPattern: slugWorkerPattern,
+    prompt,
+    mode: "wait",
+    cwd: workspaceRoot,
+    timeoutMs: workerTimeoutMs,
+    artifactContext,
+    artifactPhase: "worker",
+    artifactPhaseLabel: thread ? "migrate-plan-thread" : "migrate-plan",
+  });
+  if ((result.exitCode ?? 1) !== 0) {
+    return {
+      ok: false,
+      errorMessage: "Worker failed to generate migration plan.",
+      promotedMigrationPaths: [],
+      promotedMigrationMetadataPaths: [],
+    };
+  }
+  if (showAgentOutput && result.stderr.length > 0) {
+    emit({ kind: "stderr", text: result.stderr });
+  }
+
+  const syntheticTask = createSyntheticMigrateTask(
+    path.join(migrationDraftDir, "_staged-migration-verification.md"),
+    targetRevisionName,
+  );
+  const stagedVerificationStore = createInMemoryVerificationStore();
+  const verifyStagedDraftTaskSet = async (): Promise<{ valid: boolean; stdout?: string }> => {
+    const verification = verifyCurrentStagedDraftSet({
+      fileSystem: dependencies.fileSystem,
+      artifactRunRootDir: artifactContext.rootDir,
+      revisionName: targetRevisionName,
+      revisionDiff,
+      currentPosition: state.currentPosition,
+      migrationDraftDir,
+      threadSlug: thread?.threadSlug,
+    });
+    const resultText = verification.valid
+      ? "OK"
+      : (verification.failureReason ?? "Verification failed (no details).");
+    stagedVerificationStore.write(syntheticTask, resultText);
+    return {
+      valid: verification.valid,
+      stdout: resultText,
+    };
+  };
+  const stagedTaskVerification: TaskVerificationPort = {
+    verify: async ({ onWorkerOutput }) => {
+      const verification = await verifyStagedDraftTaskSet();
+      if (onWorkerOutput) {
+        onWorkerOutput(verification.stdout ?? "", "");
+      }
+      return verification;
+    },
+  };
+  const stagedTaskRepair: TaskRepairPort = {
+    repair: async ({ onWorkerOutput }) => {
+      const previousFailure = stagedVerificationStore.read(syntheticTask)
+        ?? "Verification failed (no details).";
+      const repairPrompt = buildMigrateRepairPrompt({
+        revisionName: targetRevisionName,
+        migrationDraftDir,
+        migrationsDir,
+        currentPosition: state.currentPosition,
+        failureReason: previousFailure,
+        revisionDiff,
+      });
+      const migrationsDirSnapshotBeforeRepair = snapshotDirectoryContents(
+        dependencies.fileSystem,
+        migrationsDir,
+      );
+      const repairRunResult = await dependencies.workerExecutor.runWorker({
+        workerPattern: slugWorkerPattern,
+        prompt: repairPrompt,
+        mode: "wait",
+        cwd: workspaceRoot,
+        timeoutMs: workerTimeoutMs,
+        artifactContext,
+        artifactPhase: "repair",
+        artifactPhaseLabel: thread ? "migrate-staged-repair-thread" : "migrate-staged-repair",
+        artifactExtra: {
+          revision: targetRevisionName,
+          migrationDraftDir,
+          threadSlug: thread?.threadSlug,
+        },
+      });
+      if (onWorkerOutput) {
+        onWorkerOutput(repairRunResult.stdout, repairRunResult.stderr);
+      }
+      if ((repairRunResult.exitCode ?? 1) !== 0) {
+        return {
+          valid: false,
+          attempts: 1,
+          repairStdout: repairRunResult.stdout,
+          verificationStdout: "Staged migration repair worker failed.",
+        };
+      }
+      const migrationsDirSnapshotAfterRepair = snapshotDirectoryContents(
+        dependencies.fileSystem,
+        migrationsDir,
+      );
+      const migrationsMutation = diffDirectorySnapshots(
+        migrationsDirSnapshotBeforeRepair,
+        migrationsDirSnapshotAfterRepair,
+      );
+      if (migrationsMutation) {
+        const failureReason = "Repair must mutate staged drafts only; real migrations directory changed ("
+          + migrationsMutation
+          + ").";
+        stagedVerificationStore.write(syntheticTask, failureReason);
+        return {
+          valid: false,
+          attempts: 1,
+          repairStdout: repairRunResult.stdout,
+          verificationStdout: failureReason,
+        };
+      }
+      const verification = await verifyStagedDraftTaskSet();
+      return {
+        valid: verification.valid,
+        attempts: 1,
+        repairStdout: repairRunResult.stdout,
+        verificationStdout: verification.stdout,
+      };
+    },
+  };
+
+  const stagedVerifyRepair = await runVerifyRepairLoop({
+    taskVerification: stagedTaskVerification,
+    taskRepair: stagedTaskRepair,
+    verificationStore: stagedVerificationStore,
+    traceWriter: dependencies.traceWriter,
+    output: dependencies.output,
+  }, {
+    task: syntheticTask,
+    source: "",
+    contextBefore: "",
+    verifyTemplate: "",
+    repairTemplate: "",
+    workerPattern: slugWorkerPattern,
+    configDir: dependencies.configDir,
+    maxRepairAttempts: MIGRATE_MAX_REPAIR_ATTEMPTS,
+    allowRepair: true,
+    templateVars: {},
+    artifactContext,
+    trace: false,
+    showAgentOutput,
+    runMode: "wait",
+    executionOutputCaptured: true,
+    isInlineCliTask: false,
+    isToolExpansionTask: false,
+  });
+
+  if (!stagedVerifyRepair.valid) {
+    return {
+      ok: false,
+      errorMessage: "Staged migration drafts failed verification after repair attempts: "
+        + (stagedVerifyRepair.failureReason ?? "Verification failed (no details).")
+        + " Staged drafts preserved in "
+        + migrationDraftDir
+        + ".",
+      promotedMigrationPaths: [],
+      promotedMigrationMetadataPaths: [],
+    };
+  }
+
+  const stagedDraftVerificationAfterRepair = verifyCurrentStagedDraftSet({
+    fileSystem: dependencies.fileSystem,
+    artifactRunRootDir: artifactContext.rootDir,
+    revisionName: targetRevisionName,
+    revisionDiff,
+    currentPosition: state.currentPosition,
+    migrationDraftDir,
+    threadSlug: thread?.threadSlug,
+  });
+  if (!stagedDraftVerificationAfterRepair.valid) {
+    return {
+      ok: false,
+      errorMessage: stagedDraftVerificationAfterRepair.failureReason
+        ?? "Staged migration drafts failed verification after repair.",
+      promotedMigrationPaths: [],
+      promotedMigrationMetadataPaths: [],
+    };
+  }
+  const stagedDrafts = stagedDraftVerificationAfterRepair.drafts;
+  if (stagedDrafts.length === 0 && revisionDiff.changes.length === 0) {
+    emit({
+      kind: "info",
+      message: thread
+        ? "Planner drafted no migrations for " + targetRevisionName + " in thread " + thread.threadSlug + ": no diff changes detected."
+        : "Planner drafted no migrations for " + targetRevisionName + ": no diff changes detected.",
+    });
+    return {
+      ok: true,
+      errorMessage: "",
+      promotedMigrationPaths: [],
+      promotedMigrationMetadataPaths: [],
+    };
+  }
+
+  emit({
+    kind: "info",
+    message: "Promoting "
+      + String(stagedDrafts.length)
+      + " staged migration file(s): "
+      + stagedDrafts.map((draft) => draft.name).join(", ")
+      + (thread ? " [thread " + thread.threadSlug + "]" : ""),
+  });
+
+  const promotedMigrationPaths: string[] = [];
+  const promotedMigrationMetadataPaths: string[] = [];
+  const promotedMigrationsDir = thread
+    ? migrationThreadMigrationsDir(migrationsDir, thread.threadSlug)
+    : migrationsDir;
+  dependencies.fileSystem.mkdir(promotedMigrationsDir, { recursive: true });
+  const stateBeforeCreate = thread
+    ? readMigrationStateFromDirectoryOrEmpty(dependencies.fileSystem, promotedMigrationsDir)
+    : state;
+  const stagedValidationErrorBeforePromotion = validateStagedDraftMigrations(
+    stagedDrafts,
+    stateBeforeCreate.currentPosition,
+  );
+  if (stagedValidationErrorBeforePromotion) {
+    return {
+      ok: false,
+      errorMessage: stagedValidationErrorBeforePromotion,
+      promotedMigrationPaths: [],
+      promotedMigrationMetadataPaths: [],
+    };
+  }
+  for (const draft of stagedDrafts) {
+    const migrationPath = path.join(promotedMigrationsDir, draft.fileName);
+    const migrationContent = dependencies.fileSystem.readText(draft.filePath);
+    dependencies.fileSystem.writeText(migrationPath, migrationContent);
+    promotedMigrationPaths.push(migrationPath);
+    promotedMigrationMetadataPaths.push(toWorkspaceRelativeMigrationPath(workspaceRoot, migrationPath));
+  }
+
+  for (const migrationPath of promotedMigrationPaths) {
+    await runExploreForMigration({
+      runExplore: dependencies.runExplore,
+      migrationPath,
+      projectRoot,
+    });
+  }
+
+  if (confirm) {
+    if (dependencies.interactiveInput.prepareForPrompt) {
+      await dependencies.interactiveInput.prepareForPrompt();
+    }
+    const answer = await dependencies.interactiveInput.prompt({
+      kind: "confirm",
+      message: "Migration files created. Review or edit them, then confirm to continue prediction.",
+      defaultValue: true,
+    });
+    if (answer.value.trim().toLowerCase() !== "true") {
+      emit({
+        kind: "info",
+        message: "Stopped at migration file checkpoint before prediction continuation.",
+      });
+      return {
+        ok: true,
+        errorMessage: "",
+        promotedMigrationPaths,
+        promotedMigrationMetadataPaths,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    errorMessage: "",
+    promotedMigrationPaths,
+    promotedMigrationMetadataPaths,
+  };
 }
 
 
@@ -773,16 +961,20 @@ const COVERAGE_TOKEN_IGNORE = new Set([
 function stagedDraftMigrationDirForRevision(
   artifactRunRootDir: string,
   revisionName: string,
+  threadSlug?: string,
 ): string {
-  return path.join(artifactRunRootDir, DRAFTED_MIGRATIONS_SUBDIR, revisionName);
+  return threadSlug
+    ? path.join(artifactRunRootDir, DRAFTED_MIGRATIONS_SUBDIR, revisionName, "threads", threadSlug)
+    : path.join(artifactRunRootDir, DRAFTED_MIGRATIONS_SUBDIR, revisionName);
 }
 
 function prepareStagedDraftMigrationDir(
   fileSystem: FileSystem,
   artifactRunRootDir: string,
   revisionName: string,
+  threadSlug?: string,
 ): string {
-  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName);
+  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName, threadSlug);
   fileSystem.rm(draftDir, { recursive: true, force: true });
   fileSystem.mkdir(draftDir, { recursive: true });
   return draftDir;
@@ -851,11 +1043,12 @@ function readStagedDraftMigrationsFromArtifactRun(
   fileSystem: FileSystem,
   artifactRunRootDir: string,
   revisionName: string,
+  threadSlug?: string,
 ): {
   drafts: StagedDraftMigration[];
   invalidFileNames: string[];
 } {
-  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName);
+  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName, threadSlug);
   return readStagedDraftMigrations(fileSystem, draftDir);
 }
 
@@ -990,6 +1183,7 @@ function verifyCurrentStagedDraftSet(input: {
   revisionDiff: DesignRevisionDiffContext;
   currentPosition: number;
   migrationDraftDir: string;
+  threadSlug?: string;
 }): {
   valid: boolean;
   failureReason: string | null;
@@ -1002,11 +1196,13 @@ function verifyCurrentStagedDraftSet(input: {
     revisionDiff,
     currentPosition,
     migrationDraftDir,
+    threadSlug,
   } = input;
   const stagedDraftResult = readStagedDraftMigrationsFromArtifactRun(
     fileSystem,
     artifactRunRootDir,
     revisionName,
+    threadSlug,
   );
 
   if (stagedDraftResult.invalidFileNames.length > 0) {
