@@ -374,6 +374,62 @@ describe("with-task", () => {
     );
   });
 
+  it("skips overwrite confirmation when only global worker keys exist", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    const globalRoot = makeTempWorkspace();
+    const globalConfigPath = path.join(globalRoot, "global-config.json");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(globalConfigPath, JSON.stringify({
+      workers: {
+        default: ["legacy", "run"],
+        tui: ["legacy"],
+      },
+      commands: {
+        discuss: ["legacy"],
+      },
+    }, null, 2) + "\n");
+
+    const interactiveInput = createInteractiveInputStub();
+    const workerConfigPort = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({
+        discoveredPath: globalConfigPath,
+        canonicalPath: globalConfigPath,
+      }),
+    });
+    const withTask = createWithTask({
+      workerConfigPort,
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput,
+    });
+
+    const result = await withTask({ harness: "opencode" });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.changed).toBe(true);
+    expect(result.cancelled).toBe(false);
+    expect(result.existingLocalWorkerKeys).toEqual([]);
+    expect(vi.mocked(interactiveInput.prepareForPrompt)).not.toHaveBeenCalled();
+    expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
+
+    const parsed = JSON.parse(fs.readFileSync(path.join(configDir, "config.json"), "utf8")) as {
+      workers?: {
+        default?: string[];
+        tui?: string[];
+      };
+      commands?: {
+        discuss?: string[];
+      };
+    };
+
+    expect(parsed.workers?.default).toEqual(["opencode", "run", "$bootstrap"]);
+    expect(parsed.workers?.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
+    expect(parsed.commands?.discuss).toEqual(["opencode"]);
+  });
+
   it("accepts case-insensitive aliases and writes canonical harness commands", async () => {
     const workspaceDir = makeTempWorkspace();
     const configDir = path.join(workspaceDir, ".rundown");
