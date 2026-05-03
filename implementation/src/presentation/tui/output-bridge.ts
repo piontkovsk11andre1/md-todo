@@ -159,9 +159,13 @@ export function applyOutputEvent(runState: TuiRunState, event: ApplicationOutput
     }
     case "text":
     case "stderr":
+    case "task":
       return;
-    default:
+    default: {
+      const _exhaustive: never = event;
+      void _exhaustive;
       return;
+    }
   }
 }
 
