@@ -124,6 +124,14 @@ export interface MigrateTaskDependencies {
   }) => Promise<number>;
 }
 
+export interface DiscoveredMigrationThread {
+  fileName: string;
+  sourcePath: string;
+  sourcePathFromWorkspace: string;
+  threadName: string;
+  threadSlug: string;
+}
+
 export function createMigrateTask(
   dependencies: MigrateTaskDependencies,
 ): (options: MigrateTaskOptions) => Promise<number> {
@@ -350,6 +358,14 @@ async function runMigrateLoop(input: {
     "migrate.md",
     DEFAULT_MIGRATE_TEMPLATE,
   );
+  const discoveredThreads = discoverMigrationThreads(dependencies.fileSystem, projectRoot);
+  if (discoveredThreads.length > 0) {
+    artifactRunExtra.migrationThreads = discoveredThreads.map((thread) => ({
+      fileName: thread.fileName,
+      sourcePathFromWorkspace: thread.sourcePathFromWorkspace,
+      threadSlug: thread.threadSlug,
+    }));
+  }
   let processedAnyRevision = false;
 
   for (;;) {
@@ -712,6 +728,61 @@ function prepareStagedDraftMigrationDir(
   fileSystem.rm(draftDir, { recursive: true, force: true });
   fileSystem.mkdir(draftDir, { recursive: true });
   return draftDir;
+}
+
+export function discoverMigrationThreads(
+  fileSystem: FileSystem,
+  workspaceRoot: string,
+): DiscoveredMigrationThread[] {
+  const threadsDir = path.join(workspaceRoot, ".rundown", "threads");
+  if (!fileSystem.exists(threadsDir)) {
+    return [];
+  }
+
+  const stat = fileSystem.stat(threadsDir);
+  if (!stat?.isDirectory) {
+    return [];
+  }
+
+  const threadFiles = fileSystem.readdir(threadsDir)
+    .filter((entry) => entry.isFile && entry.name.toLowerCase().endsWith(".md"))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+
+  if (threadFiles.length === 0) {
+    return [];
+  }
+
+  const slugCounts = new Map<string, number>();
+  return threadFiles.map((fileName) => {
+    const sourcePath = path.join(threadsDir, fileName);
+    const threadName = fileName.slice(0, -3);
+    const baseSlug = slugifyThreadFileName(threadName);
+    const priorCount = slugCounts.get(baseSlug) ?? 0;
+    const nextCount = priorCount + 1;
+    slugCounts.set(baseSlug, nextCount);
+    const threadSlug = nextCount === 1 ? baseSlug : baseSlug + "-" + String(nextCount);
+
+    return {
+      fileName,
+      sourcePath,
+      sourcePathFromWorkspace: toWorkspaceRelativeMigrationPath(workspaceRoot, sourcePath),
+      threadName,
+      threadSlug,
+    };
+  });
+}
+
+function slugifyThreadFileName(value: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[`'".]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+
+  return slug.length > 0 ? slug : "thread";
 }
 
 function toWorkspaceRelativeMigrationPath(workspaceRoot: string, migrationPath: string): string {

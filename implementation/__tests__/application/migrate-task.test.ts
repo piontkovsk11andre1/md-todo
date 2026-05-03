@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createMigrateTask } from "../../src/application/migrate-task.js";
+import {
+  createMigrateTask,
+  discoverMigrationThreads,
+} from "../../src/application/migrate-task.js";
 import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
@@ -699,6 +702,48 @@ describe("migrate-task", () => {
     } finally {
       process.chdir(previousCwd);
     }
+  });
+
+  it("discovers thread markdown files and derives stable slugs from filenames", () => {
+    const workspace = makeTempWorkspace();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "API Review.md"), "# API Review\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "a-b.md"), "# A B\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "a b.md"), "# A B duplicate slug\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "README.txt"), "not a thread\n", "utf-8");
+
+    const threads = discoverMigrationThreads(createNodeFileSystem(), workspace);
+
+    expect(threads.map((thread) => thread.fileName)).toEqual([
+      "a b.md",
+      "a-b.md",
+      "API Review.md",
+    ]);
+    expect(threads.map((thread) => thread.threadSlug)).toEqual([
+      "a-b",
+      "a-b-2",
+      "api-review",
+    ]);
+    expect(threads.map((thread) => thread.sourcePathFromWorkspace)).toEqual([
+      ".rundown/threads/a b.md",
+      ".rundown/threads/a-b.md",
+      ".rundown/threads/API Review.md",
+    ]);
+  });
+
+  it("returns no threads when .rundown/threads is missing or has no markdown files", () => {
+    const workspace = makeTempWorkspace();
+
+    const noneWhenMissing = discoverMigrationThreads(createNodeFileSystem(), workspace);
+    expect(noneWhenMissing).toEqual([]);
+
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "notes.txt"), "no markdown\n", "utf-8");
+
+    const noneWhenNoMarkdown = discoverMigrationThreads(createNodeFileSystem(), workspace);
+    expect(noneWhenNoMarkdown).toEqual([]);
   });
 });
 
