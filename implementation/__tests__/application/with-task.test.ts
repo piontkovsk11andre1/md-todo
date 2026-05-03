@@ -40,6 +40,7 @@ describe("with-task", () => {
       exitCode: 0,
       harnessKey: "opencode",
       source: "preset",
+      cancelled: false,
       changed: true,
       configPath: path.join(configDir, "config.json"),
       existingLocalWorkerKeys: [],
@@ -107,13 +108,21 @@ describe("with-task", () => {
       },
     }, null, 2) + "\n");
 
+    const interactiveInput = createInteractiveInputStub([
+      {
+        value: "true",
+        usedDefault: false,
+        interactive: true,
+      },
+    ]);
+
     const withTask = createWithTask({
       workerConfigPort: createWorkerConfigAdapter(),
       configDir: {
         configDir,
         isExplicit: true,
       },
-      interactiveInput: createInteractiveInputStub(),
+      interactiveInput,
     });
 
     const result = await withTask({ harness: "opencode" });
@@ -160,6 +169,7 @@ describe("with-task", () => {
   it("re-applying the opencode preset is idempotent", async () => {
     const workspaceDir = makeTempWorkspace();
     const configDir = path.join(workspaceDir, ".rundown");
+    const interactiveInput = createInteractiveInputStub();
 
     const withTask = createWithTask({
       workerConfigPort: createWorkerConfigAdapter(),
@@ -167,7 +177,7 @@ describe("with-task", () => {
         configDir,
         isExplicit: true,
       },
-      interactiveInput: createInteractiveInputStub(),
+      interactiveInput,
     });
 
     const first = await withTask({ harness: "opencode" });
@@ -182,7 +192,140 @@ describe("with-task", () => {
     expect(after).toBe(before);
     expect(second.source).toBe("preset");
     expect(second.changed).toBe(false);
+    expect(second.cancelled).toBe(false);
     expect(second.existingLocalWorkerKeys).toEqual(["workers.default", "workers.tui"]);
+    expect(vi.mocked(interactiveInput.prompt)).not.toHaveBeenCalled();
+  });
+
+  it("prompts before overwriting existing local worker keys for opencode", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      workers: {
+        default: ["legacy", "run"],
+        tui: ["legacy"],
+      },
+    }, null, 2) + "\n");
+
+    const interactiveInput = createInteractiveInputStub([
+      {
+        value: "true",
+        usedDefault: false,
+        interactive: true,
+      },
+    ]);
+
+    const withTask = createWithTask({
+      workerConfigPort: createWorkerConfigAdapter(),
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput,
+    });
+
+    const result = await withTask({ harness: "opencode" });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.cancelled).toBe(false);
+    expect(result.changed).toBe(true);
+    expect(result.existingLocalWorkerKeys).toEqual(["workers.default", "workers.tui"]);
+    expect(vi.mocked(interactiveInput.prepareForPrompt)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(interactiveInput.prompt)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(interactiveInput.prompt)).toHaveBeenNthCalledWith(1, {
+      kind: "confirm",
+      message: "Local worker config already exists (workers.default, workers.tui). Running \"rundown with opencode\" will replace or update these worker settings. Continue?",
+      defaultValue: false,
+    });
+
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
+      workers?: {
+        default?: string[];
+        tui?: string[];
+      };
+      commands?: {
+        discuss?: string[];
+      };
+    };
+    expect(parsed.workers?.default).toEqual(["opencode", "run", "$bootstrap"]);
+    expect(parsed.workers?.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
+    expect(parsed.commands?.discuss).toEqual(["opencode"]);
+  });
+
+  it("cancels opencode overwrite when user declines confirmation", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      workers: {
+        default: ["legacy", "run"],
+      },
+      commands: {
+        discuss: ["legacy"],
+      },
+    }, null, 2) + "\n");
+    const before = fs.readFileSync(configPath, "utf8");
+
+    const interactiveInput = createInteractiveInputStub([
+      {
+        value: "false",
+        usedDefault: false,
+        interactive: true,
+      },
+    ]);
+
+    const withTask = createWithTask({
+      workerConfigPort: createWorkerConfigAdapter(),
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput,
+    });
+
+    const result = await withTask({ harness: "opencode" });
+    const after = fs.readFileSync(configPath, "utf8");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.cancelled).toBe(true);
+    expect(result.changed).toBe(false);
+    expect(result.existingLocalWorkerKeys).toEqual(["workers.default"]);
+    expect(result.configuredKeys).toEqual([]);
+    expect(after).toBe(before);
+    expect(vi.mocked(interactiveInput.prompt)).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails in non-interactive mode when overwrite confirmation is required", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      workers: {
+        default: ["legacy", "run"],
+      },
+    }, null, 2) + "\n");
+
+    const withTask = createWithTask({
+      workerConfigPort: createWorkerConfigAdapter(),
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => {
+          throw new Error("prompt should not run in non-interactive mode");
+        }),
+      },
+    });
+
+    await expect(withTask({ harness: "opencode" })).rejects.toThrow(
+      "Cannot apply \"with opencode\" non-interactively because local worker config already exists (workers.default). Re-run in an interactive terminal to confirm replacing/updating worker settings.",
+    );
   });
 
   it("accepts case-insensitive aliases and writes canonical harness commands", async () => {
@@ -648,10 +791,18 @@ describe("with-task", () => {
       isExplicit: false,
     });
 
+    const interactiveInput = createInteractiveInputStub([
+      {
+        value: "true",
+        usedDefault: false,
+        interactive: true,
+      },
+    ]);
+
     const withTask = createWithTask({
       workerConfigPort: createWorkerConfigAdapter(),
       configDir: resolvedConfigDir,
-      interactiveInput: createInteractiveInputStub(),
+      interactiveInput,
     });
 
     const result = await withTask({ harness: "opencode" });

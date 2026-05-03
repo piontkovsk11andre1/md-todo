@@ -48,6 +48,9 @@ Fast onboarding option:
 
 - Alias inputs like `OpenCode` and `open-code` normalize to the same persisted arrays.
 - Re-running `rundown with opencode` is idempotent and reports no-op when no targeted key changes are needed.
+- If local worker keys already exist (`workers.default`, `workers.tui`, or `workers.fallbacks`) and `with opencode` would mutate worker settings, rundown asks for confirmation before writing.
+- Declining that confirmation is a clean no-op (existing config is preserved).
+- Non-interactive execution does not auto-overwrite existing worker keys: rundown fails with an actionable message requiring an interactive rerun.
 - In interactive terminals, `rundown with <harness>` immediately opens the Rundown root TUI when the configured mapping sets `workers.tui`; non-interactive invocations skip this launch.
 
 Example:

@@ -44,6 +44,9 @@ Behavior:
 - Preserves other config sections (`workspace`, `trace`, run defaults, tool directories, and other command settings).
 - Writes to local config scope only (`<config-dir>/config.json`); global config is not modified.
 - If resolved preset values are already present, reports no-op semantics and avoids rewrite noise.
+- For `opencode`, if local worker keys already exist (`workers.default`, `workers.tui`, or `workers.fallbacks`) and the run would mutate worker settings, `with` asks for confirmation before writing.
+- If that overwrite prompt is declined, `with` exits with no config changes.
+- In non-interactive execution, required overwrite confirmation cannot be answered, so `with opencode` fails with actionable guidance instead of overwriting existing worker config.
 - On interactive terminals, if `workers.tui` is configured by the applied mapping, `with` immediately opens the Rundown root TUI after printing configuration results.
 - If terminal interactivity is unavailable or no `workers.tui` mapping is configured, `with` exits after configuration output.
 - Prints configured keys and resolved config path.

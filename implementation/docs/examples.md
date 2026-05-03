@@ -44,6 +44,12 @@ What happens right after configuration:
 1. In interactive terminals, `rundown with opencode` immediately opens the Rundown root TUI.
 2. If stdin/stdout is non-interactive (for example CI), it prints config results and exits without launching TUI.
 
+Overwrite safety behavior:
+
+1. If local worker keys already exist and `with opencode` would replace or update them, rundown asks for confirmation first.
+2. If you decline, no config is changed.
+3. In non-interactive execution, rundown fails with guidance instead of silently overwriting existing worker settings.
+
 Persisted local config fragment:
 
 ```json

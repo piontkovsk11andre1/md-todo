@@ -1972,6 +1972,7 @@ describe("createWithCommandAction", () => {
       exitCode: 0,
       harnessKey: "opencode",
       source: "preset" as const,
+      cancelled: false,
       changed: true,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2039,6 +2040,7 @@ describe("createWithCommandAction", () => {
       exitCode: 0,
       harnessKey: "opencode",
       source: "preset" as const,
+      cancelled: false,
       changed: true,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2096,6 +2098,7 @@ describe("createWithCommandAction", () => {
       exitCode: 0,
       harnessKey: "mytool",
       source: "custom" as const,
+      cancelled: false,
       changed: true,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2154,6 +2157,7 @@ describe("createWithCommandAction", () => {
       exitCode: 0,
       harnessKey: "opencode",
       source: "preset" as const,
+      cancelled: false,
       changed: false,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2209,6 +2213,7 @@ describe("createWithCommandAction", () => {
       exitCode: 9,
       harnessKey: "opencode",
       source: "preset" as const,
+      cancelled: false,
       changed: true,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2263,6 +2268,7 @@ describe("createWithCommandAction", () => {
       exitCode: 7,
       harnessKey: "custom-only",
       source: "custom" as const,
+      cancelled: false,
       changed: false,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2315,6 +2321,7 @@ describe("createWithCommandAction", () => {
       exitCode: 0,
       harnessKey: "opencode",
       source: "preset" as const,
+      cancelled: false,
       changed: true,
       configPath: "/workspace/.rundown/config.json",
       configuredKeys: [
@@ -2353,6 +2360,50 @@ describe("createWithCommandAction", () => {
 
       expect(exitCode).toBe(0);
       expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(emitOutput).not.toHaveBeenCalledWith({
+        kind: "info",
+        message: "Opening Rundown root TUI...",
+      });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
+  });
+
+  it("reports cancellation and skips config output when overwrite is declined", async () => {
+    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
+    const withTask = vi.fn(async () => ({
+      exitCode: 0,
+      harnessKey: "opencode",
+      source: "preset" as const,
+      cancelled: true,
+      changed: false,
+      configPath: "/workspace/.rundown/config.json",
+      existingLocalWorkerKeys: ["workers.default"] as const,
+      configuredKeys: [],
+    }));
+
+    const app = { withTask } as unknown as CliApp;
+    (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
+    const action = createWithCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      isInteractiveTerminal: () => true,
+    });
+
+    try {
+      const exitCode = await action("opencode");
+
+      expect(exitCode).toBe(0);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(emitOutput).toHaveBeenCalledWith({
+        kind: "info",
+        message: "Cancelled: kept existing worker config unchanged for harness opencode.",
+      });
+      expect(emitOutput).not.toHaveBeenCalledWith({
+        kind: "info",
+        message: "Configured keys:",
+      });
       expect(emitOutput).not.toHaveBeenCalledWith({
         kind: "info",
         message: "Opening Rundown root TUI...",

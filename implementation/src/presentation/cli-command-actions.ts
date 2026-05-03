@@ -2506,6 +2506,14 @@ export function createWithCommandAction({
       });
     }
 
+    if (result.cancelled) {
+      emit?.({
+        kind: "info",
+        message: `Cancelled: kept existing worker config unchanged for harness ${result.harnessKey}.`,
+      });
+      return result.exitCode;
+    }
+
     emit?.({
       kind: result.changed ? "success" : "info",
       message: result.source === "preset"

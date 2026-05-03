@@ -31,6 +31,7 @@ export interface WithTaskResult {
   exitCode: number;
   harnessKey: string;
   source: "preset" | "custom";
+  cancelled: boolean;
   changed: boolean;
   configPath: string;
   existingLocalWorkerKeys: readonly ExistingLocalWorkerKeyPath[];
@@ -193,21 +194,71 @@ function detectExistingLocalWorkerKeys(
   }
 
   const localValues = workerConfigPort.listValues?.(configDirPath, "local");
-  if (!localValues?.workers) {
+  const localWorkers = localValues?.workers;
+  if (!localWorkers) {
     return [];
   }
 
   return LOCAL_WORKER_OVERWRITE_KEYS.filter((keyPath) => {
     if (keyPath === "workers.default") {
-      return localValues.workers.default !== undefined;
+      return localWorkers.default !== undefined;
     }
 
     if (keyPath === "workers.tui") {
-      return localValues.workers.tui !== undefined;
+      return localWorkers.tui !== undefined;
     }
 
-    return localValues.workers.fallbacks !== undefined;
+    return localWorkers.fallbacks !== undefined;
   });
+}
+
+function isWorkerOverwriteMutation(
+  mutation: WithTaskMutationPlanItem,
+): mutation is WithTaskMutationPlanItem & { keyPath: ExistingLocalWorkerKeyPath } {
+  return LOCAL_WORKER_OVERWRITE_KEYS.includes(mutation.keyPath as ExistingLocalWorkerKeyPath);
+}
+
+function formatWorkerKeyList(keys: readonly ExistingLocalWorkerKeyPath[]): string {
+  return keys.join(", ");
+}
+
+async function confirmWorkerOverwriteIfNeeded(
+  dependencies: WithTaskDependencies,
+  harnessKey: string | null | undefined,
+  existingLocalWorkerKeys: readonly ExistingLocalWorkerKeyPath[],
+  plannedMutations: readonly WithTaskMutationPlanItem[],
+): Promise<boolean> {
+  if (harnessKey !== "opencode") {
+    return true;
+  }
+
+  if (existingLocalWorkerKeys.length === 0) {
+    return true;
+  }
+
+  const hasPlannedWorkerMutations = plannedMutations.some((mutation) => isWorkerOverwriteMutation(mutation));
+  if (!hasPlannedWorkerMutations) {
+    return true;
+  }
+
+  const existingKeyList = formatWorkerKeyList(existingLocalWorkerKeys);
+  if (!dependencies.interactiveInput.isTTY()) {
+    throw new Error(
+      `Cannot apply "with opencode" non-interactively because local worker config already exists (${existingKeyList}). Re-run in an interactive terminal to confirm replacing/updating worker settings.`,
+    );
+  }
+
+  if (dependencies.interactiveInput.prepareForPrompt) {
+    await dependencies.interactiveInput.prepareForPrompt();
+  }
+
+  const confirmation = await dependencies.interactiveInput.prompt({
+    kind: "confirm",
+    message: `Local worker config already exists (${existingKeyList}). Running "rundown with opencode" will replace or update these worker settings. Continue?`,
+    defaultValue: false,
+  });
+
+  return confirmation.value.trim().toLowerCase() === "true";
 }
 
 /**
@@ -258,6 +309,26 @@ export function createWithTask(
       return shouldApplyLocalMutation(mutation, localValue, effectiveValue);
     });
 
+    const confirmed = await confirmWorkerOverwriteIfNeeded(
+      dependencies,
+      harnessKey,
+      existingLocalWorkerKeys,
+      plannedMutations,
+    );
+
+    if (!confirmed) {
+      return {
+        exitCode: EXIT_CODE_SUCCESS,
+        harnessKey: resolvedHarnessKey,
+        source: resultSource,
+        cancelled: true,
+        changed: false,
+        configPath: resolveLocalConfigPath(dependencies, configDirPath),
+        existingLocalWorkerKeys,
+        configuredKeys: [],
+      };
+    }
+
     let changed = false;
     let configPath = resolveLocalConfigPath(dependencies, configDirPath);
 
@@ -281,6 +352,7 @@ export function createWithTask(
       exitCode: EXIT_CODE_SUCCESS,
       harnessKey: resolvedHarnessKey,
       source: resultSource,
+      cancelled: false,
       changed,
       configPath,
       existingLocalWorkerKeys,
