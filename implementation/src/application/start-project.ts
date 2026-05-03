@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { createInitProject } from "./init-project.js";
 import { initGitRepo } from "./git-operations.js";
@@ -37,9 +36,6 @@ export interface StartProjectOptions {
   fromDesign?: string;
   noBootstrap?: boolean;
 }
-
-const BOOTSTRAP_MAX_FILES = 5000;
-const BOOTSTRAP_MAX_BYTES = 50 * 1024 * 1024;
 
 interface ValidatedWorkspaceDirectories {
   designDir: string;
@@ -98,7 +94,6 @@ export function createStartProject(
 
   return async function startProject(options: StartProjectOptions = {}): Promise<number> {
     const invocationDirectory = dependencies.workingDirectory.cwd();
-    const description = normalizeDescription(options.description);
     const dirOption = options.dir?.trim();
     const targetDirectory = dirOption
       ? dependencies.pathOperations.resolve(dirOption)
@@ -159,18 +154,6 @@ export function createStartProject(
       targetDirectory,
       workspaceDirectories.predictionDir,
     );
-    const bootstrapExcludedRelativePaths = buildBootstrapExcludedRelativePaths(workspaceDirectories);
-    const designPathExistedBeforeStart = dependencies.fileSystem.exists(designPath);
-    const designHadFilesBeforeStart = hasAnyFilesRecursively(dependencies.fileSystem, dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.designDir,
-    ));
-    const predictionHadFilesBeforeStart = hasAnyFilesRecursively(dependencies.fileSystem, predictionDir);
-    const implementationHadFilesBeforeStart = hasBootstrapSourceFilesBeforeStart({
-      fileSystem: dependencies.fileSystem,
-      implementationRoot: targetDirectory,
-      excludedRelativePaths: bootstrapExcludedRelativePaths,
-    });
     await initGitRepo(dependencies.gitClient, targetDirectory);
 
     const initProject = createInitProject({
@@ -230,7 +213,7 @@ export function createStartProject(
       writeFileIfMissing(
         dependencies.fileSystem,
         designPath,
-        buildDesignMarkdown(description),
+        "",
         emit,
       );
     }
@@ -252,38 +235,6 @@ export function createStartProject(
     }
 
     try {
-      const bootstrapResult = bootstrapFromExistingImplementation({
-        fileSystem: dependencies.fileSystem,
-        workspaceRoot: targetDirectory,
-        paths: {
-          designPath,
-          predictionDir,
-          implementationRoot: targetDirectory,
-          bootstrapExcludedRelativePaths,
-          implementationHadFilesBeforeStart,
-          designPathExistedBeforeStart,
-          designHadFilesBeforeStart,
-          predictionHadFilesBeforeStart,
-        },
-        description,
-        noBootstrap: options.noBootstrap || externalDesignCurrentPath !== undefined,
-      });
-
-      if (bootstrapResult.bootstrapped) {
-        emit({
-          kind: "success",
-          message: `Bootstrapped prediction baseline from existing implementation (${bootstrapResult.mirroredFiles} files mirrored).`,
-        });
-      }
-    } catch (error) {
-      emit({
-        kind: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return EXIT_CODE_FAILURE;
-    }
-
-    try {
       await dependencies.gitClient.run(["add", "-A", "--", "."], targetDirectory);
       await dependencies.gitClient.run(["commit", "-m", "rundown: start project"], targetDirectory);
       emit({ kind: "success", message: "Committed scaffold: rundown: start project" });
@@ -297,281 +248,6 @@ export function createStartProject(
 
     return EXIT_CODE_SUCCESS;
   };
-}
-
-function normalizeDescription(value: string | undefined): string {
-  const normalized = value?.trim();
-  return normalized && normalized.length > 0
-    ? normalized
-    : "New prediction project";
-}
-
-function buildDesignMarkdown(description: string): string {
-  return "# " + description + "\n\n" + description + "\n";
-}
-
-function buildBootstrappedDesignMarkdown(description: string): string {
-  return [
-    "# " + description,
-    "",
-    description,
-    "",
-    "Bootstrapped from existing implementation. Replace with target description in domain language; do not list implementation details.",
-    "",
-  ].join("\n");
-}
-
-function bootstrapFromExistingImplementation(input: {
-  fileSystem: FileSystem;
-  workspaceRoot: string;
-  paths: {
-    designPath: string;
-    predictionDir: string;
-    implementationRoot: string;
-    bootstrapExcludedRelativePaths: string[];
-    implementationHadFilesBeforeStart: boolean;
-    designPathExistedBeforeStart: boolean;
-    designHadFilesBeforeStart: boolean;
-    predictionHadFilesBeforeStart: boolean;
-  };
-  description: string;
-  noBootstrap?: boolean;
-}): { bootstrapped: boolean; mirroredFiles: number } {
-  const {
-    fileSystem,
-    workspaceRoot,
-    paths,
-    description,
-    noBootstrap,
-  } = input;
-
-  if (noBootstrap) {
-    return { bootstrapped: false, mirroredFiles: 0 };
-  }
-
-  if (paths.designPathExistedBeforeStart || paths.designHadFilesBeforeStart || paths.predictionHadFilesBeforeStart) {
-    return { bootstrapped: false, mirroredFiles: 0 };
-  }
-
-  if (!paths.implementationHadFilesBeforeStart) {
-    return { bootstrapped: false, mirroredFiles: 0 };
-  }
-
-  const implementationFiles = listBootstrapSourceFiles({
-    fileSystem,
-    workspaceRoot,
-    implementationRoot: paths.implementationRoot,
-    excludedRelativePaths: paths.bootstrapExcludedRelativePaths,
-  });
-  if (implementationFiles.length === 0) {
-    return { bootstrapped: false, mirroredFiles: 0 };
-  }
-
-  fileSystem.writeText(paths.designPath, buildBootstrappedDesignMarkdown(description));
-
-  for (const sourceFilePath of implementationFiles) {
-    const relativePath = path.relative(paths.implementationRoot, sourceFilePath);
-    const predictionFilePath = path.join(paths.predictionDir, relativePath);
-    const predictionParentDirectory = path.dirname(predictionFilePath);
-    if (!fileSystem.exists(predictionParentDirectory)) {
-      fileSystem.mkdir(predictionParentDirectory, { recursive: true });
-    }
-
-    const content = fs.readFileSync(sourceFilePath);
-    fs.writeFileSync(predictionFilePath, content);
-  }
-
-  return {
-    bootstrapped: true,
-    mirroredFiles: implementationFiles.length,
-  };
-}
-
-function hasBootstrapSourceFilesBeforeStart(input: {
-  fileSystem: FileSystem;
-  implementationRoot: string;
-  excludedRelativePaths: string[];
-}): boolean {
-  const { fileSystem, implementationRoot, excludedRelativePaths } = input;
-  if (!fileSystem.exists(implementationRoot)) {
-    return false;
-  }
-  if (!fileSystem.stat(implementationRoot)?.isDirectory) {
-    return false;
-  }
-
-  const pendingDirectories = [implementationRoot];
-  while (pendingDirectories.length > 0) {
-    const currentDirectory = pendingDirectories.pop();
-    if (!currentDirectory) {
-      continue;
-    }
-
-    const directoryEntries = fs.readdirSync(currentDirectory, { withFileTypes: true });
-    for (const entry of directoryEntries) {
-      const entryPath = path.join(currentDirectory, entry.name);
-      const relativePath = path.relative(implementationRoot, entryPath).replace(/\\/g, "/");
-      if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
-        continue;
-      }
-
-      if (entry.isFile()) {
-        return true;
-      }
-      if (entry.isDirectory()) {
-        pendingDirectories.push(entryPath);
-      }
-    }
-  }
-
-  return false;
-}
-
-function listBootstrapSourceFiles(input: {
-  fileSystem: FileSystem;
-  workspaceRoot: string;
-  implementationRoot: string;
-  excludedRelativePaths: string[];
-}): string[] {
-  const {
-    fileSystem,
-    workspaceRoot,
-    implementationRoot,
-    excludedRelativePaths,
-  } = input;
-  if (!fileSystem.exists(implementationRoot)) {
-    return [];
-  }
-  if (!fileSystem.stat(implementationRoot)?.isDirectory) {
-    return [];
-  }
-
-  const discoveredFiles: string[] = [];
-  const pendingDirectories = [implementationRoot];
-  let totalBytes = 0;
-
-  while (pendingDirectories.length > 0) {
-    const currentDirectory = pendingDirectories.pop();
-    if (!currentDirectory) {
-      continue;
-    }
-
-    const directoryEntries = fs.readdirSync(currentDirectory, { withFileTypes: true });
-    for (const entry of directoryEntries) {
-      const entryPath = path.join(currentDirectory, entry.name);
-      const relativePath = path.relative(implementationRoot, entryPath).replace(/\\/g, "/");
-
-      if (entry.isDirectory()) {
-        if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
-          continue;
-        }
-        pendingDirectories.push(entryPath);
-        continue;
-      }
-
-      if (!entry.isFile()) {
-        continue;
-      }
-
-      if (isBootstrapExcludedRelativePath(relativePath, excludedRelativePaths)) {
-        continue;
-      }
-
-      discoveredFiles.push(entryPath);
-
-      const fileSizeBytes = fs.statSync(entryPath).size;
-      totalBytes += fileSizeBytes;
-
-      if (discoveredFiles.length > BOOTSTRAP_MAX_FILES || totalBytes > BOOTSTRAP_MAX_BYTES) {
-        throw new Error(
-          `Bootstrap aborted: implementation tree exceeds limit (${discoveredFiles.length} files, ${totalBytes} bytes). `
-          + "Limit is 5000 files or 50MB. Use --no-bootstrap and initialize prediction manually.",
-        );
-      }
-    }
-  }
-
-  discoveredFiles.sort((left, right) => {
-    const leftRelative = path.relative(workspaceRoot, left).replace(/\\/g, "/");
-    const rightRelative = path.relative(workspaceRoot, right).replace(/\\/g, "/");
-    return leftRelative.localeCompare(rightRelative);
-  });
-  return discoveredFiles;
-}
-
-function isBootstrapExcludedRelativePath(relativePath: string, excludedRelativePaths: string[]): boolean {
-  const normalizedPath = relativePath.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (normalizedPath.length === 0) {
-    return false;
-  }
-
-  for (const excludedRelativePath of excludedRelativePaths) {
-    if (normalizedPath === excludedRelativePath || normalizedPath.startsWith(excludedRelativePath + "/")) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function buildBootstrapExcludedRelativePaths(
-  workspaceDirectories: ValidatedWorkspaceDirectories,
-): string[] {
-  const BOOTSTRAP_EXCLUDED_DIRS = [
-    ".git",
-    ".rundown",
-    "node_modules",
-    "dist",
-    "coverage",
-    workspaceDirectories.designDir,
-    workspaceDirectories.specsDir,
-    workspaceDirectories.migrationsDir,
-    workspaceDirectories.predictionDir,
-  ];
-  const excludedPaths = new Set<string>();
-
-  for (const dirName of BOOTSTRAP_EXCLUDED_DIRS) {
-    excludedPaths.add(normalizeRelativePathSegment(dirName));
-  }
-
-  return [...excludedPaths].sort((left, right) => left.localeCompare(right));
-}
-
-function normalizeRelativePathSegment(value: string): string {
-  return value
-    .replace(/\\/g, "/")
-    .replace(/^\.\//, "")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-}
-
-function hasAnyFilesRecursively(fileSystem: FileSystem, rootDirectory: string): boolean {
-  if (!fileSystem.exists(rootDirectory)) {
-    return false;
-  }
-  if (!fileSystem.stat(rootDirectory)?.isDirectory) {
-    return false;
-  }
-
-  const pendingDirectories = [rootDirectory];
-  while (pendingDirectories.length > 0) {
-    const currentDirectory = pendingDirectories.pop();
-    if (!currentDirectory) {
-      continue;
-    }
-
-    for (const entry of fileSystem.readdir(currentDirectory)) {
-      const entryPath = path.join(currentDirectory, entry.name);
-      if (entry.isFile) {
-        return true;
-      }
-      if (entry.isDirectory) {
-        pendingDirectories.push(entryPath);
-      }
-    }
-  }
-
-  return false;
 }
 
 function buildWorkspaceLinkTarget(

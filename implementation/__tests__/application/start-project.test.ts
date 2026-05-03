@@ -39,37 +39,27 @@ describe("start-project", () => {
     expect(fs.statSync(predictionPath).isDirectory()).toBe(true);
   });
 
-  it("bootstraps design target and mirrors existing implementation into prediction", async () => {
+  it("creates an empty design target and leaves prediction empty in non-empty workspaces", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
-    const sourceFilePath = path.join(workspace, "src", "foo.ts");
-    const packageJsonPath = path.join(workspace, "package.json");
-    fs.writeFileSync(sourceFilePath, "export const foo = 1;\n");
-    fs.writeFileSync(packageJsonPath, "{\"name\":\"bootstrap-test\"}\n");
+    fs.writeFileSync(path.join(workspace, "src", "foo.ts"), "export const foo = 1;\n");
+    fs.writeFileSync(path.join(workspace, "package.json"), "{\"name\":\"bootstrap-test\"}\n");
 
     const harness = createHarness(workspace);
-    const description = "Bootstrap existing implementation";
 
-    const code = await harness.startProject({ description });
+    const code = await harness.startProject({ description: "Non-empty workspace" });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
 
     const targetPath = path.join(workspace, "design", "current", "Target.md");
     const targetSource = fs.readFileSync(targetPath, "utf-8");
-    expect(targetSource).toContain(`# ${description}`);
-    expect(targetSource).toContain(
-      "Bootstrapped from existing implementation. Replace with target description in domain language; do not list implementation details.",
-    );
+    expect(targetSource).toBe("");
 
-    const mirroredSource = fs.readFileSync(path.join(workspace, "prediction", "src", "foo.ts"));
-    const originalSource = fs.readFileSync(sourceFilePath);
-    expect(mirroredSource.equals(originalSource)).toBe(true);
-
-    const mirroredPackageJson = fs.readFileSync(path.join(workspace, "prediction", "package.json"));
-    expect(mirroredPackageJson.equals(fs.readFileSync(packageJsonPath))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "prediction", "package.json"))).toBe(false);
   });
 
-  it("keeps prediction empty and does not bootstrap when workspace starts fully empty", async () => {
+  it("creates an empty design target and keeps prediction empty when workspace starts fully empty", async () => {
     const workspace = makeTempWorkspace();
     const harness = createHarness(workspace);
 
@@ -79,8 +69,7 @@ describe("start-project", () => {
 
     const targetPath = path.join(workspace, "design", "current", "Target.md");
     const targetSource = fs.readFileSync(targetPath, "utf-8");
-    expect(targetSource).toContain("# Empty workspace");
-    expect(targetSource).not.toContain("Bootstrapped from existing implementation");
+    expect(targetSource).toBe("");
 
     const predictionFiles = listFilesRecursively(path.join(workspace, "prediction"));
     expect(predictionFiles).toEqual([]);
@@ -108,22 +97,20 @@ describe("start-project", () => {
     expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
   });
 
-  it("supports --no-bootstrap by keeping prediction empty and retaining default target seed", async () => {
+  it("supports --no-bootstrap without changing deterministic clean scaffold output", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "src", "foo.ts"), "export const foo = 3;\n");
 
     const harness = createHarness(workspace);
-    const description = "No bootstrap";
 
-    const code = await harness.startProject({ description, noBootstrap: true });
+    const code = await harness.startProject({ description: "No bootstrap", noBootstrap: true });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
 
     const targetPath = path.join(workspace, "design", "current", "Target.md");
     const targetSource = fs.readFileSync(targetPath, "utf-8");
-    expect(targetSource).toBe(`# ${description}\n\n${description}\n`);
-    expect(targetSource).not.toContain("Bootstrapped from existing implementation");
+    expect(targetSource).toBe("");
 
     expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
     const predictionFiles = listFilesRecursively(path.join(workspace, "prediction"));

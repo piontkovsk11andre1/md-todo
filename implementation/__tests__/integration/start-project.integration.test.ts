@@ -459,7 +459,7 @@ describeIfStartAvailable("start-project integration", () => {
     });
   });
 
-  it("does not create migration files for existing directories", async () => {
+  it("creates the same clean scaffold for non-empty directories", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-project";
     const projectDir = path.join(workspace, projectDirName);
@@ -506,83 +506,33 @@ describeIfStartAvailable("start-project integration", () => {
     expect(result.code).toBe(0);
 
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
 
     const targetDesignPath = path.join(projectDir, "design", "current", "Target.md");
     const targetDesignSource = fs.readFileSync(targetDesignPath, "utf-8");
-    expect(targetDesignSource).toContain("# Existing directory start");
-    expect(targetDesignSource).toContain("Bootstrapped from existing implementation. Replace with target description in domain language; do not list implementation details.");
+    expect(targetDesignSource).toBe("");
   });
 
-  it("mirrors existing workspace files into prediction byte-for-byte when bootstrap fires", async () => {
+  it("creates an empty local design target for empty directories", async () => {
     const workspace = makeTempWorkspace();
-    const projectDirName = "existing-project-mirror";
+    const projectDirName = "empty-project";
     const projectDir = path.join(workspace, projectDirName);
 
     execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
     execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
     execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
 
-    fs.mkdirSync(path.join(projectDir, "src"), { recursive: true });
-    fs.mkdirSync(path.join(projectDir, "assets"), { recursive: true });
-    fs.mkdirSync(path.join(projectDir, "dist"), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, "src", "foo.ts"), "export const foo = 1;\n", "utf-8");
-    fs.writeFileSync(path.join(projectDir, "package.json"), "{\"name\":\"mirror-test\"}\n", "utf-8");
-    const binarySource = Buffer.from([0, 255, 10, 13, 128, 42]);
-    fs.writeFileSync(path.join(projectDir, "assets", "sample.bin"), binarySource);
-    fs.writeFileSync(path.join(projectDir, "dist", "bundle.js"), "ignored output\n", "utf-8");
-
     const result = await runCli([
       "start",
-      "Existing mirror start",
+      "Empty directory start",
       "--dir",
       projectDirName,
     ], workspace);
 
     expect(result.code).toBe(0);
-
-    const sourceTs = fs.readFileSync(path.join(projectDir, "src", "foo.ts"));
-    const mirroredTs = fs.readFileSync(path.join(projectDir, "prediction", "src", "foo.ts"));
-    expect(mirroredTs.equals(sourceTs)).toBe(true);
-
-    const sourcePackageJson = fs.readFileSync(path.join(projectDir, "package.json"));
-    const mirroredPackageJson = fs.readFileSync(path.join(projectDir, "prediction", "package.json"));
-    expect(mirroredPackageJson.equals(sourcePackageJson)).toBe(true);
-
-    const mirroredBinary = fs.readFileSync(path.join(projectDir, "prediction", "assets", "sample.bin"));
-    expect(mirroredBinary.equals(binarySource)).toBe(true);
-
-    expect(fs.existsSync(path.join(projectDir, "prediction", "dist", "bundle.js"))).toBe(false);
-  });
-
-  it("fails with a clear error when bootstrap mirror exceeds the 50MB cap", async () => {
-    const workspace = makeTempWorkspace();
-    const projectDirName = "existing-project-too-large";
-    const projectDir = path.join(workspace, projectDirName);
-
-    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
-    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
-    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
-
-    fs.mkdirSync(path.join(projectDir, "src"), { recursive: true });
-    fs.writeFileSync(
-      path.join(projectDir, "src", "large.bin"),
-      Buffer.alloc(50 * 1024 * 1024 + 1, 7),
-    );
-
-    const result = await runCli([
-      "start",
-      "Existing mirror start too large",
-      "--dir",
-      projectDirName,
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
-    expect(stderr).toContain("Bootstrap aborted: implementation tree exceeds limit");
-    expect(stderr).toContain("Limit is 5000 files or 50MB");
-    expect(stderr).toContain("Use --no-bootstrap");
-
-    expect(fs.existsSync(path.join(projectDir, "prediction", "src", "large.bin"))).toBe(false);
+    expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
+    expect(fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8")).toBe("");
   });
 
   it("keeps custom design dir while leaving migrations empty in non-empty workspace", async () => {
