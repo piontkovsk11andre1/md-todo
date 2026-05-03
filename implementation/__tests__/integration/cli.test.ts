@@ -11233,6 +11233,22 @@ describe.sequential("CLI integration", () => {
     expect(combinedOutput.includes("unknown option")).toBe(true);
   });
 
+  it("rundown agent --agents is rejected as an unsupported option", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await withTerminalTty(true, () => runCli(["agent", "--agents"], workspace));
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--agents")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
+  });
+
   it("accepts root --continue shorthand flags for bare invocation", async () => {
     const workspace = makeTempWorkspace();
 

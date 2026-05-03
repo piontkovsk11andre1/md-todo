@@ -54,7 +54,6 @@ import type {
   TranslateCommandInvocationOptions,
 } from "./cli-invocation-types.js";
 import { resolveInvocationWorkspaceContext } from "./invocation-workspace-context.js";
-import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   createNodeFileSystem,
   createNodePathOperationsAdapter,
@@ -246,11 +245,6 @@ export function createHelpCommandAction({
     const workerOption = resolveCliOptionValue(invocationArgv, "--worker");
     if (!isInteractiveHelpInvocationCommand(resolveInvocationCommand(invocationArgv))) {
       outputHelp();
-      return EXIT_CODE_SUCCESS;
-    }
-
-    if (resolveInvocationCommand(invocationArgv) === "agent" && hasCliFlag(invocationArgv, "--agents")) {
-      process.stdout.write(getAgentsTemplate());
       return EXIT_CODE_SUCCESS;
     }
 
