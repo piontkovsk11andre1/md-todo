@@ -3,6 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as tuiModule from "../../../src/presentation/tui/index.ts";
+import {
+  DEFAULT_WORKSPACE_DIRECTORIES,
+  DEFAULT_WORKSPACE_PLACEMENT,
+} from "../../../src/application/workspace-paths.ts";
 
 describe("tui index module", () => {
   const tempDirs: string[] = [];
@@ -74,7 +78,16 @@ describe("tui index module", () => {
       refreshStatuses,
     });
 
-    expect(app.startProject).toHaveBeenCalledWith({});
+    expect(app.startProject).toHaveBeenCalledWith({
+      description: "Initialize workspace",
+      designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
+      specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
+      migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
+      designPlacement: DEFAULT_WORKSPACE_PLACEMENT.design,
+      specsPlacement: DEFAULT_WORKSPACE_PLACEMENT.specs,
+      migrationsPlacement: DEFAULT_WORKSPACE_PLACEMENT.migrations,
+      noBootstrap: false,
+    });
     expect(state.mainMenuState.variant).toBe("initialized");
     expect(state.rootWorkspaceState.isEmptyBootstrap).toBe(false);
     expect(state.mainMenuHint).toBe("Project initialized.");

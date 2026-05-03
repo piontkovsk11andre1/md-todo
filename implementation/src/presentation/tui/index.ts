@@ -70,6 +70,10 @@ import {
   renderHelpSceneLines,
   runHelpSceneAction,
 } from "./scenes/help.ts";
+import {
+  DEFAULT_WORKSPACE_DIRECTORIES,
+  DEFAULT_WORKSPACE_PLACEMENT,
+} from "../../application/workspace-paths.js";
 import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.ts";
 import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.ts";
 
@@ -87,6 +91,8 @@ type SceneId =
 type ContinueState = ReturnType<typeof createContinueSceneState>;
 type ContinueUiState = "previewing" | "running" | "done";
 type SceneStack = SceneId[];
+
+const TUI_START_DESCRIPTION = "Initialize workspace";
 
 type SceneRouterState = {
   sceneId: SceneId;
@@ -149,7 +155,16 @@ export async function runMainMenuStartAction({
   state.mainMenuHint = "Starting workspace...";
 
   try {
-    const exitCode = await app.startProject({});
+    const exitCode = await app.startProject({
+      description: TUI_START_DESCRIPTION,
+      designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
+      specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
+      migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
+      designPlacement: DEFAULT_WORKSPACE_PLACEMENT.design,
+      specsPlacement: DEFAULT_WORKSPACE_PLACEMENT.specs,
+      migrationsPlacement: DEFAULT_WORKSPACE_PLACEMENT.migrations,
+      noBootstrap: false,
+    });
     if (exitCode === 0) {
       const workspaceState = refreshRootWorkspaceState(state, currentWorkingDirectory);
       state.mainMenuState = createMainMenuSceneState({
