@@ -436,7 +436,7 @@ Markdown:
 What happens:
 
 1. `verify:` / `confirm:` / `check:` run verify-only behavior.
-2. `memory:` / `memorize:` / `remember:` / `inventory:` run capture + persist, then verify.
+2. `memory:` / `memorize:` / `remember:` / `inventory:` run capture + persist, then verify; persisted memory artifacts are canonical and inline `memory-result:` annotations are not emitted.
 3. `fast:` / `raw:` / `quick:` run execution without verification for that task (inverse of verify-only).
 4. `profile=` applies as a modifier and composes with downstream handler tools.
 5. `include:` executes tasks from a cloned artifacts copy of the target markdown file and auto-checks include on success.

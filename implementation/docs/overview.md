@@ -312,6 +312,12 @@ Intent precedence notes:
 - `fast:` / `raw:` / `quick:` support directive-parent inheritance (`- fast:` / `- raw:` / `- quick:`) for child checkboxes.
 - Mixed explicit intent prefixes follow first-prefix precedence (`verify: fast: ...` -> verify-only, `fast: verify: ...` -> fast-execution).
 
+Memory-capture contract:
+
+- Persisted source-local memory artifacts are authoritative (`.rundown/<source>.memory.md` and `.rundown/memory-index.json`).
+- `memory-result:` inline bullets are legacy/non-authoritative and are not emitted as part of `memory:` execution.
+- Rundown owns `memory:` checkbox completion after execute persistence and verification; workers should not manually check the task or inject ad hoc source-note annotations.
+
 Modifiers patch context left-to-right; the terminal handler executes behavior. If only modifiers are present, rundown uses default execute+verify with the modified context.
 
 Special-case forms:

@@ -244,6 +244,8 @@ Execution behavior:
 
 - Rundown executes the normalized payload as the worker prompt.
 - On successful worker output, rundown appends the captured content to source-local memory.
+- `memory-result:` is not a supported output surface for `memory:` execution; inline `memory-result:` bullets are treated as legacy/non-authoritative content.
+- Rundown (not the worker) owns checkbox completion for `memory:` tasks after persistence and verification succeed.
 - Memory-capture tasks still follow normal run lifecycle behavior (verification/repair/checkbox handling) unless overridden by flags.
 
 Storage layout (source-local):
