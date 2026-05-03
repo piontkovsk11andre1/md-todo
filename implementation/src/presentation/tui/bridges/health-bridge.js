@@ -199,6 +199,18 @@ async function runWorkerHealthStatus({ appFactory }) {
   });
 }
 
+async function runResetWorkerHealthEntry({ appFactory, key }) {
+  return runAppJsonCommand({
+    appFactory,
+    invoke: (app) => {
+      if (typeof app.resetWorkerHealthEntry !== "function") {
+        throw new Error("resetWorkerHealthEntry use case is not registered on the app.");
+      }
+      return app.resetWorkerHealthEntry({ key, json: true });
+    },
+  });
+}
+
 export function createHealthBridge({
   appFactory = createApp,
   cwd = process.cwd(),
@@ -244,9 +256,68 @@ export function createHealthBridge({
     }
   }
 
+  async function resetEntry(key) {
+    if (typeof key !== "string" || key.length === 0) {
+      throw new Error("resetEntry requires a non-empty entry key.");
+    }
+
+    try {
+      const payload = await runResetWorkerHealthEntry({ appFactory, key });
+      const envelope = safeObject(payload);
+      return {
+        key: typeof envelope.removedKey === "string" ? envelope.removedKey : key,
+        removed: envelope.removed === true,
+        filePath: typeof envelope.filePath === "string" && envelope.filePath.length > 0
+          ? envelope.filePath
+          : fallbackFilePath,
+        configDir: typeof envelope.configDir === "string" && envelope.configDir.length > 0
+          ? envelope.configDir
+          : effectiveConfigDirPath,
+        generatedAt: typeof envelope.generatedAt === "string" && envelope.generatedAt.length > 0
+          ? envelope.generatedAt
+          : new Date().toISOString(),
+      };
+    } catch (error) {
+      // If the application use case is unavailable (e.g. older runtime) but the
+      // bridge was constructed with a direct workerHealthStore handle that
+      // exposes removeEntry, fall back to the port to keep the scene usable.
+      if (typeof workerHealthStore?.removeEntry === "function") {
+        const before = safeObject(workerHealthStore.read?.(effectiveConfigDirPath));
+        const existed = Array.isArray(before.entries)
+          ? before.entries.some((entry) => entry?.key === key)
+          : false;
+        const snapshot = workerHealthStore.removeEntry(key, effectiveConfigDirPath);
+        return {
+          key,
+          removed: existed,
+          filePath: fallbackFilePath,
+          configDir: effectiveConfigDirPath,
+          generatedAt: typeof snapshot?.updatedAt === "string" && snapshot.updatedAt.length > 0
+            ? snapshot.updatedAt
+            : new Date().toISOString(),
+        };
+      }
+      throw error;
+    }
+  }
+
+  async function probeEntry(key) {
+    // Manual on-demand worker probes are not yet supported in any layer (no
+    // probe port, no probe use case, no probe CLI). Return a stable shape so
+    // the Health scene can render `probe not yet supported` and remain usable
+    // when a real probe API lands.
+    return {
+      key: typeof key === "string" ? key : "",
+      supported: false,
+      reason: "probe not yet supported",
+    };
+  }
+
   return {
     configDirPath: effectiveConfigDirPath,
     loadHealthStatus,
     loadWorkerHealth: loadHealthStatus,
+    resetEntry,
+    probeEntry,
   };
 }

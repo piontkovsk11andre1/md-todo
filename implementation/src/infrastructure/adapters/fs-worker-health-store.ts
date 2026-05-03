@@ -20,6 +20,12 @@ export function createFsWorkerHealthStore(): WorkerHealthStore {
     update(updater, configDirOrCwd) {
       return updateWorkerHealthSnapshot(updater, configDirOrCwd);
     },
+    removeEntry(key, configDirOrCwd) {
+      return updateWorkerHealthSnapshot((snapshot) => ({
+        ...snapshot,
+        entries: snapshot.entries.filter((entry) => entry.key !== key),
+      }), configDirOrCwd);
+    },
     filePath(configDirOrCwd) {
       return workerHealthStoreFilePath(configDirOrCwd);
     },

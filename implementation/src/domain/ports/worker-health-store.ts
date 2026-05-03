@@ -22,6 +22,12 @@ export interface WorkerHealthStore {
     updater: (snapshot: WorkerHealthSnapshot) => WorkerHealthSnapshot,
     configDirOrCwd?: string,
   ): WorkerHealthSnapshot;
+  /**
+   * Atomically removes a single entry by key, preserving schemaVersion and
+   * file-lock semantics. Returns the refreshed snapshot. No-op when the key
+   * is unknown.
+   */
+  removeEntry?(key: string, configDirOrCwd?: string): WorkerHealthSnapshot;
   /** Returns the absolute file path used for persistence. */
   filePath(configDirOrCwd?: string): string;
 }

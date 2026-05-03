@@ -17,6 +17,10 @@ import {
   createViewWorkerHealthStatus,
   type ViewWorkerHealthOptions,
 } from "./application/worker-health-status.js";
+import {
+  createResetWorkerHealthEntry,
+  type ResetWorkerHealthOptions,
+} from "./application/reset-worker-health.js";
 import { createPlanTask, type PlanTaskOptions as PlanTaskUseCaseOptions } from "./application/plan-task.js";
 import { createResearchTask, type ResearchTaskOptions as ResearchTaskUseCaseOptions } from "./application/research-task.js";
 import { createTranslateTask, type TranslateTaskOptions as TranslateTaskUseCaseOptions } from "./application/translate-task.js";
@@ -157,6 +161,7 @@ export type App = {
   validateMemory: (options: ValidateMemoryOptions) => Promise<number>;
   cleanMemory: (options: CleanMemoryOptions) => Promise<number>;
   viewWorkerHealthStatus: (options: ViewWorkerHealthOptions) => number;
+  resetWorkerHealthEntry: (options: ResetWorkerHealthOptions) => number;
   reverifyTask: (options: ReverifyTaskCommandOptions) => Promise<number>;
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   undoTask: (options: UndoTaskOptions) => Promise<number>;
@@ -561,6 +566,11 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       output: ports.output,
     }),
+    resetWorkerHealthEntry: (ports) => createResetWorkerHealthEntry({
+      workerHealthStore: ports.workerHealthStore,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
     viewMemory: (ports) => createViewMemory({
       sourceResolver: ports.sourceResolver,
       memoryResolver: ports.memoryResolver,
@@ -852,6 +862,7 @@ function createAppFromFactories(
   const validateMemory = factories.validateMemory(ports);
   const cleanMemory = factories.cleanMemory(ports);
   const viewWorkerHealthStatus = factories.viewWorkerHealthStatus(ports);
+  const resetWorkerHealthEntry = factories.resetWorkerHealthEntry(ports);
   const reverifyTask = factories.reverifyTask(ports);
   const revertTask = factories.revertTask(ports);
   const undoTask = factories.undoTask(ports);
@@ -898,6 +909,7 @@ function createAppFromFactories(
     validateMemory,
     cleanMemory,
     viewWorkerHealthStatus,
+    resetWorkerHealthEntry,
     reverifyTask,
     revertTask,
     undoTask,
