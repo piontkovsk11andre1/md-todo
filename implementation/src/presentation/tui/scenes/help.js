@@ -9,6 +9,11 @@ import {
   handlePagerInput,
   renderPagerLines,
 } from "../components/pager.js";
+import {
+  createKeybindingsOverlayState,
+  handleKeybindingsOverlayInput,
+  renderKeybindingsOverlayLines,
+} from "../components/keybindings-overlay.js";
 
 const FIXED_LOCAL_DOCS = Object.freeze(["README.md", "roadmap.md"]);
 
@@ -250,7 +255,27 @@ export function createHelpSceneState() {
     selectedIndex: 0,
     rows: buildHelpRows(workspaceRoot),
     pager: null,
+    keybindingsOverlay: null,
   };
+}
+
+function buildGlobalKeybindings() {
+  return [
+    { key: "Esc", description: "back" },
+    { key: "Up/Down or j", description: "navigate rows" },
+    { key: "Enter", description: "open selected in pager" },
+    { key: "o", description: "open selected external URL" },
+    { key: "k", description: "open keybindings cheatsheet" },
+    { key: ":", description: "command palette (if available)" },
+    { key: "q or Ctrl+C", description: "quit app" },
+  ];
+}
+
+function buildHelpSceneSpecificKeybindings() {
+  return [
+    { key: "Enter", description: "open local docs and synthesized references" },
+    { key: "o", description: "open selected external link in browser" },
+  ];
 }
 
 export async function runHelpSceneAction({ action, state } = {}) {
@@ -318,6 +343,9 @@ export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
   if (sceneState.pager) {
     return renderPagerLines({ state: sceneState.pager });
   }
+  if (sceneState.keybindingsOverlay) {
+    return renderKeybindingsOverlayLines({ state: sceneState.keybindingsOverlay });
+  }
   const workspaceRoot = typeof sceneState.workspaceRoot === "string" && sceneState.workspaceRoot.length > 0
     ? sceneState.workspaceRoot
     : process.cwd();
@@ -357,6 +385,28 @@ export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
 export function handleHelpInput({ rawInput, state } = {}) {
   const sceneState = state ?? createHelpSceneState();
 
+  if (sceneState.keybindingsOverlay) {
+    const overlayResult = handleKeybindingsOverlayInput({
+      rawInput,
+      state: sceneState.keybindingsOverlay,
+    });
+    if (overlayResult.close) {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          keybindingsOverlay: null,
+        },
+        backToParent: false,
+      };
+    }
+    return {
+      handled: overlayResult.handled,
+      state: sceneState,
+      backToParent: false,
+    };
+  }
+
   if (sceneState.pager) {
     const pagerResult = handlePagerInput({ rawInput, state: sceneState.pager });
     if (pagerResult.backToParent) {
@@ -393,7 +443,7 @@ export function handleHelpInput({ rawInput, state } = {}) {
   const rows = Array.isArray(sceneState.rows) ? sceneState.rows : [];
   const selectedIndex = clampSelectedIndex(sceneState.selectedIndex, rows.length);
 
-  if (input === "\u001b[A" || input === "k") {
+  if (input === "\u001b[A") {
     return {
       handled: true,
       state: {
@@ -464,9 +514,39 @@ export function handleHelpInput({ rawInput, state } = {}) {
       };
     }
 
+    if (selectedRow?.kind === "keybindings") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          keybindingsOverlay: createKeybindingsOverlayState({
+            globalBindings: buildGlobalKeybindings(),
+            sceneBindings: buildHelpSceneSpecificKeybindings(),
+          }),
+          banner: "",
+        },
+        backToParent: false,
+      };
+    }
+
     return {
       handled: false,
       state: sceneState,
+      backToParent: false,
+    };
+  }
+
+  if (input === "k" || input === "K") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        keybindingsOverlay: createKeybindingsOverlayState({
+          globalBindings: buildGlobalKeybindings(),
+          sceneBindings: buildHelpSceneSpecificKeybindings(),
+        }),
+        banner: "",
+      },
       backToParent: false,
     };
   }
