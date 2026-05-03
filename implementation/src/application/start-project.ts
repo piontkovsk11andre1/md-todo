@@ -253,6 +253,10 @@ export function createStartProject(
       await dependencies.gitClient.run(["commit", "-m", "rundown: start project"], targetDirectory);
       emit({ kind: "success", message: "Committed scaffold: rundown: start project" });
     } catch (error) {
+      if (isNoOpCommitError(error)) {
+        emit({ kind: "info", message: "No scaffold changes detected; skipping commit." });
+        return EXIT_CODE_SUCCESS;
+      }
       emit({
         kind: "error",
         message: "Failed to create scaffold commit: " + String(error),
@@ -445,6 +449,11 @@ function writeFileIfMissing(
   fileSystem.writeText(filePath, content);
   emit({ kind: "success", message: "Created " + filePath });
   return true;
+}
+
+function isNoOpCommitError(error: unknown): boolean {
+  const message = String(error).toLowerCase();
+  return message.includes("nothing to commit") || message.includes("nothing added to commit");
 }
 
 function resolveAndValidateWorkspaceDirectories(input: {

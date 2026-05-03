@@ -535,6 +535,38 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8")).toBe("");
   });
 
+  it("does not overwrite existing local Target.md when start is re-run", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "rerun-project";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const firstRun = await runCli([
+      "start",
+      "Re-run target",
+      "--dir",
+      projectDirName,
+    ], workspace);
+    expect(firstRun.code).toBe(0);
+
+    const targetPath = path.join(projectDir, "design", "current", "Target.md");
+    const preservedTarget = "# Existing local target\n\nkeep this content\n";
+    fs.writeFileSync(targetPath, preservedTarget, "utf-8");
+
+    const secondRun = await runCli([
+      "start",
+      "Re-run target",
+      "--dir",
+      projectDirName,
+    ], workspace);
+
+    expect(secondRun.code).toBe(0);
+    expect(fs.readFileSync(targetPath, "utf-8")).toBe(preservedTarget);
+  });
+
   it("keeps custom design dir while leaving migrations empty in non-empty workspace", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-custom-design";
