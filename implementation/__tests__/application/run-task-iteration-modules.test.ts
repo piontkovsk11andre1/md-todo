@@ -7,6 +7,7 @@ import { completeTaskIteration } from "../../src/application/complete-task-itera
 import { runTaskIteration } from "../../src/application/run-task-iteration.js";
 import { runTraceEnrichment } from "../../src/application/trace-enrichment.js";
 import { createTraceRunSession } from "../../src/application/trace-run-session.js";
+import { createCachedCommandExecutor } from "../../src/application/cached-command-executor.js";
 import { includeHandler } from "../../src/domain/builtin-tools/include.js";
 import { listBuiltinToolNames, resolveBuiltinTool } from "../../src/domain/builtin-tools/index.js";
 import { parseTasks } from "../../src/domain/parser.js";
@@ -393,6 +394,74 @@ describe("prepare-task-prompts", () => {
 
     expect(result.prompt).toContain("task=Ship release line=5 index=1");
     expect(result.prompt).not.toContain("line=1 index=0");
+  });
+
+  it("does not warm shared cache from source cli blocks after selected task boundary", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Ship release", {
+      line: 1,
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: [
+        "- [ ] Ship release",
+        "",
+        "```cli",
+        "echo same",
+        "```",
+      ].join("\n"),
+    });
+    const delegateCliExecutor = {
+      execute: vi.fn(async () => ({
+        exitCode: 0,
+        stdout: "cached",
+        stderr: "",
+      })),
+    };
+    const { dependencies } = createDependencies({
+      cwd,
+      task,
+      fileSystem,
+      gitClient: createGitClientMock(),
+      cliBlockExecutor: delegateCliExecutor,
+    });
+    dependencies.templateLoader.load = vi.fn((templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return "```cli\necho same\n```";
+      }
+      return null;
+    });
+    const cachedCliExecutor = createCachedCommandExecutor(delegateCliExecutor);
+
+    const result = await prepareTaskPrompts({
+      dependencies,
+      task,
+      fileSource: fileSystem.readText(taskFile),
+      sourceDir: cwd,
+      shouldVerify: false,
+      trace: false,
+      extraTemplateVars: {},
+      cliExpansionEnabled: true,
+      ignoreCliBlock: false,
+      cliExecutionOptions: undefined,
+      artifactContext: null,
+      traceWriter: {
+        write: vi.fn(),
+        flush: vi.fn(),
+      },
+      cliBlockExecutor: cachedCliExecutor,
+      nowIso: () => "2026-01-01T00:00:00.000Z",
+      emit: vi.fn(),
+      onTemplateCliFailure: vi.fn(async () => null),
+      cwd,
+    });
+
+    expect("earlyExitCode" in result).toBe(false);
+    if ("earlyExitCode" in result) {
+      return;
+    }
+
+    expect(delegateCliExecutor.execute).toHaveBeenCalledTimes(2);
   });
 });
 

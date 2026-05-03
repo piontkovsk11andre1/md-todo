@@ -14,6 +14,10 @@ import {
 } from "./cli-block-handlers.js";
 import { expandCliBlocksWithOptions } from "./cli-block-expansion.js";
 import {
+  createCachedCommandExecutor,
+  createCachedCommandResultStore,
+} from "./cached-command-executor.js";
+import {
   loadProjectTemplatesFromPorts,
   type ProjectTemplates,
 } from "./project-templates.js";
@@ -130,12 +134,37 @@ export async function prepareTaskPrompts(params: {
     cliTraceRunId,
     nowIso,
   );
+  const sourceCliBlocks = extractCliBlocks(fileSource);
+  const sourceCommandCacheEligibility = sourceCliBlocks.flatMap((block) => {
+    const shouldCacheBlockResult = block.endOffset < selectedTaskStartOffset;
+    return block.commands.map(() => shouldCacheBlockResult);
+  });
+  const sourceExecutorDelegate = dependencies.cliBlockExecutor ?? cliBlockExecutor;
+  const sharedCacheStore = dependencies.cliBlockExecutor && dependencies.cliBlockExecutor !== cliBlockExecutor
+    ? createCachedCommandResultStore()
+    : null;
+  let sourceCliBlockExecutor = cliBlockExecutor;
+  let reachedPhaseCliBlockExecutor = cliBlockExecutor;
+  if (sharedCacheStore) {
+    let sourceCommandOrdinal = 0;
+    sourceCliBlockExecutor = createCachedCommandExecutor(sourceExecutorDelegate, sharedCacheStore, {
+      shouldCacheResult: () => {
+        const shouldCache = sourceCommandCacheEligibility[sourceCommandOrdinal] ?? false;
+        sourceCommandOrdinal += 1;
+        return shouldCache;
+      },
+    });
+    reachedPhaseCliBlockExecutor = createCachedCommandExecutor(
+      sourceExecutorDelegate,
+      sharedCacheStore,
+    );
+  }
   // Count CLI blocks in each stage for dry-run reporting.
-  const sourceCliBlockCount = extractCliBlocks(fileSource).length;
+  const sourceCliBlockCount = sourceCliBlocks.length;
   const expandedSourceResult = await expandCliBlocksWithOptions({
     content: fileSource,
     cliExpansionEnabled,
-    cliBlockExecutor,
+    cliBlockExecutor: sourceCliBlockExecutor,
     cwd: sourceDir,
     baseCliExpansionOptions,
     artifactContext,
@@ -146,7 +175,6 @@ export async function prepareTaskPrompts(params: {
     artifactPromptType: "source",
     wrapExecutionOptions: (options) => withSourceCliFailureWarning(options, emit),
   });
-  void selectedTaskStartOffset;
   if ("earlyExitCode" in expandedSourceResult) {
     return expandedSourceResult;
   }
@@ -201,7 +229,7 @@ export async function prepareTaskPrompts(params: {
   const expandedPromptResult = await expandCliBlocksWithOptions({
     content: renderedPrompt,
     cliExpansionEnabled,
-    cliBlockExecutor,
+    cliBlockExecutor: reachedPhaseCliBlockExecutor,
     cwd,
     baseCliExpansionOptions,
     artifactContext,
@@ -230,7 +258,7 @@ export async function prepareTaskPrompts(params: {
     const expandedVerificationPromptResult = await expandCliBlocksWithOptions({
       content: renderedVerificationPrompt,
       cliExpansionEnabled,
-      cliBlockExecutor,
+      cliBlockExecutor: reachedPhaseCliBlockExecutor,
       cwd,
       baseCliExpansionOptions,
       artifactContext,
