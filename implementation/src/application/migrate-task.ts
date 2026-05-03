@@ -592,7 +592,6 @@ async function runMigrateLoop(input: {
     });
 
     const stateBeforeCreate = readMigrationState(dependencies.fileSystem, migrationsDir);
-    const createdMigrationFileNames: string[] = [];
     const stagedValidationErrorBeforePromotion = validateStagedDraftMigrations(
       stagedDrafts,
       stateBeforeCreate.currentPosition,
@@ -601,12 +600,13 @@ async function runMigrateLoop(input: {
       throw new Error(stagedValidationErrorBeforePromotion);
     }
     const promotedMigrationPaths: string[] = [];
+    const promotedMigrationMetadataPaths: string[] = [];
     for (const draft of stagedDrafts) {
       const migrationPath = path.join(migrationsDir, draft.fileName);
       const migrationContent = dependencies.fileSystem.readText(draft.filePath);
       dependencies.fileSystem.writeText(migrationPath, migrationContent);
-      createdMigrationFileNames.push(draft.fileName);
       promotedMigrationPaths.push(migrationPath);
+      promotedMigrationMetadataPaths.push(toWorkspaceRelativeMigrationPath(workspaceRoot, migrationPath));
     }
 
     for (const migrationPath of promotedMigrationPaths) {
@@ -639,7 +639,7 @@ async function runMigrateLoop(input: {
       dependencies.fileSystem,
       workspaceRoot,
       targetRevision.name,
-      createdMigrationFileNames,
+      promotedMigrationMetadataPaths,
     );
   }
 }
@@ -685,6 +685,10 @@ function prepareStagedDraftMigrationDir(
   fileSystem.rm(draftDir, { recursive: true, force: true });
   fileSystem.mkdir(draftDir, { recursive: true });
   return draftDir;
+}
+
+function toWorkspaceRelativeMigrationPath(workspaceRoot: string, migrationPath: string): string {
+  return path.relative(workspaceRoot, migrationPath).replace(/\\/g, "/");
 }
 
 function readStagedDraftMigrationsFromArtifactRun(

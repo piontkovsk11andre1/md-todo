@@ -167,6 +167,18 @@ describe("migrate-task", () => {
         fs.existsSync(path.join(workspace, ".rundown", "runs", "run-test", "drafted-migrations", "rev.1")),
       ).toBe(true);
 
+      const rev1Meta = JSON.parse(
+        fs.readFileSync(path.join(workspace, "design", "rev.1.meta.json"), "utf-8"),
+      ) as {
+        plannedAt?: string | null;
+        migrations?: string[];
+      };
+      expect(rev1Meta.plannedAt).toBeTypeOf("string");
+      expect(rev1Meta.migrations ?? []).toEqual([
+        path.posix.join("migrations", formatMigrationFilename(2, "first-created-migration")),
+        path.posix.join("migrations", formatMigrationFilename(3, "second-created-migration")),
+      ]);
+
       const warningMessages = events
         .filter((event) => event.kind === "warn")
         .map((event) => event.message);
