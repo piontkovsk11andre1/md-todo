@@ -44,11 +44,19 @@ function listDocsMarkdownFiles(workspaceRoot) {
     .sort((left, right) => left.localeCompare(right));
 }
 
+function isExistingFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function existingFixedLocalDocs(workspaceRoot) {
   const rows = [];
   for (const fileName of FIXED_LOCAL_DOCS) {
     const absolutePath = path.join(workspaceRoot, fileName);
-    if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isFile()) {
+    if (isExistingFile(absolutePath)) {
       rows.push(fileName);
     }
   }
@@ -57,7 +65,15 @@ function existingFixedLocalDocs(workspaceRoot) {
 
 function buildHelpRows(workspaceRoot) {
   const rows = [];
-  const localDocs = [...existingFixedLocalDocs(workspaceRoot), ...listDocsMarkdownFiles(workspaceRoot)];
+  const localDocs = [];
+  const seen = new Set();
+  for (const docPath of [...existingFixedLocalDocs(workspaceRoot), ...listDocsMarkdownFiles(workspaceRoot)]) {
+    if (seen.has(docPath)) {
+      continue;
+    }
+    seen.add(docPath);
+    localDocs.push(docPath);
+  }
 
   for (const docPath of localDocs) {
     rows.push({
