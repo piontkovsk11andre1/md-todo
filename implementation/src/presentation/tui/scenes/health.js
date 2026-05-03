@@ -1,6 +1,11 @@
 import pc from "picocolors";
 import { createConfigBridge } from "../bridges/config-bridge.js";
 import { createHealthBridge } from "../bridges/health-bridge.js";
+import {
+  createPagerState,
+  handlePagerInput,
+  renderPagerLines,
+} from "../components/pager.js";
 
 const FAILURE_CLASS_ORDER = [
   "usage_limit",
@@ -114,6 +119,74 @@ function buildFallbackOrderIndex(state) {
   return order;
 }
 
+function formatTimestamp(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    return "";
+  }
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) {
+    return value;
+  }
+  return time.toISOString();
+}
+
+function buildRecentFailuresContent(entry) {
+  // The current `WorkerHealthEntry` domain shape exposes only scalar last-failure
+  // fields (lastFailureClass, lastFailureAt, failureCountWindow). A richer
+  // `recentFailures[]` log requires a schema bump in
+  // `domain/worker-health.ts` + writer changes in `application/run-task-execution.ts`
+  // and is intentionally out of scope for this migration. Until that lands we
+  // present the available scalar data as a single-page failure summary; the
+  // pager scaffolding keeps `[↵]` ready to absorb a paginated history when it
+  // appears, with no further scene wiring required.
+  const lines = [];
+  const identity = entryIdentity(entry) || "(unknown)";
+  lines.push(`Worker: ${identity}`);
+  lines.push(`Key:    ${typeof entry?.key === "string" ? entry.key : "(unknown)"}`);
+  if (typeof entry?.source === "string" && entry.source.length > 0) {
+    lines.push(`Source: ${entry.source}`);
+  }
+  if (typeof entry?.status === "string" && entry.status.length > 0) {
+    lines.push(`Status: ${entry.status}`);
+  }
+  lines.push("");
+
+  const hasLastFailure = (typeof entry?.lastFailureClass === "string" && entry.lastFailureClass.length > 0)
+    || (typeof entry?.lastFailureAt === "string" && entry.lastFailureAt.length > 0);
+
+  if (hasLastFailure) {
+    lines.push("Last failure");
+    lines.push(`  class: ${entry?.lastFailureClass || "(unknown)"}`);
+    const at = formatTimestamp(entry?.lastFailureAt);
+    if (at) {
+      lines.push(`  at:    ${at}`);
+    }
+    if (typeof entry?.failureCountWindow === "number") {
+      lines.push(`  failureCountWindow: ${entry.failureCountWindow}`);
+    }
+    if (typeof entry?.cooldownUntil === "string" && entry.cooldownUntil.length > 0) {
+      lines.push(`  cooldownUntil: ${formatTimestamp(entry.cooldownUntil)}`);
+    }
+    if (typeof entry?.cooldownRemainingSeconds === "number") {
+      lines.push(`  cooldownRemainingSeconds: ${entry.cooldownRemainingSeconds}`);
+    }
+  } else {
+    lines.push("Last failure: (none recorded)");
+  }
+
+  if (typeof entry?.lastSuccessAt === "string" && entry.lastSuccessAt.length > 0) {
+    lines.push("");
+    lines.push(`Last success: ${formatTimestamp(entry.lastSuccessAt)}`);
+  }
+
+  lines.push("");
+  lines.push("Detailed per-failure history is not yet captured by the worker-health");
+  lines.push("snapshot. A future schema bump to `WorkerHealthEntry.recentFailures[]`");
+  lines.push("will populate this view with paginated entries.");
+
+  return lines.join("\n");
+}
+
 export function createHealthSceneState() {
   return {
     healthStatus: { entries: [], generatedAt: "", filePath: "", configDir: "" },
@@ -122,6 +195,9 @@ export function createHealthSceneState() {
     selectedIndex: 0,
     banner: "",
     loading: true,
+    view: "main",
+    pagerState: null,
+    pagerEntryKey: "",
   };
 }
 
@@ -281,6 +357,11 @@ function renderPolicy(state, lines, sectionGap) {
 
 export function renderHealthSceneLines({ state, sectionGap = 1 } = {}) {
   const sceneState = state ?? createHealthSceneState();
+
+  if (sceneState.view === "recent-failures" && sceneState.pagerState) {
+    return renderPagerLines({ state: sceneState.pagerState });
+  }
+
   const lines = [];
 
   renderHeader(sceneState, lines);
@@ -314,6 +395,26 @@ export function renderHealthSceneLines({ state, sectionGap = 1 } = {}) {
 
 export function handleHealthInput({ rawInput, state } = {}) {
   const sceneState = state ?? createHealthSceneState();
+
+  if (sceneState.view === "recent-failures" && sceneState.pagerState) {
+    const result = handlePagerInput({ rawInput, state: sceneState.pagerState });
+    if (result.backToParent) {
+      return {
+        handled: true,
+        state: { ...sceneState, view: "main", pagerState: null, pagerEntryKey: "" },
+        backToParent: false,
+      };
+    }
+    if (result.handled) {
+      return {
+        handled: true,
+        state: { ...sceneState, pagerState: result.state },
+        backToParent: false,
+      };
+    }
+    return { handled: false, state: sceneState, backToParent: false };
+  }
+
   const input = String(rawInput ?? "");
   const isEscape = rawInput === "\u001b";
   const isBackspace = rawInput === "\b" || rawInput === "\u007f";
@@ -456,8 +557,6 @@ export async function runHealthSceneAction({
   }
 
   if (action.type === "view-recent-failures") {
-    // Recent-failures pagination is implemented in a follow-up task; for now
-    // surface whatever scalar last-failure data is available on the entry.
     const entries = Array.isArray(sceneState.healthStatus?.entries)
       ? sceneState.healthStatus.entries
       : [];
@@ -465,16 +564,23 @@ export async function runHealthSceneAction({
     if (!entry) {
       return { ...sceneState, banner: "No entry selected." };
     }
-    if (typeof entry.lastFailureClass === "string" && entry.lastFailureClass.length > 0) {
-      const at = typeof entry.lastFailureAt === "string" && entry.lastFailureAt.length > 0
-        ? ` at ${entry.lastFailureAt}`
-        : "";
-      return {
-        ...sceneState,
-        banner: `Last failure: ${entry.lastFailureClass}${at} (recent-failures view not yet available).`,
-      };
-    }
-    return { ...sceneState, banner: "No recorded failures for this entry." };
+    const identity = entryIdentity(entry) || "(unknown)";
+    const content = buildRecentFailuresContent(entry);
+    const pagerState = createPagerState({
+      content,
+      title: `Recent failures — ${identity}`,
+      filePath: typeof sceneState.healthStatus?.filePath === "string"
+        ? sceneState.healthStatus.filePath
+        : "",
+      viewportHeight: typeof action.viewportHeight === "number" ? action.viewportHeight : undefined,
+    });
+    return {
+      ...sceneState,
+      view: "recent-failures",
+      pagerState,
+      pagerEntryKey: typeof entry.key === "string" ? entry.key : "",
+      banner: "",
+    };
   }
 
   if (action.type === "edit-config") {
