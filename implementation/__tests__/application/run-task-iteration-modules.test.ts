@@ -5982,6 +5982,155 @@ describe("complete-task-iteration", () => {
     ].join("\n"));
   });
 
+  it("completes successfully when execute persists memory and source is already checked before runtime completion", async () => {
+    const memoryTask = createTask(path.join(cwd, "tasks.md"), "capture release context", {
+      line: 1,
+      index: 0,
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [memoryTask.file]: "- [ ] memory: capture release context\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: memoryTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    dependencies.workerExecutor.runWorker = vi.fn(async () => ({
+      exitCode: 0,
+      stdout: [
+        "Captured release context",
+        "Marked the memory task complete in source.",
+      ].join("\n"),
+      stderr: "",
+    }));
+
+    const artifactContext = {
+      runId: "run-complete",
+      rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+      cwd,
+      keepArtifacts: true,
+      commandName: "run",
+    };
+    const workerPattern = inferWorkerPatternFromCommand(["opencode", "run"]);
+
+    const dispatchResult = await dispatchTaskExecution({
+      dependencies,
+      emit: vi.fn(),
+      files: [memoryTask.file],
+      selectedWorkerCommand: ["opencode", "run"],
+      selectedWorkerPattern: workerPattern,
+      pendingPreRunResetTraceEvents: [],
+      traceRunSession: createTraceRunSession({
+        getTraceWriter: () => dependencies.traceWriter,
+        source: "tasks.md",
+        mode: "wait",
+        transport: "file",
+        traceEnabled: false,
+      }),
+      roundContext: {
+        currentRound: 1,
+        totalRounds: 1,
+      },
+      configuredOnlyVerify: false,
+      onlyVerify: false,
+      shouldVerify: false,
+      mode: "wait",
+      keepArtifacts: true,
+      showAgentOutput: false,
+      ignoreCliBlock: false,
+      verify: true,
+      noRepair: false,
+      repairAttempts: 0,
+      taskIntent: "memory-capture",
+      memoryCapturePrefix: "memory",
+      task: memoryTask,
+      prompt: "capture memory",
+      expandedContextBefore: "",
+      artifactContext,
+      resolvedWorkerCommand: ["opencode", "run"],
+      resolvedWorkerPattern: workerPattern,
+      trace: false,
+      cwd,
+      cliExecutionOptions: undefined,
+      traceWriter: dependencies.traceWriter,
+      nowIso: () => "2026-01-01T00:00:00.000Z",
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: undefined,
+    });
+
+    expect(dispatchResult.kind).toBe("ready-for-completion");
+    const canonicalTaskPath = path.resolve(memoryTask.file);
+    const memoryDirectory = path.join(path.dirname(canonicalTaskPath), ".rundown");
+    const memoryFilePath = path.join(memoryDirectory, "tasks.md.memory.md");
+    const memoryIndexPath = path.join(memoryDirectory, "memory-index.json");
+    expect(fileSystem.readText(memoryFilePath)).toContain("Captured release context");
+    const index = JSON.parse(fileSystem.readText(memoryIndexPath)) as Record<string, { summary?: string }>;
+    expect(index[canonicalTaskPath]?.summary).toBe("Captured release context");
+
+    fileSystem.writeText(memoryTask.file, "- [x] memory: capture release context\n");
+
+    const finishRun = vi.fn(async () => 0);
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({});
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+      },
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: memoryTask,
+      sourceText: fileSystem.readText(memoryTask.file),
+      expandedSource: fileSystem.readText(memoryTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: workerPattern,
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext,
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, groupEnded: true });
+    expect(afterTaskCompleteSpy).toHaveBeenCalledTimes(1);
+    expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, {});
+    expect(fileSystem.readText(memoryTask.file)).toBe("- [x] memory: capture release context\n");
+  });
+
   it("refreshes memory template vars for verify/repair after execute-time memory writes", async () => {
     const memoryTask = createTask(path.join(cwd, "tasks.md"), "capture release context", {
       line: 1,
