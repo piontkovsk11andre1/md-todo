@@ -38,6 +38,10 @@ import { createRevertTask, type RevertTaskOptions } from "./application/revert-t
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
 import { createMigrateTask, type MigrateTaskOptions } from "./application/migrate-task.js";
 import {
+  createExploreTask,
+  type ExploreTaskOptions,
+} from "./application/explore-task.js";
+import {
   createDesignTask,
   type DesignTaskOptions,
 } from "./application/docs-task.js";
@@ -72,6 +76,7 @@ import {
   type WithTaskOptions,
   type WithTaskResult,
 } from "./application/with-task.js";
+import { inferWorkerPatternFromCommand } from "./domain/worker-pattern.js";
 import {
   createWorkspaceRemoveTask,
   createWorkspaceUnlinkTask,
@@ -173,6 +178,7 @@ export type App = {
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
   translateTask: (options: TranslateTaskCommandOptions) => Promise<number>;
+  exploreTask: (options: ExploreTaskCommandOptions) => Promise<number>;
   queryTask: (options: QueryTaskCommandOptions) => Promise<number>;
   unlockTask: (options: UnlockTaskOptions) => Promise<number>;
   listTasks: (options: ListTasksOptions) => Promise<number>;
@@ -258,6 +264,33 @@ export interface QueryTaskCommandOptions {
   maxItems?: number;
   deep?: number;
   verbose?: boolean;
+}
+
+export interface ExploreTaskCommandOptions {
+  source: string;
+  cwd?: string;
+  invocationDir?: string;
+  workspaceDir?: string;
+  workspaceLinkPath?: string;
+  isLinkedWorkspace?: boolean;
+  mode: ExploreTaskOptions["mode"];
+  workerPattern: ExploreTaskOptions["workerPattern"];
+  showAgentOutput: boolean;
+  dryRun: boolean;
+  printPrompt: boolean;
+  keepArtifacts: boolean;
+  varsFileOption: string | boolean | undefined;
+  cliTemplateVarArgs: string[];
+  trace: boolean;
+  forceUnlock: boolean;
+  ignoreCliBlock: boolean;
+  cliBlockTimeoutMs?: number;
+  configDirOption?: string;
+  scanCount?: number;
+  deep?: number;
+  maxItems?: number;
+  verbose?: boolean;
+  emitPhaseMessages?: boolean;
 }
 
 export interface TranslateTaskCommandOptions {
@@ -475,14 +508,6 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     output: ports.output,
   });
 
-  const startProjectUseCase = (ports: AppPorts) => createStartProject({
-    fileSystem: ports.fileSystem,
-    gitClient: ports.gitClient,
-    output: ports.output,
-    pathOperations: ports.pathOperations,
-    workingDirectory: ports.workingDirectory,
-  });
-
   const testSpecsUseCase = (ports: AppPorts) => createTestSpecs({
     workerExecutor: ports.workerExecutor,
     workerConfigPort: ports.workerConfigPort,
@@ -521,6 +546,54 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     fileSystem: ports.fileSystem,
     output: ports.output,
   });
+
+  const exploreTaskUseCase = (ports: AppPorts) => createExploreTask({
+    output: ports.output,
+    researchTask: createResearchTask({
+      workerExecutor: ports.workerExecutor,
+      taskVerification: ports.taskVerification,
+      taskRepair: ports.taskRepair,
+      verificationStore: ports.verificationStore,
+      traceWriter: ports.traceWriter,
+      cliBlockExecutor: ports.cliBlockExecutor,
+      artifactStore: ports.artifactStore,
+      fileSystem: ports.fileSystem,
+      fileLock: ports.fileLock,
+      workingDirectory: ports.workingDirectory,
+      pathOperations: ports.pathOperations,
+      memoryResolver: ports.memoryResolver,
+      templateLoader: ports.templateLoader,
+      templateVarsLoader: ports.templateVarsLoader,
+      workerConfigPort: ports.workerConfigPort,
+      configDir: ports.configDir,
+      output: ports.output,
+    }),
+    planTask: planTaskUseCase(ports),
+  });
+
+  const runInternalExploreForCreatedFile = async (
+    ports: AppPorts,
+    source: string,
+    cwd: string,
+  ): Promise<number> => {
+    return exploreTaskUseCase(ports)({
+      source,
+      cwd,
+      mode: "wait",
+      workerPattern: inferWorkerPatternFromCommand([]),
+      showAgentOutput: false,
+      dryRun: false,
+      printPrompt: false,
+      keepArtifacts: false,
+      varsFileOption: undefined,
+      cliTemplateVarArgs: [],
+      trace: false,
+      forceUnlock: false,
+      ignoreCliBlock: false,
+      verbose: false,
+      emitPhaseMessages: false,
+    });
+  };
 
   return {
     helpTask: (ports) => createHelpTask({
@@ -633,6 +706,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
         pathOperations: ports.pathOperations,
         output: ports.output,
       }),
+      runExplore: (source, cwd) => runInternalExploreForCreatedFile(ports, source, cwd),
     }),
     designTask: (ports) => designTaskUseCase(ports),
     designDiffTask: (ports) => createDesignDiffTask({
@@ -720,6 +794,7 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       templateLoader: ports.templateLoader,
       configDir: ports.configDir,
     }),
+    exploreTask: (ports) => exploreTaskUseCase(ports),
     unlockTask: (ports) => createUnlockTask({
       fileLock: ports.fileLock,
       fileSystem: ports.fileSystem,
@@ -783,7 +858,14 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       output: ports.output,
       templateLoader: ports.templateLoader,
     }),
-    startProject: (ports) => startProjectUseCase(ports),
+    startProject: (ports) => createStartProject({
+      fileSystem: ports.fileSystem,
+      gitClient: ports.gitClient,
+      output: ports.output,
+      pathOperations: ports.pathOperations,
+      runExplore: (source, cwd) => runInternalExploreForCreatedFile(ports, source, cwd),
+      workingDirectory: ports.workingDirectory,
+    }),
     manageArtifacts: (ports) => createManageArtifacts({
       artifactStore: ports.artifactStore,
       directoryOpener: ports.directoryOpener,
@@ -875,6 +957,7 @@ function createAppFromFactories(
   const researchTask = factories.researchTask(ports);
   const translateTask = factories.translateTask(ports);
   const queryTask = factories.queryTask(ports);
+  const exploreTask = factories.exploreTask(ports);
   const unlockTask = factories.unlockTask(ports);
   const listTasks = factories.listTasks(ports);
   const nextTask = factories.nextTask(ports);
@@ -921,6 +1004,7 @@ function createAppFromFactories(
     planTask,
     researchTask,
     translateTask,
+    exploreTask,
     queryTask,
     unlockTask,
     listTasks,
