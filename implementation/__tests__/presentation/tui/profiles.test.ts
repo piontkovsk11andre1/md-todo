@@ -4,6 +4,7 @@ import {
   createProfilesSceneState,
   handleProfilesInput,
   reloadProfilesSceneState,
+  renderProfilesSceneLines,
   runProfilesSceneAction,
 } from "../../../src/presentation/tui/scenes/profiles.ts";
 import { createApp } from "../../../src/create-app.js";
@@ -74,6 +75,51 @@ describe("tui profiles integration", () => {
     expect(frame).toContain("Profiles");
     expect(frame).toContain("[↵] inspect references");
     expect(frame).not.toContain("Inspect references: fast");
+  });
+
+  it("renders no-profiles hint with docs path and edit action", () => {
+    const lines = renderProfilesSceneLines({
+      state: {
+        ...createProfilesSceneState(),
+        loading: false,
+        config: {},
+        references: [],
+      },
+    });
+    const frame = lines.join("\n");
+
+    expect(frame).toContain("No profiles defined.");
+    expect(frame).toContain("Hint: see Profiles in implementation/docs/configuration.md");
+    expect(frame).toContain("[e] edit config.json");
+  });
+
+  it("shows unknown references group and allows drill-in", () => {
+    const baseState = {
+      ...createProfilesSceneState(),
+      loading: false,
+      config: {
+        profiles: {
+          fast: ["opencode", "run", "--model", "gpt-5.3"],
+        },
+      },
+      references: [
+        { profile: "missing", file: "a.md", line: 2, kind: "frontmatter" },
+        { profile: "missing", file: "b.md", line: 7, kind: "directive" },
+      ],
+    };
+
+    const frame = renderProfilesSceneLines({ state: baseState }).join("\n");
+    expect(frame).toContain("Unknown references");
+    expect(frame).toContain("missing · 2");
+
+    const down = handleProfilesInput({ rawInput: "\u001b[B", state: baseState });
+    const enter = handleProfilesInput({ rawInput: "\n", state: down.state });
+    expect(enter.state.inspectProfile).toBe("missing");
+
+    const inspectFrame = renderProfilesSceneLines({ state: enter.state }).join("\n");
+    expect(inspectFrame).toContain("Inspect references: missing");
+    expect(inspectFrame).toContain("[frontmatter] a.md:2");
+    expect(inspectFrame).toContain("[directive] b.md:7");
   });
 
   it("caches profile scans for 30 seconds", async () => {

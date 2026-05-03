@@ -102,6 +102,53 @@ function collectReferencesForProfile(references, profileName) {
   });
 }
 
+function collectUnknownReferenceGroups(references, knownProfileNames) {
+  const known = new Set(Array.isArray(knownProfileNames) ? knownProfileNames : []);
+  const entries = Array.isArray(references) ? references : [];
+  const grouped = new Map();
+
+  for (const reference of entries) {
+    const profileName = typeof reference?.profile === "string" ? reference.profile : "";
+    const kind = typeof reference?.kind === "string" ? reference.kind : "";
+    if (profileName.length === 0 || known.has(profileName)) {
+      continue;
+    }
+    if (kind !== "frontmatter" && kind !== "directive" && kind !== "prefix") {
+      continue;
+    }
+
+    if (!grouped.has(profileName)) {
+      grouped.set(profileName, []);
+    }
+    grouped.get(profileName).push(reference);
+  }
+
+  return Array.from(grouped.entries()).map(([name, refs]) => ({
+    name,
+    count: refs.length,
+    references: refs,
+  }));
+}
+
+function buildSelectableRows(profileNames, unknownGroups) {
+  const rows = [];
+  for (const name of profileNames) {
+    rows.push({
+      type: "profile",
+      name,
+    });
+  }
+
+  for (const group of unknownGroups) {
+    rows.push({
+      type: "unknown",
+      name: group.name,
+    });
+  }
+
+  return rows;
+}
+
 function toErrorMessage(error, fallback = "Unexpected error.") {
   if (error instanceof Error && typeof error.message === "string" && error.message.length > 0) {
     return error.message;
@@ -224,7 +271,9 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
   const profiles = safeObject(config.profiles);
   const usageByProfile = collectUsageByProfile(sceneState.references);
   const profileNames = Object.keys(profiles);
-  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, profileNames.length);
+  const unknownReferenceGroups = collectUnknownReferenceGroups(sceneState.references, profileNames);
+  const selectableRows = buildSelectableRows(profileNames, unknownReferenceGroups);
+  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, selectableRows.length);
   const isInspecting = typeof sceneState.inspectProfile === "string" && sceneState.inspectProfile.length > 0;
 
   const lines = [
@@ -250,8 +299,9 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
 
   withSectionGap(lines, sectionGap);
 
-  if (profileNames.length === 0) {
+  if (profileNames.length === 0 && unknownReferenceGroups.length === 0) {
     lines.push(pc.dim("No profiles defined."));
+    lines.push(pc.dim("Hint: see Profiles in implementation/docs/configuration.md"));
     withSectionGap(lines, sectionGap);
     lines.push(pc.dim("[e] edit config.json"));
     lines.push(pc.dim("[Esc] Back to menu"));
@@ -286,10 +336,17 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
     profileNames.reduce((max, name) => Math.max(max, name.length), 0),
   );
 
+  if (profileNames.length === 0) {
+    lines.push(pc.dim("No profiles defined."));
+    lines.push(pc.dim("Hint: see Profiles in implementation/docs/configuration.md"));
+    withSectionGap(lines, sectionGap);
+  }
+
   for (let index = 0; index < profileNames.length; index += 1) {
     const profileName = profileNames[index];
     const preview = formatCommandPreview(profiles[profileName]);
-    const prefix = index === selectedProfileIndex ? "> " : "  ";
+    const rowIndex = index;
+    const prefix = rowIndex === selectedProfileIndex ? "> " : "  ";
     lines.push(`${prefix}${profileName.padEnd(nameColumnWidth, " ")}  ${preview}`);
 
     const usage = usageByProfile.get(profileName);
@@ -303,8 +360,21 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
     ));
   }
 
+  if (unknownReferenceGroups.length > 0) {
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.bold("Unknown references"));
+    for (let index = 0; index < unknownReferenceGroups.length; index += 1) {
+      const group = unknownReferenceGroups[index];
+      const rowIndex = profileNames.length + index;
+      const prefix = rowIndex === selectedProfileIndex ? "> " : "  ";
+      lines.push(`${prefix}${group.name} · ${group.count}`);
+    }
+  }
+
   withSectionGap(lines, sectionGap);
-  lines.push(pc.dim("[↵] inspect references"));
+  if (selectableRows.length > 0) {
+    lines.push(pc.dim("[↵] inspect references"));
+  }
   lines.push(pc.dim("[e] edit config.json"));
   lines.push(pc.dim("[u] full scan"));
   lines.push(pc.dim("[Esc] Back to menu"));
@@ -316,6 +386,8 @@ export function handleProfilesInput({ rawInput, state } = {}) {
   const config = safeObject(sceneState.config);
   const profiles = safeObject(config.profiles);
   const profileNames = Object.keys(profiles);
+  const unknownReferenceGroups = collectUnknownReferenceGroups(sceneState.references, profileNames);
+  const selectableRows = buildSelectableRows(profileNames, unknownReferenceGroups);
   const input = String(rawInput ?? "");
   const normalized = input.toLowerCase();
 
@@ -396,14 +468,14 @@ export function handleProfilesInput({ rawInput, state } = {}) {
     };
   }
 
-  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, profileNames.length);
+  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, selectableRows.length);
 
   if (input === "\u001b[A" || normalized === "k") {
     return {
       handled: true,
       state: {
         ...sceneState,
-        selectedProfileIndex: clampIndex(selectedProfileIndex - 1, profileNames.length),
+        selectedProfileIndex: clampIndex(selectedProfileIndex - 1, selectableRows.length),
       },
       backToParent: false,
     };
@@ -414,15 +486,15 @@ export function handleProfilesInput({ rawInput, state } = {}) {
       handled: true,
       state: {
         ...sceneState,
-        selectedProfileIndex: clampIndex(selectedProfileIndex + 1, profileNames.length),
+        selectedProfileIndex: clampIndex(selectedProfileIndex + 1, selectableRows.length),
       },
       backToParent: false,
     };
   }
 
   if (input === "\r" || input === "\n") {
-    const selectedProfile = profileNames[selectedProfileIndex];
-    if (!selectedProfile) {
+    const selectedRow = selectableRows[selectedProfileIndex];
+    if (!selectedRow?.name) {
       return {
         handled: true,
         state: sceneState,
@@ -433,7 +505,7 @@ export function handleProfilesInput({ rawInput, state } = {}) {
       handled: true,
       state: {
         ...sceneState,
-        inspectProfile: selectedProfile,
+        inspectProfile: selectedRow.name,
         inspectSelectedReferenceIndex: 0,
       },
       backToParent: false,
