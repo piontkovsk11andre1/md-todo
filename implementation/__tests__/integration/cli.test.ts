@@ -6838,7 +6838,7 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(cacheDir)).toBe(false);
   });
 
-  it("run --cache-cli-blocks reuses cached CLI expansion results across reached expansion phases", async () => {
+  it("run --cache-cli-blocks does not warm shared cache from source CLI blocks after the selected task", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
     const cliHitCounterPath = path.join(workspace, "cli-block-hit-count.log");
@@ -6861,15 +6861,59 @@ describe.sequential("CLI integration", () => {
       "utf-8",
     );
     fs.writeFileSync(
-      path.join(workspace, ".rundown", "verify.md"),
+      roadmapPath,
       [
-        "## Verify",
+        "# Roadmap",
+        "",
+        "<!-- spacer -->",
+        "",
+        "- [ ] Confirm cached CLI blocks",
+        "",
+        "```cli",
+        cliBlockCommand,
+        "```",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(workerScriptPath, "console.log('OK');\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--cache-cli-blocks",
+      "--no-verify",
+      "--worker",
+      "node",
+      workerScriptPath.replace(/\\/g, "/"),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const hitLines = fs.readFileSync(cliHitCounterPath, "utf-8")
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0);
+    expect(hitLines).toHaveLength(2);
+  });
+
+  it("run --cache-cli-blocks reuses cached CLI expansion results across reached source and execute phases", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const cliHitCounterPath = path.join(workspace, "cli-block-hit-count.log");
+    const workerScriptPath = path.join(workspace, "verify-ok-worker.cjs");
+    const normalizedHitCounterPath = cliHitCounterPath.replace(/\\/g, "/");
+    const cliBlockCommand = `node -e \"const fs=require('node:fs');fs.appendFileSync('${normalizedHitCounterPath}','hit\\n','utf-8');console.log('cached-cli-block');\"`;
+
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "execute.md"),
+      [
+        "## Execute",
         "",
         "```cli",
         cliBlockCommand,
         "```",
         "",
-        "Return exactly OK when the task is complete.",
+        "{{task}}",
       ].join("\n"),
       "utf-8",
     );
@@ -6877,10 +6921,6 @@ describe.sequential("CLI integration", () => {
       roadmapPath,
       [
         "# Roadmap",
-        "",
-        "```cli",
-        cliBlockCommand,
-        "```",
         "",
         "- [ ] Confirm cached CLI blocks",
       ].join("\n"),
@@ -6892,6 +6932,7 @@ describe.sequential("CLI integration", () => {
       "run",
       "roadmap.md",
       "--cache-cli-blocks",
+      "--no-verify",
       "--worker",
       "node",
       workerScriptPath.replace(/\\/g, "/"),
