@@ -377,7 +377,7 @@ export function renderWorkersSceneLines({ state, sectionGap = 1 } = {}) {
   }
 
   withSectionGap(lines, sectionGap);
-  lines.push(pc.dim("[e] edit config.json   [E] edit global config   [r] reload"));
+  lines.push(pc.dim("[e] edit config   [H] health   [T] tools   [r] reload"));
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
 }
