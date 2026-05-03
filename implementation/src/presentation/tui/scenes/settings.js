@@ -1,5 +1,8 @@
 import pc from "picocolors";
+import fs from "node:fs";
+import path from "node:path";
 import { createConfigBridge } from "../bridges/config-bridge.js";
+import { launchEditor } from "../components/editor-launch.js";
 
 const SUPPORTED_SCOPES = ["effective", "local", "global"];
 
@@ -73,6 +76,7 @@ function formatValueOneLine(value) {
 const ARRAY_PREVIEW_LIMIT = 3;
 const MIN_VALUE_WIDTH = 12;
 const DEFAULT_VIEWPORT_COLUMNS = 80;
+const EMPTY_JSON_WITH_NEWLINE = "{}\n";
 
 function truncateInline(text, maxLength) {
   const value = String(text);
@@ -186,6 +190,8 @@ export async function runSettingsSceneAction({
   action,
   state,
   currentWorkingDirectory = process.cwd(),
+  suspendTui,
+  resumeTui,
 } = {}) {
   const sceneState = state ?? createSettingsSceneState();
   if (!action || typeof action !== "object") {
@@ -199,6 +205,90 @@ export async function runSettingsSceneAction({
         loading: true,
       },
       currentWorkingDirectory,
+    });
+  }
+
+  if (action.type === "edit") {
+    const scope = isSupportedScope(sceneState.scope) ? sceneState.scope : "effective";
+    if (scope === "effective") {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        hint: "effective is a merged read-only view; switch to local or global to edit.",
+      };
+    }
+
+    const bridge = createConfigBridge({ cwd: currentWorkingDirectory });
+    let filePath;
+    try {
+      filePath = scope === "local"
+        ? await bridge.resolveConfigPath("local")
+        : await bridge.resolveGlobalConfigPath();
+    } catch (error) {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: `Unable to resolve ${scope} config path: ${toErrorMessage(error)}`,
+      };
+    }
+
+    if (typeof filePath !== "string" || filePath.length === 0 || filePath === bridge.unresolvedPathMarker) {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: `${scope} config path is unresolved.`,
+      };
+    }
+
+    if (scope === "global" && !fs.existsSync(filePath)) {
+      if (!sceneState.pendingGlobalCreate) {
+        return {
+          ...sceneState,
+          pendingGlobalCreate: true,
+          hint: `Global config missing at ${filePath}. Press [e] again to create {} and edit.`,
+        };
+      }
+      try {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, EMPTY_JSON_WITH_NEWLINE, "utf8");
+      } catch (error) {
+        return {
+          ...sceneState,
+          pendingGlobalCreate: false,
+          banner: `Failed to bootstrap global config at ${filePath}: ${toErrorMessage(error)}`,
+        };
+      }
+    }
+
+    let launchResult;
+    suspendTui?.();
+    try {
+      launchResult = launchEditor(filePath, { cwd: currentWorkingDirectory });
+    } catch (error) {
+      launchResult = {
+        ok: false,
+        message: `Failed to launch editor for ${filePath}: ${toErrorMessage(error)}`,
+      };
+    } finally {
+      resumeTui?.();
+    }
+
+    if (!launchResult.ok) {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: launchResult.message || "Failed to open editor.",
+      };
+    }
+
+    return reloadSettingsSceneState({
+      state: {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        hint: "",
+      },
+      currentWorkingDirectory,
+      keepBanner: false,
     });
   }
 
@@ -309,9 +399,22 @@ export function handleSettingsInput({ rawInput, state } = {}) {
         selectedIndex: 0,
         banner: "",
         hint: "",
+        pendingGlobalCreate: false,
       },
       backToParent: false,
       action: { type: "reload" },
+    };
+  }
+
+  if (normalized === "e") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        banner: "",
+      },
+      backToParent: false,
+      action: { type: "edit" },
     };
   }
 

@@ -640,6 +640,8 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
             action: result.action,
             state: state.settingsSceneState,
             currentWorkingDirectory,
+            suspendTui: teardownTuiForWorker,
+            resumeTui: restoreTuiAfterWorker,
           }).then((nextState) => {
             state.settingsSceneState = nextState;
           }).catch((error) => {
