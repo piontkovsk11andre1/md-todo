@@ -523,6 +523,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "specs"))).toEqual([]);
 
     const targetDesignPath = path.join(projectDir, "design", "current", "Target.md");
     const targetDesignSource = fs.readFileSync(targetDesignPath, "utf-8");
@@ -549,6 +550,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "specs"))).toEqual([]);
     expect(fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8")).toBe("");
   });
 
