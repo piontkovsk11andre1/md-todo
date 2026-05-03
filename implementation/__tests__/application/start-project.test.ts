@@ -3,7 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStartProject } from "../../src/application/start-project.js";
-import { EXIT_CODE_SUCCESS } from "../../src/domain/exit-codes.js";
+import {
+  EXIT_CODE_SUCCESS,
+  type ExitCode,
+} from "../../src/domain/exit-codes.js";
+import { formatMigrationFilename } from "../../src/domain/migration-parser.js";
 import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
 import type {
   ApplicationOutputEvent,
@@ -126,12 +130,49 @@ describe("start-project", () => {
     const predictionFiles = listFilesRecursively(path.join(workspace, "prediction"));
     expect(predictionFiles).toEqual([]);
   });
+
+  it("only requests enrichment for files created during start", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Existing target\n", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# Existing migration\n",
+      "utf-8",
+    );
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({ description: "No new docs" });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(harness.runExplore).not.toHaveBeenCalled();
+  });
+
+  it("enriches only the newly created migration when using external --from-design", async () => {
+    const workspace = makeTempWorkspace();
+    const externalDesignDir = makeTempWorkspace();
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({
+      description: "Use external design/current",
+      fromDesign: externalDesignDir,
+    });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(harness.runExplore).toHaveBeenCalledTimes(1);
+    expect(harness.runExplore).toHaveBeenCalledWith(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      workspace,
+    );
+  });
 });
 
 function createHarness(workspaceRoot: string): {
   startProject: ReturnType<typeof createStartProject>;
   events: ApplicationOutputEvent[];
   gitClient: GitClient;
+  runExplore: ReturnType<typeof vi.fn<(source: string, cwd: string) => Promise<ExitCode>>>;
 } {
   const events: ApplicationOutputEvent[] = [];
   const fileSystem = createNodeFileSystem();
@@ -157,6 +198,8 @@ function createHarness(workspaceRoot: string): {
     cwd: () => workspaceRoot,
   };
 
+  const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+
   return {
     startProject: createStartProject({
       fileSystem,
@@ -167,11 +210,12 @@ function createHarness(workspaceRoot: string): {
         },
       },
       pathOperations,
-      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+      runExplore,
       workingDirectory,
     }),
     events,
     gitClient,
+    runExplore,
   };
 }
 

@@ -232,13 +232,23 @@ export function createStartProject(
       emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
     }
 
+    const exploreFiles: string[] = [];
+
     if (externalDesignCurrentPath) {
       emit({
         kind: "success",
         message: "Using external directory as design/current: " + externalDesignCurrentPath,
       });
     } else {
-      writeFileIfMissing(dependencies.fileSystem, designPath, buildDesignMarkdown(description), emit);
+      const createdDesignTarget = writeFileIfMissing(
+        dependencies.fileSystem,
+        designPath,
+        buildDesignMarkdown(description),
+        emit,
+      );
+      if (createdDesignTarget) {
+        exploreFiles.push(designPath);
+      }
     }
     writeFileIfMissing(dependencies.fileSystem, agentsPath, getAgentsTemplate(), emit);
 
@@ -257,7 +267,7 @@ export function createStartProject(
       emit({ kind: "success", message: "Created " + predictionDir + "/" });
     }
 
-    writeFileIfMissing(
+    const createdInitialMigration = writeFileIfMissing(
       dependencies.fileSystem,
       initialMigrationPath,
       buildInitialMigrationMarkdown(description, {
@@ -266,6 +276,9 @@ export function createStartProject(
       }),
       emit,
     );
+    if (createdInitialMigration) {
+      exploreFiles.push(initialMigrationPath);
+    }
 
     try {
       const bootstrapResult = bootstrapFromExistingImplementation({
@@ -299,17 +312,16 @@ export function createStartProject(
       return EXIT_CODE_FAILURE;
     }
 
-    const exploreFiles = externalDesignCurrentPath
-      ? [initialMigrationPath]
-      : [designPath, initialMigrationPath];
-    const exploreExitCode = await runExploreSteps(
-      dependencies.runExplore,
-      targetDirectory,
-      exploreFiles,
-      emit,
-    );
-    if (exploreExitCode !== EXIT_CODE_SUCCESS) {
-      return exploreExitCode;
+    if (exploreFiles.length > 0) {
+      const exploreExitCode = await runExploreSteps(
+        dependencies.runExplore,
+        targetDirectory,
+        exploreFiles,
+        emit,
+      );
+      if (exploreExitCode !== EXIT_CODE_SUCCESS) {
+        return exploreExitCode;
+      }
     }
 
     try {
@@ -811,14 +823,15 @@ function writeFileIfMissing(
   filePath: string,
   content: string,
   emit: ApplicationOutputPort["emit"],
-): void {
+): boolean {
   if (fileSystem.exists(filePath)) {
     emit({ kind: "warn", message: filePath + " already exists, skipping." });
-    return;
+    return false;
   }
 
   fileSystem.writeText(filePath, content);
   emit({ kind: "success", message: "Created " + filePath });
+  return true;
 }
 
 async function runExploreSteps(
