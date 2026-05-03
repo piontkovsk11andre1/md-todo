@@ -390,6 +390,112 @@ describe("design-context revision metadata and immutability", () => {
     expect(fileSystem.readText("/repo/design/revisions/rev.3/Target.md")).toBe("current\n");
   });
 
+  it("writes new canonical snapshots under design/revisions even when only flat revisions exist", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "revisions", isDirectory: true, isFile: false },
+          { name: "rev.1", isDirectory: true, isFile: false },
+          { name: "rev.3", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/revisions": [
+          { name: "notes", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/revisions/notes": [
+          { name: "README.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/rev.1": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/rev.3": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "candidate\n",
+        "/repo/design/revisions/notes/README.md": "notes\n",
+        "/repo/design/rev.1/Target.md": "one\n",
+        "/repo/design/rev.3/Target.md": "three\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/revisions": { isDirectory: true, isFile: false },
+        "/repo/design/revisions/notes": { isDirectory: true, isFile: false },
+        "/repo/design/rev.1": { isDirectory: true, isFile: false },
+        "/repo/design/rev.3": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, "/repo", {
+      now: new Date("2026-01-02T03:04:05.000Z"),
+    });
+
+    expect(saved).toMatchObject({
+      kind: "saved",
+      revision: {
+        index: 4,
+        name: "rev.4",
+      },
+    });
+    if (saved.kind === "saved") {
+      expect(normalizePath(saved.revision.absolutePath)).toBe("/repo/design/revisions/rev.4");
+      expect(normalizePath(saved.revision.metadataPath)).toBe("/repo/design/revisions/rev.4.meta.json");
+    }
+    expect(fileSystem.readText("/repo/design/revisions/rev.4/Target.md")).toBe("candidate\n");
+    expect(JSON.parse(fileSystem.readText("/repo/design/revisions/rev.4.meta.json"))).toEqual({
+      revision: "rev.4",
+      index: 4,
+      createdAt: "2026-01-02T03:04:05.000Z",
+    });
+    expect(fileSystem.readText("/repo/design/rev.3/Target.md")).toBe("three\n");
+  });
+
+  it("keeps flat design/rev.N repositories readable for unchanged snapshot detection", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/rev.2": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/design/current/Target.md": "same\n",
+        "/repo/design/rev.2/Target.md": "same\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const saved = saveDesignRevisionSnapshot(fileSystem, "/repo");
+
+    expect(saved).toMatchObject({
+      kind: "unchanged",
+      latestRevision: {
+        index: 2,
+        name: "rev.2",
+      },
+    });
+    if (saved.kind === "unchanged") {
+      expect(normalizePath(saved.latestRevision.absolutePath)).toBe("/repo/design/rev.2");
+      expect(normalizePath(saved.latestRevision.metadataPath)).toBe("/repo/design/rev.2.meta.json");
+    }
+    expect(fileSystem.stat("/repo/design/revisions/rev.3")).toBeNull();
+  });
+
   it("falls back to legacy docs/current for revisions when canonical design/current is missing", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
