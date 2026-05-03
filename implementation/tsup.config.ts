@@ -13,6 +13,13 @@ export default defineConfig([
     },
   },
   {
+    entry: { "presentation/tui/index": "src/presentation/tui/index.ts" },
+    format: ["esm"],
+    target: "node18",
+    sourcemap: true,
+    splitting: false,
+  },
+  {
     entry: { index: "src/index.ts" },
     format: ["esm"],
     target: "node18",
