@@ -103,7 +103,7 @@ function groupLinePrefix(): string {
     return "";
   }
 
-  const segment = isInteractiveProgressEnabled() ? "│  " : "    ";
+  const segment = "  ";
   return segment.repeat(groupDepth);
 }
 
@@ -232,11 +232,7 @@ export const cliOutputPort: ApplicationOutputPort = {
         const counter = event.counter ? `[${event.counter.current}/${event.counter.total}] ` : "";
         const parentPrefix = groupLinePrefix();
         const content = withTimestamp(`${counter}${event.label}`);
-        if (isInteractiveProgressEnabled()) {
-          console.log(`${parentPrefix}┌ ${content}`);
-        } else {
-          console.log(`${parentPrefix}${content}`);
-        }
+        console.log(`${parentPrefix}${content}`);
         groupDepth += 1;
         return;
       }
@@ -249,11 +245,7 @@ export const cliOutputPort: ApplicationOutputPort = {
         const content = withTimestamp(`${statusLabel}${suffix}`);
         const writeLine = isSuccess ? console.log : console.error;
 
-        if (isInteractiveProgressEnabled()) {
-          writeLine(`${parentPrefix}└ ${content}`);
-        } else {
-          writeLine(`${parentPrefix}${content}`);
-        }
+        writeLine(`${parentPrefix}${content}`);
         return;
       }
       case "info":
