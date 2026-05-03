@@ -1053,7 +1053,7 @@ program
 
 program
   .command("with")
-  .description("Configure .rundown worker settings for a known external harness preset.")
+  .description("Configure .rundown worker settings for a known harness preset (opencode asks before overwriting existing local worker keys).")
   .argument("<harness>", "Harness preset name (for example: opencode)")
   .allowUnknownOption(false)
   .action(withCliAction(createWithCommandAction({

@@ -241,6 +241,8 @@ See the command-focused reference: [cli-init.md](cli-init.md).
 
 ### `rundown with <harness>`
 
+Use this to apply known harness presets into local config. For `opencode`, if local `workers.default`, `workers.tui`, or `workers.fallbacks` already exist and would be changed, `with` asks for confirmation first; declining leaves config unchanged, and non-interactive runs fail instead of silently overwriting.
+
 See the command-focused reference: [cli-with.md](cli-with.md).
 
 ### `rundown config`

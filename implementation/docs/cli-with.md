@@ -47,6 +47,7 @@ Behavior:
 - For `opencode`, if local worker keys already exist (`workers.default`, `workers.tui`, or `workers.fallbacks`) and the run would mutate worker settings, `with` asks for confirmation before writing.
 - If that overwrite prompt is declined, `with` exits with no config changes.
 - In non-interactive execution, required overwrite confirmation cannot be answered, so `with opencode` fails with actionable guidance instead of overwriting existing worker config.
+- For `opencode`, exact local matches are treated as no-op and do not trigger overwrite confirmation.
 - On interactive terminals, if `workers.tui` is configured by the applied mapping, `with` immediately opens the Rundown root TUI after printing configuration results.
 - If terminal interactivity is unavailable or no `workers.tui` mapping is configured, `with` exits after configuration output.
 - Prints configured keys and resolved config path.
