@@ -40,6 +40,13 @@ import {
   renderHealthSceneLines,
   runHealthSceneAction,
 } from "./scenes/health.js";
+import {
+  createBuiltInsVisibilitySession,
+  createToolsSceneState,
+  openToolsScene,
+  reloadToolsSceneState,
+  renderToolsSceneLines,
+} from "./scenes/tools.js";
 import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
 import {
   createSettingsSceneState,
@@ -85,6 +92,8 @@ function createSceneRouterState() {
     runState: createInitialRunState(),
     workersSceneState: createWorkersSceneState(),
     healthSceneState: createHealthSceneState(),
+    toolsSceneState: createToolsSceneState(),
+    toolsBuiltInsVisibilitySession: createBuiltInsVisibilitySession(),
     profilesSceneState: createProfilesSceneState(),
     settingsSceneState: createSettingsSceneState(),
     helpSceneState: createHelpSceneState(),
@@ -92,6 +101,7 @@ function createSceneRouterState() {
     agentSessionPending: false,
     workersActionPending: false,
     healthActionPending: false,
+    toolsActionPending: false,
     settingsActionPending: false,
     helpActionPending: false,
   };
@@ -212,6 +222,9 @@ function buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumn
   }
   if (state.sceneId === "health") {
     return renderHealthSceneLines({ state: state.healthSceneState, sectionGap: spacing.sectionGap });
+  }
+  if (state.sceneId === "tools") {
+    return renderToolsSceneLines({ state: state.toolsSceneState, sectionGap: spacing.sectionGap });
   }
   if (state.sceneId === "profiles") {
     return renderProfilesSceneLines({ state: state.profilesSceneState, sectionGap: spacing.sectionGap });
@@ -344,6 +357,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
     let newWorkLoadToken = 0;
     let workersLoadToken = 0;
     let healthLoadToken = 0;
+    let toolsLoadToken = 0;
     let settingsLoadToken = 0;
 
     const openNewWorkScene = () => {
@@ -401,6 +415,39 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           return;
         }
         state.healthSceneState = nextState;
+      });
+    };
+
+    const openToolsSceneFromWorkers = () => {
+      pushScene(state, "tools");
+      state.showHelpOverlay = false;
+      state.toolsSceneState = openToolsScene({
+        session: state.toolsBuiltInsVisibilitySession,
+        state: {
+          ...createToolsSceneState(),
+          loading: true,
+          banner: "",
+        },
+      });
+
+      const loadToken = ++toolsLoadToken;
+      void reloadToolsSceneState({
+        state: state.toolsSceneState,
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== toolsLoadToken || state.sceneId !== "tools") {
+          return;
+        }
+        state.toolsSceneState = nextState;
+      }).catch((error) => {
+        if (loadToken !== toolsLoadToken || state.sceneId !== "tools") {
+          return;
+        }
+        state.toolsSceneState = {
+          ...state.toolsSceneState,
+          loading: false,
+          banner: error instanceof Error ? error.message : String(error),
+        };
       });
     };
 
@@ -659,6 +706,11 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           return;
         }
 
+        if (result.action?.type === "open-tools") {
+          openToolsSceneFromWorkers();
+          return;
+        }
+
         if (result.action && !state.workersActionPending) {
           state.workersActionPending = true;
           void runWorkersSceneAction({
@@ -712,6 +764,15 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           }).finally(() => {
             state.healthActionPending = false;
           });
+        }
+        return;
+      }
+
+      if (state.sceneId === "tools") {
+        if (isBack(rawInput)) {
+          toolsLoadToken += 1;
+          state.toolsActionPending = false;
+          popScene(state);
         }
         return;
       }
