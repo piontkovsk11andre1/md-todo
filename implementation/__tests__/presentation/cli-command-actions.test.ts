@@ -2727,7 +2727,6 @@ describe("createStartCommandAction", () => {
       specsPlacement: "sourcedir",
       migrationsDir: "changes",
       migrationsPlacement: "workdir",
-      noBootstrap: false,
     });
 
     expect(exitCode).toBe(0);
@@ -2741,7 +2740,6 @@ describe("createStartCommandAction", () => {
       specsPlacement: "sourcedir",
       migrationsDir: "changes",
       migrationsPlacement: "workdir",
-      noBootstrap: false,
     });
   });
 });

@@ -33,7 +33,6 @@ export interface StartProjectOptions {
   specsPlacement?: string;
   migrationsPlacement?: string;
   fromDesign?: string;
-  noBootstrap?: boolean;
 }
 
 interface ValidatedWorkspaceDirectories {

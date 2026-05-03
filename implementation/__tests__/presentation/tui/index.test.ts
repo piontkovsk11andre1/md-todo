@@ -86,7 +86,6 @@ describe("tui index module", () => {
       designPlacement: DEFAULT_WORKSPACE_PLACEMENT.design,
       specsPlacement: DEFAULT_WORKSPACE_PLACEMENT.specs,
       migrationsPlacement: DEFAULT_WORKSPACE_PLACEMENT.migrations,
-      noBootstrap: false,
     });
     expect(state.mainMenuState.variant).toBe("initialized");
     expect(state.rootWorkspaceState.isEmptyBootstrap).toBe(false);

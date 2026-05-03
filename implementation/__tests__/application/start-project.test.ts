@@ -107,26 +107,6 @@ describe("start-project", () => {
     expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
   });
 
-  it("supports --no-bootstrap without changing deterministic clean scaffold output", async () => {
-    const workspace = makeTempWorkspace();
-    fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "src", "foo.ts"), "export const foo = 3;\n");
-
-    const harness = createHarness(workspace);
-
-    const code = await harness.startProject({ description: "No bootstrap", noBootstrap: true });
-
-    expect(code).toBe(EXIT_CODE_SUCCESS);
-
-    const targetPath = path.join(workspace, "design", "current", "Target.md");
-    const targetSource = fs.readFileSync(targetPath, "utf-8");
-    expect(targetSource).toBe("");
-
-    expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
-    const predictionFiles = listFilesRecursively(path.join(workspace, "prediction"));
-    expect(predictionFiles).toEqual([]);
-  });
-
   it("only requests enrichment for files created during start", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });

@@ -373,7 +373,7 @@ program
 program
   .command("start")
   .description("Scaffold a new workspace with design/ and migrations/ tracks.")
-  .argument("<description>", "Seed description for design/current/Target.md")
+  .argument("<description>", "Project description")
   .option("--dir <path>", "Target project directory (default: current working directory)")
   .option("--design-dir <path>", "Design workspace directory (default: design)", "design")
   .option("--design-placement <mode>", "Design placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
@@ -382,7 +382,6 @@ program
   .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)", "migrations")
   .option("--migrations-placement <mode>", "Migrations placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--from-design <path>", "Use an existing directory as design/current. Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/rev.N.")
-  .option("--no-bootstrap", "Skip bootstrap of prediction/ from existing implementation when design/ is empty")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
