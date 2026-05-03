@@ -307,13 +307,48 @@ function renderHeader(state, lines) {
   lines.push(pc.dim(`unavailableReevaluation: ${mode}`));
 }
 
+function healthFileExists(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) {
+    return false;
+  }
+  try {
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
+function renderEmptyWorkers(state, lines) {
+  // Render a clear, multi-line empty state that distinguishes between
+  // "health file does not exist yet" (no worker has run) and
+  // "file exists but contains no entries" (snapshot was reset or pruned).
+  // The Policy section and `[e] edit healthPolicy` action remain usable
+  // below, so we keep this block focused on explaining what the user sees.
+  const filePath = typeof state.healthStatus?.filePath === "string"
+    ? state.healthStatus.filePath
+    : "";
+  const exists = healthFileExists(filePath);
+  const displayPath = filePath.length > 0 ? filePath : ".rundown/worker-health.json";
+
+  if (!exists) {
+    lines.push(pc.dim("  No worker-health snapshot found."));
+    lines.push(pc.dim(`  Expected at: ${displayPath}`));
+    lines.push(pc.dim("  Entries appear here after the first worker invocation."));
+    return;
+  }
+
+  lines.push(pc.dim("  No worker-health entries recorded."));
+  lines.push(pc.dim(`  Snapshot: ${displayPath}`));
+  lines.push(pc.dim("  Entries appear here as workers succeed or fail."));
+}
+
 function renderWorkers(state, lines, sectionGap) {
   withSectionGap(lines, sectionGap);
   lines.push(pc.bold("Workers"));
 
   const entries = Array.isArray(state.healthStatus?.entries) ? state.healthStatus.entries : [];
   if (entries.length === 0) {
-    lines.push(pc.dim("  (no health entries — empty snapshot)"));
+    renderEmptyWorkers(state, lines);
     return;
   }
 
@@ -427,9 +462,15 @@ export function renderHealthSceneLines({ state, sectionGap = 1 } = {}) {
   renderWorkers(sceneState, lines, sectionGap);
   renderPolicy(sceneState, lines, sectionGap);
 
+  const entries = Array.isArray(sceneState.healthStatus?.entries) ? sceneState.healthStatus.entries : [];
   withSectionGap(lines, sectionGap);
-  lines.push(pc.dim("[↵] view recent failures   [r] reset entry   [p] probe now"));
-  lines.push(pc.dim("[e] edit healthPolicy in config.json"));
+  if (entries.length === 0) {
+    lines.push(pc.dim("[e] edit healthPolicy in config.json"));
+    lines.push(pc.dim("(entry actions [↵]/[r]/[p] become available once a worker-health entry exists)"));
+  } else {
+    lines.push(pc.dim("[↵] view recent failures   [r] reset entry   [p] probe now"));
+    lines.push(pc.dim("[e] edit healthPolicy in config.json"));
+  }
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
 }
