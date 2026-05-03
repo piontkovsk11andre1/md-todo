@@ -55,6 +55,11 @@ describe("start-project", () => {
     const targetSource = fs.readFileSync(targetPath, "utf-8");
     expect(targetSource).toBe("");
 
+    const migrationsPath = path.join(workspace, "migrations");
+    expect(fs.existsSync(migrationsPath)).toBe(true);
+    expect(fs.statSync(migrationsPath).isDirectory()).toBe(true);
+    expect(fs.readdirSync(migrationsPath)).toEqual([]);
+
     expect(fs.existsSync(path.join(workspace, "prediction", "src", "foo.ts"))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "prediction", "package.json"))).toBe(false);
   });
@@ -70,6 +75,11 @@ describe("start-project", () => {
     const targetPath = path.join(workspace, "design", "current", "Target.md");
     const targetSource = fs.readFileSync(targetPath, "utf-8");
     expect(targetSource).toBe("");
+
+    const migrationsPath = path.join(workspace, "migrations");
+    expect(fs.existsSync(migrationsPath)).toBe(true);
+    expect(fs.statSync(migrationsPath).isDirectory()).toBe(true);
+    expect(fs.readdirSync(migrationsPath)).toEqual([]);
 
     const predictionFiles = listFilesRecursively(path.join(workspace, "prediction"));
     expect(predictionFiles).toEqual([]);
