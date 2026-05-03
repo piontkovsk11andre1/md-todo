@@ -292,6 +292,46 @@ export async function runSettingsSceneAction({
     });
   }
 
+  if (action.type === "reveal-path") {
+    const scope = isSupportedScope(sceneState.scope) ? sceneState.scope : "effective";
+    if (scope === "effective") {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: "effective is a merged view and has no single config file path. Switch to local or global.",
+      };
+    }
+
+    const bridge = createConfigBridge({ cwd: currentWorkingDirectory });
+    let filePath;
+    try {
+      filePath = scope === "local"
+        ? await bridge.resolveConfigPath("local")
+        : await bridge.resolveGlobalConfigPath();
+    } catch (error) {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: `Unable to resolve ${scope} config path: ${toErrorMessage(error)}`,
+      };
+    }
+
+    if (typeof filePath !== "string" || filePath.length === 0 || filePath === bridge.unresolvedPathMarker) {
+      return {
+        ...sceneState,
+        pendingGlobalCreate: false,
+        banner: `${scope} config path is unresolved.`,
+      };
+    }
+
+    return {
+      ...sceneState,
+      pendingGlobalCreate: false,
+      hint: "",
+      banner: `${scope} config path: ${filePath}`,
+    };
+  }
+
   return sceneState;
 }
 
@@ -415,6 +455,18 @@ export function handleSettingsInput({ rawInput, state } = {}) {
       },
       backToParent: false,
       action: { type: "edit" },
+    };
+  }
+
+  if (normalized === "o") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        hint: "",
+      },
+      backToParent: false,
+      action: { type: "reveal-path" },
     };
   }
 
