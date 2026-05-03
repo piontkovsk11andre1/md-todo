@@ -22,6 +22,17 @@ describe("tui main menu integration", () => {
     expect(harness.frame()).toMatchSnapshot();
   });
 
+  it("renders bootstrap menu in an empty workspace", async () => {
+    const harness = await createTuiHarness({ emptyWorkspace: true });
+    const frame = harness.frame();
+
+    expect(frame).toContain("1. Start");
+    expect(frame).toContain("2. Workers");
+    expect(frame).toContain("3. Help");
+    expect(frame).not.toContain("Continue");
+    expect(frame).not.toContain("New Work");
+  });
+
   it("wraps navigation from first row to last and back", async () => {
     const harness = await createTuiHarness();
 

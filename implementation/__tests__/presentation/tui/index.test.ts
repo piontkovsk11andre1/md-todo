@@ -34,6 +34,22 @@ describe("tui index module", () => {
     });
   });
 
+  it("keeps initialized menu variant for initialized workspaces", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-tui-index-"));
+    tempDirs.push(cwd);
+
+    fs.mkdirSync(path.join(cwd, "design"), { recursive: true });
+    fs.mkdirSync(path.join(cwd, "specs"), { recursive: true });
+    fs.mkdirSync(path.join(cwd, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(cwd, ".rundown"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, ".rundown", "config.json"), JSON.stringify({ workspace: {} }, null, 2));
+
+    const state = tuiModule.createSceneRouterState({ currentWorkingDirectory: cwd });
+
+    expect(state.mainMenuState.variant).toBe("initialized");
+    expect(state.rootWorkspaceState.isEmptyBootstrap).toBe(false);
+  });
+
   it("runs Start action, refreshes workspace state, and switches to initialized menu", async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-tui-index-"));
     tempDirs.push(cwd);
