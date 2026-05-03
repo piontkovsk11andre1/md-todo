@@ -33,6 +33,20 @@ export class TemplateCliBlockExecutionError extends Error {
 }
 
 /**
+ * Maps template CLI block failures to the canonical non-zero run exit code.
+ *
+ * Returns `null` for unrelated errors so callers can rethrow or apply their
+ * own handling strategy.
+ */
+export function mapTemplateCliFailureToExitCode(error: unknown): number | null {
+  if (!(error instanceof TemplateCliBlockExecutionError)) {
+    return null;
+  }
+
+  return 1;
+}
+
+/**
  * Adds an `onCommandExecuted` callback while preserving an existing callback.
  *
  * The existing handler runs first, then the new handler, so callers can layer
@@ -149,21 +163,23 @@ export async function handleTemplateCliFailure(
   onFailureHook: () => Promise<void>,
   failRun: (failureMessage: string) => Promise<number>,
 ): Promise<number | null> {
-  if (!(error instanceof TemplateCliBlockExecutionError)) {
+  if (mapTemplateCliFailureToExitCode(error) === null) {
     return null;
   }
 
-  const exitCodeLabel = error.exitCode === null ? "unknown" : String(error.exitCode);
+  const templateCliError = error as TemplateCliBlockExecutionError;
+
+  const exitCodeLabel = templateCliError.exitCode === null ? "unknown" : String(templateCliError.exitCode);
   emit({
     kind: "error",
     message: "`cli` fenced command failed in "
-      + error.templateLabel
+      + templateCliError.templateLabel
       + " (exit "
       + exitCodeLabel
       + "): "
-      + error.command
+      + templateCliError.command
       + ". Aborting run.",
   });
   await onFailureHook();
-  return await failRun("`cli` fenced command failed in " + error.templateLabel + ": " + error.command);
+  return await failRun("`cli` fenced command failed in " + templateCliError.templateLabel + ": " + templateCliError.command);
 }

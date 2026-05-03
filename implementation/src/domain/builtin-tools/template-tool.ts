@@ -4,6 +4,7 @@ import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } fro
 import { parseUncheckedTodoLines } from "../todo-lines.js";
 import { expandCliBlocksWithOptions } from "../../application/cli-block-expansion.js";
 import {
+  mapTemplateCliFailureToExitCode,
   TemplateCliBlockExecutionError,
   withTemplateCliFailureAbort,
 } from "../../application/cli-block-handlers.js";
@@ -61,7 +62,7 @@ export function createTemplateToolHandler(template: string): ToolHandlerFn {
               + exitCodeLabel
               + "): "
               + error.command;
-            return typeof error.exitCode === "number" && error.exitCode !== 0 ? error.exitCode : 1;
+            return mapTemplateCliFailureToExitCode(error) ?? 1;
           }
 
           cliExpansionFailureReason = "Tool template CLI block expansion failed: " + toErrorMessage(error);

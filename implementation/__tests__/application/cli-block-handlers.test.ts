@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   handleTemplateCliFailure,
+  mapTemplateCliFailureToExitCode,
   TemplateCliBlockExecutionError,
   withCliTrace,
   withCommandExecutionHandler,
@@ -104,5 +105,12 @@ describe("cli-block-handlers", () => {
       failRun,
     );
     expect(notHandled).toBeNull();
+  });
+
+  it("maps template failure errors to canonical exit code", () => {
+    expect(
+      mapTemplateCliFailureToExitCode(new TemplateCliBlockExecutionError("task template", "exit 1", 1)),
+    ).toBe(1);
+    expect(mapTemplateCliFailureToExitCode(new Error("unrelated"))).toBeNull();
   });
 });
