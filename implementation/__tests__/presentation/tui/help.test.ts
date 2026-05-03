@@ -13,26 +13,9 @@ describe("tui help integration", () => {
     expect(frame).toMatch(/docs\/[\w.-]+\.md/);
   });
 
-  it("opens AGENTS.md template in pager", async () => {
+  it("does not expose an AGENTS template entry", async () => {
     const harness = await createTuiHarness({ initialScene: "help" });
-
-    for (let index = 0; index < 200; index += 1) {
-      if (harness.frame().includes("> [↵] AGENTS.md template (live, via getAgentsTemplate())")) {
-        break;
-      }
-      await harness.press("down");
-    }
-
-    expect(harness.frame()).toContain("> [↵] AGENTS.md template (live, via getAgentsTemplate())");
-
-    await harness.press("enter");
-
-    const frame = harness.frame();
-    expect(frame).toContain("Help");
-    expect(frame).toContain("AGENTS.md template");
-    expect(frame).toContain("# AGENTS");
-    expect(frame).toContain("## Planner");
-    expect(frame).toContain("[q/Esc] close");
+    expect(harness.frame()).not.toContain("AGENTS.md template");
   });
 
   it("renders keybindings overlay with [k]", async () => {

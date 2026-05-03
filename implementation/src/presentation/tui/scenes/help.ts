@@ -3,7 +3,6 @@ import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { getAgentsTemplate } from "../../../domain/agents-template.js";
 import { createConfigBridge } from "../bridges/config-bridge.ts";
 import {
   createPagerState,
@@ -204,13 +203,6 @@ function buildHelpRows(workspaceRoot) {
     });
   }
 
-  rows.push({
-    id: "synthetic:agents-template",
-    section: "Synthesized references",
-    keyHint: "[↵]",
-    label: "AGENTS.md template (live, via getAgentsTemplate())",
-    kind: "synthetic-agents-template",
-  });
   rows.push({
     id: "synthetic:effective-config",
     section: "Synthesized references",
@@ -477,21 +469,6 @@ export function handleHelpInput({ rawInput, state } = {}) {
             title: "Help",
             filePath: selectedRow.target,
             content,
-          }),
-        },
-        backToParent: false,
-      };
-    }
-
-    if (selectedRow?.kind === "synthetic-agents-template") {
-      return {
-        handled: true,
-        state: {
-          ...sceneState,
-          pager: createPagerState({
-            title: "Help",
-            filePath: "AGENTS.md template",
-            content: getAgentsTemplate(),
           }),
         },
         backToParent: false,
