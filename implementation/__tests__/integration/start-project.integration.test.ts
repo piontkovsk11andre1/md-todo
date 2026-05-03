@@ -634,6 +634,37 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readFileSync(targetPath, "utf-8")).toBe(preservedTarget);
   });
 
+  it("does not recreate AGENTS.md when start is re-run", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "rerun-agents-project";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const firstRun = await runCli([
+      "start",
+      "Re-run agents",
+      "--dir",
+      projectDirName,
+    ], workspace);
+    expect(firstRun.code).toBe(0);
+
+    const agentsPath = path.join(projectDir, "AGENTS.md");
+    expect(fs.existsSync(agentsPath)).toBe(false);
+
+    const secondRun = await runCli([
+      "start",
+      "Re-run agents",
+      "--dir",
+      projectDirName,
+    ], workspace);
+
+    expect(secondRun.code).toBe(0);
+    expect(fs.existsSync(agentsPath)).toBe(false);
+  });
+
   it("does not overwrite or remove existing implementation/ content when start is re-run", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "rerun-implementation-project";
