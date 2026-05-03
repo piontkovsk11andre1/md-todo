@@ -40,6 +40,18 @@ function toErrorMessage(error, fallback = "Unexpected error.") {
   return fallback;
 }
 
+function shouldReloadAfterEditorSession(launchResult) {
+  if (!launchResult || typeof launchResult !== "object") {
+    return false;
+  }
+  if (launchResult.ok) {
+    return true;
+  }
+  return launchResult.reason === "non-zero-exit"
+    || launchResult.reason === "terminated"
+    || launchResult.reason === "unknown-result";
+}
+
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -339,7 +351,7 @@ export async function runSettingsSceneAction({
       resumeTui?.();
     }
 
-    if (!launchResult.ok) {
+    if (!shouldReloadAfterEditorSession(launchResult)) {
       return {
         ...sceneState,
         pendingGlobalCreate: false,
@@ -347,7 +359,7 @@ export async function runSettingsSceneAction({
       };
     }
 
-    return reloadSettingsSceneState({
+    const reloadedState = await reloadSettingsSceneState({
       state: {
         ...sceneState,
         pendingGlobalCreate: false,
@@ -356,6 +368,15 @@ export async function runSettingsSceneAction({
       currentWorkingDirectory,
       keepBanner: false,
     });
+
+    if (!launchResult.ok) {
+      return {
+        ...reloadedState,
+        banner: launchResult.message || "Editor exited unexpectedly; configuration was reloaded.",
+      };
+    }
+
+    return reloadedState;
   }
 
   if (action.type === "reveal-path") {
