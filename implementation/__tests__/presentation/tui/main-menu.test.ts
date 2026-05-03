@@ -1,0 +1,66 @@
+import { describe, expect, it, vi } from "vitest";
+import { createTuiHarness } from "./harness.ts";
+import {
+  createMainMenuSceneState,
+  getMainMenuRows,
+} from "../../../src/presentation/tui/scenes/main-menu.ts";
+import { ROW_IDS, createStatusProbeRegistry } from "../../../src/presentation/tui/status-probes.ts";
+
+function expectSelectedRow(frame: string, label: string): void {
+  expect(frame).toContain(`> ${label}`);
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+describe("tui main menu integration", () => {
+  it("renders all six menu rows", async () => {
+    const harness = await createTuiHarness();
+    const frame = harness.frame();
+
+    expect(frame).toContain("Main Menu:");
+    expect(frame).toContain("1. Continue");
+    expect(frame).toContain("2. New Work");
+    expect(frame).toContain("3. Workers");
+    expect(frame).toContain("4. Profiles");
+    expect(frame).toContain("5. Settings");
+    expect(frame).toContain("6. Help");
+  });
+
+  it("wraps navigation from first row to last and back", async () => {
+    const harness = await createTuiHarness();
+
+    expectSelectedRow(harness.frame(), "1. Continue");
+
+    await harness.press("up");
+    expectSelectedRow(harness.frame(), "6. Help");
+
+    await harness.press("down");
+    expectSelectedRow(harness.frame(), "1. Continue");
+  });
+
+  it("refreshes each status probe once on entry", async () => {
+    const probeCalls = Object.fromEntries(
+      ROW_IDS.map((rowId) => [rowId, vi.fn(async () => ({ text: `${rowId}-ok`, tone: "ok" }))]),
+    ) as Record<string, ReturnType<typeof vi.fn>>;
+
+    const probeRegistry = createStatusProbeRegistry({
+      probes: probeCalls,
+      now: () => 100_000,
+    });
+
+    const state = createMainMenuSceneState();
+
+    getMainMenuRows(state, { probeRegistry });
+    await flushMicrotasks();
+    getMainMenuRows(state, { probeRegistry });
+    await flushMicrotasks();
+
+    for (const rowId of ROW_IDS) {
+      expect(probeCalls[rowId]).toHaveBeenCalledTimes(1);
+      expect(probeCalls[rowId]).toHaveBeenCalledWith();
+    }
+  });
+});
