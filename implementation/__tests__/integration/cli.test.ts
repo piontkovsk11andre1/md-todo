@@ -11465,6 +11465,7 @@ describe.sequential("CLI integration", () => {
     expect(spawnMock).not.toHaveBeenCalled();
     const compactHelpOutput = [...result.logs, ...result.stdoutWrites].join("\n").replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Usage: rundown");
+    expect(compactHelpOutput).not.toContain("--agents");
 
     expectGlobalOutputLogInvocationEntries(workspace, {
       command: "rundown",
