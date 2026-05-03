@@ -1,6 +1,11 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  createPagerState,
+  handlePagerInput,
+  renderPagerLines,
+} from "../components/pager.js";
 
 const FIXED_LOCAL_DOCS = Object.freeze(["README.md", "roadmap.md"]);
 
@@ -129,11 +134,15 @@ export function createHelpSceneState() {
     workspaceRoot,
     selectedIndex: 0,
     rows: buildHelpRows(workspaceRoot),
+    pager: null,
   };
 }
 
 export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
   const sceneState = state ?? createHelpSceneState();
+  if (sceneState.pager) {
+    return renderPagerLines({ state: sceneState.pager });
+  }
   const workspaceRoot = typeof sceneState.workspaceRoot === "string" && sceneState.workspaceRoot.length > 0
     ? sceneState.workspaceRoot
     : process.cwd();
@@ -169,6 +178,28 @@ export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
 export function handleHelpInput({ rawInput, state } = {}) {
   const sceneState = state ?? createHelpSceneState();
 
+  if (sceneState.pager) {
+    const pagerResult = handlePagerInput({ rawInput, state: sceneState.pager });
+    if (pagerResult.backToParent) {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          pager: null,
+        },
+        backToParent: false,
+      };
+    }
+    return {
+      handled: pagerResult.handled,
+      state: {
+        ...sceneState,
+        pager: pagerResult.state,
+      },
+      backToParent: false,
+    };
+  }
+
   const isEscape = rawInput === "\u001b";
   const isBackspace = rawInput === "\b" || rawInput === "\u007f";
   if (isEscape || isBackspace) {
@@ -200,6 +231,38 @@ export function handleHelpInput({ rawInput, state } = {}) {
       state: {
         ...sceneState,
         selectedIndex: clampSelectedIndex(selectedIndex + 1, rows.length),
+      },
+      backToParent: false,
+    };
+  }
+
+  if (input === "\r" || input === "\n") {
+    const selectedRow = rows[selectedIndex];
+    if (selectedRow?.kind !== "local-doc" || typeof selectedRow.target !== "string") {
+      return {
+        handled: false,
+        state: sceneState,
+        backToParent: false,
+      };
+    }
+
+    const absolutePath = path.join(sceneState.workspaceRoot, selectedRow.target);
+    let content = "";
+    try {
+      content = fs.readFileSync(absolutePath, "utf8");
+    } catch {
+      content = "Unable to read this file.";
+    }
+
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        pager: createPagerState({
+          title: "Help",
+          filePath: selectedRow.target,
+          content,
+        }),
       },
       backToParent: false,
     };
