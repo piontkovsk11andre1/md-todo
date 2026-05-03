@@ -6,7 +6,6 @@ By default, `start` creates a design-first project structure and prepares migrat
 
 - `design/current/`
 - `design/current/Target.md`
-- `AGENTS.md`
 - `migrations/`
 - `migrations/1. Initialization.md`
 - `specs/`

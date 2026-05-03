@@ -244,7 +244,6 @@ bun add -g @p10i/rundown
 
 - [Overview](docs/overview.md) — core model, workflow, and task lifecycle
 - [CLI](docs/cli.md) — commands, flags, and global options
-- [CLI: `--agents`](docs/cli-agents.md) — print deterministic AGENTS guidance from root mode
 - [CLI: root `rundown`](docs/cli-root.md) — no-argument interactive help startup behavior
 - [CLI: `config`](docs/cli-config.md) — inspect merged configuration and value sources
 - [CLI: `init`](docs/cli-init.md) — scaffold a new rundown workspace

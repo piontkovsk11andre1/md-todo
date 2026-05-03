@@ -27,7 +27,6 @@ Options:
 
 - In interactive terminals (`stdout` and `stderr` are TTY), rundown launches the root TUI.
 - If TTY is unavailable (for example CI or piped output), rundown falls back to static Commander help and exits `0`.
-- `rundown --agents` remains root-only and prints canonical AGENTS guidance without entering the TUI.
 - Use `rundown agent` for the previous no-args interactive agent-help flow.
 - Explicit subcommands keep their normal behavior.
 

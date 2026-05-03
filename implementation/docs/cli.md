@@ -21,52 +21,6 @@ rundown --config-dir ../../.rundown run TODO.md
 rundown --config-dir /workspace/rundown-config run docs/todos.md
 ```
 
-## `--agents` output mode
-
-Use `--agents` at the root to print deterministic, Markdown-safe AGENTS guidance to stdout and exit `0`.
-
-See the command-focused reference: [cli-agents.md](cli-agents.md).
-
-Behavior:
-
-- Root-only usage: `rundown --agents` and `rd --agents`.
-- Non-interactive path: no worker startup, no live-help fallback, and no TUI dependency.
-- Clean output contract: plain text only (no ANSI colors/spinners/status prefixes), newline-terminated.
-- Deterministic precedence: when combined with `--help`, `--agents` takes precedence and emits AGENTS content.
-- Subcommand misuse is rejected (for example, `rundown run tasks.md --agents`).
-
-Redirection examples (POSIX shells):
-
-```bash
-# Inspect emitted AGENTS guidance in terminal
-rundown --agents
-
-# Create or overwrite AGENTS.md
-rd --agents > AGENTS.md
-
-# Append guidance to existing AGENTS.md
-rd --agents >> AGENTS.md
-```
-
-Redirection examples (PowerShell):
-
-```powershell
-# Inspect emitted AGENTS guidance in terminal
-rundown --agents
-
-# Create or overwrite AGENTS.md
-rd --agents > AGENTS.md
-
-# Append guidance to existing AGENTS.md
-rd --agents >> AGENTS.md
-```
-
-Cross-shell notes:
-
-- `>` overwrites; `>>` appends.
-- Re-running append commands adds another full copy of the guidance (no built-in dedupe).
-- `rd` and `rundown` are alias-equivalent and emit byte-identical `--agents` output.
-
 ### `rundown`
 
 Running `rundown` with no subcommand and no positional arguments opens the root TUI when possible.
@@ -77,7 +31,6 @@ Behavior:
 
 - In an interactive terminal (`stdout` and `stderr` are TTY), rundown launches the root TUI.
 - If TTY is unavailable (for example CI or piped output), rundown falls back to static Commander help and exits `0`.
-- `rundown --agents` remains root-only and prints canonical AGENTS guidance without entering the TUI.
 - Use `rundown agent` for the previous no-args interactive agent-help flow.
 - This no-arg behavior applies only to root startup and does not change explicit subcommands.
 
