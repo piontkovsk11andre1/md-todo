@@ -1,10 +1,12 @@
 // @ts-nocheck
 import { createStatusProbeRegistry } from "../status-probes.ts";
 
-export type MainMenuSceneId = "continue" | "newWork" | "workers" | "profiles" | "settings" | "help";
+export type MainMenuSceneId = "start" | "continue" | "newWork" | "workers" | "profiles" | "settings" | "help";
+export type MainMenuVariant = "initialized" | "emptyBootstrap";
 
 export type MainMenuState = {
   selectedIndex: number;
+  variant: MainMenuVariant;
 };
 
 export type MainMenuItem = {
@@ -13,7 +15,7 @@ export type MainMenuItem = {
   probeId: string;
 };
 
-const MAIN_MENU_ITEMS: readonly MainMenuItem[] = Object.freeze([
+const INITIALIZED_MAIN_MENU_ITEMS: readonly MainMenuItem[] = Object.freeze([
   { sceneId: "continue", label: "Continue", probeId: "continue" },
   { sceneId: "newWork", label: "New Work", probeId: "newWork" },
   { sceneId: "workers", label: "Workers", probeId: "workers" },
@@ -22,27 +24,47 @@ const MAIN_MENU_ITEMS: readonly MainMenuItem[] = Object.freeze([
   { sceneId: "help", label: "Help", probeId: "help" },
 ]);
 
+const EMPTY_BOOTSTRAP_MAIN_MENU_ITEMS: readonly MainMenuItem[] = Object.freeze([
+  { sceneId: "start", label: "Start", probeId: "start" },
+  { sceneId: "workers", label: "Workers", probeId: "workers" },
+  { sceneId: "help", label: "Help", probeId: "help" },
+]);
+
 const statusProbeRegistry = createStatusProbeRegistry();
 
-function normalizeSelectionIndex(index: number): number {
-  if (!Number.isInteger(index) || MAIN_MENU_ITEMS.length === 0) {
+function getMainMenuItemsForVariant(variant: MainMenuVariant): readonly MainMenuItem[] {
+  if (variant === "emptyBootstrap") {
+    return EMPTY_BOOTSTRAP_MAIN_MENU_ITEMS;
+  }
+  return INITIALIZED_MAIN_MENU_ITEMS;
+}
+
+function resolveMainMenuVariant(variant: unknown): MainMenuVariant {
+  return variant === "emptyBootstrap" ? "emptyBootstrap" : "initialized";
+}
+
+function normalizeSelectionIndex(index: number, variant: MainMenuVariant): number {
+  const items = getMainMenuItemsForVariant(variant);
+  if (!Number.isInteger(index) || items.length === 0) {
     return 0;
   }
-  const limit = MAIN_MENU_ITEMS.length;
+  const limit = items.length;
   return ((index % limit) + limit) % limit;
 }
 
-export function createMainMenuSceneState() {
-  return { selectedIndex: 0 };
+export function createMainMenuSceneState({ variant = "initialized" }: { variant?: MainMenuVariant } = {}): MainMenuState {
+  return { selectedIndex: 0, variant: resolveMainMenuVariant(variant) };
 }
 
-export function getMainMenuItems() {
-  return MAIN_MENU_ITEMS;
+export function getMainMenuItems(state?: MainMenuState) {
+  return getMainMenuItemsForVariant(resolveMainMenuVariant(state?.variant));
 }
 
 export function getMainMenuRows(state: MainMenuState, { probeRegistry = statusProbeRegistry } = {}) {
-  const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0);
-  return MAIN_MENU_ITEMS.map((item, index) => {
+  const variant = resolveMainMenuVariant(state?.variant);
+  const menuItems = getMainMenuItemsForVariant(variant);
+  const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0, variant);
+  return menuItems.map((item, index) => {
     const status = probeRegistry.getProbeStatus(item.probeId);
     const workersDrilldownHint = item.sceneId === "workers" ? "   (H: health · T: tools)" : "";
     const profilesDrilldownHint = item.sceneId === "profiles" ? "   (↵: inspect · e: edit · u: scan)" : "";
@@ -69,21 +91,26 @@ export async function refreshMainMenuStatusProbe(probeId: string, { probeRegistr
 }
 
 export function getSelectedMainMenuItem(state: MainMenuState): MainMenuItem {
-  const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0);
-  return MAIN_MENU_ITEMS[selectedIndex];
+  const variant = resolveMainMenuVariant(state?.variant);
+  const menuItems = getMainMenuItemsForVariant(variant);
+  const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0, variant);
+  return menuItems[selectedIndex];
 }
 
 export function moveMainMenuSelection(state: MainMenuState, delta: number): MainMenuState {
-  const selectedIndex = normalizeSelectionIndex((state?.selectedIndex ?? 0) + delta);
-  return { selectedIndex };
+  const variant = resolveMainMenuVariant(state?.variant);
+  const selectedIndex = normalizeSelectionIndex((state?.selectedIndex ?? 0) + delta, variant);
+  return { selectedIndex, variant };
 }
 
 export function jumpMainMenuSelection(state: MainMenuState, oneBasedIndex: string): MainMenuState {
+  const variant = resolveMainMenuVariant(state?.variant);
+  const menuItems = getMainMenuItemsForVariant(variant);
   const target = Number.parseInt(String(oneBasedIndex), 10);
-  if (!Number.isInteger(target) || target < 1 || target > MAIN_MENU_ITEMS.length) {
-    return state ?? createMainMenuSceneState();
+  if (!Number.isInteger(target) || target < 1 || target > menuItems.length) {
+    return state ?? createMainMenuSceneState({ variant });
   }
-  return { selectedIndex: target - 1 };
+  return { selectedIndex: target - 1, variant };
 }
 
 export function handleMainMenuInput(state: MainMenuState, rawInput: string) {
