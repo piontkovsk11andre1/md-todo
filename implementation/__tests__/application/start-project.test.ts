@@ -42,6 +42,51 @@ describe("start-project", () => {
     expect(fs.statSync(predictionPath).isDirectory()).toBe(true);
   });
 
+  it("persists implementation in generated workspace config", async () => {
+    const workspace = makeTempWorkspace();
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({ description: "Config persistence" });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(workspace, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        directories?: {
+          design?: string;
+          implementation?: string;
+          specs?: string;
+          migrations?: string;
+          prediction?: string;
+        };
+        placement?: {
+          design?: string;
+          implementation?: string;
+          specs?: string;
+          migrations?: string;
+          prediction?: string;
+        };
+      };
+    };
+
+    expect(config.workspace?.directories).toEqual({
+      design: "design",
+      implementation: "implementation",
+      specs: "specs",
+      migrations: "migrations",
+      prediction: "prediction",
+    });
+    expect(config.workspace?.placement).toEqual({
+      design: "sourcedir",
+      implementation: "sourcedir",
+      specs: "sourcedir",
+      migrations: "sourcedir",
+      prediction: "sourcedir",
+    });
+  });
+
   it("creates an empty design target and leaves prediction empty in non-empty workspaces", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "src"), { recursive: true });
