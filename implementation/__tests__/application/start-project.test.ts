@@ -149,6 +149,30 @@ describe("start-project", () => {
     expect(harness.runExplore).not.toHaveBeenCalled();
   });
 
+  it("enriches newly created target and initial migration without configuration warning", async () => {
+    const workspace = makeTempWorkspace();
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({ description: "Enriched start" });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(harness.runExplore).toHaveBeenNthCalledWith(
+      1,
+      path.join(workspace, "design", "current", "Target.md"),
+      workspace,
+    );
+    expect(harness.runExplore).toHaveBeenNthCalledWith(
+      2,
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      workspace,
+    );
+
+    const warningMessages = harness.events
+      .filter((event) => event.kind === "warn")
+      .map((event) => event.message);
+    expect(warningMessages.some((message) => message.includes("Explore integration is not configured"))).toBe(false);
+  });
+
   it("enriches only the newly created migration when using external --from-design", async () => {
     const workspace = makeTempWorkspace();
     const externalDesignDir = makeTempWorkspace();
