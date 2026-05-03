@@ -894,9 +894,7 @@ async function runMigrationLaneDrafting(input: {
 
   const promotedMigrationPaths: string[] = [];
   const promotedMigrationMetadataPaths: string[] = [];
-  const promotedMigrationsDir = thread
-    ? migrationThreadMigrationsDir(migrationsDir, thread.threadSlug)
-    : migrationsDir;
+  const promotedMigrationsDir = migrationsDir;
   dependencies.fileSystem.mkdir(promotedMigrationsDir, { recursive: true });
   const stateBeforeCreate = thread
     ? readMigrationStateFromDirectoryOrEmpty(dependencies.fileSystem, promotedMigrationsDir)
