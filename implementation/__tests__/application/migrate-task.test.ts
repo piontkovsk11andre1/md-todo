@@ -1129,6 +1129,136 @@ describe("migrate-task", () => {
     }
   });
 
+  it("isolates sibling thread history and keeps numbering independent per lane", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(99, "root-only-seed")),
+      "# 99. Root Only Seed\n\n- [x] root lane history should be ignored in thread mode\n",
+      "utf-8",
+    );
+
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "ops.md"), "# Ops\n", "utf-8");
+
+    const billingMigrationsDir = path.join(workspace, "migrations", "threads", "billing");
+    const opsMigrationsDir = path.join(workspace, "migrations", "threads", "ops");
+    fs.mkdirSync(billingMigrationsDir, { recursive: true });
+    fs.mkdirSync(opsMigrationsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(billingMigrationsDir, formatMigrationFilename(4, "billing-seed")),
+      "# 4. Billing Seed\n\n- [x] billing history\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(opsMigrationsDir, formatMigrationFilename(1, "ops-seed")),
+      "# 1. Ops Seed\n\n- [x] ops history\n",
+      "utf-8",
+    );
+
+    const promptsByThread = new Map<string, string>();
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ artifactPhaseLabel, prompt, artifactExtra }) => {
+        if (artifactPhaseLabel === "migrate-thread-translate") {
+          const threadSlug = String(artifactExtra?.threadSlug ?? "ops");
+          return { exitCode: 0, stdout: "# translated " + threadSlug + " brief\n", stderr: "" };
+        }
+
+        if (artifactPhaseLabel === "migrate-plan-thread") {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const threadSlug = path.basename(draftDir);
+          promptsByThread.set(threadSlug, prompt);
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, threadSlug + "-followup")),
+            "# " + String(position + 1) + ". " + threadSlug + " followup\n\n- [ ] Cover Target.md and " + threadSlug + " flow updates.\n",
+            "utf-8",
+          );
+          return { exitCode: 0, stdout: "planned " + threadSlug, stderr: "" };
+        }
+
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(fs.existsSync(path.join(billingMigrationsDir, formatMigrationFilename(5, "billing-followup")))).toBe(true);
+      expect(fs.existsSync(path.join(opsMigrationsDir, formatMigrationFilename(2, "ops-followup")))).toBe(true);
+
+      const billingPrompt = promptsByThread.get("billing") ?? "";
+      const opsPrompt = promptsByThread.get("ops") ?? "";
+      expect(billingPrompt).toContain("Current migration number: 4");
+      expect(opsPrompt).toContain("Current migration number: 1");
+      expect(billingPrompt).toContain("- 4. Billing Seed.md");
+      expect(billingPrompt).not.toContain("- 1. Ops Seed.md");
+      expect(opsPrompt).toContain("- 1. Ops Seed.md");
+      expect(opsPrompt).not.toContain("- 4. Billing Seed.md");
+      expect(billingPrompt).toContain("translated billing brief");
+      expect(billingPrompt).not.toContain("translated ops brief");
+      expect(opsPrompt).toContain("translated ops brief");
+      expect(opsPrompt).not.toContain("translated billing brief");
+      expect(billingPrompt).not.toContain("- 99. Root Only Seed.md");
+      expect(opsPrompt).not.toContain("- 99. Root Only Seed.md");
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("preserves staged thread artifacts when one lane fails verification", async () => {
     const workspace = makeTempWorkspace();
     scaffoldReleasedDesignRevisions(workspace, "design");
