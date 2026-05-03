@@ -1,4 +1,3 @@
-import path from "node:path";
 import { createInitProject } from "./init-project.js";
 import { initGitRepo } from "./git-operations.js";
 import {
