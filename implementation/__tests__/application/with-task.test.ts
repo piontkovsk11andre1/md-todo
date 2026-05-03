@@ -42,6 +42,7 @@ describe("with-task", () => {
       source: "preset",
       changed: true,
       configPath: path.join(configDir, "config.json"),
+      existingLocalWorkerKeys: [],
       configuredKeys: [
         {
           keyPath: "workers.default",
@@ -121,6 +122,11 @@ describe("with-task", () => {
     expect(result.harnessKey).toBe("opencode");
     expect(result.source).toBe("preset");
     expect(result.changed).toBe(true);
+    expect(result.existingLocalWorkerKeys).toEqual([
+      "workers.default",
+      "workers.tui",
+      "workers.fallbacks",
+    ]);
 
     const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
       workers?: {
@@ -176,6 +182,7 @@ describe("with-task", () => {
     expect(after).toBe(before);
     expect(second.source).toBe("preset");
     expect(second.changed).toBe(false);
+    expect(second.existingLocalWorkerKeys).toEqual(["workers.default", "workers.tui"]);
   });
 
   it("accepts case-insensitive aliases and writes canonical harness commands", async () => {
@@ -299,6 +306,7 @@ describe("with-task", () => {
     expect(result.harnessKey).toBe("opencode");
     expect(result.changed).toBe(false);
     expect(result.configPath).toBe(configPath);
+    expect(result.existingLocalWorkerKeys).toEqual([]);
     expect(result.configuredKeys).toEqual([
       {
         keyPath: "workers.default",
@@ -323,6 +331,35 @@ describe("with-task", () => {
     expect(fs.existsSync(configPath)).toBe(false);
     expect(workerConfigPort.setValue).not.toHaveBeenCalled();
     expect(workerConfigPort.unsetValue).not.toHaveBeenCalled();
+  });
+
+  it("detects local worker keys before applying opencode preset", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      workers: {
+        tui: ["legacy", "--prompt", "$bootstrap"],
+      },
+      commands: {
+        discuss: ["legacy"],
+      },
+    }, null, 2) + "\n");
+
+    const withTask = createWithTask({
+      workerConfigPort: createWorkerConfigAdapter(),
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput: createInteractiveInputStub(),
+    });
+
+    const result = await withTask({ harness: "opencode" });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.existingLocalWorkerKeys).toEqual(["workers.tui"]);
   });
 
   it("keeps opencode-like unknown harness names on interactive custom mapping flow", async () => {

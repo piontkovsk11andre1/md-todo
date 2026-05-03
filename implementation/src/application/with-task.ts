@@ -33,6 +33,7 @@ export interface WithTaskResult {
   source: "preset" | "custom";
   changed: boolean;
   configPath: string;
+  existingLocalWorkerKeys: readonly ExistingLocalWorkerKeyPath[];
   configuredKeys: readonly WithTaskConfiguredKeyResult[];
 }
 
@@ -41,6 +42,13 @@ export function hasWithTaskInteractiveWorker(result: WithTaskResult): boolean {
 }
 
 type WithTaskMutableKeyPath = Exclude<WithTaskConfiguredKeyResult["keyPath"], "workers.fallbacks"> | "workers.fallbacks";
+type ExistingLocalWorkerKeyPath = "workers.default" | "workers.tui" | "workers.fallbacks";
+
+const LOCAL_WORKER_OVERWRITE_KEYS: readonly ExistingLocalWorkerKeyPath[] = [
+  "workers.default",
+  "workers.tui",
+  "workers.fallbacks",
+];
 
 interface WithTaskMutationPlanItem {
   keyPath: WithTaskMutableKeyPath;
@@ -174,6 +182,34 @@ function resolveLocalConfigPath(dependencies: WithTaskDependencies, configDirPat
   return paths?.localConfigPath ?? path.join(configDirPath, "config.json");
 }
 
+function detectExistingLocalWorkerKeys(
+  workerConfigPort: WorkerConfigPort,
+  configDirPath: string,
+): ExistingLocalWorkerKeyPath[] {
+  if (workerConfigPort.readValue) {
+    return LOCAL_WORKER_OVERWRITE_KEYS.filter((keyPath) => {
+      return workerConfigPort.readValue?.(configDirPath, "local", keyPath) !== undefined;
+    });
+  }
+
+  const localValues = workerConfigPort.listValues?.(configDirPath, "local");
+  if (!localValues?.workers) {
+    return [];
+  }
+
+  return LOCAL_WORKER_OVERWRITE_KEYS.filter((keyPath) => {
+    if (keyPath === "workers.default") {
+      return localValues.workers.default !== undefined;
+    }
+
+    if (keyPath === "workers.tui") {
+      return localValues.workers.tui !== undefined;
+    }
+
+    return localValues.workers.fallbacks !== undefined;
+  });
+}
+
 /**
  * Creates the `with` command use case.
  *
@@ -198,6 +234,9 @@ export function createWithTask(
     const presetPayload = harnessKey
       ? getHarnessPresetPayload(harnessKey)
       : await promptUnknownHarnessPreset(options.harness, dependencies.interactiveInput);
+    const existingLocalWorkerKeys = harnessKey === "opencode"
+      ? detectExistingLocalWorkerKeys(dependencies.workerConfigPort, configDirPath)
+      : [];
 
     const mutationPlan = buildPresetMutationPlan(presetPayload);
     const plannedMutations = mutationPlan.filter((mutation) => {
@@ -244,6 +283,7 @@ export function createWithTask(
       source: resultSource,
       changed,
       configPath,
+      existingLocalWorkerKeys,
       configuredKeys: [
         {
           keyPath: "workers.default",
