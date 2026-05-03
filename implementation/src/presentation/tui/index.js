@@ -143,7 +143,7 @@ function applySharedNavigationGrammar(state, rawInput) {
   return false;
 }
 
-function buildSceneLines(state, spacing, currentWorkingDirectory) {
+function buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumns) {
   if (state.sceneId === "continue") {
     return renderContinueSceneLines({
       uiState: state.continueUiState,
@@ -168,7 +168,11 @@ function buildSceneLines(state, spacing, currentWorkingDirectory) {
     return renderProfilesSceneLines({ state: state.profilesSceneState, sectionGap: spacing.sectionGap });
   }
   if (state.sceneId === "settings") {
-    return renderSettingsSceneLines({ state: state.settingsSceneState, sectionGap: spacing.sectionGap });
+    return renderSettingsSceneLines({
+      state: state.settingsSceneState,
+      sectionGap: spacing.sectionGap,
+      viewportColumns,
+    });
   }
   if (state.sceneId === "help") {
     return renderHelpSceneLines({ state: state.helpSceneState, sectionGap: spacing.sectionGap });
@@ -614,7 +618,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       const viewportColumns = process.stdout.isTTY ? process.stdout.columns : undefined;
       const spacing = getSceneSpacing(viewportRows);
       const statusToken = renderStatusBadge(state.sceneId, state.continueUiState, spinner, state.agentSessionPending);
-      const sceneLines = buildSceneLines(state, spacing, currentWorkingDirectory);
+      const sceneLines = buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumns);
       const lines = buildFrame({
         sceneId: state.sceneId,
         statusToken,

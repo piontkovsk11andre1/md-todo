@@ -62,6 +62,61 @@ function formatValueOneLine(value) {
   }
 }
 
+const ARRAY_PREVIEW_LIMIT = 3;
+const MIN_VALUE_WIDTH = 12;
+const DEFAULT_VIEWPORT_COLUMNS = 80;
+
+function truncateInline(text, maxLength) {
+  const value = String(text);
+  if (maxLength <= 0) {
+    return "";
+  }
+  if (value.length <= maxLength) {
+    return value;
+  }
+  if (maxLength === 1) {
+    return "…";
+  }
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function formatArrayPreview(value, maxLength) {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const head = value.slice(0, ARRAY_PREVIEW_LIMIT).map((item) => formatValueOneLine(item));
+  const suffix = value.length > ARRAY_PREVIEW_LIMIT ? ", …" : "";
+  const candidate = `[${head.join(", ")}${suffix}]`;
+  if (candidate.length <= maxLength) {
+    return candidate;
+  }
+  return null;
+}
+
+function formatRowValue(value, maxLength) {
+  const safeMax = Math.max(1, Math.floor(maxLength));
+  const oneLine = formatValueOneLine(value);
+  if (oneLine.length <= safeMax) {
+    return oneLine;
+  }
+  if (Array.isArray(value)) {
+    const preview = formatArrayPreview(value, safeMax);
+    if (preview !== null) {
+      return preview;
+    }
+  }
+  return truncateInline(oneLine, safeMax);
+}
+
+function resolveValueColumnWidth(viewportColumns, keyColumnWidth, provenanceReserve) {
+  const cols = Number.isFinite(viewportColumns) && viewportColumns > 0
+    ? viewportColumns
+    : DEFAULT_VIEWPORT_COLUMNS;
+  // Layout: "  " (2) + key (keyColumnWidth) + "  " (2) + value + "  " + marker
+  const available = cols - 2 - keyColumnWidth - 2 - provenanceReserve;
+  return Math.max(MIN_VALUE_WIDTH, available);
+}
+
 export function createSettingsSceneState() {
   return {
     scope: "effective",
@@ -132,7 +187,7 @@ function formatProvenanceMarker(source) {
   return pc.dim(`◀ ${source}`);
 }
 
-export function renderSettingsSceneLines({ state, sectionGap = 1 } = {}) {
+export function renderSettingsSceneLines({ state, sectionGap = 1, viewportColumns } = {}) {
   const sceneState = state ?? createSettingsSceneState();
   const scope = isSupportedScope(sceneState.scope) ? sceneState.scope : "effective";
   const lines = [buildHeaderLine(scope)];
@@ -172,9 +227,12 @@ export function renderSettingsSceneLines({ state, sectionGap = 1 } = {}) {
       return length > max ? length : max;
     }, 0);
     const keyColumnWidth = Math.min(Math.max(longestKey, 12), 36);
+    // Reserve approximate width for the provenance marker ("◀ built-in" ≈ 11 chars + leading "  ").
+    const provenanceReserve = showProvenance ? 14 : 0;
+    const valueColumnWidth = resolveValueColumnWidth(viewportColumns, keyColumnWidth, provenanceReserve);
     for (const entry of entries) {
       const keyText = typeof entry?.key === "string" ? entry.key : "";
-      const valueText = formatValueOneLine(entry?.value);
+      const valueText = formatRowValue(entry?.value, valueColumnWidth);
       const paddedKey = keyText.padEnd(keyColumnWidth, " ");
       let row = `  ${paddedKey}  ${valueText}`;
       if (showProvenance) {
