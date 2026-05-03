@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const DOMAIN_DIR = path.resolve("src/domain");
+const DOMAIN_DIR = path.resolve("implementation/src/domain");
 const DOMAIN_TRACE_FILES = [
   "trace.ts",
   "trace-parser.ts",

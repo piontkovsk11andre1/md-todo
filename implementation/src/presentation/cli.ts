@@ -164,7 +164,7 @@ program
   )
   .option("-c, --continue", "Resume the previous interactive root help/agent session")
   .option("--agents", "Print canonical AGENTS.md guidance and exit")
-  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
+  .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl")
   .action(withCliAction(createRootTuiAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
@@ -309,6 +309,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     discussModes: DISCUSS_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -339,6 +340,7 @@ program
   .action(withCliAction(createReverifyCommandAction({
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -675,6 +677,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     plannerModes: PLANNER_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -714,6 +717,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     exploreModes: EXPLORE_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -750,6 +754,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     makeModes: MAKE_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -781,6 +786,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     translateModes: TRANSLATE_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program
@@ -958,6 +964,7 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     researchModes: RESEARCH_MODES,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 program

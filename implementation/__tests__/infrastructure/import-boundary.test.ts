@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const INFRASTRUCTURE_DIR = path.resolve("src/infrastructure");
+const INFRASTRUCTURE_DIR = path.resolve("implementation/src/infrastructure");
 const INFRASTRUCTURE_TRACE_ADAPTER_FILES = [
   "adapters/jsonl-trace-writer.ts",
   "adapters/noop-trace-writer.ts",

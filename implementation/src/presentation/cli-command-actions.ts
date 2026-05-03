@@ -344,6 +344,29 @@ function hasTraceFlag(argv: string[]): boolean {
   return false;
 }
 
+function resolveTraceFlag(opts: CliOpts, getInvocationArgv?: () => string[]): boolean {
+  if (Boolean(opts.trace as boolean | undefined)) {
+    return true;
+  }
+
+  const invocationArgv = getInvocationArgv
+    ? resolveInvocationArgv(getInvocationArgv)
+    : process.argv.slice(2);
+
+  return hasTraceFlag(invocationArgv);
+}
+
+function resolveSharedRuntimeOptionsWithTrace(
+  opts: CliOpts,
+  getWorkerFromSeparator: () => string[] | undefined,
+  getInvocationArgv?: () => string[],
+): ReturnType<typeof resolveSharedWorkerRuntimeOptions> {
+  return {
+    ...resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator),
+    trace: resolveTraceFlag(opts, getInvocationArgv),
+  };
+}
+
 interface RunActionDependencies extends WorkerActionDependencies {
   runnerModes: readonly ProcessRunMode[];
 }
@@ -491,7 +514,7 @@ export function createRunCommandAction({
       ? Boolean(opts.revertable as boolean | undefined)
       : Boolean(runDefaults?.revertable);
     const keepArtifacts = (opts.keepArtifacts as boolean) || revertable;
-    const trace = opts.trace as boolean;
+    const trace = resolveTraceFlag(opts, getInvocationArgv);
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
     const traceOnly = opts.traceOnly as boolean;
     const varsFileOption = opts.varsFile as string | boolean | undefined;
@@ -681,7 +704,7 @@ export function createLoopCommandAction({
     const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
     const traceOnly = Boolean(opts.traceOnly as boolean | undefined);
     const traceStats = Boolean(opts.traceStats as boolean | undefined);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedRuntimeOptions = resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator, getInvocationArgv);
     const revertable = hasRevertableFlag
       ? Boolean(opts.revertable as boolean | undefined)
       : Boolean(runDefaults?.revertable);
@@ -929,6 +952,7 @@ export function createDiscussCommandAction({
   getApp,
   getWorkerFromSeparator,
   discussModes,
+  getInvocationArgv,
 }: DiscussActionDependencies): (source: string | undefined, opts: CliOpts) => CliActionResult {
   return (source: string | undefined, opts: CliOpts) => {
     // Parse and normalize discuss-specific option values.
@@ -941,7 +965,7 @@ export function createDiscussCommandAction({
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const showAgentOutput = resolveShowAgentOutputOption(opts);
-    const trace = Boolean(opts.trace as boolean | undefined);
+    const trace = resolveTraceFlag(opts, getInvocationArgv);
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
@@ -986,6 +1010,7 @@ export function createDiscussCommandAction({
 export function createReverifyCommandAction({
   getApp,
   getWorkerFromSeparator,
+  getInvocationArgv,
 }: WorkerActionDependencies): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     // Parse run-selection and behavior flags for re-verification.
@@ -998,7 +1023,7 @@ export function createReverifyCommandAction({
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
-    const trace = opts.trace as boolean;
+    const trace = resolveTraceFlag(opts, getInvocationArgv);
     const targetRun = normalizeOptionalString(opts.run) ?? "latest";
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
@@ -1147,6 +1172,7 @@ export function createPlanCommandAction({
   getApp,
   getWorkerFromSeparator,
   plannerModes,
+  getInvocationArgv,
 }: PlanActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
   return (markdownFiles: string[], opts: CliOpts) => {
     const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
@@ -1159,7 +1185,7 @@ export function createPlanCommandAction({
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
-    const trace = opts.trace as boolean;
+    const trace = resolveTraceFlag(opts, getInvocationArgv);
     const showAgentOutput = resolveShowAgentOutputOption(opts);
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
@@ -1207,6 +1233,7 @@ export function createResearchCommandAction({
   getApp,
   getWorkerFromSeparator,
   researchModes,
+  getInvocationArgv,
 }: ResearchActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
   return (markdownFiles: string[], opts: CliOpts) => {
     const workerWorkspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
@@ -1215,7 +1242,7 @@ export function createResearchCommandAction({
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
-    const trace = opts.trace as boolean;
+    const trace = resolveTraceFlag(opts, getInvocationArgv);
     const showAgentOutput = resolveShowAgentOutputOption(opts);
     const forceUnlock = Boolean(opts.forceUnlock as boolean | undefined);
     const ignoreCliBlock = resolveIgnoreCliBlockFlag(opts);
@@ -1259,6 +1286,7 @@ export function createTranslateCommandAction({
   getApp,
   getWorkerFromSeparator,
   translateModes,
+  getInvocationArgv,
 }: TranslateActionDependencies): (
   whatMarkdownFile: string,
   howMarkdownFile: string,
@@ -1278,7 +1306,7 @@ export function createTranslateCommandAction({
       outputMarkdownFile,
     );
     const mode = parseRunnerMode(opts.mode as string | undefined, translateModes);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedRuntimeOptions = resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator, getInvocationArgv);
 
     const request: TranslateCommandInvocationOptions = {
       what: resolvedMarkdownFiles.whatMarkdownFile,
@@ -1315,6 +1343,7 @@ export function createExploreCommandAction({
   getApp,
   getWorkerFromSeparator,
   exploreModes,
+  getInvocationArgv,
 }: ExploreActionDependencies): (markdownFiles: string[], opts: CliOpts) => CliActionResult {
   return async (markdownFiles: string[], opts: CliOpts) => {
     const app = getApp();
@@ -1329,7 +1358,7 @@ export function createExploreCommandAction({
       deep,
       maxItems,
       verbose,
-    } = parseExploreCliOptions(opts, exploreModes, getWorkerFromSeparator);
+    } = parseExploreCliOptions(opts, exploreModes, getWorkerFromSeparator, getInvocationArgv);
 
     return runExplorePhases({
       app,
@@ -1594,7 +1623,7 @@ export function createQueryCommandAction({
   return (queryText: string, opts: CliOpts) => {
     const workspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const mode = parseRunnerMode(opts.mode as string | undefined, queryModes);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedRuntimeOptions = resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator);
     const format = parseQueryOutputFormat(opts.format as string | undefined);
     const output = normalizeOptionalString(opts.output);
     const dir = path.resolve(normalizeOptionalString(opts.dir) ?? process.cwd());
@@ -1659,11 +1688,12 @@ function parseExploreCliOptions(
   opts: CliOpts,
   exploreModes: readonly ProcessRunMode[],
   getWorkerFromSeparator: () => string[] | undefined,
+  getInvocationArgv?: () => string[],
 ): ParsedExploreCliOptions {
   return {
     workspaceRuntimeOptions: resolveWorkerWorkspaceRuntimeOptions(),
     mode: parseRunnerMode(opts.mode as string | undefined, exploreModes),
-    sharedRuntimeOptions: resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator),
+    sharedRuntimeOptions: resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator, getInvocationArgv),
     dryRun: Boolean(opts.dryRun as boolean | undefined),
     printPrompt: Boolean(opts.printPrompt as boolean | undefined),
     scanCount: parseScanCount(opts.scanCount as string | undefined),
@@ -1748,6 +1778,7 @@ export function createMakeCommandAction({
   getApp,
   getWorkerFromSeparator,
   makeModes,
+  getInvocationArgv,
 }: MakeActionDependencies): (seedText: string, markdownFile: string, opts: CliOpts) => CliActionResult {
   return async (seedText: string, markdownFile: string, opts: CliOpts) => {
     const app = getApp();
@@ -1762,7 +1793,7 @@ export function createMakeCommandAction({
       scanCount,
       maxItems,
       verbose,
-    } = parseMakeBootstrapCliOptions(opts, makeModes, getWorkerFromSeparator);
+    } = parseMakeBootstrapCliOptions(opts, makeModes, getWorkerFromSeparator, getInvocationArgv);
 
     return runMakeBootstrapPhases({
       app,
@@ -1797,7 +1828,7 @@ export function createAddCommandAction({
     const targetMarkdownFile = resolveAddMarkdownFile(markdownFile);
     const workspaceRuntimeOptions = resolveWorkerWorkspaceRuntimeOptions();
     const mode = parseRunnerMode(opts.mode as string | undefined, addModes);
-    const sharedRuntimeOptions = resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator);
+    const sharedRuntimeOptions = resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator);
     const dryRun = Boolean(opts.dryRun as boolean | undefined);
     const printPrompt = Boolean(opts.printPrompt as boolean | undefined);
     const scanCount = parseScanCount(opts.scanCount as string | undefined);
@@ -1864,12 +1895,13 @@ function parseMakeBootstrapCliOptions(
   opts: CliOpts,
   makeModes: readonly ProcessRunMode[],
   getWorkerFromSeparator: () => string[] | undefined,
+  getInvocationArgv?: () => string[],
 ): ParsedMakeBootstrapCliOptions {
   return {
     workspaceRuntimeOptions: resolveWorkerWorkspaceRuntimeOptions(),
     mode: parseRunnerMode(opts.mode as string | undefined, makeModes),
     skipResearch: Boolean((opts.skipResearch as boolean | undefined) || (opts.raw as boolean | undefined)),
-    sharedRuntimeOptions: resolveSharedWorkerRuntimeOptions(opts, getWorkerFromSeparator),
+    sharedRuntimeOptions: resolveSharedRuntimeOptionsWithTrace(opts, getWorkerFromSeparator, getInvocationArgv),
     dryRun: Boolean(opts.dryRun as boolean | undefined),
     printPrompt: Boolean(opts.printPrompt as boolean | undefined),
     scanCount: parseScanCount(opts.scanCount as string | undefined),

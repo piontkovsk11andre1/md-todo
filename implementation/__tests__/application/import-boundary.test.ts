@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const APPLICATION_DIR = path.resolve("src/application");
+const APPLICATION_DIR = path.resolve("implementation/src/application");
 const USE_CASE_FILES = [
   "run-task.ts",
   "discuss-task.ts",
