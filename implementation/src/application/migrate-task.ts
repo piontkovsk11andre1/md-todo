@@ -1344,6 +1344,15 @@ function buildTemplateVars(input: {
   revisionDiff?: DesignRevisionDiffContext;
   migrationDraftDir?: string;
   newMigrations?: string;
+  threadContext?: {
+    mode: boolean;
+    name?: string;
+    slug?: string;
+    sourcePathFromWorkspace?: string;
+    briefPathFromWorkspace?: string;
+    translatedBrief?: string;
+    laneSummary?: string;
+  };
 }): TemplateVars {
   const {
     fileSystem,
@@ -1357,6 +1366,7 @@ function buildTemplateVars(input: {
     revisionDiff: providedRevisionDiff,
     migrationDraftDir,
     newMigrations,
+    threadContext,
   } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
 
@@ -1389,6 +1399,21 @@ function buildTemplateVars(input: {
     const fileName = path.basename(migration.filePath);
     return "- " + fileName;
   });
+
+  const threadMode = threadContext?.mode === true;
+  const threadName = threadContext?.name ?? "";
+  const threadSlug = threadContext?.slug ?? "";
+  const threadSourcePath = threadContext?.sourcePathFromWorkspace ?? "";
+  const threadBriefPath = threadContext?.briefPathFromWorkspace ?? "";
+  const translatedThreadBrief = threadContext?.translatedBrief ?? "";
+  const threadLaneSummary = threadContext?.laneSummary
+    ?? (threadMode
+      ? [
+        "- This drafting run is scoped to one migration thread lane.",
+        "- Use only thread-local migration history and numbering.",
+        "- Use the translated thread brief below to specialize migration planning.",
+      ].join("\n")
+      : "- Thread mode is disabled for this run; use shared root migration context only.");
 
   return {
     task: "migrate",
@@ -1439,6 +1464,13 @@ function buildTemplateVars(input: {
     invocationDir: invocationRoot,
     workspaceDir: projectRoot,
     position: state.currentPosition,
+    migrateThreadMode: threadMode ? "true" : "false",
+    migrateThreadName: threadName,
+    migrateThreadSlug: threadSlug,
+    migrateThreadSourcePath: threadSourcePath,
+    migrateThreadBriefPath: threadBriefPath,
+    migrateThreadTranslatedBrief: translatedThreadBrief,
+    migrateThreadLaneSummary: threadLaneSummary,
   };
 }
 

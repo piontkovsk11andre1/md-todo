@@ -682,6 +682,22 @@ You are drafting staged migration documents for a prediction-driven project.
 
 - Current migration number: {{position}}
 
+## Thread lane context
+
+- Thread mode active: {{migrateThreadMode}}
+- Thread name: {{migrateThreadName}}
+- Thread slug: {{migrateThreadSlug}}
+- Thread source: {{migrateThreadSourcePath}}
+- Translated thread brief artifact: {{migrateThreadBriefPath}}
+
+### Thread lane summary
+
+{{migrateThreadLaneSummary}}
+
+### Translated thread brief
+
+{{migrateThreadTranslatedBrief}}
+
 ## Draft staging
 
 - Write new draft migration files only in this staging directory: {{migrationDraftDir}}

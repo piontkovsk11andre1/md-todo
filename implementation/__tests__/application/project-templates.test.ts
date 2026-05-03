@@ -43,6 +43,9 @@ describe("project-templates", () => {
     expect(renderedPlannerPrompt).toContain("current prediction tree");
     expect(renderedPlannerPrompt).not.toContain("prediction/");
     expect(renderedPlannerPrompt).not.toContain("satellite");
+    expect(renderedPlannerPrompt).toContain("Thread mode active: {{migrateThreadMode}}");
+    expect(renderedPlannerPrompt).toContain("Thread slug: {{migrateThreadSlug}}");
+    expect(renderedPlannerPrompt).toContain("{{migrateThreadTranslatedBrief}}");
   });
 
   it("returns defaults when config directory is unavailable", () => {
