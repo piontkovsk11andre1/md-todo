@@ -30,39 +30,47 @@ function getExternalLinkById(linkId) {
   return null;
 }
 
-function openExternalUrl(url) {
+function spawnDetached(command, args) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+      shell: false,
+    });
+
+    child.once("error", () => {
+      if (!settled) {
+        settled = true;
+        resolve(false);
+      }
+    });
+
+    child.once("spawn", () => {
+      if (!settled) {
+        settled = true;
+        child.unref();
+        resolve(true);
+      }
+    });
+  });
+}
+
+async function openExternalUrl(url) {
   if (typeof url !== "string" || url.length === 0) {
     return false;
   }
 
   if (process.platform === "win32") {
-    const child = spawn("cmd", ["/c", "start", "", url], {
-      detached: true,
-      stdio: "ignore",
-      shell: false,
-    });
-    child.unref();
-    return true;
+    return spawnDetached("cmd", ["/c", "start", "", url]);
   }
 
   if (process.platform === "darwin") {
-    const child = spawn("open", [url], {
-      detached: true,
-      stdio: "ignore",
-      shell: false,
-    });
-    child.unref();
-    return true;
+    return spawnDetached("open", [url]);
   }
 
   if (process.platform === "linux") {
-    const child = spawn("xdg-open", [url], {
-      detached: true,
-      stdio: "ignore",
-      shell: false,
-    });
-    child.unref();
-    return true;
+    return spawnDetached("xdg-open", [url]);
   }
 
   return false;
@@ -289,7 +297,7 @@ export async function runHelpSceneAction({ action, state } = {}) {
     }
 
     try {
-      const opened = openExternalUrl(link.url);
+      const opened = await openExternalUrl(link.url);
       return {
         ...sceneState,
         banner: opened ? `Opened ${link.label} in your browser.` : `Open this URL manually: ${link.url}`,
