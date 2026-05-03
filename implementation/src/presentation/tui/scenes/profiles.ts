@@ -1,5 +1,6 @@
 // @ts-nocheck
 import pc from "picocolors";
+import { launchEditor } from "../components/editor-launch.ts";
 import { createConfigBridge } from "../bridges/config-bridge.ts";
 import { createWorkspaceScanBridge } from "../bridges/workspace-scan.ts";
 
@@ -244,6 +245,7 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
       }
     }
     withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("[↵] open reference in editor"));
     lines.push(pc.dim("[Esc] Back to profiles"));
     return lines;
   }
@@ -319,6 +321,29 @@ export function handleProfilesInput({ rawInput, state } = {}) {
           inspectSelectedReferenceIndex: clampIndex(selectedReferenceIndex + 1, references.length),
         },
         backToParent: false,
+      };
+    }
+
+    if (input === "\r" || input === "\n") {
+      const reference = references[selectedReferenceIndex];
+      if (!reference || typeof reference.file !== "string" || reference.file.length === 0) {
+        return {
+          handled: true,
+          state: sceneState,
+          backToParent: false,
+        };
+      }
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+        action: {
+          type: "open-reference",
+          reference: {
+            file: reference.file,
+            line: reference.line,
+          },
+        },
       };
     }
 
@@ -403,6 +428,9 @@ export async function runProfilesSceneAction({
   action,
   state,
   currentWorkingDirectory = process.cwd(),
+  suspendTui,
+  resumeTui,
+  launchEditorFn = launchEditor,
 } = {}) {
   if (!action || typeof action.type !== "string") {
     return state ?? createProfilesSceneState();
@@ -415,6 +443,44 @@ export async function runProfilesSceneAction({
       forceRescan: true,
       keepBanner: false,
     });
+  }
+
+  if (action.type === "open-reference") {
+    const sceneState = state ?? createProfilesSceneState();
+    const reference = action.reference;
+    const filePath = typeof reference?.file === "string" ? reference.file : "";
+    const line = Number.isInteger(reference?.line) && reference.line > 0 ? reference.line : undefined;
+    if (filePath.length === 0) {
+      return {
+        ...sceneState,
+        banner: "Reference file path is missing.",
+      };
+    }
+
+    let launchResult;
+    suspendTui?.();
+    try {
+      launchResult = launchEditorFn(filePath, { cwd: currentWorkingDirectory, line });
+    } catch (error) {
+      launchResult = {
+        ok: false,
+        message: `Failed to launch editor for ${filePath}: ${toErrorMessage(error)}`,
+      };
+    } finally {
+      resumeTui?.();
+    }
+
+    if (!launchResult.ok) {
+      return {
+        ...sceneState,
+        banner: launchResult.message || "Failed to open editor.",
+      };
+    }
+
+    return {
+      ...sceneState,
+      banner: "",
+    };
   }
 
   return state ?? createProfilesSceneState();

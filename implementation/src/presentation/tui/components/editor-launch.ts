@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 
 function parseCommandText(value) {
   if (typeof value !== "string") {
@@ -78,7 +79,45 @@ function formatCommand(command, args) {
   return parts.join(" ");
 }
 
-export function launchEditor(filePath, { cwd = process.cwd(), env = process.env, platform = process.platform } = {}) {
+function toPositiveLineNumber(value) {
+  if (!Number.isInteger(value) || value <= 0) {
+    return null;
+  }
+  return value;
+}
+
+function normalizeCommandName(command) {
+  if (typeof command !== "string" || command.length === 0) {
+    return "";
+  }
+  return path.basename(command).toLowerCase().replace(/\.exe$/, "");
+}
+
+function buildEditorArgs(candidate, targetPath, line) {
+  const baseArgs = Array.isArray(candidate?.args) ? candidate.args : [];
+  const resolvedLine = toPositiveLineNumber(line);
+  if (resolvedLine === null) {
+    return [...baseArgs, targetPath];
+  }
+
+  const commandName = normalizeCommandName(candidate?.command);
+  if (commandName === "code" || commandName === "code-insiders" || commandName === "codium" || commandName === "cursor") {
+    return [...baseArgs, "-g", `${targetPath}:${resolvedLine}`];
+  }
+
+  if (commandName === "vi" || commandName === "vim" || commandName === "nvim" || commandName === "gvim") {
+    return [...baseArgs, `+${resolvedLine}`, targetPath];
+  }
+
+  return [...baseArgs, targetPath];
+}
+
+export function launchEditor(filePath, {
+  cwd = process.cwd(),
+  env = process.env,
+  platform = process.platform,
+  line,
+} = {}) {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
     return {
       ok: false,
@@ -92,7 +131,7 @@ export function launchEditor(filePath, { cwd = process.cwd(), env = process.env,
   const candidates = createEditorCandidates({ env, platform });
 
   for (const candidate of candidates) {
-    const args = [...candidate.args, targetPath];
+    const args = buildEditorArgs(candidate, targetPath, line);
     const result = spawnSync(candidate.command, args, {
       cwd,
       env,

@@ -889,6 +889,8 @@ export async function runRootTui(
             action: result.action,
             state: state.profilesSceneState,
             currentWorkingDirectory,
+            suspendTui: teardownTuiForWorker,
+            resumeTui: restoreTuiAfterWorker,
           }).then((nextState) => {
             state.profilesSceneState = nextState;
           }).catch((error) => {

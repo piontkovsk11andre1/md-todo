@@ -4,6 +4,7 @@ import {
   createProfilesSceneState,
   handleProfilesInput,
   reloadProfilesSceneState,
+  runProfilesSceneAction,
 } from "../../../src/presentation/tui/scenes/profiles.ts";
 import { createApp } from "../../../src/create-app.js";
 
@@ -135,6 +136,73 @@ describe("tui profiles integration", () => {
     expect(result.handled).toBe(true);
     expect(result.backToParent).toBe(false);
     expect(result.state.inspectProfile).toBe("fast");
+  });
+
+  it("maps Enter in inspect mode to open-reference action", () => {
+    const result = handleProfilesInput({
+      rawInput: "\n",
+      state: {
+        ...createProfilesSceneState(),
+        loading: false,
+        inspectProfile: "fast",
+        inspectSelectedReferenceIndex: 0,
+        references: [
+          {
+            profile: "fast",
+            file: "C:\\Work\\md-todo\\specs\\notes.md",
+            line: 7,
+            kind: "prefix",
+          },
+        ],
+      },
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.backToParent).toBe(false);
+    expect(result.action).toEqual({
+      type: "open-reference",
+      reference: {
+        file: "C:\\Work\\md-todo\\specs\\notes.md",
+        line: 7,
+      },
+    });
+  });
+
+  it("opens reference in editor at reported line", async () => {
+    const launchEditorFn = vi.fn(() => ({ ok: true }));
+    const currentState = {
+      ...createProfilesSceneState(),
+      loading: false,
+      inspectProfile: "fast",
+      references: [
+        {
+          profile: "fast",
+          file: "C:\\Work\\md-todo\\specs\\notes.md",
+          line: 12,
+          kind: "frontmatter",
+        },
+      ],
+    };
+
+    await runProfilesSceneAction({
+      action: {
+        type: "open-reference",
+        reference: {
+          file: "C:\\Work\\md-todo\\specs\\notes.md",
+          line: 12,
+        },
+      },
+      state: currentState,
+      currentWorkingDirectory: "C:\\Work\\md-todo",
+      suspendTui: () => {},
+      resumeTui: () => {},
+      launchEditorFn,
+    });
+
+    expect(launchEditorFn).toHaveBeenCalledWith("C:\\Work\\md-todo\\specs\\notes.md", {
+      cwd: "C:\\Work\\md-todo",
+      line: 12,
+    });
   });
 
   it("forceRescan bypasses cache before TTL", async () => {
