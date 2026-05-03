@@ -10,6 +10,9 @@ export function createProfilesSceneState() {
     config: {},
     configPath: ".rundown/config.json",
     references: [],
+    selectedProfileIndex: 0,
+    inspectProfile: null,
+    inspectSelectedReferenceIndex: 0,
     referencesScannedAt: 0,
     referencesScanned: false,
     banner: "",
@@ -19,6 +22,19 @@ export function createProfilesSceneState() {
 
 function safeObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function clampIndex(index, length) {
+  if (!Number.isInteger(index) || index < 0) {
+    return 0;
+  }
+  if (!Number.isInteger(length) || length <= 0) {
+    return 0;
+  }
+  if (index >= length) {
+    return length - 1;
+  }
+  return index;
 }
 
 function withSectionGap(lines, sectionGap) {
@@ -66,6 +82,21 @@ function collectUsageByProfile(references) {
   }
 
   return byProfile;
+}
+
+function collectReferencesForProfile(references, profileName) {
+  if (typeof profileName !== "string" || profileName.length === 0) {
+    return [];
+  }
+  const entries = Array.isArray(references) ? references : [];
+  return entries.filter((reference) => {
+    if (reference?.profile !== profileName) {
+      return false;
+    }
+    return reference?.kind === "frontmatter"
+      || reference?.kind === "directive"
+      || reference?.kind === "prefix";
+  });
 }
 
 function toErrorMessage(error, fallback = "Unexpected error.") {
@@ -162,6 +193,8 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
   const profiles = safeObject(config.profiles);
   const usageByProfile = collectUsageByProfile(sceneState.references);
   const profileNames = Object.keys(profiles);
+  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, profileNames.length);
+  const isInspecting = typeof sceneState.inspectProfile === "string" && sceneState.inspectProfile.length > 0;
 
   const lines = [
     pc.bold("Profiles"),
@@ -193,14 +226,38 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
     return lines;
   }
 
+  if (isInspecting) {
+    const inspectProfile = sceneState.inspectProfile;
+    const references = collectReferencesForProfile(sceneState.references, inspectProfile);
+    const selectedReferenceIndex = clampIndex(sceneState.inspectSelectedReferenceIndex, references.length);
+    lines.push(pc.bold(`Inspect references: ${inspectProfile}`));
+    if (references.length === 0) {
+      lines.push(pc.dim("  No references found."));
+    } else {
+      for (let index = 0; index < references.length; index += 1) {
+        const reference = references[index];
+        const kind = reference.kind;
+        const file = typeof reference.file === "string" && reference.file.length > 0 ? reference.file : "(unknown file)";
+        const line = Number.isInteger(reference.line) && reference.line > 0 ? reference.line : 1;
+        const prefix = index === selectedReferenceIndex ? "> " : "  ";
+        lines.push(`${prefix}[${kind}] ${file}:${line}`);
+      }
+    }
+    withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("[Esc] Back to profiles"));
+    return lines;
+  }
+
   const nameColumnWidth = Math.max(
     8,
     profileNames.reduce((max, name) => Math.max(max, name.length), 0),
   );
 
-  for (const profileName of profileNames) {
+  for (let index = 0; index < profileNames.length; index += 1) {
+    const profileName = profileNames[index];
     const preview = formatCommandPreview(profiles[profileName]);
-    lines.push(`  ${profileName.padEnd(nameColumnWidth, " ")}  ${preview}`);
+    const prefix = index === selectedProfileIndex ? "> " : "  ";
+    lines.push(`${prefix}${profileName.padEnd(nameColumnWidth, " ")}  ${preview}`);
 
     const usage = usageByProfile.get(profileName);
     if (!usage) {
@@ -214,27 +271,122 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
   }
 
   withSectionGap(lines, sectionGap);
+  lines.push(pc.dim("[↵] inspect references"));
   lines.push(pc.dim("[u] full scan"));
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
 }
 
 export function handleProfilesInput({ rawInput, state } = {}) {
+  const sceneState = state ?? createProfilesSceneState();
+  const config = safeObject(sceneState.config);
+  const profiles = safeObject(config.profiles);
+  const profileNames = Object.keys(profiles);
+  const input = String(rawInput ?? "");
+  const normalized = input.toLowerCase();
+
+  const isInspecting = typeof sceneState.inspectProfile === "string" && sceneState.inspectProfile.length > 0;
+  if (isInspecting) {
+    if (rawInput === "\u001b" || rawInput === "\b" || rawInput === "\u007f") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          inspectProfile: null,
+          inspectSelectedReferenceIndex: 0,
+        },
+        backToParent: false,
+      };
+    }
+
+    const references = collectReferencesForProfile(sceneState.references, sceneState.inspectProfile);
+    const selectedReferenceIndex = clampIndex(sceneState.inspectSelectedReferenceIndex, references.length);
+    if (input === "\u001b[A" || normalized === "k") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          inspectSelectedReferenceIndex: clampIndex(selectedReferenceIndex - 1, references.length),
+        },
+        backToParent: false,
+      };
+    }
+    if (input === "\u001b[B" || normalized === "j") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          inspectSelectedReferenceIndex: clampIndex(selectedReferenceIndex + 1, references.length),
+        },
+        backToParent: false,
+      };
+    }
+
+    return {
+      handled: false,
+      state: sceneState,
+      backToParent: false,
+    };
+  }
+
   const isEscape = rawInput === "\u001b";
   const isBackspace = rawInput === "\b" || rawInput === "\u007f";
   if (isEscape || isBackspace) {
     return {
       handled: true,
-      state: state ?? createProfilesSceneState(),
+      state: sceneState,
       backToParent: true,
     };
   }
 
-  const input = String(rawInput ?? "").toLowerCase();
-  if (input === "u") {
+  const selectedProfileIndex = clampIndex(sceneState.selectedProfileIndex, profileNames.length);
+
+  if (input === "\u001b[A" || normalized === "k") {
     return {
       handled: true,
-      state: state ?? createProfilesSceneState(),
+      state: {
+        ...sceneState,
+        selectedProfileIndex: clampIndex(selectedProfileIndex - 1, profileNames.length),
+      },
+      backToParent: false,
+    };
+  }
+
+  if (input === "\u001b[B" || normalized === "j") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        selectedProfileIndex: clampIndex(selectedProfileIndex + 1, profileNames.length),
+      },
+      backToParent: false,
+    };
+  }
+
+  if (input === "\r" || input === "\n") {
+    const selectedProfile = profileNames[selectedProfileIndex];
+    if (!selectedProfile) {
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+      };
+    }
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        inspectProfile: selectedProfile,
+        inspectSelectedReferenceIndex: 0,
+      },
+      backToParent: false,
+    };
+  }
+
+  if (normalized === "u") {
+    return {
+      handled: true,
+      state: sceneState,
       backToParent: false,
       action: { type: "full-rescan" },
     };
@@ -242,7 +394,7 @@ export function handleProfilesInput({ rawInput, state } = {}) {
 
   return {
     handled: false,
-    state: state ?? createProfilesSceneState(),
+    state: sceneState,
     backToParent: false,
   };
 }

@@ -52,6 +52,29 @@ describe("tui profiles integration", () => {
     expect(harness.frame()).toContain("4. Profiles");
   });
 
+  it("drills into profile references on Enter and returns on Esc", async () => {
+    const harness = await createTuiHarness({
+      initialScene: "profiles",
+      workspaceFiles: {
+        "migrations/001-first.md": "---\nprofile: fast\n---\n\n- [ ] First task\n",
+        "specs/notes.md": "- [ ] profile=fast, tighten test coverage\n",
+      },
+    });
+
+    await harness.press("enter");
+    let frame = harness.frame();
+    expect(frame).toContain("Inspect references: fast");
+    expect(frame).toContain("[frontmatter]");
+    expect(frame).toContain("[prefix]");
+    expect(frame).toContain("[Esc] Back to profiles");
+
+    await harness.press("esc");
+    frame = harness.frame();
+    expect(frame).toContain("Profiles");
+    expect(frame).toContain("[↵] inspect references");
+    expect(frame).not.toContain("Inspect references: fast");
+  });
+
   it("caches profile scans for 30 seconds", async () => {
     const scanProfileReferences = vi.fn(async () => []);
     const workspaceScanBridgeFactory = () => ({
@@ -95,6 +118,23 @@ describe("tui profiles integration", () => {
     expect(result.handled).toBe(true);
     expect(result.backToParent).toBe(false);
     expect(result.action).toEqual({ type: "full-rescan" });
+  });
+
+  it("maps Enter to inspect-selected-profile action via state transition", () => {
+    const result = handleProfilesInput({
+      rawInput: "\n",
+      state: {
+        ...createProfilesSceneState(),
+        loading: false,
+        config: {
+          profiles: profileMockData.profiles,
+        },
+      },
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.backToParent).toBe(false);
+    expect(result.state.inspectProfile).toBe("fast");
   });
 
   it("forceRescan bypasses cache before TTL", async () => {

@@ -876,7 +876,7 @@ export async function runRootTui(
       if (state.sceneId === "profiles") {
         const result = handleProfilesInput({ rawInput, state: state.profilesSceneState });
         state.profilesSceneState = result.state;
-        if (result.backToParent || isBack(rawInput)) {
+        if (result.backToParent || (!result.handled && isBack(rawInput))) {
           profilesLoadToken += 1;
           state.profilesActionPending = false;
           popScene(state);
