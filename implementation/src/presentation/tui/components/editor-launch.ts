@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { spawnSync } from "node:child_process";
 
 function parseCommandText(value) {

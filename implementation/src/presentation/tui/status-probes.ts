@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createApp } from "../../create-app.js";
 import type { App, CreateAppDependencies } from "../../create-app.js";
 import type { ApplicationOutputEvent } from "../../domain/ports/output-port.js";

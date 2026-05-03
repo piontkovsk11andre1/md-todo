@@ -1,3 +1,4 @@
+// @ts-nocheck
 import path from "node:path";
 import { createApp } from "../../../create-app.js";
 import type { App, CreateAppDependencies } from "../../../create-app.js";

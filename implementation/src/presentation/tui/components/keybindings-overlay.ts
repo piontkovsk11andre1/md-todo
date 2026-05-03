@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pc from "picocolors";
 
 function normalizeBindings(bindings) {

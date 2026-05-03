@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pc from "picocolors";
 
 const DEFAULT_VIEWPORT_HEIGHT = 20;

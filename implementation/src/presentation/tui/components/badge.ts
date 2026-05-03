@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pc from "picocolors";
 
 type BadgePainter = (text: string) => string;

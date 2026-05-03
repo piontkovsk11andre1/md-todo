@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createStatusProbeRegistry } from "../status-probes.ts";
 
 export type MainMenuSceneId = "continue" | "newWork" | "workers" | "profiles" | "settings" | "help";

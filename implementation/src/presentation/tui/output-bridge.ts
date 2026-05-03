@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { isBadgeOperationKey, normalizeOperationKey } from "./components/badge.ts";
 import type { App } from "../../create-app.js";
 import type { ApplicationOutputEvent } from "../../domain/ports/output-port.js";

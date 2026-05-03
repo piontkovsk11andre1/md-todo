@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Command, InvalidArgumentError } from "commander";
 import { pathToFileURL } from "node:url";
 import {

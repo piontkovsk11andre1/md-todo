@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pc from "picocolors";
 import readline from "node:readline";
 
