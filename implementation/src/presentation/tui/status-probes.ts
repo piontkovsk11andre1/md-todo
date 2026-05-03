@@ -2,6 +2,7 @@
 import { createApp } from "../../create-app.js";
 import type { App, CreateAppDependencies } from "../../create-app.js";
 import type { ApplicationOutputEvent } from "../../domain/ports/output-port.js";
+import { detectRootWorkspaceState } from "./root-workspace-state.ts";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -13,6 +14,7 @@ const CONTINUE_SOURCE = "migrations/";
 const AGENT_MARKDOWN_PATH = ".rundown/agent.md";
 
 const PROBE_TTLS_MS = Object.freeze({
+  start: Number.POSITIVE_INFINITY,
   continue: 2000,
   newWork: 5000,
   workers: 10000,
@@ -43,6 +45,9 @@ async function runProbeSafely(probe) {
 }
 
 function createDefaultProbe(rowId) {
+  if (rowId === "start") {
+    return createStartProbe();
+  }
   if (rowId === "continue") {
     return createContinueProbe();
   }
@@ -238,9 +243,34 @@ export function createNewWorkProbe({ appFactory = createApp, cwd = process.cwd()
   };
 }
 
-export function createWorkersProbe({ appFactory = createApp }: { appFactory?: AppFactory } = {}) {
+export function createStartProbe() {
+  return async function runStartProbe() {
+    return {
+      text: "scaffold design/ + migrations/",
+      tone: "muted",
+    };
+  };
+}
+
+export function createWorkersProbe({
+  appFactory = createApp,
+  cwd = process.cwd(),
+  detectWorkspaceState = detectRootWorkspaceState,
+}: {
+  appFactory?: AppFactory;
+  cwd?: string;
+  detectWorkspaceState?: (cwd: string) => { isEmptyBootstrap: boolean; hasWorkersConfigured: boolean };
+} = {}) {
   return async function runWorkersProbe() {
     try {
+      const workspaceState = detectWorkspaceState(cwd);
+      if (workspaceState?.isEmptyBootstrap || !workspaceState?.hasWorkersConfigured) {
+        return {
+          text: "no workers configured yet",
+          tone: "warn",
+        };
+      }
+
       const [workerConfigPayload, workerHealthPayload] = await Promise.all([
         runAppJsonCommand({
           appFactory,

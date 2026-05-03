@@ -37,6 +37,7 @@ describe("tui main menu integration", () => {
     const probeCalls = Object.fromEntries(
       ROW_IDS.map((rowId) => [rowId, vi.fn(async () => ({ text: `${rowId}-ok`, tone: "ok" }))]),
     ) as Record<string, ReturnType<typeof vi.fn>>;
+    const initializedRowIds = ["continue", "newWork", "workers", "profiles", "settings", "help"];
 
     const probeRegistry = createStatusProbeRegistry({
       probes: probeCalls,
@@ -50,9 +51,11 @@ describe("tui main menu integration", () => {
     getMainMenuRows(state, { probeRegistry });
     await flushMicrotasks();
 
-    for (const rowId of ROW_IDS) {
+    for (const rowId of initializedRowIds) {
       expect(probeCalls[rowId]).toHaveBeenCalledTimes(1);
       expect(probeCalls[rowId]).toHaveBeenCalledWith();
     }
+
+    expect(probeCalls.start).not.toHaveBeenCalled();
   });
 });
