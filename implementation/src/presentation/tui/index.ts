@@ -18,6 +18,7 @@ import {
   refreshMainMenuStatuses,
 } from "./scenes/main-menu.ts";
 import type { MainMenuSceneId, MainMenuState } from "./scenes/main-menu.ts";
+import { detectRootWorkspaceState, type RootWorkspaceState } from "./root-workspace-state.ts";
 import {
   createNewWorkSceneState,
   generateNewWorkAgentPrompt,
@@ -111,7 +112,65 @@ type SceneRouterState = {
   settingsActionPending: boolean;
   profilesActionPending: boolean;
   helpActionPending: boolean;
+  startActionPending: boolean;
+  rootWorkspaceState: RootWorkspaceState;
 };
+
+function resolveMainMenuVariantFromWorkspaceState(workspaceState: RootWorkspaceState): "emptyBootstrap" | "initialized" {
+  return workspaceState.isEmptyBootstrap ? "emptyBootstrap" : "initialized";
+}
+
+function refreshRootWorkspaceState(state: SceneRouterState, cwd: string): RootWorkspaceState {
+  const nextState = detectRootWorkspaceState(cwd);
+  state.rootWorkspaceState = nextState;
+  state.mainMenuState = {
+    ...state.mainMenuState,
+    variant: resolveMainMenuVariantFromWorkspaceState(nextState),
+  };
+  return nextState;
+}
+
+export async function runMainMenuStartAction({
+  state,
+  app,
+  currentWorkingDirectory,
+  refreshStatuses = refreshMainMenuStatuses,
+}: {
+  state: SceneRouterState;
+  app: unknown;
+  currentWorkingDirectory: string;
+  refreshStatuses?: () => Promise<void>;
+}): Promise<void> {
+  if (!app || typeof app !== "object" || typeof app.startProject !== "function") {
+    state.mainMenuHint = "Start unavailable: app.startProject is not configured.";
+    return;
+  }
+
+  state.mainMenuHint = "Starting workspace...";
+
+  try {
+    const exitCode = await app.startProject({});
+    if (exitCode === 0) {
+      const workspaceState = refreshRootWorkspaceState(state, currentWorkingDirectory);
+      state.mainMenuState = createMainMenuSceneState({
+        variant: resolveMainMenuVariantFromWorkspaceState(workspaceState),
+      });
+      state.sceneStack = ["mainMenu"];
+      state.sceneId = "mainMenu";
+      state.mainMenuHint = workspaceState.isEmptyBootstrap
+        ? "Start completed, but workspace is still not initialized."
+        : "Project initialized.";
+      await refreshStatuses();
+      return;
+    }
+
+    state.mainMenuHint = exitCode === 130
+      ? "Start cancelled."
+      : `Start failed (exit ${exitCode}).`;
+  } catch (error) {
+    state.mainMenuHint = `Start failed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
 
 function parsePositiveInteger(value: unknown, label: string): number {
   const parsed = Number.parseInt(String(value), 10);
@@ -129,13 +188,16 @@ function parseFps(value: unknown): number {
   return parsed;
 }
 
-export function createSceneRouterState(): SceneRouterState {
+export function createSceneRouterState({ currentWorkingDirectory = process.cwd() }: { currentWorkingDirectory?: string } = {}): SceneRouterState {
+  const rootWorkspaceState = detectRootWorkspaceState(currentWorkingDirectory);
   return {
     sceneId: "mainMenu",
     sceneStack: ["mainMenu"],
     showHelpOverlay: false,
     mainMenuHint: "",
-    mainMenuState: createMainMenuSceneState(),
+    mainMenuState: createMainMenuSceneState({
+      variant: resolveMainMenuVariantFromWorkspaceState(rootWorkspaceState),
+    }),
     continueUiState: "previewing",
     continueSceneState: createContinueSceneState(),
     runState: createInitialRunState(),
@@ -154,6 +216,8 @@ export function createSceneRouterState(): SceneRouterState {
     settingsActionPending: false,
     profilesActionPending: false,
     helpActionPending: false,
+    startActionPending: false,
+    rootWorkspaceState,
   };
 }
 
@@ -184,11 +248,14 @@ function isBack(rawInput: string): boolean {
   return rawInput === "\u001b" || rawInput === "\b" || rawInput === "\u007f";
 }
 
-function resetToMainMenu(state: SceneRouterState): void {
+function resetToMainMenu(state: SceneRouterState, cwd: string): void {
   state.sceneStack = ["mainMenu"];
   state.sceneId = "mainMenu";
   state.showHelpOverlay = false;
-  state.mainMenuState = createMainMenuSceneState();
+  const workspaceState = refreshRootWorkspaceState(state, cwd);
+  state.mainMenuState = createMainMenuSceneState({
+    variant: resolveMainMenuVariantFromWorkspaceState(workspaceState),
+  });
   state.continueUiState = "previewing";
   state.continueSceneState = createContinueSceneState();
   state.newWorkSceneState = createNewWorkSceneState();
@@ -203,8 +270,13 @@ function routeFromMainMenu(
   openWorkersScene: () => void,
   openProfilesScene: () => void,
   openSettingsScene: () => void,
+  runStartAction: () => void,
 ): void {
   state.showHelpOverlay = false;
+  if (routeTo === "start") {
+    runStartAction();
+    return;
+  }
   if (routeTo === "continue") {
     state.sceneId = "continue";
     state.continueUiState = "previewing";
@@ -331,7 +403,7 @@ export async function runRootTui(
   const currentWorkingDirectory = process.cwd();
 
   return await new Promise((resolve) => {
-    const state = createSceneRouterState();
+    const state = createSceneRouterState({ currentWorkingDirectory });
     let settled = false;
     let finalized = false;
     let previousLineCount = 0;
@@ -425,6 +497,22 @@ export async function runRootTui(
     let toolsLoadToken = 0;
     let settingsLoadToken = 0;
     let profilesLoadToken = 0;
+
+    const runStartAction = () => {
+      if (state.startActionPending) {
+        return;
+      }
+
+      state.startActionPending = true;
+      void runMainMenuStartAction({
+        state,
+        app,
+        currentWorkingDirectory,
+      })
+        .finally(() => {
+          state.startActionPending = false;
+        });
+    };
 
     const openNewWorkScene = () => {
       state.sceneId = "newWork";
@@ -648,7 +736,15 @@ export async function runRootTui(
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
           if (selected?.sceneId) {
-            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene, openProfilesScene, openSettingsScene);
+            routeFromMainMenu(
+              state,
+              selected.sceneId,
+              openNewWorkScene,
+              openWorkersScene,
+              openProfilesScene,
+              openSettingsScene,
+              runStartAction,
+            );
           }
           return;
         }
@@ -672,7 +768,7 @@ export async function runRootTui(
             if (result.backToParent) {
               void releaseApp(state.runState.app).finally(() => {
                 state.runState.app = null;
-                resetToMainMenu(state);
+                resetToMainMenu(state, currentWorkingDirectory);
               });
             }
             return;
@@ -680,7 +776,7 @@ export async function runRootTui(
           if (isBack(rawInput)) {
             void releaseApp(state.runState.app).finally(() => {
               state.runState.app = null;
-              resetToMainMenu(state);
+              resetToMainMenu(state, currentWorkingDirectory);
             });
           }
         });

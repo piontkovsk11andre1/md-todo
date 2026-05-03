@@ -106,6 +106,7 @@ export interface HarnessOptions {
   configJson?: object;
   workerHealthJson?: object;
   initialScene?: SceneId;
+  emptyWorkspace?: boolean;
 }
 
 export interface HarnessResult {
@@ -164,6 +165,14 @@ function writeWorkspaceFile(rootDir: string, relativePath: string, content: stri
 
 function createWorkspace(options: HarnessOptions): string {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-tui-harness-"));
+
+  if (!options.emptyWorkspace) {
+    fs.mkdirSync(path.join(rootDir, "design"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "specs"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "migrations"), { recursive: true });
+    writeWorkspaceFile(rootDir, ".rundown/config.json", `${JSON.stringify({ workspace: {} }, null, 2)}\n`);
+  }
+
   const files = options.workspaceFiles ?? {};
   for (const [relativePath, content] of Object.entries(files)) {
     writeWorkspaceFile(rootDir, relativePath, String(content ?? ""));
@@ -217,7 +226,7 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     getTtl: (rowId: string) => baseProbeRegistry.getTtl(rowId),
   };
 
-  const state = createSceneRouterState();
+  const state = createSceneRouterState({ currentWorkingDirectory });
 
   let frameIndex = 0;
   let lastRawFrame = "";
