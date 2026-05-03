@@ -675,6 +675,8 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           void runHelpSceneAction({
             action: result.action,
             state: state.helpSceneState,
+            suspendTui: teardownTuiForWorker,
+            resumeTui: restoreTuiAfterWorker,
           }).then((nextState) => {
             state.helpSceneState = nextState;
           }).finally(() => {

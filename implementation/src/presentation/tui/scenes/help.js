@@ -1,7 +1,7 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { getAgentsTemplate } from "../../../domain/agents-template.js";
 import { createConfigBridge } from "../bridges/config-bridge.js";
 import {
@@ -35,50 +35,42 @@ function getExternalLinkById(linkId) {
   return null;
 }
 
-function spawnDetached(command, args) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const child = spawn(command, args, {
-      detached: true,
+function runOpenCommand(command, args) {
+  try {
+    const result = spawnSync(command, args, {
       stdio: "ignore",
       shell: false,
+      windowsHide: true,
     });
-
-    child.once("error", () => {
-      if (!settled) {
-        settled = true;
-        resolve(false);
-      }
-    });
-
-    child.once("spawn", () => {
-      if (!settled) {
-        settled = true;
-        child.unref();
-        resolve(true);
-      }
-    });
-  });
+    return !result.error && result.status === 0;
+  } catch {
+    return false;
+  }
 }
 
-async function openExternalUrl(url) {
+async function openExternalUrl(url, { suspendTui, resumeTui } = {}) {
   if (typeof url !== "string" || url.length === 0) {
     return false;
   }
 
-  if (process.platform === "win32") {
-    return spawnDetached("cmd", ["/c", "start", "", url]);
-  }
+  suspendTui?.();
+  try {
+    if (process.platform === "win32") {
+      return runOpenCommand("cmd", ["/c", "start", "", url]);
+    }
 
-  if (process.platform === "darwin") {
-    return spawnDetached("open", [url]);
-  }
+    if (process.platform === "darwin") {
+      return runOpenCommand("open", [url]);
+    }
 
-  if (process.platform === "linux") {
-    return spawnDetached("xdg-open", [url]);
-  }
+    if (process.platform === "linux") {
+      return runOpenCommand("xdg-open", [url]);
+    }
 
-  return false;
+    return false;
+  } finally {
+    resumeTui?.();
+  }
 }
 
 function withSectionGap(lines, sectionGap) {
@@ -278,7 +270,7 @@ function buildHelpSceneSpecificKeybindings() {
   ];
 }
 
-export async function runHelpSceneAction({ action, state } = {}) {
+export async function runHelpSceneAction({ action, state, suspendTui, resumeTui } = {}) {
   const sceneState = state ?? createHelpSceneState();
   if (!action || typeof action !== "object") {
     return sceneState;
@@ -322,7 +314,7 @@ export async function runHelpSceneAction({ action, state } = {}) {
     }
 
     try {
-      const opened = await openExternalUrl(link.url);
+      const opened = await openExternalUrl(link.url, { suspendTui, resumeTui });
       return {
         ...sceneState,
         banner: opened ? `Opened ${link.label} in your browser.` : `Open this URL manually: ${link.url}`,
