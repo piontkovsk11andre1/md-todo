@@ -2490,8 +2490,9 @@ export function createLocalizeCommandAction({
 export function createWithCommandAction({
   getApp,
   getWorkerFromSeparator,
+  getInvocationArgv,
   isInteractiveTerminal: isInteractiveTerminalOverride,
-}: Pick<WorkerActionDependencies, "getApp" | "getWorkerFromSeparator"> & {
+}: Pick<WorkerActionDependencies, "getApp" | "getWorkerFromSeparator" | "getInvocationArgv"> & {
   isInteractiveTerminal?: () => boolean;
 }): (harness: string) => CliActionResult {
   return async (harness: string) => {
@@ -2528,22 +2529,11 @@ export function createWithCommandAction({
       && hasWithTaskInteractiveWorker(result)
       && (isInteractiveTerminalOverride ?? isInteractiveTerminal)()
     ) {
-      emit?.({ kind: "info", message: "Starting interactive discuss session..." });
-      return app.discussTask({
-        source: "",
-        mode: "tui",
-        workerPattern: inferWorkerPatternFromCommand([]),
-        sortMode: "name-sort",
-        dryRun: false,
-        printPrompt: false,
-        keepArtifacts: false,
-        varsFileOption: undefined,
-        cliTemplateVarArgs: [],
-        showAgentOutput: false,
-        trace: false,
-        forceUnlock: false,
-        ignoreCliBlock: false,
-        verbose: false,
+      emit?.({ kind: "info", message: "Opening Rundown root TUI..." });
+      return runRootTui({
+        app,
+        workerPattern: resolveWorkerPattern(undefined, getWorkerFromSeparator),
+        argv: resolveInvocationArgv(getInvocationArgv),
       });
     }
 

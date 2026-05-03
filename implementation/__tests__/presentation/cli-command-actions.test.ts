@@ -1965,9 +1965,9 @@ describe("createWorkerHealthCommandAction", () => {
 });
 
 describe("createWithCommandAction", () => {
-  it("forwards harness argument to withTask, renders output, then starts discuss tui", async () => {
+  it("forwards harness argument to withTask, renders output, then opens root TUI", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 0,
       harnessKey: "opencode",
@@ -1996,49 +1996,45 @@ describe("createWithCommandAction", () => {
         },
       ] as const,
     }));
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
       getWorkerFromSeparator: () => undefined,
+      getInvocationArgv: () => ["with", "opencode"],
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("opencode");
+    try {
+      const exitCode = await action("opencode");
 
-    expect(exitCode).toBe(0);
-    expect(withTask).toHaveBeenCalledTimes(1);
-    expect(withTask).toHaveBeenCalledWith({ harness: "opencode" });
-    expect(discussTask).toHaveBeenCalledTimes(1);
-    expect(discussTask).toHaveBeenCalledWith(expect.objectContaining({
-      source: "",
-      mode: "tui",
-      sortMode: "name-sort",
-      dryRun: false,
-      printPrompt: false,
-      keepArtifacts: false,
-      showAgentOutput: false,
-      trace: false,
-      forceUnlock: false,
-      ignoreCliBlock: false,
-      verbose: false,
-      workerPattern: expect.objectContaining({
-        command: [],
-      }),
-    }));
-    expect(emitOutput).toHaveBeenCalledWith({ kind: "success", message: "Applied harness preset: opencode" });
-    expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Path: /workspace/.rundown/config.json" });
-    expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Configured keys:" });
-    expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Starting interactive discuss session..." });
-    expect(emitOutput).toHaveBeenCalledWith({
-      kind: "info",
-      message: "- workers.default = [\"opencode\",\"run\",\"$bootstrap\"]",
-    });
+      expect(exitCode).toBe(0);
+      expect(withTask).toHaveBeenCalledTimes(1);
+      expect(withTask).toHaveBeenCalledWith({ harness: "opencode" });
+      expect(runRootTuiSpy).toHaveBeenCalledTimes(1);
+      expect(runRootTuiSpy).toHaveBeenCalledWith(expect.objectContaining({
+        app,
+        argv: ["with", "opencode"],
+        workerPattern: expect.objectContaining({
+          command: [],
+        }),
+      }));
+      expect(emitOutput).toHaveBeenCalledWith({ kind: "success", message: "Applied harness preset: opencode" });
+      expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Path: /workspace/.rundown/config.json" });
+      expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Configured keys:" });
+      expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Opening Rundown root TUI..." });
+      expect(emitOutput).toHaveBeenCalledWith({
+        kind: "info",
+        message: "- workers.default = [\"opencode\",\"run\",\"$bootstrap\"]",
+      });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
-  it("starts discuss using configured tui worker even when separator worker includes file flags", async () => {
+  it("reuses root TUI worker-pattern resolution when separator worker is present", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 0,
       harnessKey: "opencode",
@@ -2067,26 +2063,31 @@ describe("createWithCommandAction", () => {
         },
       ],
     }));
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
       getWorkerFromSeparator: () => ["opencode", "run", "--file", "$file", "$bootstrap"],
+      getInvocationArgv: () => ["with", "opencode"],
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("opencode");
+    try {
+      const exitCode = await action("opencode");
 
-    expect(exitCode).toBe(0);
-    expect(discussTask).toHaveBeenCalledTimes(1);
-    expect(discussTask).toHaveBeenCalledWith(expect.objectContaining({
-      workerPattern: expect.objectContaining({
-        command: [],
-        usesBootstrap: false,
-        usesFile: false,
-        appendFile: true,
-      }),
-    }));
+      expect(exitCode).toBe(0);
+      expect(runRootTuiSpy).toHaveBeenCalledTimes(1);
+      expect(runRootTuiSpy).toHaveBeenCalledWith(expect.objectContaining({
+        workerPattern: expect.objectContaining({
+          command: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          usesBootstrap: true,
+          usesFile: true,
+          appendFile: false,
+        }),
+      }));
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
   it("warns and reports custom source when unknown harness is configured interactively", async () => {
@@ -2118,8 +2119,8 @@ describe("createWithCommandAction", () => {
       ],
     }));
 
-    const discussTask = vi.fn(async () => 0);
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
@@ -2127,24 +2128,28 @@ describe("createWithCommandAction", () => {
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("mytool");
+    try {
+      const exitCode = await action("mytool");
 
-    expect(exitCode).toBe(0);
-    expect(withTask).toHaveBeenCalledWith({ harness: "mytool" });
-    expect(emitOutput).toHaveBeenCalledWith({
-      kind: "warn",
-      message: "Harness \"mytool\" is not in the preset registry. Saved custom invocation mapping.",
-    });
-    expect(emitOutput).toHaveBeenCalledWith({
-      kind: "success",
-      message: "Applied custom harness mapping: mytool",
-    });
-    expect(discussTask).not.toHaveBeenCalled();
+      expect(exitCode).toBe(0);
+      expect(withTask).toHaveBeenCalledWith({ harness: "mytool" });
+      expect(emitOutput).toHaveBeenCalledWith({
+        kind: "warn",
+        message: "Harness \"mytool\" is not in the preset registry. Saved custom invocation mapping.",
+      });
+      expect(emitOutput).toHaveBeenCalledWith({
+        kind: "success",
+        message: "Applied custom harness mapping: mytool",
+      });
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
-  it("starts discuss tui even when opencode preset application is a no-op", async () => {
+  it("opens root TUI even when opencode preset application is a no-op", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 0,
       harnessKey: "opencode",
@@ -2174,7 +2179,7 @@ describe("createWithCommandAction", () => {
       ],
     }));
 
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
@@ -2182,20 +2187,24 @@ describe("createWithCommandAction", () => {
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("opencode");
+    try {
+      const exitCode = await action("opencode");
 
-    expect(exitCode).toBe(0);
-    expect(discussTask).toHaveBeenCalledTimes(1);
-    expect(emitOutput).toHaveBeenCalledWith({
-      kind: "info",
-      message: "No change: harness preset opencode is already configured.",
-    });
-    expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Starting interactive discuss session..." });
+      expect(exitCode).toBe(0);
+      expect(runRootTuiSpy).toHaveBeenCalledTimes(1);
+      expect(emitOutput).toHaveBeenCalledWith({
+        kind: "info",
+        message: "No change: harness preset opencode is already configured.",
+      });
+      expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Opening Rundown root TUI..." });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
-  it("does not start discuss tui when with-task fails even if interactive keys are present", async () => {
+  it("does not open root TUI when with-task fails even if interactive keys are present", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 9,
       harnessKey: "opencode",
@@ -2225,7 +2234,7 @@ describe("createWithCommandAction", () => {
       ],
     }));
 
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
@@ -2233,19 +2242,23 @@ describe("createWithCommandAction", () => {
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("opencode");
+    try {
+      const exitCode = await action("opencode");
 
-    expect(exitCode).toBe(9);
-    expect(discussTask).not.toHaveBeenCalled();
-    expect(emitOutput).not.toHaveBeenCalledWith({
-      kind: "info",
-      message: "Starting interactive discuss session...",
-    });
+      expect(exitCode).toBe(9);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(emitOutput).not.toHaveBeenCalledWith({
+        kind: "info",
+        message: "Opening Rundown root TUI...",
+      });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
   it("returns with-task exit code and skips tui launch when no interactive worker is configured", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 7,
       harnessKey: "custom-only",
@@ -2273,7 +2286,7 @@ describe("createWithCommandAction", () => {
       ],
     }));
 
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
@@ -2281,19 +2294,23 @@ describe("createWithCommandAction", () => {
       isInteractiveTerminal: () => true,
     });
 
-    const exitCode = await action("custom-only");
+    try {
+      const exitCode = await action("custom-only");
 
-    expect(exitCode).toBe(7);
-    expect(discussTask).not.toHaveBeenCalled();
-    expect(emitOutput).not.toHaveBeenCalledWith({
-      kind: "info",
-      message: "Starting interactive discuss session...",
-    });
+      expect(exitCode).toBe(7);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(emitOutput).not.toHaveBeenCalledWith({
+        kind: "info",
+        message: "Opening Rundown root TUI...",
+      });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 
   it("keeps existing non-interactive behavior by skipping tui launch", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
-    const discussTask = vi.fn(async () => 0);
+    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
     const withTask = vi.fn(async () => ({
       exitCode: 0,
       harnessKey: "opencode",
@@ -2323,7 +2340,7 @@ describe("createWithCommandAction", () => {
       ],
     }));
 
-    const app = { withTask, discussTask } as unknown as CliApp;
+    const app = { withTask } as unknown as CliApp;
     (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
     const action = createWithCommandAction({
       getApp: () => app,
@@ -2331,14 +2348,18 @@ describe("createWithCommandAction", () => {
       isInteractiveTerminal: () => false,
     });
 
-    const exitCode = await action("opencode");
+    try {
+      const exitCode = await action("opencode");
 
-    expect(exitCode).toBe(0);
-    expect(discussTask).not.toHaveBeenCalled();
-    expect(emitOutput).not.toHaveBeenCalledWith({
-      kind: "info",
-      message: "Starting interactive discuss session...",
-    });
+      expect(exitCode).toBe(0);
+      expect(runRootTuiSpy).not.toHaveBeenCalled();
+      expect(emitOutput).not.toHaveBeenCalledWith({
+        kind: "info",
+        message: "Opening Rundown root TUI...",
+      });
+    } finally {
+      runRootTuiSpy.mockRestore();
+    }
   });
 });
 

@@ -41,7 +41,7 @@ What this configures:
 
 What happens right after configuration:
 
-1. In interactive terminals, `rundown with opencode` immediately starts a TUI `discuss` session.
+1. In interactive terminals, `rundown with opencode` immediately opens the Rundown root TUI.
 2. If stdin/stdout is non-interactive (for example CI), it prints config results and exits without launching TUI.
 
 Persisted local config fragment:
