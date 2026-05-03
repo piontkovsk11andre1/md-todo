@@ -46,6 +46,10 @@ describeIfMigrateAvailable("migrate-task integration", () => {
             migrations: "changesets",
           },
         },
+        commands: {
+          research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+          plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        },
       }, null, 2) + "\n",
       "utf-8",
     );
@@ -78,6 +82,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       "migrate",
       "--dir",
       "migrations",
+      "--show-agent-output",
       "--",
       "node",
       "-e",
@@ -173,7 +178,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ]),
     ], workspace);
 
-    expect(result.code).toBe(0);
+    const debugOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(result.code, debugOutput).toBe(0);
 
     const rev0MetaAfter = fs.readFileSync(rev0MetaPath, "utf-8");
     const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
@@ -983,6 +994,16 @@ function scaffoldPredictionProjectForReconciliation(workspace: string): void {
 function scaffoldLoopMigrateProject(workspace: string): void {
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, ".rundown", "config.json"),
+    JSON.stringify({
+      commands: {
+        research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+      },
+    }, null, 2) + "\n",
+    "utf-8",
+  );
   scaffoldReleasedDesignRevisions(workspace, "docs");
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
   fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n\n- seed-item\n", "utf-8");
@@ -1054,6 +1075,16 @@ function scaffoldRevisionPlanningStampProject(workspace: string): void {
 
   fs.mkdirSync(migrationsDir, { recursive: true });
   fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, ".rundown", "config.json"),
+    JSON.stringify({
+      commands: {
+        research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+      },
+    }, null, 2) + "\n",
+    "utf-8",
+  );
   fs.mkdirSync(path.join(designRoot, "current"), { recursive: true });
   fs.mkdirSync(path.join(designRoot, "rev.0"), { recursive: true });
   fs.mkdirSync(path.join(designRoot, "rev.1"), { recursive: true });
@@ -1166,6 +1197,40 @@ function buildConvergentMigrateWorkerScript(plannerOutputs: string[]): string {
     "  console.log('OK');",
     "  process.exit(0);",
     "}",
+    "const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "const changedFilesMatch=prompt.match(/### Changed files\\n\\n([\\s\\S]*?)\\n\\n### Diff/);",
+    "const changedPaths=(changedFilesMatch&&changedFilesMatch[1]?changedFilesMatch[1].split(/\\r?\\n/):[])",
+    "  .map((line)=>line.trim())",
+    "  .filter((line)=>line.startsWith('- '))",
+    "  .map((line)=>line.replace(/^-\\s*(?:added|modified|removed):\\s*/i,''))",
+    "  .filter((line)=>line.length>0);",
+    "const toTitle=(slug)=>slug.split('-').filter(Boolean).map((part)=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');",
+    "const writeDrafts=(spec)=>{",
+    "  const slugs=spec.split(/\\r?\\n/).map((line)=>line.trim()).filter((line)=>line.length>0);",
+    "  if(slugs.length===0){",
+    "    console.log('DONE');",
+    "    return;",
+    "  }",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  for(let idx=0; idx<slugs.length; idx+=1){",
+    "    const slug=slugs[idx];",
+    "    const number=currentPosition+idx+1;",
+    "    const title=toTitle(slug);",
+    "    const fileName=`${number}. ${title}.md`;",
+    "    const coverageLine=changedPaths.length>0?changedPaths.join(', '):'no design changes';",
+    "    const body=[",
+    "      `# ${number}. ${title}`,",
+    "      '',",
+    "      `- [ ] Implement ${slug} across prediction and implementation flows with explicit acceptance criteria.`,",
+    "      `- [ ] Cover design diff paths: ${coverageLine}.`,",
+    "    ].join('\\n');",
+    "    fs.writeFileSync(path.join(draftDir,fileName),body+'\\n','utf-8');",
+    "  }",
+    "  console.log('drafted migration files');",
+    "};",
     "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
     "  let index=0;",
     "  if(fs.existsSync(seqPath)){",
@@ -1174,7 +1239,11 @@ function buildConvergentMigrateWorkerScript(plannerOutputs: string[]): string {
     "  const bounded=Math.min(index, Math.max(plannerOutputs.length-1, 0));",
     "  const next=plannerOutputs.length>0?plannerOutputs[bounded]:'DONE';",
     "  fs.writeFileSync(seqPath,String(index+1));",
-    "  console.log(next);",
+    "  if(next.trim()==='DONE'){",
+    "    console.log('DONE');",
+    "  } else {",
+    "    writeDrafts(next);",
+    "  }",
     "  process.exit(0);",
     "}",
     "if(prompt.includes('grounded in the prediction tree')){",
@@ -1198,6 +1267,22 @@ function buildReplanSkipAssertionWorkerScript(firstSlug: string, secondSlug: str
     "const slugSeqPath=path.join(process.cwd(),'.migrate-plan.slug.seq');",
     `const firstSlug=${JSON.stringify(firstSlug)};`,
     `const secondSlug=${JSON.stringify(secondSlug)};`,
+    "const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "const toTitle=(slug)=>slug.split('-').filter(Boolean).map((part)=>part.charAt(0).toUpperCase()+part.slice(1)).join(' ');",
+    "const writeDraft=(slug)=>{",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const number=currentPosition+1;",
+    "  const fileName=`${number}. ${toTitle(slug)}.md`;",
+    "  const body=[",
+    "    `# ${number}. ${toTitle(slug)}`,",
+    "    '',",
+    "    `- [ ] Implement ${slug} migration draft and link it to changed design files.`,",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,fileName),body+'\\n','utf-8');",
+    "};",
     "if(prompt.includes('Verify whether the selected task is complete.')){",
     "  console.log('OK');",
     "  process.exit(0);",
@@ -1212,7 +1297,8 @@ function buildReplanSkipAssertionWorkerScript(firstSlug: string, secondSlug: str
     "  if(planIndex===0){",
     "    const slugCalls=fs.existsSync(slugSeqPath)?(Number.parseInt(fs.readFileSync(slugSeqPath,'utf-8'),10)||0):0;",
     "    fs.writeFileSync(slugSeqPath,String(slugCalls+1));",
-    "    console.log(firstSlug);",
+    "    writeDraft(firstSlug);",
+    "    console.log('drafted migration files');",
     "    process.exit(0);",
     "  }",
     "",
@@ -1223,7 +1309,8 @@ function buildReplanSkipAssertionWorkerScript(firstSlug: string, secondSlug: str
     "",
     "  const slugCalls=fs.existsSync(slugSeqPath)?(Number.parseInt(fs.readFileSync(slugSeqPath,'utf-8'),10)||0):0;",
     "  fs.writeFileSync(slugSeqPath,String(slugCalls+1));",
-    "  console.log(secondSlug);",
+    "  writeDraft(secondSlug);",
+    "  console.log('drafted migration files');",
     "  process.exit(0);",
     "}",
     "if(prompt.includes('grounded in the prediction tree')){",
@@ -1242,6 +1329,20 @@ function buildMigrateExecutionWorkerScript(): string {
     "const fs=require('node:fs');",
     "const promptPath=process.argv[process.argv.length-1];",
     "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const fullDocMatch=prompt.match(/## Full document\\n\\n([\\s\\S]*?)\\n\\n## Design context/);",
+    "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+    "  const sourceDoc=fullDocMatch&&fullDocMatch[1]?fullDocMatch[1]:'';",
+    "  console.log(sourceDoc.length>0?sourceDoc:'\\n');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Verify whether the research output is acceptable.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Diagnose why research verification keeps failing.')){",
+    "  console.log('UNRESOLVED: no additional diagnosis needed in test worker');",
+    "  process.exit(0);",
+    "}",
     "if(prompt.includes('updating migration context incrementally')){",
     "  console.log('# Context');",
     "  console.log('');",
@@ -1317,8 +1418,28 @@ function buildPlannerPromptCaptureWorkerScript(): string {
     "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
     "const capturedPath=path.join(process.cwd(),'.captured-migrate-planner-prompt.txt');",
     "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+    "  const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "  const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "  const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "  const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "  const changedFilesMatch=prompt.match(/### Changed files\\n\\n([\\s\\S]*?)\\n\\n### Diff/);",
+    "  const changedPaths=(changedFilesMatch&&changedFilesMatch[1]?changedFilesMatch[1].split(/\\r?\\n/):[])",
+    "    .map((line)=>line.trim())",
+    "    .filter((line)=>line.startsWith('- '))",
+    "    .map((line)=>line.replace(/^-\\s*(?:added|modified|removed):\\s*/i,''))",
+    "    .filter((line)=>line.length>0);",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const migrationNumber=currentPosition+1;",
+    "  const coverageLine=changedPaths.length>0?changedPaths.join(', '):'Target.md';",
+    "  const draftBody=[",
+    "    `# ${migrationNumber}. Prompt Capture Migration`,",
+    "    '',",
+    "    '- [ ] Implement prompt capture migration changes for revision planning.',",
+    "    `- [ ] Cover design diff paths: ${coverageLine}.`,",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,`${migrationNumber}. Prompt Capture Migration.md`),draftBody+'\\n','utf-8');",
     "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
-    "  console.log('DONE');",
+    "  console.log('drafted migration files');",
     "  process.exit(0);",
     "}",
     "if(prompt.includes('Verify whether the selected task is complete.')){",
