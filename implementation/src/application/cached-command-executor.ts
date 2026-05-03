@@ -4,14 +4,45 @@ import type {
   CommandResult,
 } from "../domain/ports/command-executor.js";
 
+export interface CacheDecisionParams {
+  command: string;
+  cwd: string;
+  options: CommandExecutionOptions | undefined;
+  result: CommandResult;
+}
+
+export interface CachedCommandResultStore {
+  get(command: string, cwd: string): CommandResult | null;
+  set(command: string, cwd: string, result: CommandResult): void;
+}
+
+export function createCachedCommandResultStore(): CachedCommandResultStore {
+  const cache = new Map<string, CommandResult>();
+  return {
+    get(command: string, cwd: string): CommandResult | null {
+      const cached = cache.get(buildCacheKey(command, cwd));
+      return cached ? cloneResult(cached) : null;
+    },
+    set(command: string, cwd: string, result: CommandResult): void {
+      cache.set(buildCacheKey(command, cwd), cloneResult(result));
+    },
+  };
+}
+
 /**
  * Creates a command executor decorator that memoizes results in memory.
  *
  * Cache keys are derived from `(command, cwd)`, so repeated executions of the
  * same command in the same directory return a cached `CommandResult` clone.
  */
-export function createCachedCommandExecutor(delegate: CommandExecutor): CommandExecutor {
-  const cache = new Map<string, CommandResult>();
+export function createCachedCommandExecutor(
+  delegate: CommandExecutor,
+  store: CachedCommandResultStore = createCachedCommandResultStore(),
+  options?: {
+    shouldCacheResult?: (params: CacheDecisionParams) => boolean;
+  },
+): CommandExecutor {
+  const shouldCacheResult = options?.shouldCacheResult;
 
   return {
     async execute(
@@ -19,14 +50,18 @@ export function createCachedCommandExecutor(delegate: CommandExecutor): CommandE
       cwd: string,
       options?: CommandExecutionOptions,
     ): Promise<CommandResult> {
-      const cacheKey = buildCacheKey(command, cwd);
-      const cached = cache.get(cacheKey);
+      const cached = store.get(command, cwd);
       if (cached) {
-        return cloneResult(cached);
+        return cached;
       }
 
       const result = await delegate.execute(command, cwd, options);
-      cache.set(cacheKey, cloneResult(result));
+      const canCache = shouldCacheResult
+        ? shouldCacheResult({ command, cwd, options, result })
+        : true;
+      if (canCache) {
+        store.set(command, cwd, result);
+      }
       return cloneResult(result);
     },
   };
