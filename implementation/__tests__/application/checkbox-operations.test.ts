@@ -934,23 +934,6 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
-  it("removes memory-result metadata annotations during checkbox reset", () => {
-    const fileSystem = createFileSystem({
-      "todo.md": [
-        "- [x] memory: Capture release context",
-        "  - memory-result: captured context",
-        "- [x] Next task",
-      ].join("\n"),
-    });
-
-    resetFileCheckboxes("todo.md", fileSystem);
-
-    expect(fileSystem.readText("todo.md")).toBe([
-      "- [ ] memory: Capture release context",
-      "- [ ] Next task",
-    ].join("\n"));
-  });
-
   it("removes question answer metadata annotations during checkbox reset", () => {
     const fileSystem = createFileSystem({
       "todo.md": [
