@@ -16,6 +16,7 @@ import {
   refreshMainMenuStatusProbe,
   refreshMainMenuStatuses,
 } from "./scenes/main-menu.ts";
+import type { MainMenuSceneId, MainMenuState } from "./scenes/main-menu.ts";
 import {
   createNewWorkSceneState,
   generateNewWorkAgentPrompt,
@@ -64,7 +65,47 @@ import {
 import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.ts";
 import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.ts";
 
-function parsePositiveInteger(value, label) {
+type SceneId =
+  | "mainMenu"
+  | "continue"
+  | "newWork"
+  | "workers"
+  | "health"
+  | "tools"
+  | "profiles"
+  | "settings"
+  | "help";
+
+type ContinueState = ReturnType<typeof createContinueSceneState>;
+type ContinueUiState = "previewing" | "running" | "done";
+type SceneStack = SceneId[];
+
+type SceneRouterState = {
+  sceneId: SceneId;
+  sceneStack: SceneStack;
+  showHelpOverlay: boolean;
+  mainMenuHint: string;
+  mainMenuState: MainMenuState;
+  continueUiState: ContinueUiState;
+  continueSceneState: ContinueState;
+  runState: ReturnType<typeof createInitialRunState>;
+  workersSceneState: any;
+  healthSceneState: any;
+  toolsSceneState: any;
+  toolsBuiltInsVisibilitySession: ReturnType<typeof createBuiltInsVisibilitySession>;
+  profilesSceneState: any;
+  settingsSceneState: any;
+  helpSceneState: any;
+  newWorkSceneState: any;
+  agentSessionPending: boolean;
+  workersActionPending: boolean;
+  healthActionPending: boolean;
+  toolsActionPending: boolean;
+  settingsActionPending: boolean;
+  helpActionPending: boolean;
+};
+
+function parsePositiveInteger(value: unknown, label: string): number {
   const parsed = Number.parseInt(String(value), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new InvalidArgumentError(`${label} must be a positive integer.`);
@@ -72,7 +113,7 @@ function parsePositiveInteger(value, label) {
   return parsed;
 }
 
-function parseFps(value) {
+function parseFps(value: unknown): number {
   const parsed = parsePositiveInteger(value, "FPS");
   if (parsed > 60) {
     throw new InvalidArgumentError("FPS must be <= 60.");
@@ -80,7 +121,7 @@ function parseFps(value) {
   return parsed;
 }
 
-function createSceneRouterState() {
+function createSceneRouterState(): SceneRouterState {
   return {
     sceneId: "mainMenu",
     sceneStack: ["mainMenu"],
@@ -107,37 +148,34 @@ function createSceneRouterState() {
   };
 }
 
-function pushScene(state, sceneId) {
-  if (typeof sceneId !== "string" || sceneId.length === 0) {
-    return;
-  }
+function pushScene(state: SceneRouterState, sceneId: SceneId): void {
   state.sceneStack.push(sceneId);
   state.sceneId = sceneId;
 }
 
-function popScene(state) {
-  if (!Array.isArray(state.sceneStack) || state.sceneStack.length <= 1) {
+function popScene(state: SceneRouterState): void {
+  if (state.sceneStack.length <= 1) {
     state.sceneStack = ["mainMenu"];
     state.sceneId = "mainMenu";
     return;
   }
   state.sceneStack.pop();
-  state.sceneId = state.sceneStack[state.sceneStack.length - 1] || "mainMenu";
+  state.sceneId = state.sceneStack[state.sceneStack.length - 1] ?? "mainMenu";
 }
 
-function isArrowUp(rawInput) {
+function isArrowUp(rawInput: string): boolean {
   return rawInput === "\u001b[A";
 }
 
-function isArrowDown(rawInput) {
+function isArrowDown(rawInput: string): boolean {
   return rawInput === "\u001b[B";
 }
 
-function isBack(rawInput) {
+function isBack(rawInput: string): boolean {
   return rawInput === "\u001b" || rawInput === "\b" || rawInput === "\u007f";
 }
 
-function resetToMainMenu(state) {
+function resetToMainMenu(state: SceneRouterState): void {
   state.sceneStack = ["mainMenu"];
   state.sceneId = "mainMenu";
   state.showHelpOverlay = false;
@@ -149,7 +187,13 @@ function resetToMainMenu(state) {
   void refreshMainMenuStatusProbe("continue");
 }
 
-function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene, openSettingsScene) {
+function routeFromMainMenu(
+  state: SceneRouterState,
+  routeTo: MainMenuSceneId,
+  openNewWorkScene: () => void,
+  openWorkersScene: () => void,
+  openSettingsScene: () => void,
+): void {
   state.showHelpOverlay = false;
   if (routeTo === "continue") {
     state.sceneId = "continue";
@@ -182,7 +226,7 @@ function routeFromMainMenu(state, routeTo, openNewWorkScene, openWorkersScene, o
   }
 }
 
-function applySharedNavigationGrammar(state, rawInput) {
+function applySharedNavigationGrammar(state: SceneRouterState, rawInput: string): boolean {
   const input = String(rawInput).toLowerCase();
   if (isArrowUp(rawInput) || input === "k") {
     state.mainMenuState = moveMainMenuSelection(state.mainMenuState, -1);
@@ -199,7 +243,12 @@ function applySharedNavigationGrammar(state, rawInput) {
   return false;
 }
 
-function buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumns) {
+function buildSceneLines(
+  state: SceneRouterState,
+  spacing: { sectionGap: number; hintGap: number; errorGap: number },
+  currentWorkingDirectory: string,
+  viewportColumns: number | undefined,
+): string[] {
   if (state.sceneId === "continue") {
     return renderContinueSceneLines({
       uiState: state.continueUiState,
@@ -242,7 +291,9 @@ function buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumn
   return [];
 }
 
-export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) {
+export async function runRootTui(
+  { app, workerPattern, cliVersion, argv }: { app?: unknown; workerPattern?: unknown; cliVersion?: unknown; argv?: string[] } = {},
+) {
   void app;
   void workerPattern;
   void cliVersion;
@@ -271,7 +322,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
     let finalized = false;
     let previousLineCount = 0;
     let frameIndex = 0;
-    let interval;
+    let interval: NodeJS.Timeout | undefined;
 
     const restoreCursor = withCursorHidden();
 
@@ -338,7 +389,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       }
     };
 
-    const finish = (exitCode, { newline = false } = {}) => {
+    const finish = (exitCode: number, { newline = false }: { newline?: boolean } = {}) => {
       if (settled) {
         return;
       }
@@ -472,7 +523,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       });
     };
 
-    const launchNewWork = async (actionKey) => {
+    const launchNewWork = async (actionKey: string) => {
       if (state.agentSessionPending) {
         return;
       }
@@ -508,7 +559,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
       void refreshMainMenuStatusProbe("newWork");
     };
 
-    function onInput(chunk) {
+    function onInput(chunk: Buffer | string) {
       const rawInput = String(chunk);
       const input = rawInput.toLowerCase();
       const isEnter = rawInput === "\r" || rawInput === "\n";
