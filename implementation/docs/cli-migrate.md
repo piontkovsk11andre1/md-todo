@@ -11,7 +11,7 @@ Without an action, `migrate` runs a convergence loop:
 5. Optionally pause at `--confirm`.
 6. Run `migrate up` for the batch, then loop again.
 
-Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/rev.*/**`) as context sources, and falls back to legacy `docs/current/**`, `docs/rev.*/**`, and root `Design.md` only as compatibility-only paths for older projects.
+Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/revisions/rev.*/**`) as context sources, and falls back to legacy `design/rev.*/**`, `docs/current/**`, `docs/rev.*/**`, and root `Design.md` only as compatibility-only paths for older projects.
 
 ## Global option: `--config-dir <path>`
 

@@ -21,10 +21,10 @@ This makes the checkbox a consequence of successful work, not a guess.
 In addition to execute/verify task running, rundown supports a prediction-oriented migration workflow:
 
 - `start` bootstraps a design-first project workspace.
-- `design release` snapshots `design/current/` into the next immutable `design/rev.N/` revision.
+- `design release` snapshots `design/current/` into the next immutable `design/revisions/rev.N/` revision.
 - `design diff [target]` compares revision state for `design/current/` using shorthand or explicit selectors.
 - Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
-- Compatibility fallback remains additive for older projects: `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
+- Compatibility fallback remains additive for older projects: legacy `design/rev.*/`, `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
 - `migrate` advances a numbered migration track using a convergence loop and writes snapshot checkpoints.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test` verifies assertion specs against predicted migration state.

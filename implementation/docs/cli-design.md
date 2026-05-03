@@ -6,9 +6,9 @@ Use `design` commands for revision snapshots and revision diffs; use `migrate` c
 
 ## `rd design release`
 
-Release `design/current/` into the next immutable `design/rev.N/` snapshot.
+Release `design/current/` into the next immutable `design/revisions/rev.N/` snapshot.
 
-No-change behavior is preserved: when `design/current/` is byte-for-byte unchanged from the latest revision directory, no new `design/rev.N/` directory is created and the command reports a no-op.
+No-change behavior is preserved: when `design/current/` is byte-for-byte unchanged from the latest revision directory, no new `design/revisions/rev.N/` directory is created and the command reports a no-op.
 
 ## Global option: `--config-dir <path>`
 
