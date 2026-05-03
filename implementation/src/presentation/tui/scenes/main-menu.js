@@ -31,10 +31,11 @@ export function getMainMenuRows(state, { probeRegistry = statusProbeRegistry } =
   const selectedIndex = normalizeSelectionIndex(state?.selectedIndex ?? 0);
   return MAIN_MENU_ITEMS.map((item, index) => {
     const status = probeRegistry.getProbeStatus(item.probeId);
+    const workersDrilldownHint = item.sceneId === "workers" ? "   (H: health · T: tools)" : "";
     return {
       sceneId: item.sceneId,
       label: item.label,
-      statusText: status.text,
+      statusText: `${status.text}${workersDrilldownHint}`,
       statusTone: status.tone,
       isActive: index === selectedIndex,
       index,
