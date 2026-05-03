@@ -3,6 +3,7 @@ import {
   DEFAULT_MIGRATE_TEMPLATE,
 } from "../domain/defaults.js";
 import {
+  formatMigrationFilename,
   parseMigrationDirectory,
   parseMigrationFilename,
 } from "../domain/migration-parser.js";
@@ -405,11 +406,20 @@ async function runMigrateLoop(input: {
       emit({ kind: "stderr", text: result.stderr });
     }
 
-    const stagedDrafts = readStagedDraftMigrationsFromArtifactRun(
+    const stagedDraftResult = readStagedDraftMigrationsFromArtifactRun(
       dependencies.fileSystem,
       artifactContext.rootDir,
       targetRevision.name,
     );
+    if (stagedDraftResult.invalidFileNames.length > 0) {
+      throw new Error(
+        "Drafted migration filenames must be canonical (N. Title.md). Invalid files in "
+          + migrationDraftDir
+          + ": "
+          + stagedDraftResult.invalidFileNames.join(", "),
+      );
+    }
+    const stagedDrafts = stagedDraftResult.drafts;
     if (stagedDrafts.length === 0) {
       if (revisionDiff.changes.length === 0) {
         emit({
@@ -526,7 +536,10 @@ function readStagedDraftMigrationsFromArtifactRun(
   fileSystem: FileSystem,
   artifactRunRootDir: string,
   revisionName: string,
-): StagedDraftMigration[] {
+): {
+  drafts: StagedDraftMigration[];
+  invalidFileNames: string[];
+} {
   const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName);
   return readStagedDraftMigrations(fileSystem, draftDir);
 }
@@ -534,19 +547,27 @@ function readStagedDraftMigrationsFromArtifactRun(
 function readStagedDraftMigrations(
   fileSystem: FileSystem,
   draftDir: string,
-): StagedDraftMigration[] {
+): {
+  drafts: StagedDraftMigration[];
+  invalidFileNames: string[];
+} {
   if (!fileSystem.exists(draftDir)) {
-    return [];
+    return {
+      drafts: [],
+      invalidFileNames: [],
+    };
   }
 
   const staged: StagedDraftMigration[] = [];
+  const invalidFileNames: string[] = [];
   for (const entry of fileSystem.readdir(draftDir)) {
     if (!entry.isFile) {
       continue;
     }
     const fileName = entry.name;
     const parsed = parseMigrationFilename(fileName);
-    if (!parsed) {
+    if (!parsed || fileName !== formatMigrationFilename(parsed.number, parsed.name)) {
+      invalidFileNames.push(fileName);
       continue;
     }
     staged.push({
@@ -558,7 +579,10 @@ function readStagedDraftMigrations(
   }
 
   staged.sort((left, right) => left.number - right.number || left.fileName.localeCompare(right.fileName));
-  return staged;
+  return {
+    drafts: staged,
+    invalidFileNames,
+  };
 }
 
 function validateStagedDraftMigrations(
