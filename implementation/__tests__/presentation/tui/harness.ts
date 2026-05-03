@@ -52,7 +52,9 @@ import {
 import {
   createProfilesSceneState,
   handleProfilesInput,
+  reloadProfilesSceneState,
   renderProfilesSceneLines,
+  runProfilesSceneAction,
 } from "../../../src/presentation/tui/scenes/profiles.ts";
 import {
   createSettingsSceneState,
@@ -386,6 +388,33 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     track(promise);
   }
 
+  function openProfilesScene(): void {
+    pushScene("profiles");
+    state.showHelpOverlay = false;
+    state.profilesSceneState = {
+      ...createProfilesSceneState(),
+      loading: true,
+      banner: "",
+    };
+    const promise = reloadProfilesSceneState({
+      state: state.profilesSceneState,
+      currentWorkingDirectory,
+    }).then((nextState) => {
+      if (state.sceneId === "profiles") {
+        state.profilesSceneState = nextState;
+      }
+    }).catch((error) => {
+      if (state.sceneId === "profiles") {
+        state.profilesSceneState = {
+          ...state.profilesSceneState,
+          loading: false,
+          banner: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
+    track(promise);
+  }
+
   function routeFromMainMenu(routeTo: SceneId): void {
     state.showHelpOverlay = false;
     if (routeTo === "continue") {
@@ -416,11 +445,15 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
       openWorkersScene();
       return;
     }
+    if (routeTo === "profiles") {
+      openProfilesScene();
+      return;
+    }
     if (routeTo === "settings") {
       openSettingsScene();
       return;
     }
-    if (routeTo === "profiles" || routeTo === "help") {
+    if (routeTo === "help") {
       state.sceneId = routeTo;
       state.sceneStack = ["mainMenu", routeTo];
     }
@@ -733,8 +766,28 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
       const result = handleProfilesInput({ rawInput, state: state.profilesSceneState });
       state.profilesSceneState = result.state;
       if (result.backToParent || isBack(rawInput)) {
-        state.sceneId = "mainMenu";
-        state.sceneStack = ["mainMenu"];
+        state.profilesActionPending = false;
+        popScene();
+        return;
+      }
+      if (result.action && !state.profilesActionPending) {
+        state.profilesActionPending = true;
+        const promise = runProfilesSceneAction({
+          action: result.action,
+          state: state.profilesSceneState,
+          currentWorkingDirectory,
+        }).then((nextState) => {
+          state.profilesSceneState = nextState;
+        }).catch((error) => {
+          state.profilesSceneState = {
+            ...state.profilesSceneState,
+            loading: false,
+            banner: error instanceof Error ? error.message : String(error),
+          };
+        }).finally(() => {
+          state.profilesActionPending = false;
+        });
+        track(promise);
       }
       return;
     }
@@ -812,8 +865,7 @@ export async function createTuiHarness(options: HarnessOptions = {}): Promise<Ha
     } else if (initialScene === "settings") {
       openSettingsScene();
     } else if (initialScene === "profiles") {
-      state.sceneId = "profiles";
-      state.sceneStack = ["mainMenu", "profiles"];
+      openProfilesScene();
     } else if (initialScene === "help") {
       state.sceneId = "help";
       state.sceneStack = ["mainMenu", "help"];

@@ -49,7 +49,13 @@ import {
   reloadToolsSceneState,
   renderToolsSceneLines,
 } from "./scenes/tools.ts";
-import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.ts";
+import {
+  createProfilesSceneState,
+  handleProfilesInput,
+  reloadProfilesSceneState,
+  renderProfilesSceneLines,
+  runProfilesSceneAction,
+} from "./scenes/profiles.ts";
 import {
   createSettingsSceneState,
   handleSettingsInput,
@@ -103,6 +109,7 @@ type SceneRouterState = {
   healthActionPending: boolean;
   toolsActionPending: boolean;
   settingsActionPending: boolean;
+  profilesActionPending: boolean;
   helpActionPending: boolean;
 };
 
@@ -145,6 +152,7 @@ export function createSceneRouterState(): SceneRouterState {
     healthActionPending: false,
     toolsActionPending: false,
     settingsActionPending: false,
+    profilesActionPending: false,
     helpActionPending: false,
   };
 }
@@ -193,6 +201,7 @@ function routeFromMainMenu(
   routeTo: MainMenuSceneId,
   openNewWorkScene: () => void,
   openWorkersScene: () => void,
+  openProfilesScene: () => void,
   openSettingsScene: () => void,
 ): void {
   state.showHelpOverlay = false;
@@ -218,11 +227,15 @@ function routeFromMainMenu(
     openWorkersScene();
     return;
   }
+  if (routeTo === "profiles") {
+    openProfilesScene();
+    return;
+  }
   if (routeTo === "settings") {
     openSettingsScene();
     return;
   }
-  if (routeTo === "profiles" || routeTo === "help") {
+  if (routeTo === "help") {
     state.sceneId = routeTo;
   }
 }
@@ -411,6 +424,7 @@ export async function runRootTui(
     let healthLoadToken = 0;
     let toolsLoadToken = 0;
     let settingsLoadToken = 0;
+    let profilesLoadToken = 0;
 
     const openNewWorkScene = () => {
       state.sceneId = "newWork";
@@ -524,6 +538,36 @@ export async function runRootTui(
       });
     };
 
+    const openProfilesScene = () => {
+      pushScene(state, "profiles");
+      state.showHelpOverlay = false;
+      state.profilesSceneState = {
+        ...createProfilesSceneState(),
+        loading: true,
+        banner: "",
+      };
+
+      const loadToken = ++profilesLoadToken;
+      void reloadProfilesSceneState({
+        state: state.profilesSceneState,
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== profilesLoadToken || state.sceneId !== "profiles") {
+          return;
+        }
+        state.profilesSceneState = nextState;
+      }).catch((error) => {
+        if (loadToken !== profilesLoadToken || state.sceneId !== "profiles") {
+          return;
+        }
+        state.profilesSceneState = {
+          ...state.profilesSceneState,
+          loading: false,
+          banner: error instanceof Error ? error.message : String(error),
+        };
+      });
+    };
+
     const launchNewWork = async (actionKey: string) => {
       if (state.agentSessionPending) {
         return;
@@ -604,7 +648,7 @@ export async function runRootTui(
         if (isEnter) {
           const selected = getSelectedMainMenuItem(state.mainMenuState);
           if (selected?.sceneId) {
-            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene, openSettingsScene);
+            routeFromMainMenu(state, selected.sceneId, openNewWorkScene, openWorkersScene, openProfilesScene, openSettingsScene);
           }
           return;
         }
@@ -833,7 +877,29 @@ export async function runRootTui(
         const result = handleProfilesInput({ rawInput, state: state.profilesSceneState });
         state.profilesSceneState = result.state;
         if (result.backToParent || isBack(rawInput)) {
-          state.sceneId = "mainMenu";
+          profilesLoadToken += 1;
+          state.profilesActionPending = false;
+          popScene(state);
+          return;
+        }
+
+        if (result.action && !state.profilesActionPending) {
+          state.profilesActionPending = true;
+          void runProfilesSceneAction({
+            action: result.action,
+            state: state.profilesSceneState,
+            currentWorkingDirectory,
+          }).then((nextState) => {
+            state.profilesSceneState = nextState;
+          }).catch((error) => {
+            state.profilesSceneState = {
+              ...state.profilesSceneState,
+              loading: false,
+              banner: error instanceof Error ? error.message : String(error),
+            };
+          }).finally(() => {
+            state.profilesActionPending = false;
+          });
         }
         return;
       }

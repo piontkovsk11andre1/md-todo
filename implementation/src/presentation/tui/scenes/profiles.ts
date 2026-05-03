@@ -1,13 +1,19 @@
 // @ts-nocheck
 import pc from "picocolors";
+import { createConfigBridge } from "../bridges/config-bridge.ts";
+import { createWorkspaceScanBridge } from "../bridges/workspace-scan.ts";
+
+const PROFILE_SCAN_TTL_MS = 30_000;
 
 export function createProfilesSceneState() {
   return {
     config: {},
     configPath: ".rundown/config.json",
     references: [],
+    referencesScannedAt: 0,
+    referencesScanned: false,
     banner: "",
-    loading: false,
+    loading: true,
   };
 }
 
@@ -60,6 +66,94 @@ function collectUsageByProfile(references) {
   }
 
   return byProfile;
+}
+
+function toErrorMessage(error, fallback = "Unexpected error.") {
+  if (error instanceof Error && typeof error.message === "string" && error.message.length > 0) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+  return fallback;
+}
+
+function buildBridgeBundle(currentWorkingDirectory, {
+  configBridgeFactory = createConfigBridge,
+  workspaceScanBridgeFactory = createWorkspaceScanBridge,
+} = {}) {
+  return {
+    configBridge: configBridgeFactory({ cwd: currentWorkingDirectory }),
+    workspaceScanBridge: workspaceScanBridgeFactory({ cwd: currentWorkingDirectory }),
+  };
+}
+
+export async function reloadProfilesSceneState({
+  state,
+  currentWorkingDirectory = process.cwd(),
+  forceRescan = false,
+  keepBanner = false,
+  now = Date.now,
+  configBridgeFactory,
+  workspaceScanBridgeFactory,
+} = {}) {
+  const sceneState = {
+    ...(state ?? createProfilesSceneState()),
+    loading: true,
+  };
+  if (!keepBanner) {
+    sceneState.banner = "";
+  }
+
+  const { configBridge, workspaceScanBridge } = buildBridgeBundle(currentWorkingDirectory, {
+    configBridgeFactory,
+    workspaceScanBridgeFactory,
+  });
+  const configPathPromise = configBridge.resolveConfigPath("local");
+  const configPromise = configBridge.loadWorkerConfig();
+
+  const scanStale = now() - (sceneState.referencesScannedAt || 0) >= PROFILE_SCAN_TTL_MS;
+  const shouldScan = forceRescan || !sceneState.referencesScanned || scanStale;
+  const scanPromise = shouldScan
+    ? workspaceScanBridge.scanProfileReferences({ sourcePath: currentWorkingDirectory })
+    : Promise.resolve(sceneState.references);
+
+  const [configPathResult, configResult, scanResult] = await Promise.allSettled([
+    configPathPromise,
+    configPromise,
+    scanPromise,
+  ]);
+
+  const errors = [];
+
+  if (configPathResult.status === "fulfilled" && typeof configPathResult.value === "string" && configPathResult.value.length > 0) {
+    sceneState.configPath = configPathResult.value;
+  } else if (configPathResult.status === "rejected") {
+    errors.push(`Config path failed: ${toErrorMessage(configPathResult.reason)}`);
+  }
+
+  if (configResult.status === "fulfilled") {
+    sceneState.config = safeObject(configResult.value);
+  } else {
+    errors.push(`Config load failed: ${toErrorMessage(configResult.reason)}`);
+  }
+
+  if (scanResult.status === "fulfilled") {
+    sceneState.references = Array.isArray(scanResult.value) ? scanResult.value : [];
+    if (shouldScan) {
+      sceneState.referencesScannedAt = now();
+      sceneState.referencesScanned = true;
+    }
+  } else {
+    errors.push(`Workspace scan failed: ${toErrorMessage(scanResult.reason)}`);
+  }
+
+  if (errors.length > 0) {
+    sceneState.banner = errors.join(" | ");
+  }
+
+  sceneState.loading = false;
+  return sceneState;
 }
 
 export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
@@ -120,6 +214,7 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
   }
 
   withSectionGap(lines, sectionGap);
+  lines.push(pc.dim("[u] full scan"));
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
 }
@@ -134,9 +229,41 @@ export function handleProfilesInput({ rawInput, state } = {}) {
       backToParent: true,
     };
   }
+
+  const input = String(rawInput ?? "").toLowerCase();
+  if (input === "u") {
+    return {
+      handled: true,
+      state: state ?? createProfilesSceneState(),
+      backToParent: false,
+      action: { type: "full-rescan" },
+    };
+  }
+
   return {
     handled: false,
     state: state ?? createProfilesSceneState(),
     backToParent: false,
   };
+}
+
+export async function runProfilesSceneAction({
+  action,
+  state,
+  currentWorkingDirectory = process.cwd(),
+} = {}) {
+  if (!action || typeof action.type !== "string") {
+    return state ?? createProfilesSceneState();
+  }
+
+  if (action.type === "full-rescan") {
+    return reloadProfilesSceneState({
+      state,
+      currentWorkingDirectory,
+      forceRescan: true,
+      keepBanner: false,
+    });
+  }
+
+  return state ?? createProfilesSceneState();
 }
