@@ -1126,6 +1126,116 @@ describe("migrate-task", () => {
       process.chdir(previousCwd);
     }
   });
+
+  it("does not run explore when any thread lane fails drafting", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "design", "rev.1", "BillingFlow.md"),
+      "# Billing\n\nNew billing workflow requirements.\n",
+      "utf-8",
+    );
+
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "ops.md"), "# Ops\n", "utf-8");
+
+    const runRootDir = path.join(workspace, ".rundown", "runs", "run-test");
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ artifactPhaseLabel, prompt }) => {
+        if (artifactPhaseLabel === "migrate-thread-translate") {
+          const threadSlug = prompt.includes("# Billing") ? "billing" : "ops";
+          return { exitCode: 0, stdout: "# translated " + threadSlug + "\n", stderr: "" };
+        }
+
+        if (artifactPhaseLabel === "migrate-plan-thread") {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const threadSlug = prompt.includes("thread billing") ? "billing" : "ops";
+          fs.mkdirSync(draftDir, { recursive: true });
+          if (threadSlug === "billing") {
+            fs.writeFileSync(
+              path.join(draftDir, formatMigrationFilename(2, "billing-change")),
+              "# 2. Billing Change\n\n- [ ] Cover BillingFlow.md and related billing rollout updates.\n",
+              "utf-8",
+            );
+          } else {
+            fs.writeFileSync(
+              path.join(draftDir, formatMigrationFilename(2, "ops-change")),
+              "# 2. Ops Change\n\n- [ ] TODO\n",
+              "utf-8",
+            );
+          }
+          return { exitCode: 0, stdout: "planned " + threadSlug, stderr: "" };
+        }
+
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: runRootDir,
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(runExplore).not.toHaveBeenCalled();
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
 });
 
 function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): void {

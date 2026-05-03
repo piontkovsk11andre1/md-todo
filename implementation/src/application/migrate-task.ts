@@ -550,6 +550,19 @@ async function runMigrateLoop(input: {
       }
     }
 
+    for (const lane of laneResults) {
+      if (lane.errorMessage) {
+        continue;
+      }
+      for (const migrationPath of lane.promotedMigrationPaths) {
+        await runExploreForMigration({
+          runExplore: dependencies.runExplore,
+          migrationPath,
+          projectRoot,
+        });
+      }
+    }
+
     if (laneFailures.length > 0) {
       const failureSummary = laneFailures.map((failure) => {
         const laneLabel = failure.thread ? "thread " + failure.thread.threadSlug : "root lane";
@@ -906,14 +919,6 @@ async function runMigrationLaneDrafting(input: {
     dependencies.fileSystem.writeText(migrationPath, migrationContent);
     promotedMigrationPaths.push(migrationPath);
     promotedMigrationMetadataPaths.push(toWorkspaceRelativeMigrationPath(workspaceRoot, migrationPath));
-  }
-
-  for (const migrationPath of promotedMigrationPaths) {
-    await runExploreForMigration({
-      runExplore: dependencies.runExplore,
-      migrationPath,
-      projectRoot,
-    });
   }
 
   if (confirm) {
