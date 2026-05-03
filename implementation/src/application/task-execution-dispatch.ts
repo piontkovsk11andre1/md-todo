@@ -29,6 +29,7 @@ import { createTraceRunSession } from "./trace-run-session.js";
 import type { PrefixChain } from "../domain/prefix-chain.js";
 import { executeToolChain } from "./tool-execution.js";
 import type { TerminalStopSignal } from "../domain/terminal-control.js";
+import { persistMemoryCaptureOutput } from "../domain/builtin-tools/memory.js";
 
 const INCLUDE_STACK_ENV = "RUNDOWN_INCLUDE_STACK";
 const INLINE_CLI_FAILURE_STREAM_MAX_CHARS = 12_000;
@@ -665,7 +666,7 @@ export async function dispatchTaskExecution(params: {
       taskLine: task.line,
       workerOutput: runResult.stdout,
       memoryCapturePrefix,
-      dependencies,
+      memoryWriter: dependencies.memoryWriter,
       emit,
     });
     if (!persistenceResult.ok) {
@@ -910,65 +911,4 @@ function parseIncludeStack(raw: string | undefined): string[] {
 
 function normalizeIncludePath(filePath: string): string {
   return filePath.replaceAll("/", "\\").toLowerCase();
-}
-
-function persistMemoryCaptureOutput(params: {
-  sourcePath: string;
-  taskText: string;
-  taskLine: number;
-  workerOutput: string;
-  memoryCapturePrefix?: "memory" | "memorize" | "remember" | "inventory";
-  dependencies: RunTaskDependencies;
-  emit: EmitFn;
-}): { ok: true } | { ok: false; message: string; reason: string } {
-  const { sourcePath, taskText, taskLine, workerOutput, memoryCapturePrefix, dependencies, emit } = params;
-  const normalizedOutput = workerOutput.trim();
-  if (normalizedOutput.length === 0) {
-    return {
-      ok: false,
-      message: "Memory capture worker returned empty output; nothing to persist.",
-      reason: "Memory capture worker returned empty output.",
-    };
-  }
-
-  if (!dependencies.memoryWriter) {
-    return {
-      ok: false,
-      message: "Memory capture requires a configured memory writer.",
-      reason: "Memory writer is not configured.",
-    };
-  }
-
-  const writeResult = dependencies.memoryWriter.write({
-    sourcePath,
-    workerOutput: normalizedOutput,
-    capturePrefix: memoryCapturePrefix,
-    originTask: {
-      text: taskText,
-      line: taskLine,
-    },
-  });
-  if (!writeResult.ok) {
-    if (writeResult.error.warningMessage) {
-      emit({
-        kind: "warn",
-        message: writeResult.error.warningMessage,
-      });
-    }
-
-    return {
-      ok: false,
-      message: writeResult.error.message,
-      reason: writeResult.error.reason,
-    };
-  }
-
-  if (writeResult.value.warningMessage) {
-    emit({
-      kind: "warn",
-      message: writeResult.value.warningMessage,
-    });
-  }
-
-  return { ok: true };
 }
