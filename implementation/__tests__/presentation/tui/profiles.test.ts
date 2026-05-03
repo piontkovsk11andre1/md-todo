@@ -121,6 +121,17 @@ describe("tui profiles integration", () => {
     expect(result.action).toEqual({ type: "full-rescan" });
   });
 
+  it("maps [e] to edit-config action", () => {
+    const result = handleProfilesInput({
+      rawInput: "e",
+      state: createProfilesSceneState(),
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.backToParent).toBe(false);
+    expect(result.action).toEqual({ type: "edit-config" });
+  });
+
   it("maps Enter to inspect-selected-profile action via state transition", () => {
     const result = handleProfilesInput({
       rawInput: "\n",
@@ -203,6 +214,41 @@ describe("tui profiles integration", () => {
       cwd: "C:\\Work\\md-todo",
       line: 12,
     });
+  });
+
+  it("opens config editor and reloads after edit", async () => {
+    const launchEditorFn = vi.fn(() => ({ ok: true }));
+    const reloadProfilesSceneStateFn = vi.fn(async ({ state }) => ({
+      ...state,
+      loading: false,
+      banner: "",
+      config: {
+        profiles: {
+          fast: ["opencode", "run", "--model", "gpt-5.3"],
+        },
+      },
+    }));
+
+    const currentState = {
+      ...createProfilesSceneState(),
+      loading: false,
+      configPath: "C:\\Work\\md-todo\\.rundown\\config.json",
+    };
+
+    await runProfilesSceneAction({
+      action: { type: "edit-config" },
+      state: currentState,
+      currentWorkingDirectory: "C:\\Work\\md-todo",
+      suspendTui: () => {},
+      resumeTui: () => {},
+      launchEditorFn,
+      reloadProfilesSceneStateFn,
+    });
+
+    expect(launchEditorFn).toHaveBeenCalledWith("C:\\Work\\md-todo\\.rundown\\config.json", {
+      cwd: "C:\\Work\\md-todo",
+    });
+    expect(reloadProfilesSceneStateFn).toHaveBeenCalled();
   });
 
   it("forceRescan bypasses cache before TTL", async () => {

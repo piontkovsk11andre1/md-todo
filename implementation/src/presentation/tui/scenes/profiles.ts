@@ -1,5 +1,7 @@
 // @ts-nocheck
 import pc from "picocolors";
+import fs from "node:fs";
+import path from "node:path";
 import { launchEditor } from "../components/editor-launch.ts";
 import { createConfigBridge } from "../bridges/config-bridge.ts";
 import { createWorkspaceScanBridge } from "../bridges/workspace-scan.ts";
@@ -108,6 +110,34 @@ function toErrorMessage(error, fallback = "Unexpected error.") {
     return error;
   }
   return fallback;
+}
+
+function ensureParentDirectory(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+function safeEditConfigFile(filePath, {
+  currentWorkingDirectory,
+  suspendTui,
+  resumeTui,
+  launchEditorFn,
+} = {}) {
+  try {
+    ensureParentDirectory(filePath);
+    suspendTui?.();
+    let launchResult;
+    try {
+      launchResult = launchEditorFn(filePath, { cwd: currentWorkingDirectory });
+    } finally {
+      resumeTui?.();
+    }
+    return launchResult;
+  } catch (error) {
+    return {
+      ok: false,
+      message: `Failed to launch editor for ${filePath}: ${toErrorMessage(error)}`,
+    };
+  }
 }
 
 function buildBridgeBundle(currentWorkingDirectory, {
@@ -223,6 +253,7 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
   if (profileNames.length === 0) {
     lines.push(pc.dim("No profiles defined."));
     withSectionGap(lines, sectionGap);
+    lines.push(pc.dim("[e] edit config.json"));
     lines.push(pc.dim("[Esc] Back to menu"));
     return lines;
   }
@@ -274,6 +305,7 @@ export function renderProfilesSceneLines({ state, sectionGap = 1 } = {}) {
 
   withSectionGap(lines, sectionGap);
   lines.push(pc.dim("[↵] inspect references"));
+  lines.push(pc.dim("[e] edit config.json"));
   lines.push(pc.dim("[u] full scan"));
   lines.push(pc.dim("[Esc] Back to menu"));
   return lines;
@@ -417,6 +449,15 @@ export function handleProfilesInput({ rawInput, state } = {}) {
     };
   }
 
+  if (input === "e") {
+    return {
+      handled: true,
+      state: sceneState,
+      backToParent: false,
+      action: { type: "edit-config" },
+    };
+  }
+
   return {
     handled: false,
     state: sceneState,
@@ -431,6 +472,7 @@ export async function runProfilesSceneAction({
   suspendTui,
   resumeTui,
   launchEditorFn = launchEditor,
+  reloadProfilesSceneStateFn = reloadProfilesSceneState,
 } = {}) {
   if (!action || typeof action.type !== "string") {
     return state ?? createProfilesSceneState();
@@ -481,6 +523,37 @@ export async function runProfilesSceneAction({
       ...sceneState,
       banner: "",
     };
+  }
+
+  if (action.type === "edit-config") {
+    const sceneState = state ?? createProfilesSceneState();
+    const configPath = typeof sceneState.configPath === "string" && sceneState.configPath.length > 0
+      ? sceneState.configPath
+      : path.join(currentWorkingDirectory, ".rundown", "config.json");
+
+    const launchResult = safeEditConfigFile(configPath, {
+      currentWorkingDirectory,
+      suspendTui,
+      resumeTui,
+      launchEditorFn,
+    });
+
+    if (!launchResult?.ok) {
+      return {
+        ...sceneState,
+        configPath,
+        banner: launchResult?.message || "Failed to open editor.",
+      };
+    }
+
+    return reloadProfilesSceneStateFn({
+      state: {
+        ...sceneState,
+        configPath,
+      },
+      currentWorkingDirectory,
+      keepBanner: false,
+    });
   }
 
   return state ?? createProfilesSceneState();
