@@ -73,17 +73,20 @@ async function runAppJsonCommand({ appFactory = createApp, invoke }) {
   }
 }
 
-async function runConfigList({ appFactory, scope }) {
+async function runConfigList({ appFactory, scope, showSource = false }) {
   const payload = await runAppJsonCommand({
     appFactory,
     invoke: (app) => app.configList({
       scope,
       json: true,
-      showSource: false,
+      showSource,
     }),
   });
   const envelope = safeObject(payload);
-  return envelope.config;
+  return {
+    config: envelope.config,
+    sources: envelope.sources,
+  };
 }
 
 async function runConfigPath({ appFactory, scope }) {
@@ -120,6 +123,20 @@ export function createConfigBridge({
     return workerConfigPort.listValues(effectiveConfigDirPath, scope);
   }
 
+  function fallbackListEffective() {
+    if (typeof workerConfigPort?.loadWithSources !== "function") {
+      return undefined;
+    }
+    const loaded = workerConfigPort.loadWithSources(effectiveConfigDirPath);
+    if (!loaded || typeof loaded !== "object") {
+      return undefined;
+    }
+    return {
+      config: loaded.config,
+      sources: loaded.valueSources,
+    };
+  }
+
   function fallbackResolvePath(scope) {
     if (typeof workerConfigPort?.getConfigPaths !== "function") {
       return undefined;
@@ -134,7 +151,8 @@ export function createConfigBridge({
 
   async function listConfig(scope = "effective") {
     try {
-      return await runConfigList({ appFactory, scope });
+      const result = await runConfigList({ appFactory, scope, showSource: false });
+      return result.config;
     } catch (error) {
       const fallback = fallbackListConfig(scope);
       if (fallback !== undefined) {
@@ -142,6 +160,35 @@ export function createConfigBridge({
       }
       throw error;
     }
+  }
+
+  async function listEffective() {
+    try {
+      return await runConfigList({ appFactory, scope: "effective", showSource: true });
+    } catch (error) {
+      const fallback = fallbackListEffective();
+      if (fallback !== undefined) {
+        return fallback;
+      }
+      const configFallback = fallbackListConfig("effective");
+      if (configFallback !== undefined) {
+        return {
+          config: configFallback,
+          sources: undefined,
+        };
+      }
+      throw error;
+    }
+  }
+
+  async function listLocal() {
+    const config = await listConfig("local");
+    return { config };
+  }
+
+  async function listGlobal() {
+    const config = await listConfig("global");
+    return { config };
   }
 
   async function resolveConfigPath(scope = "local") {
@@ -164,6 +211,10 @@ export function createConfigBridge({
     return resolveConfigPath("global");
   }
 
+  async function getGlobalPath() {
+    return resolveGlobalConfigPath();
+  }
+
   async function loadWorkerConfig() {
     return listConfig("effective");
   }
@@ -171,6 +222,10 @@ export function createConfigBridge({
   return {
     configDirPath: effectiveConfigDirPath,
     unresolvedPathMarker: UNRESOLVED_PATH,
+    listEffective,
+    listLocal,
+    listGlobal,
+    getGlobalPath,
     listConfig,
     loadWorkerConfig,
     resolveConfigPath,

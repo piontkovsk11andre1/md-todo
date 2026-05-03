@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createConfigBridge } from "../bridges/config-bridge.js";
 import { launchEditor } from "../components/editor-launch.js";
+import { createPagerState, handlePagerInput, renderPagerLines } from "../components/pager.js";
 
 const SUPPORTED_SCOPES = ["effective", "local", "global"];
 
@@ -129,6 +130,65 @@ function resolveValueColumnWidth(viewportColumns, keyColumnWidth, provenanceRese
   return Math.max(MIN_VALUE_WIDTH, available);
 }
 
+function clampSelectedIndex(index, length) {
+  if (!Number.isInteger(index) || index < 0) {
+    return 0;
+  }
+  if (!Number.isInteger(length) || length <= 0) {
+    return 0;
+  }
+  if (index >= length) {
+    return length - 1;
+  }
+  return index;
+}
+
+function formatInspectorContent({ entry, scope, source }) {
+  const keyText = typeof entry?.key === "string" && entry.key.length > 0 ? entry.key : "(unknown)";
+  const sourceLine = scope === "effective"
+    ? `Source: ${typeof source === "string" && source.length > 0 ? source : "unknown"}`
+    : "Source: n/a (scope-specific view)";
+  const valueText = JSON.stringify(entry?.value, null, 2);
+  return [
+    `Key: ${keyText}`,
+    sourceLine,
+    "",
+    "Value (pretty JSON):",
+    typeof valueText === "string" ? valueText : String(entry?.value),
+  ].join("\n");
+}
+
+function openSettingsInspector({ state, viewportHeight }) {
+  const sceneState = state ?? createSettingsSceneState();
+  const entries = Array.isArray(sceneState.entries) ? sceneState.entries : [];
+  if (entries.length === 0) {
+    return {
+      ...sceneState,
+      banner: "No setting selected to inspect.",
+    };
+  }
+  const index = clampSelectedIndex(sceneState.selectedIndex, entries.length);
+  const entry = entries[index];
+  const scope = isSupportedScope(sceneState.scope) ? sceneState.scope : "effective";
+  const sources = safeObject(sceneState.sources);
+  const source = typeof entry?.key === "string" ? sources[entry.key] : undefined;
+  const content = formatInspectorContent({ entry, scope, source });
+  const pager = createPagerState({
+    title: "Settings Inspector",
+    filePath: typeof entry?.key === "string" ? entry.key : "",
+    content,
+    viewportHeight,
+  });
+
+  return {
+    ...sceneState,
+    selectedIndex: index,
+    banner: "",
+    hint: "",
+    pager,
+  };
+}
+
 export function createSettingsSceneState() {
   return {
     scope: "effective",
@@ -162,12 +222,18 @@ export async function reloadSettingsSceneState({
 
   try {
     const bridge = createConfigBridge({ cwd: currentWorkingDirectory });
-    const config = await bridge.listConfig(scope);
+    const listed = scope === "effective"
+      ? await bridge.listEffective()
+      : scope === "local"
+        ? await bridge.listLocal()
+        : await bridge.listGlobal();
+    const config = safeObject(listed?.config);
+    const sources = scope === "effective" ? safeObject(listed?.sources) : undefined;
     const entries = flattenConfigEntries(config);
     return {
       ...sceneState,
       entries,
-      sources: undefined,
+      sources,
       selectedIndex: Math.min(sceneState.selectedIndex ?? 0, Math.max(0, entries.length - 1)),
       loading: false,
       lastError: "",
@@ -223,7 +289,7 @@ export async function runSettingsSceneAction({
     try {
       filePath = scope === "local"
         ? await bridge.resolveConfigPath("local")
-        : await bridge.resolveGlobalConfigPath();
+        : await bridge.getGlobalPath();
     } catch (error) {
       return {
         ...sceneState,
@@ -307,7 +373,7 @@ export async function runSettingsSceneAction({
     try {
       filePath = scope === "local"
         ? await bridge.resolveConfigPath("local")
-        : await bridge.resolveGlobalConfigPath();
+        : await bridge.getGlobalPath();
     } catch (error) {
       return {
         ...sceneState,
@@ -350,6 +416,9 @@ function formatProvenanceMarker(source) {
 
 export function renderSettingsSceneLines({ state, sectionGap = 1, viewportColumns } = {}) {
   const sceneState = state ?? createSettingsSceneState();
+  if (sceneState.pager) {
+    return renderPagerLines({ state: sceneState.pager });
+  }
   const scope = isSupportedScope(sceneState.scope) ? sceneState.scope : "effective";
   const lines = [buildHeaderLine(scope)];
 
@@ -383,6 +452,7 @@ export function renderSettingsSceneLines({ state, sectionGap = 1, viewportColumn
   if (entries.length === 0) {
     lines.push(pc.dim(`  No configuration values to show for scope "${scope}".`));
   } else {
+    const selectedIndex = clampSelectedIndex(sceneState.selectedIndex, entries.length);
     const longestKey = entries.reduce((max, entry) => {
       const length = typeof entry?.key === "string" ? entry.key.length : 0;
       return length > max ? length : max;
@@ -391,11 +461,13 @@ export function renderSettingsSceneLines({ state, sectionGap = 1, viewportColumn
     // Reserve approximate width for the provenance marker ("◀ built-in" ≈ 11 chars + leading "  ").
     const provenanceReserve = showProvenance ? 14 : 0;
     const valueColumnWidth = resolveValueColumnWidth(viewportColumns, keyColumnWidth, provenanceReserve);
-    for (const entry of entries) {
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
       const keyText = typeof entry?.key === "string" ? entry.key : "";
       const valueText = formatRowValue(entry?.value, valueColumnWidth);
       const paddedKey = keyText.padEnd(keyColumnWidth, " ");
-      let row = `  ${paddedKey}  ${valueText}`;
+      const prefix = index === selectedIndex ? "> " : "  ";
+      let row = `${prefix}${paddedKey}  ${valueText}`;
       if (showProvenance) {
         const marker = formatProvenanceMarker(sources[keyText]);
         if (marker) {
@@ -416,6 +488,29 @@ export function renderSettingsSceneLines({ state, sectionGap = 1, viewportColumn
 
 export function handleSettingsInput({ rawInput, state } = {}) {
   const sceneState = state ?? createSettingsSceneState();
+
+  if (sceneState.pager) {
+    const pagerResult = handlePagerInput({ rawInput, state: sceneState.pager });
+    if (pagerResult.backToParent) {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          pager: null,
+        },
+        backToParent: false,
+      };
+    }
+    return {
+      handled: pagerResult.handled,
+      state: {
+        ...sceneState,
+        pager: pagerResult.state,
+      },
+      backToParent: false,
+    };
+  }
+
   const isEscape = rawInput === "\u001b";
   const isBackspace = rawInput === "\b" || rawInput === "\u007f";
   if (isEscape || isBackspace) {
@@ -427,6 +522,40 @@ export function handleSettingsInput({ rawInput, state } = {}) {
   }
 
   const input = typeof rawInput === "string" ? rawInput : "";
+
+  const entries = Array.isArray(sceneState.entries) ? sceneState.entries : [];
+  const selectedIndex = clampSelectedIndex(sceneState.selectedIndex, entries.length);
+
+  if (input === "\u001b[A" || input === "k") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        selectedIndex: clampSelectedIndex(selectedIndex - 1, entries.length),
+      },
+      backToParent: false,
+    };
+  }
+
+  if (input === "\u001b[B" || input === "j") {
+    return {
+      handled: true,
+      state: {
+        ...sceneState,
+        selectedIndex: clampSelectedIndex(selectedIndex + 1, entries.length),
+      },
+      backToParent: false,
+    };
+  }
+
+  if (input === "\r" || input === "\n") {
+    return {
+      handled: true,
+      state: openSettingsInspector({ state: sceneState }),
+      backToParent: false,
+    };
+  }
+
   const normalized = input.toLowerCase();
   if (normalized === "s") {
     const nextScope = getNextScope(sceneState.scope);
