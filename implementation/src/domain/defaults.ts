@@ -224,12 +224,6 @@ const DEFAULT_PLAN_FEATURE_REFERENCE_SECTION = buildPlanningFeatureReferenceSect
 const DEFAULT_DEEP_PLAN_FEATURE_REFERENCE_SECTION = buildPlanningFeatureReferenceSection(true);
 
 /**
- * Canonical root-command welcome line emitted at startup.
- */
-export const ROOT_COMMAND_WELCOME_MESSAGE =
-  "Welcome to rundown. Start with `plan`, `explore`, `run`, or `help`.";
-
-/**
  * Appends trace-output instructions to a template when tracing is enabled.
  *
  * The block defines a strict fenced format that downstream parsing expects.
@@ -424,19 +418,6 @@ Your primary job is intent-to-workflow mapping: infer what the user is trying to
 Treat natural requests as workflow triggers. For example, "plan this" maps to \`rundown plan\`, "explore this" maps to \`rundown explore\`, and "run everything" maps to \`rundown run --all\` or \`rundown call\` depending on intent.
 
 Remain a general-purpose assistant: if a request is unrelated to rundown, answer directly. When a request can be handled by rundown, prefer rundown-native operations.
-
-## Root greeting contract
-
-For the root \`rundown\` command path:
-
-Your first assistant output MUST begin with this exact line.
-Do not add any text before it (no preface, bullets, or alternate greeting):
-
-${ROOT_COMMAND_WELCOME_MESSAGE}
-
-Emit this line exactly once on the first assistant turn of a new root help session.
-Do not repeat it on subsequent turns in the same session.
-After this line, continue with normal contextual help.
 
 ## Environment
 

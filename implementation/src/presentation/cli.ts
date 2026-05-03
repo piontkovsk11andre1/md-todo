@@ -29,7 +29,6 @@ import {
   terminate,
 } from "./cli-argv.js";
 import { normalizeExitCode } from "../domain/exit-codes.js";
-import { ROOT_COMMAND_WELCOME_MESSAGE } from "../domain/defaults.js";
 import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   createArtifactsCommandAction,
@@ -120,7 +119,6 @@ interface CliRuntimeState {
   invocationArgv: string[] | undefined;
   app: CliApp | undefined;
   loopSignalExitCode: number | undefined;
-  rootWelcomeEmitted: boolean;
 }
 
 // Shared mutable runtime state for the current CLI process invocation.
@@ -130,7 +128,6 @@ const runtimeState: CliRuntimeState = {
   invocationArgv: undefined,
   app: undefined,
   loopSignalExitCode: undefined,
-  rootWelcomeEmitted: false,
 };
 
 const program = new Command();
@@ -1140,15 +1137,12 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   runtimeState.app = undefined;
   runtimeState.invocationArgv = rewrittenArgv;
   runtimeState.loopSignalExitCode = undefined;
-  runtimeState.rootWelcomeEmitted = false;
   runtimeState.invocationLogState = createCliInvocationLogState(rewrittenArgv, {
     cliVersion,
     createSessionId,
     resolveInvocationCommand,
     resolveConfigDirForInvocation,
   });
-
-  emitRootCommandWelcomeIfNeeded(rundownArgs, runtimeState);
 
   cleanupCallCliCacheArtifactAtStartup(rewrittenArgv);
 
@@ -1251,25 +1245,6 @@ function validateUnsupportedMigrateAction(argv: string[]): void {
 
     throw new Error(`unknown action: ${token}`);
   }
-}
-
-/**
- * Emits the canonical root-command welcome line once per root CLI invocation.
- */
-function emitRootCommandWelcomeIfNeeded(
-  argv: string[],
-  state: Pick<CliRuntimeState, "rootWelcomeEmitted">,
-): void {
-  if (
-    state.rootWelcomeEmitted
-    || resolveInvocationCommand(argv) !== "rundown"
-    || hasRootAgentsOption(argv)
-  ) {
-    return;
-  }
-
-  console.log(ROOT_COMMAND_WELCOME_MESSAGE);
-  state.rootWelcomeEmitted = true;
 }
 
 /**

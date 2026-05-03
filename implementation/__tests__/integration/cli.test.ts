@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactStoreStatus } from "../../src/domain/ports/index.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createLockfileFileLock } from "../../src/infrastructure/file-lock.js";
-import { ROOT_COMMAND_WELCOME_MESSAGE } from "../../src/domain/defaults.js";
 import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 const tempDirs: string[] = [];
@@ -72,13 +71,6 @@ function stripCliTimestampPrefix(value: string): string {
   }
 
   return value.replace(/^(\[(?:log|error)\]\s)\[[0-9]{4}-[0-9]{2}-[0-9]{2}T[^\]]+\]\s/, "$1");
-}
-
-function expectCanonicalRootWelcome(logs: string[]): void {
-  const canonicalWelcomes = logs.filter((line) => line === ROOT_COMMAND_WELCOME_MESSAGE);
-  expect(canonicalWelcomes).toHaveLength(1);
-  expect(logs[0]).toBe(ROOT_COMMAND_WELCOME_MESSAGE);
-  expect(logs.some((line) => line.startsWith("Welcome to rundown") && line !== ROOT_COMMAND_WELCOME_MESSAGE)).toBe(false);
 }
 
 function expectedInitSuccessLines(displayConfigDir: string): string[] {
@@ -11190,16 +11182,10 @@ describe.sequential("CLI integration", () => {
     const result = await withTerminalTty(false, () => runCli([], workspace));
 
     expect(result.code).toBe(0);
-    expectCanonicalRootWelcome(result.logs);
     const normalizedEvents = normalizeOutputEvents(result.outputEvents);
-    const outputOpeningSequence = normalizedEvents.slice(0, 4).map((event) => (
-      event === `[log] ${ROOT_COMMAND_WELCOME_MESSAGE}`
-        ? "[log] <canonical-welcome>"
-        : event
-    ));
+    const outputOpeningSequence = normalizedEvents.slice(0, 3);
     expect(outputOpeningSequence).toMatchInlineSnapshot(`
       [
-        "[log] <canonical-welcome>",
         "[stdout] Usage: rundown [options] [command]",
         "A Markdown-native task runtime for agentic workflows.",
         "Options:",
@@ -11344,7 +11330,6 @@ describe.sequential("CLI integration", () => {
       const result = await withTerminalTty(true, () => runCli(args, workspace));
 
       expect(result.code).toBe(0);
-      expectCanonicalRootWelcome(result.logs);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
 
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
@@ -11369,7 +11354,6 @@ describe.sequential("CLI integration", () => {
       const result = await withTerminalTty(true, () => runCli([], workspace));
 
       expect(result.code).toBe(0);
-      expectCanonicalRootWelcome(result.logs);
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
@@ -11388,7 +11372,6 @@ describe.sequential("CLI integration", () => {
       const result = await withTerminalTty(true, () => runCli([], workspace));
 
       expect(result.code).toBe(1);
-      expectCanonicalRootWelcome(result.logs);
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
@@ -11412,7 +11395,6 @@ describe.sequential("CLI integration", () => {
       ], workspace));
 
       expect(result.code).toBe(0);
-      expectCanonicalRootWelcome(result.logs);
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(runRootTuiMock).toHaveBeenCalledWith(expect.objectContaining({
         argv: ["--config-dir", customConfigDir],
@@ -11433,7 +11415,6 @@ describe.sequential("CLI integration", () => {
       const result = await withTerminalTty(true, () => runCli(["--trace"], workspace));
 
       expect(result.code).toBe(0);
-      expectCanonicalRootWelcome(result.logs);
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(runRootTuiMock).toHaveBeenCalledWith(expect.objectContaining({
         argv: ["--trace"],
@@ -11455,7 +11436,6 @@ describe.sequential("CLI integration", () => {
       const result = await withTerminalTty(true, () => runCli([], workspace));
 
       expect(result.code).toBe(0);
-      expectCanonicalRootWelcome(result.logs);
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
