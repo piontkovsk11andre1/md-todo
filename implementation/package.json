@@ -23,7 +23,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "tui-sketch": "node ./src/presentation/tui/index.js",
+    "tui-sketch": "node ./dist/presentation/tui/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
