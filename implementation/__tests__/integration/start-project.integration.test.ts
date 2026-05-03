@@ -630,6 +630,38 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readFileSync(targetPath, "utf-8")).toBe(preservedTarget);
   });
 
+  it("does not overwrite or remove existing implementation/ content when start is re-run", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "rerun-implementation-project";
+    const projectDir = path.join(workspace, projectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const firstRun = await runCli([
+      "start",
+      "Re-run implementation",
+      "--dir",
+      projectDirName,
+    ], workspace);
+    expect(firstRun.code).toBe(0);
+
+    const implementationKeepPath = path.join(projectDir, "implementation", "keep.ts");
+    const preservedImplementationSource = "export const keep = true;\n";
+    fs.writeFileSync(implementationKeepPath, preservedImplementationSource, "utf-8");
+
+    const secondRun = await runCli([
+      "start",
+      "Re-run implementation",
+      "--dir",
+      projectDirName,
+    ], workspace);
+
+    expect(secondRun.code).toBe(0);
+    expect(fs.readFileSync(implementationKeepPath, "utf-8")).toBe(preservedImplementationSource);
+  });
+
   it("keeps custom design dir while leaving migrations empty in non-empty workspace", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-custom-design";
