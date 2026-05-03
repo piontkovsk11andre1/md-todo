@@ -74,6 +74,13 @@ export interface TranslateTaskOptions {
   verbose?: boolean;
 }
 
+export interface RenderTranslatePromptInput {
+  translateTemplate: string;
+  whatDocument: string;
+  howDocument: string;
+  whatPath: string;
+}
+
 export function createTranslateTask(
   dependencies: TranslateTaskDependencies,
 ): (options: TranslateTaskOptions) => Promise<number> {
@@ -181,17 +188,12 @@ export function createTranslateTask(
       dependencies.templateLoader,
       dependencies.pathOperations,
     );
-    const promptVars: TemplateVars = {
-      task: "Translate document",
-      file: options.what,
-      context: whatDocument,
-      source: whatDocument,
-      taskIndex: 0,
-      taskLine: 1,
-      what: whatDocument,
-      how: howDocument,
-    };
-    const prompt = renderTemplate(templates.translate, promptVars);
+    const prompt = renderTranslatePrompt({
+      translateTemplate: templates.translate,
+      whatDocument,
+      howDocument,
+      whatPath: options.what,
+    });
 
     if (options.printPrompt) {
       emit({ kind: "text", text: prompt });
@@ -433,6 +435,21 @@ export function createTranslateTask(
       }
     }
   };
+}
+
+export function renderTranslatePrompt(input: RenderTranslatePromptInput): string {
+  const promptVars: TemplateVars = {
+    task: "Translate document",
+    file: input.whatPath,
+    context: input.whatDocument,
+    source: input.whatDocument,
+    taskIndex: 0,
+    taskLine: 1,
+    what: input.whatDocument,
+    how: input.howDocument,
+  };
+
+  return renderTemplate(input.translateTemplate, promptVars);
 }
 
 function resolveCliExpansionCwd(

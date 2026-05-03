@@ -6,6 +6,7 @@ import {
   createMigrateTask,
   discoverMigrationThreads,
   loadMigrationThreadStates,
+  materializeMigrationThreadBriefs,
 } from "../../src/application/migrate-task.js";
 import {
   EXIT_CODE_FAILURE,
@@ -809,6 +810,122 @@ describe("migrate-task", () => {
     expect(loadedStates[0]?.migrationsDir).toBe(path.join(migrationsDir, "threads", "ops"));
     expect(loadedStates[0]?.state.currentPosition).toBe(0);
     expect(loadedStates[0]?.state.migrations).toEqual([]);
+  });
+
+  it("materializes translated briefs per thread into run artifacts", async () => {
+    const workspace = makeTempWorkspace();
+    const fileSystem = createNodeFileSystem();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    const runRootDir = path.join(workspace, ".rundown", "runs", "run-test");
+    const revisionName = "rev.1";
+
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n\nFocus on billing rollout.\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "ops.md"), "# Ops\n\nFocus on ops rollout.\n", "utf-8");
+    fs.mkdirSync(runRootDir, { recursive: true });
+
+    const threads = discoverMigrationThreads(fileSystem, workspace);
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ artifactExtra }) => {
+        const threadSlug = String(artifactExtra?.threadSlug ?? "unknown");
+        return {
+          exitCode: 0,
+          stdout: "# translated " + threadSlug + "\n\nthread-specific brief\n",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const revisionDiff = {
+      fromRevision: null,
+      toTarget: {
+        name: revisionName,
+        absolutePath: path.join(workspace, "design", revisionName),
+        metadataPath: path.join(workspace, "design", revisionName + ".meta.json"),
+        metadata: {
+          revision: revisionName,
+          index: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          label: "Revision 1",
+          plannedAt: null,
+          migrations: [],
+        },
+      },
+      hasComparison: true,
+      summary: "1 file changed",
+      changes: [
+        {
+          kind: "modified",
+          relativePath: "Target.md",
+          fromPath: path.join(workspace, "design", "rev.0", "Target.md"),
+          toPath: path.join(workspace, "design", revisionName, "Target.md"),
+        },
+      ],
+      addedCount: 0,
+      modifiedCount: 1,
+      removedCount: 0,
+      sourceReferences: [
+        path.join(workspace, "design", "rev.0", "Target.md"),
+        path.join(workspace, "design", revisionName, "Target.md"),
+      ],
+    };
+
+    const outputEvents: ApplicationOutputEvent[] = [];
+    const briefs = await materializeMigrationThreadBriefs({
+      fileSystem,
+      workerExecutor,
+      output: {
+        emit: (event) => {
+          outputEvents.push(event);
+        },
+      },
+      workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      workspaceRoot: workspace,
+      artifactContext: {
+        runId: "run-test",
+        rootDir: runRootDir,
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      },
+      revisionName,
+      revisionDiff,
+      threads,
+      translateTemplate: "## Source\n\n{{what}}\n\n## Guide\n\n{{how}}\n",
+      showAgentOutput: true,
+    });
+
+    expect(briefs.map((entry) => entry.thread.threadSlug)).toEqual(["billing", "ops"]);
+    expect(briefs.map((entry) => entry.outputPathFromWorkspace)).toEqual([
+      ".rundown/runs/run-test/thread-briefs/rev.1/billing.md",
+      ".rundown/runs/run-test/thread-briefs/rev.1/ops.md",
+    ]);
+    expect(fs.readFileSync(path.join(runRootDir, "thread-briefs", revisionName, "billing.md"), "utf-8")).toContain("translated billing");
+    expect(fs.readFileSync(path.join(runRootDir, "thread-briefs", revisionName, "ops.md"), "utf-8")).toContain("translated ops");
+
+    const workerCalls = (workerExecutor.runWorker as ReturnType<typeof vi.fn>).mock.calls;
+    expect(workerCalls).toHaveLength(2);
+    expect(workerCalls[0]?.[0]).toMatchObject({
+      artifactPhase: "translate",
+      artifactPhaseLabel: "migrate-thread-translate",
+      artifactExtra: expect.objectContaining({
+        workflow: "migrate-thread-translate",
+        revision: revisionName,
+        threadSlug: "billing",
+      }),
+    });
+    expect(workerCalls[1]?.[0]).toMatchObject({
+      artifactPhase: "translate",
+      artifactPhaseLabel: "migrate-thread-translate",
+      artifactExtra: expect.objectContaining({
+        workflow: "migrate-thread-translate",
+        revision: revisionName,
+        threadSlug: "ops",
+      }),
+    });
+    expect(outputEvents).toEqual([]);
   });
 });
 

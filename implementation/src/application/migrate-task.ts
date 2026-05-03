@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   DEFAULT_MIGRATE_TEMPLATE,
+  DEFAULT_TRANSLATE_TEMPLATE,
 } from "../domain/defaults.js";
 import {
   formatMigrationFilename,
@@ -25,6 +26,7 @@ import type { InteractiveInputPort } from "../domain/ports/interactive-input-por
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import { renderTemplate, type TemplateVars } from "../domain/template.js";
+import { renderTranslatePrompt } from "./translate-task.js";
 import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_NO_WORK,
@@ -136,6 +138,12 @@ export interface LoadedMigrationThreadState {
   thread: DiscoveredMigrationThread;
   migrationsDir: string;
   state: ReturnType<typeof readMigrationState>;
+}
+
+export interface MaterializedMigrationThreadBrief {
+  thread: DiscoveredMigrationThread;
+  outputPath: string;
+  outputPathFromWorkspace: string;
 }
 
 export function createMigrateTask(
@@ -364,6 +372,12 @@ async function runMigrateLoop(input: {
     "migrate.md",
     DEFAULT_MIGRATE_TEMPLATE,
   );
+  const translateTemplate = readTemplate(
+    dependencies.templateLoader,
+    projectRoot,
+    "translate.md",
+    DEFAULT_TRANSLATE_TEMPLATE,
+  );
   const discoveredThreads = discoverMigrationThreads(dependencies.fileSystem, projectRoot);
   const loadedThreadStates = loadMigrationThreadStates({
     fileSystem: dependencies.fileSystem,
@@ -419,6 +433,37 @@ async function runMigrateLoop(input: {
       invocationRoot,
       target: targetRevision.name,
     });
+    const materializedThreadBriefs = await materializeMigrationThreadBriefs({
+      fileSystem: dependencies.fileSystem,
+      workerExecutor: dependencies.workerExecutor,
+      output: dependencies.output,
+      workerPattern: slugWorkerPattern,
+      workspaceRoot,
+      artifactContext,
+      revisionName: targetRevision.name,
+      revisionDiff,
+      threads: discoveredThreads,
+      translateTemplate,
+      workerTimeoutMs,
+      showAgentOutput,
+    });
+    if (materializedThreadBriefs.length > 0) {
+      const threadTranslationHistory = Array.isArray(artifactRunExtra.threadTranslations)
+        ? artifactRunExtra.threadTranslations as Array<{
+          revision: string;
+          threadSlug: string;
+          sourcePathFromWorkspace: string;
+          outputPathFromWorkspace: string;
+        }>
+        : [];
+      threadTranslationHistory.push(...materializedThreadBriefs.map((brief) => ({
+        revision: targetRevision.name,
+        threadSlug: brief.thread.threadSlug,
+        sourcePathFromWorkspace: brief.thread.sourcePathFromWorkspace,
+        outputPathFromWorkspace: brief.outputPathFromWorkspace,
+      })));
+      artifactRunExtra.threadTranslations = threadTranslationHistory;
+    }
     const migrationDraftDir = prepareStagedDraftMigrationDir(
       dependencies.fileSystem,
       artifactContext.rootDir,
@@ -1406,6 +1451,87 @@ function readMigrationState(fileSystem: FileSystem, migrationsDir: string) {
 
 function migrationThreadMigrationsDir(migrationsDir: string, threadSlug: string): string {
   return path.join(migrationsDir, "threads", threadSlug);
+}
+
+export async function materializeMigrationThreadBriefs(input: {
+  fileSystem: FileSystem;
+  workerExecutor: WorkerExecutorPort;
+  output: ApplicationOutputPort;
+  workerPattern: ParsedWorkerPattern;
+  workspaceRoot: string;
+  artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  revisionName: string;
+  revisionDiff: DesignRevisionDiffContext;
+  threads: readonly DiscoveredMigrationThread[];
+  translateTemplate: string;
+  workerTimeoutMs?: number;
+  showAgentOutput: boolean;
+}): Promise<MaterializedMigrationThreadBrief[]> {
+  const {
+    fileSystem,
+    workerExecutor,
+    output,
+    workerPattern,
+    workspaceRoot,
+    artifactContext,
+    revisionName,
+    revisionDiff,
+    threads,
+    translateTemplate,
+    workerTimeoutMs,
+    showAgentOutput,
+  } = input;
+  if (threads.length === 0) {
+    return [];
+  }
+
+  const emit = output.emit.bind(output);
+  const diffDocument = formatDesignRevisionUnifiedDiff(fileSystem, revisionDiff);
+  const outputDir = path.join(artifactContext.rootDir, "thread-briefs", revisionName);
+  fileSystem.mkdir(outputDir, { recursive: true });
+
+  const materializedBriefs: MaterializedMigrationThreadBrief[] = [];
+  for (const thread of threads) {
+    const threadInstruction = fileSystem.readText(thread.sourcePath);
+    const prompt = renderTranslatePrompt({
+      translateTemplate,
+      whatDocument: diffDocument,
+      howDocument: threadInstruction,
+      whatPath: path.posix.join("design", revisionName + ".diff.md"),
+    });
+    const runResult = await workerExecutor.runWorker({
+      workerPattern,
+      prompt,
+      mode: "wait",
+      cwd: workspaceRoot,
+      timeoutMs: workerTimeoutMs,
+      artifactContext,
+      artifactPhase: "translate",
+      artifactPhaseLabel: "migrate-thread-translate",
+      artifactExtra: {
+        workflow: "migrate-thread-translate",
+        revision: revisionName,
+        threadSlug: thread.threadSlug,
+        threadSourcePath: thread.sourcePathFromWorkspace,
+      },
+    });
+    if ((runResult.exitCode ?? 1) !== 0) {
+      throw new Error("Worker failed to translate migration thread brief for " + thread.threadSlug + ".");
+    }
+    if (showAgentOutput && runResult.stderr.length > 0) {
+      emit({ kind: "stderr", text: runResult.stderr });
+    }
+
+    const outputPath = path.join(outputDir, thread.threadSlug + ".md");
+    fileSystem.writeText(outputPath, runResult.stdout);
+    materializedBriefs.push({
+      thread,
+      outputPath,
+      outputPathFromWorkspace: toWorkspaceRelativeMigrationPath(workspaceRoot, outputPath),
+    });
+  }
+
+  return materializedBriefs;
 }
 
 export function loadMigrationThreadStates(input: {
