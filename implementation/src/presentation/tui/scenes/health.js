@@ -1,6 +1,9 @@
 import pc from "picocolors";
+import fs from "node:fs";
+import path from "node:path";
 import { createConfigBridge } from "../bridges/config-bridge.js";
 import { createHealthBridge } from "../bridges/health-bridge.js";
+import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.js";
 import {
   createPagerState,
   handlePagerInput,
@@ -31,6 +34,44 @@ function buildBridgeBundle(currentWorkingDirectory) {
     configDirPath: configBridge.configDirPath,
   });
   return { configBridge, healthBridge };
+}
+
+function ensureParentDirectory(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
+async function resolveLocalConfigPath(sceneState, currentWorkingDirectory, configBridge) {
+  if (typeof sceneState.configPath === "string"
+    && sceneState.configPath.length > 0
+    && sceneState.configPath !== ".rundown/config.json") {
+    return sceneState.configPath;
+  }
+  const bridge = configBridge ?? buildBridgeBundle(currentWorkingDirectory).configBridge;
+  return bridge.resolveConfigPath("local");
+}
+
+function editConfigFile(filePath, { currentWorkingDirectory, suspendTui, resumeTui, launchEditor } = {}) {
+  ensureParentDirectory(filePath);
+  suspendTui?.();
+  let launchResult;
+  try {
+    launchResult = launchEditor(filePath, { cwd: currentWorkingDirectory });
+  } finally {
+    resumeTui?.();
+  }
+  return launchResult;
+}
+
+function safeEditConfigFile(filePath, options) {
+  try {
+    return editConfigFile(filePath, options);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "launch-threw",
+      message: `Failed to launch editor for ${filePath}: ${toErrorMessage(error)}`,
+    };
+  }
 }
 
 function toErrorMessage(error, fallback = "Unexpected error.") {
@@ -512,6 +553,9 @@ export async function runHealthSceneAction({
   state,
   currentWorkingDirectory = process.cwd(),
   bridges,
+  suspendTui,
+  resumeTui,
+  launchEditor = defaultLaunchEditor,
 } = {}) {
   const sceneState = state ?? createHealthSceneState();
   if (!action || typeof action.type !== "string") {
@@ -584,9 +628,41 @@ export async function runHealthSceneAction({
   }
 
   if (action.type === "edit-config") {
-    // Full edit-then-reload flow is wired in a follow-up task; for now defer
-    // by surfacing a banner so the keybinding is observable end-to-end.
-    return { ...sceneState, banner: "Edit healthPolicy: not yet wired (follow-up task)." };
+    const configBridge = bridges?.configBridge
+      ?? buildBridgeBundle(currentWorkingDirectory).configBridge;
+    let localPath;
+    try {
+      localPath = await resolveLocalConfigPath(sceneState, currentWorkingDirectory, configBridge);
+    } catch (error) {
+      return {
+        ...sceneState,
+        banner: `Unable to resolve config path: ${toErrorMessage(error)}`,
+      };
+    }
+
+    if (typeof localPath !== "string" || localPath.length === 0) {
+      return { ...sceneState, banner: "Config path is unresolved." };
+    }
+
+    const launchResult = safeEditConfigFile(localPath, {
+      currentWorkingDirectory,
+      suspendTui,
+      resumeTui,
+      launchEditor,
+    });
+    if (!launchResult || launchResult.ok !== true) {
+      return {
+        ...sceneState,
+        configPath: localPath,
+        banner: launchResult?.message || "Failed to open editor.",
+      };
+    }
+
+    return reloadHealthSceneState({
+      state: { ...sceneState, configPath: localPath },
+      currentWorkingDirectory,
+      keepBanner: false,
+    });
   }
 
   return sceneState;
