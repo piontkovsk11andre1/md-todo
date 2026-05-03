@@ -251,7 +251,11 @@ export function createMigrateTask(
         : undefined;
       dependencies.artifactStore.finalize(artifactContext, {
         status: exitCode === EXIT_CODE_SUCCESS ? "completed" : "failed",
-        preserve: Boolean(options.keepArtifacts),
+        preserve: shouldPreserveArtifactsForMigrateRun({
+          keepArtifacts: Boolean(options.keepArtifacts),
+          exitCode,
+          artifactRunExtra,
+        }),
         extra: finalizeExtra,
       });
       return exitCode;
@@ -262,7 +266,11 @@ export function createMigrateTask(
       };
       dependencies.artifactStore.finalize(artifactContext, {
         status: "failed",
-        preserve: Boolean(options.keepArtifacts),
+        preserve: shouldPreserveArtifactsForMigrateRun({
+          keepArtifacts: Boolean(options.keepArtifacts),
+          exitCode: EXIT_CODE_FAILURE,
+          artifactRunExtra: finalizeExtra,
+        }),
         extra: finalizeExtra,
       });
       emit({ kind: "error", message: error instanceof Error ? error.message : String(error) });
@@ -274,6 +282,22 @@ export function createMigrateTask(
 function isDirectory(fileSystem: FileSystem, absolutePath: string): boolean {
   const stat = fileSystem.stat(absolutePath);
   return stat?.isDirectory === true;
+}
+
+function shouldPreserveArtifactsForMigrateRun(input: {
+  keepArtifacts: boolean;
+  exitCode: number;
+  artifactRunExtra: Record<string, unknown>;
+}): boolean {
+  if (input.keepArtifacts) {
+    return true;
+  }
+
+  if (input.exitCode === EXIT_CODE_SUCCESS) {
+    return false;
+  }
+
+  return input.artifactRunExtra.stagedDraftMigrationDirPrepared === true;
 }
 
 async function runMigrateLoop(input: {
@@ -371,6 +395,9 @@ async function runMigrateLoop(input: {
       artifactContext.rootDir,
       targetRevision.name,
     );
+    artifactRunExtra.stagedDraftMigrationDirPrepared = true;
+    artifactRunExtra.stagedDraftMigrationDir = migrationDraftDir;
+    artifactRunExtra.stagedDraftRevision = targetRevision.name;
 
     const vars = buildTemplateVars({
       fileSystem: dependencies.fileSystem,
