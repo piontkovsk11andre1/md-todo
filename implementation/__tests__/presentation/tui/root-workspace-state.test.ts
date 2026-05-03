@@ -52,6 +52,7 @@ describe("detectRootWorkspaceState", () => {
     tempDirs.push(rootDir);
 
     fs.mkdirSync(path.join(rootDir, "design"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "implementation"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "specs"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "migrations"), { recursive: true });
     writeFile(rootDir, ".rundown/config.json", JSON.stringify({ workspace: {} }, null, 2));
@@ -67,12 +68,14 @@ describe("detectRootWorkspaceState", () => {
     tempDirs.push(rootDir);
 
     fs.mkdirSync(path.join(rootDir, "docs"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "source"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "acceptance"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "tasks"), { recursive: true });
     writeFile(rootDir, ".rundown/config.json", JSON.stringify({
       workspace: {
         directories: {
           design: "docs",
+          implementation: "source",
           specs: "acceptance",
           migrations: "tasks",
         },
@@ -90,6 +93,7 @@ describe("detectRootWorkspaceState", () => {
     tempDirs.push(rootDir);
 
     fs.mkdirSync(path.join(rootDir, "design"), { recursive: true });
+    fs.mkdirSync(path.join(rootDir, "implementation"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "specs"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "migrations"), { recursive: true });
     writeFile(rootDir, ".rundown/config.json", JSON.stringify({

@@ -9,6 +9,7 @@ export type RootWorkspaceState = {
 
 const DEFAULT_WORKSPACE_DIRECTORIES = Object.freeze({
   design: "design",
+  implementation: "implementation",
   specs: "specs",
   migrations: "migrations",
 });
@@ -63,6 +64,7 @@ function normalizeWorkspaceDirectoryName(value: unknown, fallback: string): stri
 
 function resolveWorkspaceDirectories(configDocument: Record<string, unknown> | undefined): {
   design: string;
+  implementation: string;
   specs: string;
   migrations: string;
 } {
@@ -77,6 +79,10 @@ function resolveWorkspaceDirectories(configDocument: Record<string, unknown> | u
 
   return {
     design: normalizeWorkspaceDirectoryName(directoriesObject?.design, DEFAULT_WORKSPACE_DIRECTORIES.design),
+    implementation: normalizeWorkspaceDirectoryName(
+      directoriesObject?.implementation,
+      DEFAULT_WORKSPACE_DIRECTORIES.implementation,
+    ),
     specs: normalizeWorkspaceDirectoryName(directoriesObject?.specs, DEFAULT_WORKSPACE_DIRECTORIES.specs),
     migrations: normalizeWorkspaceDirectoryName(directoriesObject?.migrations, DEFAULT_WORKSPACE_DIRECTORIES.migrations),
   };
@@ -98,6 +104,7 @@ function hasInitializedWorkspaceStructure(cwd: string, configDocument: Record<st
 
   const directories = resolveWorkspaceDirectories(configDocument);
   return isDirectory(path.join(cwd, directories.design))
+    && isDirectory(path.join(cwd, directories.implementation))
     && isDirectory(path.join(cwd, directories.specs))
     && isDirectory(path.join(cwd, directories.migrations));
 }
