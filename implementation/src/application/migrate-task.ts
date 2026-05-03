@@ -3,7 +3,6 @@ import {
   DEFAULT_MIGRATE_TEMPLATE,
 } from "../domain/defaults.js";
 import {
-  formatMigrationFilename,
   parseMigrationDirectory,
   parseMigrationFilename,
 } from "../domain/migration-parser.js";
@@ -359,6 +358,14 @@ async function runMigrateLoop(input: {
       invocationRoot,
       target: targetRevision.name,
     });
+    const migrationDraftDir = path.join(
+      artifactContext.rootDir,
+      "drafted-migrations",
+      targetRevision.name,
+    );
+    dependencies.fileSystem.rm(migrationDraftDir, { recursive: true, force: true });
+    dependencies.fileSystem.mkdir(migrationDraftDir, { recursive: true });
+
     const vars = buildTemplateVars({
       fileSystem: dependencies.fileSystem,
       state: latestState,
@@ -369,6 +376,7 @@ async function runMigrateLoop(input: {
       workspacePaths,
       designRevisionTarget: targetRevision.name,
       revisionDiff,
+      migrationDraftDir,
       newMigrations: "",
     });
     const prompt = renderTemplate(planningTemplate, vars);
@@ -399,28 +407,13 @@ async function runMigrateLoop(input: {
       emit({ kind: "stderr", text: result.stderr });
     }
 
-    const proposedNames = parseProposedMigrationNames(result.stdout);
-    let plannerReturnedDone = false;
-    const plannedNames: string[] = [];
-    if (proposedNames === null) {
-      plannerReturnedDone = true;
-      emit({
-        kind: "info",
-        message: "Planner returned DONE for " + targetRevision.name + ": no new migrations needed.",
-      });
-    } else {
-      const knownNames = new Set<string>(latestState.migrations.map((migration) => migration.name));
-      for (const proposedName of proposedNames) {
-        if (knownNames.has(proposedName)) {
-          continue;
-        }
-        plannedNames.push(proposedName);
-        knownNames.add(proposedName);
-      }
-    }
-
-    if (plannedNames.length === 0) {
-      if (plannerReturnedDone) {
+    const stagedDrafts = readStagedDraftMigrations(dependencies.fileSystem, migrationDraftDir);
+    if (stagedDrafts.length === 0) {
+      if (revisionDiff.changes.length === 0) {
+        emit({
+          kind: "info",
+          message: "Planner drafted no migrations for " + targetRevision.name + ": no diff changes detected.",
+        });
         markRevisionPlanned(
           dependencies.fileSystem,
           workspaceRoot,
@@ -430,31 +423,40 @@ async function runMigrateLoop(input: {
         continue;
       }
 
-      emit({
-        kind: "warn",
-        message:
-          "Planner produced no parseable migration names (expected lowercase kebab-case slugs). Re-run with --show-agent-output --keep-artifacts to inspect raw output.",
-      });
-      return EXIT_CODE_SUCCESS;
+      throw new Error(
+        "Planner did not draft migration files in "
+        + migrationDraftDir
+        + ". Re-run with --show-agent-output --keep-artifacts to inspect worker output.",
+      );
+    }
+
+    const stagedValidationError = validateStagedDraftMigrations(stagedDrafts, latestState.currentPosition);
+    if (stagedValidationError) {
+      throw new Error(stagedValidationError);
     }
 
     emit({
       kind: "info",
-      message: "Creating "
-        + String(plannedNames.length)
-        + " migration file(s): "
-        + plannedNames.join(", "),
+      message: "Promoting "
+        + String(stagedDrafts.length)
+        + " staged migration file(s): "
+        + stagedDrafts.map((draft) => draft.name).join(", "),
     });
 
     const stateBeforeCreate = readMigrationState(dependencies.fileSystem, migrationsDir);
     const createdMigrationFileNames: string[] = [];
-    for (const [index, migrationName] of plannedNames.entries()) {
-      const number = stateBeforeCreate.currentPosition + index + 1;
-      const migrationFileName = formatMigrationFilename(number, migrationName);
-      const migrationPath = path.join(migrationsDir, migrationFileName);
-      const migrationContent = createMigrationDocument(number, migrationName);
+    const stagedValidationErrorBeforePromotion = validateStagedDraftMigrations(
+      stagedDrafts,
+      stateBeforeCreate.currentPosition,
+    );
+    if (stagedValidationErrorBeforePromotion) {
+      throw new Error(stagedValidationErrorBeforePromotion);
+    }
+    for (const draft of stagedDrafts) {
+      const migrationPath = path.join(migrationsDir, draft.fileName);
+      const migrationContent = dependencies.fileSystem.readText(draft.filePath);
       dependencies.fileSystem.writeText(migrationPath, migrationContent);
-      createdMigrationFileNames.push(migrationFileName);
+      createdMigrationFileNames.push(draft.fileName);
 
       await runExploreForMigration({
         runExplore: dependencies.runExplore,
@@ -491,37 +493,66 @@ async function runMigrateLoop(input: {
 }
 
 
-function parseProposedMigrationNames(stdout: string): string[] | null {
-  const trimmed = stdout.trim();
-  if (trimmed.toUpperCase() === "DONE") {
+interface StagedDraftMigration {
+  fileName: string;
+  filePath: string;
+  number: number;
+  name: string;
+}
+
+function readStagedDraftMigrations(
+  fileSystem: FileSystem,
+  draftDir: string,
+): StagedDraftMigration[] {
+  if (!fileSystem.exists(draftDir)) {
+    return [];
+  }
+
+  const staged: StagedDraftMigration[] = [];
+  for (const entry of fileSystem.readdir(draftDir)) {
+    if (!entry.isFile) {
+      continue;
+    }
+    const fileName = entry.name;
+    const parsed = parseMigrationFilename(fileName);
+    if (!parsed) {
+      continue;
+    }
+    staged.push({
+      fileName,
+      filePath: path.join(draftDir, fileName),
+      number: parsed.number,
+      name: parsed.name,
+    });
+  }
+
+  staged.sort((left, right) => left.number - right.number || left.fileName.localeCompare(right.fileName));
+  return staged;
+}
+
+function validateStagedDraftMigrations(
+  drafts: readonly StagedDraftMigration[],
+  currentPosition: number,
+): string | null {
+  if (drafts.length === 0) {
     return null;
   }
 
-  const names: string[] = [];
-  const seen = new Set<string>();
-  for (const line of stdout.split(/\r?\n/)) {
-    const match = line.match(/^\s*(?:[-*+]\s+|\d+[.)]\s+)?`?([a-z0-9]+(?:-[a-z0-9]+)*)`?\s*$/);
-    if (!match) {
-      continue;
-    }
-    const proposedName = match[1] ?? "";
-    if (proposedName.length === 0 || seen.has(proposedName)) {
-      continue;
-    }
-    seen.add(proposedName);
-    names.push(proposedName);
+  if (drafts[0]!.number <= currentPosition) {
+    return "Drafted migration numbers must be greater than the current migration number ("
+      + String(currentPosition)
+      + ").";
   }
 
-  return names;
-}
+  for (let index = 1; index < drafts.length; index += 1) {
+    const previous = drafts[index - 1]!;
+    const current = drafts[index]!;
+    if (current.number !== previous.number + 1) {
+      return "Drafted migration numbers must form a continuous forward range without gaps.";
+    }
+  }
 
-function createMigrationDocument(number: number, migrationName: string): string {
-  return [
-    `# ${String(number)}. ${toTitleCase(migrationName)}`,
-    "",
-    "- [ ] Implement this migration",
-    "",
-  ].join("\n");
+  return null;
 }
 
 
@@ -595,6 +626,7 @@ function buildTemplateVars(input: {
   workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
   designRevisionTarget?: string | number;
   revisionDiff?: DesignRevisionDiffContext;
+  migrationDraftDir?: string;
   newMigrations?: string;
 }): TemplateVars {
   const {
@@ -607,6 +639,7 @@ function buildTemplateVars(input: {
     workspacePaths,
     designRevisionTarget,
     revisionDiff: providedRevisionDiff,
+    migrationDraftDir,
     newMigrations,
   } = input;
   const latestMigration = state.migrations[state.migrations.length - 1] ?? null;
@@ -651,6 +684,7 @@ function buildTemplateVars(input: {
     design,
     latestMigration: latestMigration ? fileSystem.readText(latestMigration.filePath) : "",
     newMigrations: newMigrations ?? "",
+    migrationDraftDir: migrationDraftDir ?? "",
     migrationHistory: historyLines.join("\n"),
     designContextSourceReferences: designContextSourceRefs,
     designContextSourceReferencesJson: JSON.stringify(designContextSources.sourceReferences),
@@ -691,18 +725,6 @@ function buildTemplateVars(input: {
     position: state.currentPosition,
   };
 }
-
-function toTitleCase(value: string): string {
-  return value
-    .trim()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .split(" ")
-    .filter((part) => part.length > 0)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
 
 function readMigrationState(fileSystem: FileSystem, migrationsDir: string) {
   const files = fileSystem.readdir(migrationsDir)
