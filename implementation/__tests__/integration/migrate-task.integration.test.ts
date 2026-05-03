@@ -98,6 +98,33 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "second-loop-change")))).toBe(true);
   });
 
+  it("does not modify real migrations when staged drafts fail verification", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldLoopMigrateProject(workspace);
+    fs.writeFileSync(
+      path.join(workspace, "docs", "rev.1", "BillingFlow.md"),
+      "# Billing\n\nNew billing workflow requirements.\n",
+      "utf-8",
+    );
+
+    const migrationsDir = path.join(workspace, "migrations");
+    const migrationsBefore = readDirectoryFileBytes(migrationsDir);
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildFailingDraftCoverageWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    expect(readDirectoryFileBytes(migrationsDir)).toEqual(migrationsBefore);
+    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "api-migration")))).toBe(false);
+  });
+
   it("exits cleanly when planner outputs DONE for an unplanned no-op released revision pair", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
@@ -1350,6 +1377,46 @@ function buildMigrateExecutionWorkerScript(): string {
     "  process.exit(0);",
     "}",
     "console.log('1. from-migrate-execution-worker');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildFailingDraftCoverageWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+    "  const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "  const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "  const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "  const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const migrationNumber=currentPosition+1;",
+    "  const fileName=`${migrationNumber}. Api Migration.md`;",
+    "  const body=[",
+    "    `# ${migrationNumber}. Api Migration`,",
+    "    '',",
+    "    '- [ ] Update API handlers and request contracts for migrated endpoints.',",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,fileName),body+'\\n','utf-8');",
+    "  console.log('drafted migration files');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Repair staged migration drafts')){",
+    "  console.log('repaired staged draft');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('grounded in the prediction tree')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
     "process.exit(0);",
   ].join("\n");
 }
