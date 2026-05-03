@@ -805,6 +805,46 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(false);
     expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
   });
+
+  it("does not create local Target.md on rerun after external design was configured", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "external-config-rerun";
+    const projectDir = path.join(workspace, projectDirName);
+    const externalDesignDir = path.join(workspace, "external-design-rerun");
+
+    fs.mkdirSync(externalDesignDir, { recursive: true });
+    fs.writeFileSync(path.join(externalDesignDir, "Notes.md"), "# Existing notes\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const initialResult = await runCli([
+      "start",
+      "Seed external design config",
+      "--dir",
+      projectDirName,
+      "--from-design",
+      externalDesignDir,
+    ], workspace);
+    expect(initialResult.code).toBe(0);
+
+    const rerunResult = await runCli([
+      "start",
+      "Reuse external design config",
+      "--dir",
+      projectDirName,
+    ], workspace);
+    expect(rerunResult.code).toBe(0);
+
+    expect(fs.existsSync(path.join(projectDir, "design", "current", "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as { workspace?: { design?: { currentPath?: string } } };
+    expect(config.workspace?.design?.currentPath).toBe(path.normalize(externalDesignDir));
+  });
 });
 
 function makeTempWorkspace(): string {
