@@ -6922,6 +6922,10 @@ describe.sequential("CLI integration", () => {
       [
         "# Roadmap",
         "",
+        "```cli",
+        cliBlockCommand,
+        "```",
+        "",
         "- [ ] Confirm cached CLI blocks",
       ].join("\n"),
       "utf-8",
