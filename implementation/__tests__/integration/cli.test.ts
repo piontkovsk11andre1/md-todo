@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ArtifactStoreStatus } from "../../src/domain/ports/index.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createLockfileFileLock } from "../../src/infrastructure/file-lock.js";
-import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 const tempDirs: string[] = [];
 
@@ -11202,80 +11201,20 @@ describe.sequential("CLI integration", () => {
     });
   });
 
-  it("root --agents prints canonical AGENTS template and exits successfully", async () => {
+  it("root --agents is rejected as an unsupported option", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await withTerminalTty(true, () => runCli(["--agents"], workspace));
 
-    expect(result.code).toBe(0);
-    expect(result.logs).toEqual([]);
-    expect(result.errors).toEqual([]);
-    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
-  });
-
-  it("root --agents takes precedence over --help output", async () => {
-    const workspace = makeTempWorkspace();
-
-    const result = await withTerminalTty(true, () => runCli(["--help", "--agents"], workspace));
-
-    expect(result.code).toBe(0);
-    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
-  });
-
-  it("root --agents remains authoritative when --continue is provided", async () => {
-    const workspace = makeTempWorkspace();
-
-    const result = await withTerminalTty(false, () => runCli(["--continue", "--agents"], workspace));
-
-    expect(result.code).toBe(0);
-    expect(result.logs).toEqual([]);
-    expect(result.errors).toEqual([]);
-    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
-    expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
-  });
-
-  it("keeps rd and rundown --agents output and exit code identical in TTY and non-TTY without live help", async () => {
-    const workspace = makeTempWorkspace();
-    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, ".rundown", "config.json"), JSON.stringify({
-      workers: {
-        tui: ["node", "-e", "process.exit(0)"],
-      },
-    }, null, 2), "utf-8");
-
-    const spawnMock = vi.fn().mockImplementation(() => {
-      const child = new EventEmitter() as EventEmitter & { unref: () => void };
-      child.unref = vi.fn();
-      process.nextTick(() => {
-        child.emit("close", 0);
-      });
-      return child;
-    });
-
-    vi.doMock("cross-spawn", () => ({
-      default: spawnMock,
-    }));
-
-    const rundownTty = await withTerminalTty(true, () => runCliFromEntrypoint("/repo/node_modules/.bin/rundown", ["--agents"], workspace));
-    const rdTty = await withTerminalTty(true, () => runCliFromEntrypoint("/repo/node_modules/.bin/rd", ["--agents"], workspace));
-    const rundownNoTty = await withTerminalTty(false, () => runCliFromEntrypoint("/repo/node_modules/.bin/rundown", ["--agents"], workspace));
-    const rdNoTty = await withTerminalTty(false, () => runCliFromEntrypoint("/repo/node_modules/.bin/rd", ["--agents"], workspace));
-
-    vi.doUnmock("cross-spawn");
-
-    for (const result of [rundownTty, rdTty, rundownNoTty, rdNoTty]) {
-      expect(result.code).toBe(0);
-      expect(result.logs).toEqual([]);
-      expect(result.errors).toEqual([]);
-      expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
-    }
-
-    expect(rdTty.stdoutWrites.join("")).toBe(rundownTty.stdoutWrites.join(""));
-    expect(rdNoTty.stdoutWrites.join("")).toBe(rundownNoTty.stdoutWrites.join(""));
-    expect(rdTty.code).toBe(rundownTty.code);
-    expect(rdNoTty.code).toBe(rundownNoTty.code);
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--agents")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
   });
 
   it("rejects --agents when used with subcommands", async () => {
@@ -11284,18 +11223,14 @@ describe.sequential("CLI integration", () => {
     const result = await withTerminalTty(true, () => runCli(["run", "roadmap.md", "--agents"], workspace));
 
     expect(result.code).toBe(1);
-    expect(result.errors.some((line) => line.includes("Unsupported option for `run`: --agents"))).toBe(true);
-  });
-
-  it("rundown agent --agents prints canonical AGENTS template and exits successfully", async () => {
-    const workspace = makeTempWorkspace();
-
-    const result = await withTerminalTty(false, () => runCli(["agent", "--agents"], workspace));
-
-    expect(result.code).toBe(0);
-    expect(result.logs).toEqual([]);
-    expect(result.errors).toEqual([]);
-    expect(result.stdoutWrites.join("")).toBe(DEFAULT_AGENTS_TEMPLATE);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("--agents")).toBe(true);
+    expect(combinedOutput.includes("unknown option")).toBe(true);
   });
 
   it("accepts root --continue shorthand flags for bare invocation", async () => {

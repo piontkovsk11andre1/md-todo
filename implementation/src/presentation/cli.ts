@@ -29,7 +29,6 @@ import {
   terminate,
 } from "./cli-argv.js";
 import { normalizeExitCode } from "../domain/exit-codes.js";
-import { getAgentsTemplate } from "../domain/agents-template.js";
 import {
   createArtifactsCommandAction,
   createAddCommandAction,
@@ -175,7 +174,6 @@ program
   .command("agent")
   .description("Open the interactive rundown agent.")
   .option("-c, --continue", "Resume the previous interactive root help/agent session")
-  .option("--agents", "Print canonical AGENTS.md guidance and exit")
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
   .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
   .action(withCliAction(createHelpCommandAction({
@@ -1165,7 +1163,6 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   runtimeState.workerFromSeparator = workerCommandArgs;
 
   try {
-    validateRootAgentsOptionUsage(rundownArgs);
     // Keep research as a strict single-pass workflow for this iteration.
     validateUnsupportedResearchScanCount(rundownArgs);
     validateUnsupportedAddMode(rundownArgs);
@@ -1177,12 +1174,6 @@ export async function parseCliArgs(argv: string[]): Promise<void> {
   } catch (error) {
     emitCliFatalError(error, runtimeState.invocationLogState, runtimeState.app?.emitOutput);
     terminate(1);
-    return;
-  }
-
-  if (resolveInvocationCommand(rundownArgs) === "rundown" && hasRootAgentsOption(rundownArgs)) {
-    process.stdout.write(getAgentsTemplate());
-    terminate(0);
     return;
   }
 
@@ -1562,37 +1553,6 @@ function hasQuietOption(argv: string[]): boolean {
 }
 
 /**
- * Determines whether root-level AGENTS output mode was requested.
- */
-function hasRootAgentsOption(argv: string[]): boolean {
-  for (const token of argv) {
-    if (token === "--") {
-      break;
-    }
-
-    if (token === "--agents" || token.startsWith("--agents=")) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Rejects --agents usage when combined with subcommands.
- */
-function validateRootAgentsOptionUsage(argv: string[]): void {
-  if (!hasRootAgentsOption(argv)) {
-    return;
-  }
-
-  const command = resolveInvocationCommand(argv);
-  if (command !== "rundown" && command !== "agent") {
-    throw new Error(`Unsupported option for \`${command}\`: --agents. Use \`rundown --agents\` or \`rundown agent --agents\`.`);
-  }
-}
-
-/**
  * Determines whether app initialization must happen before commander parsing.
  *
  * The root invocation path may require immediate app access prior to action execution.
@@ -1603,7 +1563,7 @@ function shouldInitializeAppBeforeParse(argv: string[]): boolean {
   }
 
   const command = resolveInvocationCommand(argv);
-  return command === "rundown" && !hasRootAgentsOption(argv);
+  return command === "rundown";
 }
 
 // Auto-parse process arguments unless explicitly disabled for embedding or tests.

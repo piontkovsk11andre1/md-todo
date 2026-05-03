@@ -249,7 +249,7 @@ export function createHelpCommandAction({
       return EXIT_CODE_SUCCESS;
     }
 
-    if (hasCliFlag(invocationArgv, "--agents")) {
+    if (resolveInvocationCommand(invocationArgv) === "agent" && hasCliFlag(invocationArgv, "--agents")) {
       process.stdout.write(getAgentsTemplate());
       return EXIT_CODE_SUCCESS;
     }
@@ -294,7 +294,7 @@ export function createHelpCommandAction({
  * Creates the root no-args action handler that launches the TUI scaffold.
  *
  * The returned action keeps static help behavior for non-root/non-interactive
- * invocations while preserving `--agents` compatibility.
+ * invocations.
  */
 export function createRootTuiAction({
   getApp,
@@ -308,11 +308,6 @@ export function createRootTuiAction({
     const invocationArgv = resolveInvocationArgv(getInvocationArgv);
     if (resolveInvocationCommand(invocationArgv) !== "rundown") {
       outputHelp();
-      return EXIT_CODE_SUCCESS;
-    }
-
-    if (hasCliFlag(invocationArgv, "--agents")) {
-      process.stdout.write(getAgentsTemplate());
       return EXIT_CODE_SUCCESS;
     }
 

@@ -38,7 +38,6 @@ import {
 import type { CliApp } from "../../src/presentation/cli-app-init.js";
 import * as sleepModule from "../../src/infrastructure/cancellable-sleep.js";
 import * as tuiModule from "../../src/presentation/tui/index.ts";
-import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 type RunTaskRequest = Record<string, unknown>;
 type RunTaskFn = (request: RunTaskRequest) => Promise<number>;
@@ -380,92 +379,6 @@ describe("createLoopCommandAction", () => {
 });
 
 describe("createHelpCommandAction", () => {
-  it("prints AGENTS template and skips help worker when --agents is provided", async () => {
-    const helpTask = vi.fn(async () => 0);
-    const app = { helpTask } as unknown as CliApp;
-    const outputHelp = vi.fn();
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
-      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
-    }) as typeof process.stdout.write);
-
-    try {
-      const action = createHelpCommandAction({
-        getApp: () => app,
-        getWorkerFromSeparator: () => undefined,
-        outputHelp,
-        cliVersion: "1.2.3",
-        isInteractiveTerminal: () => true,
-        getInvocationArgv: () => ["--agents"],
-      });
-
-      const exitCode = await action();
-
-      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
-      expect(helpTask).not.toHaveBeenCalled();
-      expect(outputHelp).not.toHaveBeenCalled();
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  it("keeps --agents authoritative when continuation flags are present", async () => {
-    const helpTask = vi.fn(async () => 0);
-    const app = { helpTask } as unknown as CliApp;
-    const outputHelp = vi.fn();
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
-      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
-    }) as typeof process.stdout.write);
-
-    try {
-      const action = createHelpCommandAction({
-        getApp: () => app,
-        getWorkerFromSeparator: () => ["opencode", "run"],
-        outputHelp,
-        cliVersion: "1.2.3",
-        isInteractiveTerminal: () => true,
-        getInvocationArgv: () => ["--continue", "--agents", "--", "opencode", "run"],
-      });
-
-      const exitCode = await action();
-
-      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
-      expect(helpTask).not.toHaveBeenCalled();
-      expect(outputHelp).not.toHaveBeenCalled();
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  it("prints AGENTS template and skips help worker for rundown agent --agents", async () => {
-    const helpTask = vi.fn(async () => 0);
-    const app = { helpTask } as unknown as CliApp;
-    const outputHelp = vi.fn();
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
-      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
-    }) as typeof process.stdout.write);
-
-    try {
-      const action = createHelpCommandAction({
-        getApp: () => app,
-        getWorkerFromSeparator: () => ["node", "-e", "process.exit(0)"],
-        outputHelp,
-        cliVersion: "1.2.3",
-        isInteractiveTerminal: () => true,
-        getInvocationArgv: () => ["agent", "--agents", "--", "node", "-e", "process.exit(0)"],
-      });
-
-      const exitCode = await action();
-
-      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
-      expect(helpTask).not.toHaveBeenCalled();
-      expect(outputHelp).not.toHaveBeenCalled();
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
 
   it("forwards --trace to helpTask on root interactive invocation", async () => {
     const helpTask = vi.fn(async () => 0);
@@ -783,35 +696,6 @@ describe("createHelpCommandAction", () => {
 });
 
 describe("createRootTuiAction", () => {
-  it("prints AGENTS template and skips TUI when --agents is provided", async () => {
-    const app = {} as CliApp;
-    const outputHelp = vi.fn();
-    const runRootTuiSpy = vi.spyOn(tuiModule, "runRootTui").mockResolvedValue(0);
-    const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
-      return typeof chunk === "string" && chunk === DEFAULT_AGENTS_TEMPLATE;
-    }) as typeof process.stdout.write);
-
-    try {
-      const action = createRootTuiAction({
-        getApp: () => app,
-        getWorkerFromSeparator: () => undefined,
-        outputHelp,
-        cliVersion: "1.2.3",
-        isInteractiveTerminal: () => true,
-        getInvocationArgv: () => ["--agents"],
-      });
-
-      const exitCode = await action();
-
-      expect(exitCode).toBe(EXIT_CODE_SUCCESS);
-      expect(stdoutSpy).toHaveBeenCalledWith(DEFAULT_AGENTS_TEMPLATE);
-      expect(runRootTuiSpy).not.toHaveBeenCalled();
-      expect(outputHelp).not.toHaveBeenCalled();
-    } finally {
-      stdoutSpy.mockRestore();
-      runRootTuiSpy.mockRestore();
-    }
-  });
 
   it("falls back to static help for non-root command invocation", async () => {
     const app = {} as CliApp;
