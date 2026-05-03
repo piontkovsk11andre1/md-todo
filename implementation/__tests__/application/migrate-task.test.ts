@@ -46,9 +46,24 @@ describe("migrate-task", () => {
     const workerExecutor: WorkerExecutorPort = {
       runWorker: vi.fn(async ({ prompt }) => {
         if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "first-created-migration")),
+            "# 2. First Created Migration\n\n- [ ] Draft task one\n",
+            "utf-8",
+          );
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 2, "second-created-migration")),
+            "# 3. Second Created Migration\n\n- [ ] Draft task two\n",
+            "utf-8",
+          );
           return {
             exitCode: 0,
-            stdout: ["first-created-migration", "second-created-migration"].join("\n"),
+            stdout: "drafted migration files",
             stderr: "",
           };
         }
@@ -135,6 +150,9 @@ describe("migrate-task", () => {
         path.join(workspace, "migrations", formatMigrationFilename(3, "second-created-migration")),
         workspace,
       );
+      expect(
+        fs.existsSync(path.join(workspace, ".rundown", "runs", "run-test", "drafted-migrations", "rev.1")),
+      ).toBe(true);
 
       const warningMessages = events
         .filter((event) => event.kind === "warn")

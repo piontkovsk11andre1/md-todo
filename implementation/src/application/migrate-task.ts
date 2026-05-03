@@ -358,13 +358,11 @@ async function runMigrateLoop(input: {
       invocationRoot,
       target: targetRevision.name,
     });
-    const migrationDraftDir = path.join(
+    const migrationDraftDir = prepareStagedDraftMigrationDir(
+      dependencies.fileSystem,
       artifactContext.rootDir,
-      "drafted-migrations",
       targetRevision.name,
     );
-    dependencies.fileSystem.rm(migrationDraftDir, { recursive: true, force: true });
-    dependencies.fileSystem.mkdir(migrationDraftDir, { recursive: true });
 
     const vars = buildTemplateVars({
       fileSystem: dependencies.fileSystem,
@@ -407,7 +405,11 @@ async function runMigrateLoop(input: {
       emit({ kind: "stderr", text: result.stderr });
     }
 
-    const stagedDrafts = readStagedDraftMigrations(dependencies.fileSystem, migrationDraftDir);
+    const stagedDrafts = readStagedDraftMigrationsFromArtifactRun(
+      dependencies.fileSystem,
+      artifactContext.rootDir,
+      targetRevision.name,
+    );
     if (stagedDrafts.length === 0) {
       if (revisionDiff.changes.length === 0) {
         emit({
@@ -498,6 +500,35 @@ interface StagedDraftMigration {
   filePath: string;
   number: number;
   name: string;
+}
+
+const DRAFTED_MIGRATIONS_SUBDIR = "drafted-migrations";
+
+function stagedDraftMigrationDirForRevision(
+  artifactRunRootDir: string,
+  revisionName: string,
+): string {
+  return path.join(artifactRunRootDir, DRAFTED_MIGRATIONS_SUBDIR, revisionName);
+}
+
+function prepareStagedDraftMigrationDir(
+  fileSystem: FileSystem,
+  artifactRunRootDir: string,
+  revisionName: string,
+): string {
+  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName);
+  fileSystem.rm(draftDir, { recursive: true, force: true });
+  fileSystem.mkdir(draftDir, { recursive: true });
+  return draftDir;
+}
+
+function readStagedDraftMigrationsFromArtifactRun(
+  fileSystem: FileSystem,
+  artifactRunRootDir: string,
+  revisionName: string,
+): StagedDraftMigration[] {
+  const draftDir = stagedDraftMigrationDirForRevision(artifactRunRootDir, revisionName);
+  return readStagedDraftMigrations(fileSystem, draftDir);
 }
 
 function readStagedDraftMigrations(
