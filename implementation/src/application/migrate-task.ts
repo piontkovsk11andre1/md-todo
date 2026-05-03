@@ -505,7 +505,9 @@ async function runMigrateLoop(input: {
       state: ReturnType<typeof readMigrationState>;
       migrationDraftDir: string;
       thread?: DiscoveredMigrationThread;
+      errorMessage?: string;
     }> = [];
+    const laneFailures: Array<{ thread?: DiscoveredMigrationThread; errorMessage: string }> = [];
 
     for (const lane of laneStates) {
       const result = await runMigrationLaneDrafting({
@@ -530,10 +532,6 @@ async function runMigrateLoop(input: {
         migrationDraftDir: lane.migrationDraftDir,
         thread: lane.kind === "thread" ? lane.thread : undefined,
       });
-      if (!result.ok) {
-        throw new Error(result.errorMessage);
-      }
-
       laneResults.push({
         migrationsDir: lane.migrationsDir,
         promotedMigrationMetadataPaths: result.promotedMigrationMetadataPaths,
@@ -541,7 +539,23 @@ async function runMigrateLoop(input: {
         state: lane.state,
         migrationDraftDir: lane.migrationDraftDir,
         thread: lane.kind === "thread" ? lane.thread : undefined,
+        errorMessage: result.ok ? undefined : result.errorMessage,
       });
+
+      if (!result.ok) {
+        laneFailures.push({
+          thread: lane.kind === "thread" ? lane.thread : undefined,
+          errorMessage: result.errorMessage,
+        });
+      }
+    }
+
+    if (laneFailures.length > 0) {
+      const failureSummary = laneFailures.map((failure) => {
+        const laneLabel = failure.thread ? "thread " + failure.thread.threadSlug : "root lane";
+        return laneLabel + ": " + failure.errorMessage;
+      }).join("; ");
+      throw new Error("One or more migration lanes failed: " + failureSummary);
     }
 
     const promotedMigrationMetadataPaths = laneResults.flatMap((lane) => lane.promotedMigrationMetadataPaths);
