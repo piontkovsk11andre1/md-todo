@@ -6,7 +6,7 @@ import {
   primeContinuePreview,
   renderContinueSceneLines,
   updateContinueUiState,
-} from "./scenes/continue.js";
+} from "./scenes/continue.ts";
 import {
   createMainMenuSceneState,
   getMainMenuRows,
@@ -15,7 +15,7 @@ import {
   moveMainMenuSelection,
   refreshMainMenuStatusProbe,
   refreshMainMenuStatuses,
-} from "./scenes/main-menu.js";
+} from "./scenes/main-menu.ts";
 import {
   createNewWorkSceneState,
   generateNewWorkAgentPrompt,
@@ -25,44 +25,44 @@ import {
   renderNewWorkSceneLines,
   resetNewWorkWorkerHealth,
   startNewWorkSceneAction,
-} from "./scenes/new-work.js";
+} from "./scenes/new-work.ts";
 import {
   createWorkersSceneState,
   handleWorkersInput,
   reloadWorkersSceneState,
   renderWorkersSceneLines,
   runWorkersSceneAction,
-} from "./scenes/workers.js";
+} from "./scenes/workers.ts";
 import {
   createHealthSceneState,
   handleHealthInput,
   reloadHealthSceneState,
   renderHealthSceneLines,
   runHealthSceneAction,
-} from "./scenes/health.js";
+} from "./scenes/health.ts";
 import {
   createBuiltInsVisibilitySession,
   createToolsSceneState,
   openToolsScene,
   reloadToolsSceneState,
   renderToolsSceneLines,
-} from "./scenes/tools.js";
-import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
+} from "./scenes/tools.ts";
+import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.ts";
 import {
   createSettingsSceneState,
   handleSettingsInput,
   reloadSettingsSceneState,
   renderSettingsSceneLines,
   runSettingsSceneAction,
-} from "./scenes/settings.js";
+} from "./scenes/settings.ts";
 import {
   createHelpSceneState,
   handleHelpInput,
   renderHelpSceneLines,
   runHelpSceneAction,
-} from "./scenes/help.js";
-import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.js";
-import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.js";
+} from "./scenes/help.ts";
+import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.ts";
+import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.ts";
 
 function parsePositiveInteger(value, label) {
   const parsed = Number.parseInt(String(value), 10);

@@ -7,9 +7,9 @@ import {
   formatTaskLines,
   formatTimestamp,
   progressBar,
-} from "../layout.js";
-import { paintOperationBadge } from "../components/badge.js";
-import { applyOutputEvent, createInitialRunState, pushRecentMessage } from "../output-bridge.js";
+} from "../layout.ts";
+import { paintOperationBadge } from "../components/badge.ts";
+import { applyOutputEvent, createInitialRunState, pushRecentMessage } from "../output-bridge.ts";
 
 export const MATERIALIZE_MODES = [
   { key: "1", id: "migrations", label: "Materialize Migrations" },

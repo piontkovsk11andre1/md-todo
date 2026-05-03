@@ -5,8 +5,8 @@ import {
   handleContinueInput,
   renderContinueSceneLines,
   updateContinueUiState,
-} from "../../../src/presentation/tui/scenes/continue.js";
-import { applyOutputEvent, createInitialRunState } from "../../../src/presentation/tui/output-bridge.js";
+} from "../../../src/presentation/tui/scenes/continue.ts";
+import { applyOutputEvent, createInitialRunState } from "../../../src/presentation/tui/output-bridge.ts";
 
 vi.mock("../../../src/create-app.js", () => ({
   createApp: vi.fn(() => ({

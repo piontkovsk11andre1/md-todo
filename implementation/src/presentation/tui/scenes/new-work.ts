@@ -4,7 +4,7 @@ import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
 import { getAgentsTemplate } from "../../../domain/agents-template.js";
 import { openDirectory } from "../../../infrastructure/open-directory.js";
-import { renderMissingAgentPanelLines } from "../components/missing-agent-panel.js";
+import { renderMissingAgentPanelLines } from "../components/missing-agent-panel.ts";
 
 const DEFAULT_WORKER_PATTERN = {
   command: [],

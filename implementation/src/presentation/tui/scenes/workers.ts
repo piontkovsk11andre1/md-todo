@@ -1,9 +1,9 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
-import { createConfigBridge } from "../bridges/config-bridge.js";
-import { createHealthBridge } from "../bridges/health-bridge.js";
-import { launchEditor } from "../components/editor-launch.js";
+import { createConfigBridge } from "../bridges/config-bridge.ts";
+import { createHealthBridge } from "../bridges/health-bridge.ts";
+import { launchEditor } from "../components/editor-launch.ts";
 
 const COMMAND_OVERRIDE_ORDER = [
   "run",

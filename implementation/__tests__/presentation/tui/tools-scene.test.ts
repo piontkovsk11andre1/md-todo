@@ -19,7 +19,7 @@ import {
   resolveBuiltInToolDocsTarget,
   resolveToolDirectories,
   toggleBuiltInsVisibility,
-} from "../../../src/presentation/tui/scenes/tools.js";
+} from "../../../src/presentation/tui/scenes/tools.ts";
 
 function makeTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

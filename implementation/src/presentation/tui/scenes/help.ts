@@ -3,17 +3,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { getAgentsTemplate } from "../../../domain/agents-template.js";
-import { createConfigBridge } from "../bridges/config-bridge.js";
+import { createConfigBridge } from "../bridges/config-bridge.ts";
 import {
   createPagerState,
   handlePagerInput,
   renderPagerLines,
-} from "../components/pager.js";
+} from "../components/pager.ts";
 import {
   createKeybindingsOverlayState,
   handleKeybindingsOverlayInput,
   renderKeybindingsOverlayLines,
-} from "../components/keybindings-overlay.js";
+} from "../components/keybindings-overlay.ts";
 
 const FIXED_LOCAL_DOCS = Object.freeze(["README.md", "roadmap.md"]);
 

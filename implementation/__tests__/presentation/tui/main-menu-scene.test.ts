@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { refreshMainMenuStatusProbe } from "../../../src/presentation/tui/scenes/main-menu.js";
+import { refreshMainMenuStatusProbe } from "../../../src/presentation/tui/scenes/main-menu.ts";
 
 describe("main menu scene", () => {
   it("refreshes a single status probe by id", async () => {

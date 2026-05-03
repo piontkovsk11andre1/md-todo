@@ -37,7 +37,7 @@ import {
 } from "../../src/presentation/cli-command-actions.js";
 import type { CliApp } from "../../src/presentation/cli-app-init.js";
 import * as sleepModule from "../../src/infrastructure/cancellable-sleep.js";
-import * as tuiModule from "../../src/presentation/tui/index.js";
+import * as tuiModule from "../../src/presentation/tui/index.ts";
 import { DEFAULT_AGENTS_TEMPLATE } from "../../src/domain/agents-template.js";
 
 type RunTaskRequest = Record<string, unknown>;

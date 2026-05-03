@@ -1,14 +1,14 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
-import { createConfigBridge } from "../bridges/config-bridge.js";
-import { createHealthBridge } from "../bridges/health-bridge.js";
-import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.js";
+import { createConfigBridge } from "../bridges/config-bridge.ts";
+import { createHealthBridge } from "../bridges/health-bridge.ts";
+import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.ts";
 import {
   createPagerState,
   handlePagerInput,
   renderPagerLines,
-} from "../components/pager.js";
+} from "../components/pager.ts";
 
 const FAILURE_CLASS_ORDER = [
   "usage_limit",

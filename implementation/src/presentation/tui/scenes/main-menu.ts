@@ -1,4 +1,4 @@
-import { createStatusProbeRegistry } from "../status-probes.js";
+import { createStatusProbeRegistry } from "../status-probes.ts";
 
 const MAIN_MENU_ITEMS = Object.freeze([
   { sceneId: "continue", label: "Continue", probeId: "continue" },

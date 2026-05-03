@@ -4,8 +4,8 @@ import pc from "picocolors";
 import {
   createPagerState,
   renderPagerLines,
-} from "../components/pager.js";
-import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.js";
+} from "../components/pager.ts";
+import { launchEditor as defaultLaunchEditor } from "../components/editor-launch.ts";
 
 const TOOLS_DIRECTORY_NAME = "tools";
 const CONFIG_FILE_NAME = "config.json";

@@ -4,7 +4,7 @@ import {
   handleHealthInput,
   renderHealthSceneLines,
   runHealthSceneAction,
-} from "../../../src/presentation/tui/scenes/health.js";
+} from "../../../src/presentation/tui/scenes/health.ts";
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001B\[[0-9;]*m/g, "");

@@ -8,7 +8,7 @@ import {
   scrollPagerToTop,
   setPagerContent,
   setPagerViewportHeight,
-} from "../../../src/presentation/tui/components/pager.js";
+} from "../../../src/presentation/tui/components/pager.ts";
 
 function makeContent(count: number): string {
   return Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n");

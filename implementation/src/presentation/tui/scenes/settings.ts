@@ -1,9 +1,9 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
-import { createConfigBridge } from "../bridges/config-bridge.js";
-import { launchEditor } from "../components/editor-launch.js";
-import { createPagerState, handlePagerInput, renderPagerLines } from "../components/pager.js";
+import { createConfigBridge } from "../bridges/config-bridge.ts";
+import { launchEditor } from "../components/editor-launch.ts";
+import { createPagerState, handlePagerInput, renderPagerLines } from "../components/pager.ts";
 
 const SUPPORTED_SCOPES = ["effective", "local", "global"];
 

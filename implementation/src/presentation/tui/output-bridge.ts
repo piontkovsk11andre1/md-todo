@@ -1,4 +1,4 @@
-import { isBadgeOperationKey, normalizeOperationKey } from "./components/badge.js";
+import { isBadgeOperationKey, normalizeOperationKey } from "./components/badge.ts";
 
 export async function releaseApp(app) {
   if (!app) {

@@ -11189,7 +11189,7 @@ describe.sequential("CLI integration", () => {
   it("root interactive invocation forwards root args to runRootTui", async () => {
     const workspace = makeTempWorkspace();
     const runRootTuiMock = vi.fn(async () => 0);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11209,14 +11209,14 @@ describe.sequential("CLI integration", () => {
         workerPattern: expect.any(Object),
       }));
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
   it("root interactive invocation exits 0 when TUI quits cleanly", async () => {
     const workspace = makeTempWorkspace();
     const runRootTuiMock = vi.fn(async () => 0);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11228,14 +11228,14 @@ describe.sequential("CLI integration", () => {
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
   it("root interactive invocation maps SIGINT-style TUI exit to current CLI signal code", async () => {
     const workspace = makeTempWorkspace();
     const runRootTuiMock = vi.fn(async () => 130);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11247,7 +11247,7 @@ describe.sequential("CLI integration", () => {
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
@@ -11256,7 +11256,7 @@ describe.sequential("CLI integration", () => {
     const customConfigDir = path.join(workspace, "custom-config");
     fs.mkdirSync(customConfigDir, { recursive: true });
     const runRootTuiMock = vi.fn(async () => 0);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11273,14 +11273,14 @@ describe.sequential("CLI integration", () => {
         argv: ["--config-dir", customConfigDir],
       }));
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
   it("root invocation accepts --trace and forwards it to TUI", async () => {
     const workspace = makeTempWorkspace();
     const runRootTuiMock = vi.fn(async () => 0);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11294,7 +11294,7 @@ describe.sequential("CLI integration", () => {
         argv: ["--trace"],
       }));
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
@@ -11302,7 +11302,7 @@ describe.sequential("CLI integration", () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
     const runRootTuiMock = vi.fn(async () => 0);
-    vi.doMock("../../src/presentation/tui/index.js", () => ({
+    vi.doMock("../../src/presentation/tui/index.ts", () => ({
       runRootTui: runRootTuiMock,
     }));
 
@@ -11314,7 +11314,7 @@ describe.sequential("CLI integration", () => {
       expect(runRootTuiMock).toHaveBeenCalledTimes(1);
       expect(result.stdoutWrites.join("\n").includes("Usage: rundown")).toBe(false);
     } finally {
-      vi.doUnmock("../../src/presentation/tui/index.js");
+      vi.doUnmock("../../src/presentation/tui/index.ts");
     }
   });
 
