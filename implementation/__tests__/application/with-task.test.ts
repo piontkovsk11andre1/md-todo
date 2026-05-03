@@ -298,6 +298,52 @@ describe("with-task", () => {
     expect(vi.mocked(interactiveInput.prompt)).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps config unchanged when overwrite confirmation is interrupted", async () => {
+    const workspaceDir = makeTempWorkspace();
+    const configDir = path.join(workspaceDir, ".rundown");
+    fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify({
+      workers: {
+        default: ["legacy", "run"],
+      },
+      commands: {
+        discuss: ["legacy"],
+      },
+    }, null, 2) + "\n");
+    const before = fs.readFileSync(configPath, "utf8");
+
+    const interactiveInput: InteractiveInputPort = {
+      isTTY: vi.fn(() => true),
+      prepareForPrompt: vi.fn(),
+      prompt: vi.fn(async () => {
+        const interrupted = new Error("Input interrupted by user (Ctrl+C).");
+        interrupted.name = "InteractiveInputInterruptedError";
+        throw interrupted;
+      }),
+    };
+
+    const withTask = createWithTask({
+      workerConfigPort: createWorkerConfigAdapter(),
+      configDir: {
+        configDir,
+        isExplicit: true,
+      },
+      interactiveInput,
+    });
+
+    const result = await withTask({ harness: "opencode" });
+    const after = fs.readFileSync(configPath, "utf8");
+
+    expect(result.exitCode).toBe(0);
+    expect(result.cancelled).toBe(true);
+    expect(result.changed).toBe(false);
+    expect(result.existingLocalWorkerKeys).toEqual(["workers.default"]);
+    expect(result.configuredKeys).toEqual([]);
+    expect(after).toBe(before);
+    expect(vi.mocked(interactiveInput.prompt)).toHaveBeenCalledTimes(1);
+  });
+
   it("fails in non-interactive mode when overwrite confirmation is required", async () => {
     const workspaceDir = makeTempWorkspace();
     const configDir = path.join(workspaceDir, ".rundown");

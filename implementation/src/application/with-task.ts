@@ -222,6 +222,16 @@ function formatWorkerKeyList(keys: readonly ExistingLocalWorkerKeyPath[]): strin
   return keys.join(", ");
 }
 
+function isInteractiveCancellationError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.name === "InteractiveInputInterruptedError"
+    || error.name === "AbortError"
+    || /(interrupted|aborted|cancelled|canceled|ctrl\s*\+\s*c|sigint)/i.test(error.message);
+}
+
 async function confirmWorkerOverwriteIfNeeded(
   dependencies: WithTaskDependencies,
   harnessKey: string | null | undefined,
@@ -252,11 +262,20 @@ async function confirmWorkerOverwriteIfNeeded(
     await dependencies.interactiveInput.prepareForPrompt();
   }
 
-  const confirmation = await dependencies.interactiveInput.prompt({
-    kind: "confirm",
-    message: `Local worker config already exists (${existingKeyList}). Running "rundown with opencode" will replace or update these worker settings. Continue?`,
-    defaultValue: false,
-  });
+  let confirmation;
+  try {
+    confirmation = await dependencies.interactiveInput.prompt({
+      kind: "confirm",
+      message: `Local worker config already exists (${existingKeyList}). Running "rundown with opencode" will replace or update these worker settings. Continue?`,
+      defaultValue: false,
+    });
+  } catch (error) {
+    if (isInteractiveCancellationError(error)) {
+      return false;
+    }
+
+    throw error;
+  }
 
   return confirmation.value.trim().toLowerCase() === "true";
 }
