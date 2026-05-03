@@ -748,6 +748,111 @@ describe("migrate-task", () => {
     expect(noneWhenNoMarkdown).toEqual([]);
   });
 
+  it("keeps root migrations drafting unchanged when no thread markdown files exist", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "notes.txt"), "not a thread\n", "utf-8");
+
+    const runRootDir = path.join(workspace, ".rundown", "runs", "run-test");
+    let plannerArtifactPhaseLabel = "";
+    let plannerPrompt = "";
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt, artifactPhaseLabel }) => {
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          plannerArtifactPhaseLabel = artifactPhaseLabel ?? "";
+          plannerPrompt = prompt;
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "root-only-change")),
+            "# 2. Root Only Change\n\n- [ ] Cover Target.md migration updates for the root lane.\n",
+            "utf-8",
+          );
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "ok",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: runRootDir,
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => {
+        throw new Error("not used");
+      }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(plannerArtifactPhaseLabel).toBe("migrate-plan");
+      expect(plannerPrompt).toContain("Thread mode is disabled for this run");
+      expect(plannerPrompt).not.toContain("thread-briefs/");
+      expect(plannerPrompt).not.toContain("thread mode is enabled");
+      expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "root-only-change")))).toBe(true);
+      expect(fs.existsSync(path.join(workspace, "migrations", "threads"))).toBe(false);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("loads per-thread migration state from migrations/threads/<thread>", () => {
     const workspace = makeTempWorkspace();
     const fileSystem = createNodeFileSystem();
