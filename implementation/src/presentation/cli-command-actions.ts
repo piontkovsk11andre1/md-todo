@@ -2532,7 +2532,7 @@ export function createWithCommandAction({
       return app.discussTask({
         source: "",
         mode: "tui",
-        workerPattern: resolveWorkerPattern(undefined, getWorkerFromSeparator),
+        workerPattern: inferWorkerPatternFromCommand([]),
         sortMode: "name-sort",
         dryRun: false,
         printPrompt: false,

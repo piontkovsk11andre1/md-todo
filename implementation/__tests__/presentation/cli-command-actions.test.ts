@@ -2036,6 +2036,59 @@ describe("createWithCommandAction", () => {
     });
   });
 
+  it("starts discuss using configured tui worker even when separator worker includes file flags", async () => {
+    const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
+    const discussTask = vi.fn(async () => 0);
+    const withTask = vi.fn(async () => ({
+      exitCode: 0,
+      harnessKey: "opencode",
+      source: "preset" as const,
+      changed: true,
+      configPath: "/workspace/.rundown/config.json",
+      configuredKeys: [
+        {
+          keyPath: "workers.default" as const,
+          status: "set" as const,
+          value: ["opencode", "run", "$bootstrap"],
+        },
+        {
+          keyPath: "workers.tui" as const,
+          status: "set" as const,
+          value: ["opencode", "--prompt", "$bootstrap"],
+        },
+        {
+          keyPath: "commands.discuss" as const,
+          status: "set" as const,
+          value: ["opencode"],
+        },
+        {
+          keyPath: "workers.fallbacks" as const,
+          status: "preserved" as const,
+        },
+      ],
+    }));
+    const app = { withTask, discussTask } as unknown as CliApp;
+    (app as unknown as { emitOutput: typeof emitOutput }).emitOutput = emitOutput;
+    const action = createWithCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["opencode", "run", "--file", "$file", "$bootstrap"],
+      isInteractiveTerminal: () => true,
+    });
+
+    const exitCode = await action("opencode");
+
+    expect(exitCode).toBe(0);
+    expect(discussTask).toHaveBeenCalledTimes(1);
+    expect(discussTask).toHaveBeenCalledWith(expect.objectContaining({
+      workerPattern: expect.objectContaining({
+        command: [],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      }),
+    }));
+  });
+
   it("warns and reports custom source when unknown harness is configured interactively", async () => {
     const emitOutput = vi.fn<(event: ApplicationOutputEvent) => void>();
     const withTask = vi.fn(async () => ({
