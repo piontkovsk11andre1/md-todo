@@ -378,7 +378,7 @@ program
   .option("--specs-placement <mode>", "Specs placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)", "migrations")
   .option("--migrations-placement <mode>", "Migrations placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
-  .option("--from-design <path>", "Use an existing directory as design/current. Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/rev.N.")
+  .option("--from-design <path>", "Use an existing directory as design/current. Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/revisions/rev.N.")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
@@ -402,7 +402,7 @@ program
       "",
       "Design workflow:",
       "  - Active draft edits live in design/current/ (default primary file: design/current/Target.md)",
-      "  - Historical snapshots are stored under design/rev.N/ as immutable revisions",
+      "  - Historical snapshots are stored under design/revisions/rev.N/ as immutable revisions",
       "  - Legacy docs/current/Design.md and root Design.md remain supported only as compatibility-only fallbacks",
       "",
       "Linked workspace behavior:",
@@ -470,7 +470,7 @@ const designCommand = program
 
 designCommand
   .command("release")
-  .description("Release design/current/ into the next immutable design/rev.N/ snapshot.")
+  .description("Release design/current/ into the next immutable design/revisions/rev.N/ snapshot.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--label <text>", "Optional label to store in revision metadata")
