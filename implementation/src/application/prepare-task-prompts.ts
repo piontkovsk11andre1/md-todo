@@ -33,6 +33,26 @@ import type { RunTaskDependencies } from "./run-task-execution.js";
 
 type EmitFn = (event: Parameters<ApplicationOutputPort["emit"]>[0]) => void;
 
+function getLineStartOffset(source: string, lineNumber: number): number {
+  if (!Number.isInteger(lineNumber) || lineNumber <= 1) {
+    return 0;
+  }
+
+  let currentLine = 1;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source.charCodeAt(index) !== 10) {
+      continue;
+    }
+
+    currentLine += 1;
+    if (currentLine === lineNumber) {
+      return index + 1;
+    }
+  }
+
+  return source.length;
+}
+
 export interface PrepareTaskPromptsResult {
   expandedSource: string;
   expandedContextBefore: string;
@@ -93,6 +113,9 @@ export async function prepareTaskPrompts(params: {
     onTemplateCliFailure,
   } = params;
 
+  // Compute the selected-task boundary against raw source before any expansion.
+  const selectedTaskStartOffset = getLineStartOffset(fileSource, task.line);
+
   const baseCliExpansionOptions = artifactContext?.keepArtifacts
     ? {
       ...cliExecutionOptions,
@@ -123,6 +146,7 @@ export async function prepareTaskPrompts(params: {
     artifactPromptType: "source",
     wrapExecutionOptions: (options) => withSourceCliFailureWarning(options, emit),
   });
+  void selectedTaskStartOffset;
   if ("earlyExitCode" in expandedSourceResult) {
     return expandedSourceResult;
   }
