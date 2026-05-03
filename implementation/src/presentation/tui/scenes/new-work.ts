@@ -5,7 +5,7 @@ import pc from "picocolors";
 import { createApp } from "../../../create-app.js";
 import type { App, CreateAppDependencies } from "../../../create-app.js";
 import type { ApplicationOutputEvent } from "../../../domain/ports/output-port.js";
-import { getAgentsTemplate } from "../../../domain/agents-template.js";
+import { DEFAULT_AGENT_TEMPLATE } from "../../../domain/defaults.js";
 import { openDirectory } from "../../../infrastructure/open-directory.js";
 import { renderMissingAgentPanelLines } from "../components/missing-agent-panel.ts";
 import type { TuiRunState } from "../output-bridge.ts";
@@ -250,7 +250,7 @@ export function isNewWorkActionKey(actionKey) {
 export function generateNewWorkAgentPrompt({ currentWorkingDirectory }) {
   const promptPath = path.join(currentWorkingDirectory, AGENT_MARKDOWN_PATH);
   fs.mkdirSync(path.dirname(promptPath), { recursive: true });
-  fs.writeFileSync(promptPath, getAgentsTemplate(), "utf8");
+  fs.writeFileSync(promptPath, DEFAULT_AGENT_TEMPLATE, "utf8");
   return { promptPath };
 }
 
