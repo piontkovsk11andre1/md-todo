@@ -748,7 +748,7 @@ describe("CLI run option normalization", () => {
 
     const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("Design workflow:");
-    expect(compactHelpOutput).toContain("Historical snapshots are stored under design/rev.N/ as immutable revisions");
+    expect(compactHelpOutput).toContain("Historical snapshots are stored under design/revisions/rev.N/ as immutable revisions");
   });
 
   it("expands materialize alias to run --all --revertable", async () => {
@@ -5700,6 +5700,13 @@ async function invokeMakeAndCaptureCalls(
       listTasks: vi.fn(async () => 0),
       planTask,
       researchTask,
+      exploreTask: vi.fn(async (request: Record<string, unknown>) => {
+        const researchCode = await researchTask(request);
+        if (typeof researchCode !== "number" || researchCode !== 0) {
+          return researchCode;
+        }
+        return planTask(request);
+      }),
       unlockTask: vi.fn(async () => 0),
       initProject: vi.fn(async () => 0),
       manageArtifacts: vi.fn(() => 0),
@@ -5747,6 +5754,13 @@ async function invokeExploreAndCaptureCalls(
       listTasks: vi.fn(async () => 0),
       planTask,
       researchTask,
+      exploreTask: vi.fn(async (request: Record<string, unknown>) => {
+        const researchCode = await researchTask(request);
+        if (typeof researchCode !== "number" || researchCode !== 0) {
+          return researchCode;
+        }
+        return planTask(request);
+      }),
       unlockTask: vi.fn(async () => 0),
       initProject: vi.fn(async () => 0),
       manageArtifacts: vi.fn(() => 0),
