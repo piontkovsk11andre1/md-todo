@@ -6260,6 +6260,130 @@ describe("complete-task-iteration", () => {
     });
   });
 
+  it("passes refreshed memory context to verification within the same task iteration", async () => {
+    const memoryTask = createTask(path.join(cwd, "tasks.md"), "capture release context", {
+      line: 1,
+      index: 0,
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [memoryTask.file]: "- [ ] memory: capture release context\n",
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: memoryTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const memoryFilePath = path.join(cwd, ".rundown", "tasks.md.memory.md");
+    const memoryIndexPath = path.join(cwd, ".rundown", "memory-index.json");
+    dependencies.memoryResolver = {
+      resolve: vi.fn(() => ({
+        available: true,
+        filePath: memoryFilePath,
+        summary: "Captured release context",
+      })),
+    };
+
+    const verifySpy = vi
+      .spyOn(dependencies.taskVerification, "verify")
+      .mockResolvedValue({ valid: true, stdout: "verified" });
+    vi.spyOn(checkboxOperationsModule, "checkTaskUsingFileSystem").mockImplementation(() => {});
+    vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({});
+
+    await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+      },
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun: vi.fn(async () => 0),
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: memoryTask,
+      verificationTask: memoryTask,
+      sourceText: fileSystem.readText(memoryTask.file),
+      expandedSource: fileSystem.readText(memoryTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: [
+          "## Memory context",
+          "",
+          "- Status: {{memoryStatus}}",
+          "- File: `{{memoryFilePath}}`",
+          "- Index: `{{memoryIndexPath}}`",
+          "- Summary: {{memorySummary}}",
+        ].join("\n"),
+        repair: "Repair with status {{memoryStatus}}",
+        resolve: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {
+        memoryStatus: "unavailable",
+        memoryFilePath: "",
+        memoryIndexPath: "",
+        memorySummary: "",
+        memoryMap: JSON.stringify({
+          status: "unavailable",
+          filePath: "",
+          summary: "",
+          indexPath: "",
+        }),
+      },
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: true,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    const verifyInput = verifySpy.mock.calls[0]?.[0];
+    expect(verifyInput?.templateVars).toMatchObject({
+      memoryStatus: "available",
+      memoryFilePath,
+      memoryIndexPath,
+      memorySummary: "Captured release context",
+      memoryMap: JSON.stringify({
+        status: "available",
+        filePath: memoryFilePath,
+        summary: "Captured release context",
+        indexPath: memoryIndexPath,
+      }),
+    });
+  });
+
   it("returns exit code 2 when resolve outcome is unresolved", async () => {
     const fileSystem = createInMemoryFileSystem({
       [task.file]: "- [ ] Ship release\n",
