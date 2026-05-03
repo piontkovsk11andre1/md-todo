@@ -45,10 +45,11 @@ export function getMainMenuRows(state: MainMenuState, { probeRegistry = statusPr
   return MAIN_MENU_ITEMS.map((item, index) => {
     const status = probeRegistry.getProbeStatus(item.probeId);
     const workersDrilldownHint = item.sceneId === "workers" ? "   (H: health · T: tools)" : "";
+    const profilesDrilldownHint = item.sceneId === "profiles" ? "   (↵: inspect · e: edit · u: scan)" : "";
     return {
       sceneId: item.sceneId,
       label: item.label,
-      statusText: `${status.text}${workersDrilldownHint}`,
+      statusText: `${status.text}${workersDrilldownHint}${profilesDrilldownHint}`,
       statusTone: status.tone,
       isActive: index === selectedIndex,
       index,
