@@ -535,6 +535,50 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8")).toBe("");
   });
 
+  it("produces the same no-migration scaffold in empty and non-empty directories", async () => {
+    const workspace = makeTempWorkspace();
+    const emptyProjectDirName = "empty-baseline";
+    const nonEmptyProjectDirName = "existing-baseline";
+    const nonEmptyProjectDir = path.join(workspace, nonEmptyProjectDirName);
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    fs.mkdirSync(nonEmptyProjectDir, { recursive: true });
+    fs.writeFileSync(path.join(nonEmptyProjectDir, "README.md"), "# Existing project\n", "utf-8");
+    fs.mkdirSync(path.join(nonEmptyProjectDir, "src"), { recursive: true });
+    fs.writeFileSync(path.join(nonEmptyProjectDir, "src", "index.ts"), "export const value = 1;\n", "utf-8");
+
+    const emptyResult = await runCli([
+      "start",
+      "Empty baseline",
+      "--dir",
+      emptyProjectDirName,
+    ], workspace);
+    const nonEmptyResult = await runCli([
+      "start",
+      "Existing baseline",
+      "--dir",
+      nonEmptyProjectDirName,
+    ], workspace);
+
+    expect(emptyResult.code).toBe(0);
+    expect(nonEmptyResult.code).toBe(0);
+
+    const emptyScaffold = readScaffoldState(path.join(workspace, emptyProjectDirName));
+    const nonEmptyScaffold = readScaffoldState(path.join(workspace, nonEmptyProjectDirName));
+
+    expect(nonEmptyScaffold.readmeSource).toBe("# Existing project\n");
+    expect(fs.readFileSync(path.join(nonEmptyProjectDir, "src", "index.ts"), "utf-8")).toBe("export const value = 1;\n");
+
+    const { readmeSource: _emptyReadmeSource, ...emptyScaffoldComparable } = emptyScaffold;
+    const { readmeSource: _nonEmptyReadmeSource, ...nonEmptyScaffoldComparable } = nonEmptyScaffold;
+    expect(emptyScaffoldComparable).toEqual(nonEmptyScaffoldComparable);
+    expect(emptyScaffold.migrationEntries).toEqual([]);
+    expect(nonEmptyScaffold.migrationEntries).toEqual([]);
+  });
+
   it("does not overwrite existing local Target.md when start is re-run", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "rerun-project";
@@ -879,4 +923,71 @@ async function runCli(args: string[], cwd: string): Promise<{
       process.env.RUNDOWN_TEST_MODE = previousTestMode;
     }
   }
+}
+
+function readScaffoldState(projectDir: string): {
+  agentsExists: boolean;
+  targetSource: string;
+  migrationEntries: string[];
+  predictionEntries: string[];
+  directories: {
+    designCurrentExists: boolean;
+    specsExists: boolean;
+    migrationsExists: boolean;
+    predictionExists: boolean;
+  };
+  configWorkspace: {
+    directories?: {
+      design?: string;
+      specs?: string;
+      migrations?: string;
+      prediction?: string;
+    };
+    placement?: {
+      design?: string;
+      specs?: string;
+      migrations?: string;
+      prediction?: string;
+    };
+  };
+  readmeSource: string;
+} {
+  const config = JSON.parse(
+    fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+  ) as {
+    workspace?: {
+      directories?: {
+        design?: string;
+        specs?: string;
+        migrations?: string;
+        prediction?: string;
+      };
+      placement?: {
+        design?: string;
+        specs?: string;
+        migrations?: string;
+        prediction?: string;
+      };
+    };
+  };
+
+  const readmePath = path.join(projectDir, "README.md");
+
+  return {
+    agentsExists: fs.existsSync(path.join(projectDir, "AGENTS.md")),
+    targetSource: fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8"),
+    migrationEntries: fs.readdirSync(path.join(projectDir, "migrations")),
+    predictionEntries: fs.readdirSync(path.join(projectDir, "prediction")),
+    directories: {
+      designCurrentExists: fs.existsSync(path.join(projectDir, "design", "current")),
+      specsExists: fs.existsSync(path.join(projectDir, "specs")),
+      migrationsExists: fs.existsSync(path.join(projectDir, "migrations")),
+      predictionExists: fs.existsSync(path.join(projectDir, "prediction")),
+    },
+    configWorkspace: {
+      directories: config.workspace?.directories,
+      placement: config.workspace?.placement,
+    },
+    readmeSource: fs.existsSync(readmePath) ? fs.readFileSync(readmePath, "utf-8") : "",
+  };
 }
