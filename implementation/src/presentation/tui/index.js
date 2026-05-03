@@ -41,7 +41,12 @@ import {
   renderSettingsSceneLines,
   runSettingsSceneAction,
 } from "./scenes/settings.js";
-import { createHelpSceneState, handleHelpInput, renderHelpSceneLines } from "./scenes/help.js";
+import {
+  createHelpSceneState,
+  handleHelpInput,
+  renderHelpSceneLines,
+  runHelpSceneAction,
+} from "./scenes/help.js";
 import { SPINNER_FRAMES, buildFrame, getSceneSpacing, render, renderStatusBadge, withCursorHidden } from "./layout.js";
 import { createInitialRunState, releaseApp, resolveProcessArgv } from "./output-bridge.js";
 
@@ -78,6 +83,7 @@ function createSceneRouterState() {
     agentSessionPending: false,
     workersActionPending: false,
     settingsActionPending: false,
+    helpActionPending: false,
   };
 }
 
@@ -662,6 +668,18 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         state.helpSceneState = result.state;
         if (result.backToParent || isBack(rawInput)) {
           state.sceneId = "mainMenu";
+        }
+
+        if (result.action && !state.helpActionPending) {
+          state.helpActionPending = true;
+          void runHelpSceneAction({
+            action: result.action,
+            state: state.helpSceneState,
+          }).then((nextState) => {
+            state.helpSceneState = nextState;
+          }).finally(() => {
+            state.helpActionPending = false;
+          });
         }
       }
     }

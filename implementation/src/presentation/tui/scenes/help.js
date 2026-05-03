@@ -1,6 +1,8 @@
 import pc from "picocolors";
 import fs from "node:fs";
 import path from "node:path";
+import { getAgentsTemplate } from "../../../domain/agents-template.js";
+import { createConfigBridge } from "../bridges/config-bridge.js";
 import {
   createPagerState,
   handlePagerInput,
@@ -33,6 +35,60 @@ function clampSelectedIndex(index, length) {
     return length - 1;
   }
   return index;
+}
+
+function safeObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function flattenConfigEntries(config, prefix = "") {
+  const entries = [];
+  const source = safeObject(config);
+  const keys = Object.keys(source);
+  for (const key of keys) {
+    const value = source[key];
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObject(value)) {
+      const nested = flattenConfigEntries(value, fullKey);
+      if (nested.length === 0) {
+        entries.push({ key: fullKey, value });
+      } else {
+        entries.push(...nested);
+      }
+      continue;
+    }
+    entries.push({ key: fullKey, value });
+  }
+  return entries;
+}
+
+function formatValueOneLine(value) {
+  try {
+    const text = JSON.stringify(value);
+    return typeof text === "string" ? text : String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatEffectiveConfigDump({ config, sources }) {
+  const entries = flattenConfigEntries(config);
+  if (entries.length === 0) {
+    return "No effective configuration values found.";
+  }
+  const sourceMap = safeObject(sources);
+  return entries
+    .map((entry) => {
+      const valueText = formatValueOneLine(entry.value);
+      const source = sourceMap[entry.key];
+      const sourceSuffix = typeof source === "string" && source.length > 0 ? `  // ${source}` : "";
+      return `${entry.key} = ${valueText}${sourceSuffix}`;
+    })
+    .join("\n");
 }
 
 function listDocsMarkdownFiles(workspaceRoot) {
@@ -138,6 +194,46 @@ export function createHelpSceneState() {
   };
 }
 
+export async function runHelpSceneAction({ action, state } = {}) {
+  const sceneState = state ?? createHelpSceneState();
+  if (!action || typeof action !== "object") {
+    return sceneState;
+  }
+
+  if (action.type === "open-synthesized-effective-config") {
+    const bridge = createConfigBridge({ cwd: sceneState.workspaceRoot });
+    try {
+      const listed = await bridge.listEffective();
+      const content = formatEffectiveConfigDump({
+        config: listed?.config,
+        sources: listed?.sources,
+      });
+      return {
+        ...sceneState,
+        pager: createPagerState({
+          title: "Help",
+          filePath: "Effective config dump",
+          content,
+        }),
+      };
+    } catch (error) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : String(error ?? "Unknown error");
+      return {
+        ...sceneState,
+        pager: createPagerState({
+          title: "Help",
+          filePath: "Effective config dump",
+          content: `Unable to load effective config.\n\n${message}`,
+        }),
+      };
+    }
+  }
+
+  return sceneState;
+}
+
 export function renderHelpSceneLines({ state, sectionGap = 1 } = {}) {
   const sceneState = state ?? createHelpSceneState();
   if (sceneState.pager) {
@@ -238,32 +334,56 @@ export function handleHelpInput({ rawInput, state } = {}) {
 
   if (input === "\r" || input === "\n") {
     const selectedRow = rows[selectedIndex];
-    if (selectedRow?.kind !== "local-doc" || typeof selectedRow.target !== "string") {
+    if (selectedRow?.kind === "local-doc" && typeof selectedRow.target === "string") {
+      const absolutePath = path.join(sceneState.workspaceRoot, selectedRow.target);
+      let content = "";
+      try {
+        content = fs.readFileSync(absolutePath, "utf8");
+      } catch {
+        content = "Unable to read this file.";
+      }
+
       return {
-        handled: false,
-        state: sceneState,
+        handled: true,
+        state: {
+          ...sceneState,
+          pager: createPagerState({
+            title: "Help",
+            filePath: selectedRow.target,
+            content,
+          }),
+        },
         backToParent: false,
       };
     }
 
-    const absolutePath = path.join(sceneState.workspaceRoot, selectedRow.target);
-    let content = "";
-    try {
-      content = fs.readFileSync(absolutePath, "utf8");
-    } catch {
-      content = "Unable to read this file.";
+    if (selectedRow?.kind === "synthetic-agents-template") {
+      return {
+        handled: true,
+        state: {
+          ...sceneState,
+          pager: createPagerState({
+            title: "Help",
+            filePath: "AGENTS.md template",
+            content: getAgentsTemplate(),
+          }),
+        },
+        backToParent: false,
+      };
+    }
+
+    if (selectedRow?.kind === "synthetic-effective-config") {
+      return {
+        handled: true,
+        state: sceneState,
+        backToParent: false,
+        action: { type: "open-synthesized-effective-config" },
+      };
     }
 
     return {
-      handled: true,
-      state: {
-        ...sceneState,
-        pager: createPagerState({
-          title: "Help",
-          filePath: selectedRow.target,
-          content,
-        }),
-      },
+      handled: false,
+      state: sceneState,
       backToParent: false,
     };
   }
