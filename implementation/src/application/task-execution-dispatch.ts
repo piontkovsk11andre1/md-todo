@@ -15,6 +15,7 @@ import { buildTaskHierarchyTemplateVars, renderTemplate, type TemplateVars } fro
 import type {
   ArtifactRunContext,
   CommandExecutionOptions,
+  TraceWriterPort,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { RunTaskDependencies } from "./run-task-execution.js";
@@ -120,6 +121,9 @@ export async function dispatchTaskExecution(params: {
   cwd: string;
   workerTimeoutMs?: number;
   executionEnv?: Record<string, string>;
+  cliExecutionOptions?: CommandExecutionOptions;
+  traceWriter: TraceWriterPort;
+  nowIso: () => string;
   cliExecutionOptionsWithVerificationTemplateFailureAbort: CommandExecutionOptions | undefined;
   cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace: CommandExecutionOptions | undefined;
   forceRetryMetadata?: {
@@ -165,6 +169,9 @@ export async function dispatchTaskExecution(params: {
     cwd,
     workerTimeoutMs,
     executionEnv,
+    cliExecutionOptions,
+    traceWriter,
+    nowIso,
     cliExecutionOptionsWithVerificationTemplateFailureAbort,
     cliExecutionOptionsWithVerificationTemplateFailureAbortAndTrace,
     forceRetryMetadata,
@@ -292,6 +299,12 @@ export async function dispatchTaskExecution(params: {
         ...buildTaskHierarchyTemplateVars(task),
       } satisfies TemplateVars,
       showAgentOutput,
+      cliBlockExecutor: dependencies.cliBlockExecutor,
+      cliExpansionEnabled: !ignoreCliBlock,
+      cliExecutionOptions,
+      traceWriter,
+      cliTraceRunId: artifactContext.runId,
+      nowIso,
       templates: {
         researchOutputContract:
           templates?.researchOutputContract ?? DEFAULT_RESEARCH_OUTPUT_CONTRACT_TEMPLATE,

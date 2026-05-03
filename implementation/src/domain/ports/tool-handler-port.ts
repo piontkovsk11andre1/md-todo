@@ -3,7 +3,12 @@ import type { FileSystem } from "./file-system.js";
 import type { PathOperationsPort } from "./path-operations-port.js";
 import type { ApplicationOutputPort } from "./output-port.js";
 import type { WorkerExecutorPort } from "./worker-executor-port.js";
-import type { ArtifactRunContext, CommandExecutionOptions } from "./index.js";
+import type {
+  ArtifactRunContext,
+  CommandExecutionOptions,
+  CommandExecutor,
+  TraceWriterPort,
+} from "./index.js";
 import type { TemplateVars } from "../template.js";
 import type { ParsedWorkerPattern } from "../worker-pattern.js";
 import type { TerminalStopSignal } from "../terminal-control.js";
@@ -90,6 +95,12 @@ export interface ToolHandlerContext {
   keepArtifacts: boolean;
   templateVars: TemplateVars;
   showAgentOutput: boolean;
+  cliBlockExecutor?: CommandExecutor;
+  cliExpansionEnabled?: boolean;
+  cliExecutionOptions?: CommandExecutionOptions;
+  traceWriter?: TraceWriterPort;
+  cliTraceRunId?: string;
+  nowIso?: () => string;
   localeMessages?: LocaleMessages;
   templates?: {
     researchOutputContract: string;
