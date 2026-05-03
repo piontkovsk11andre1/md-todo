@@ -66,6 +66,27 @@ describe("checkbox-operations", () => {
     expect(fileSystem.readText("todo.md")).toBe("- [x] First task\n- [ ] Second task\n");
   });
 
+  it("treats already-checked relocated tasks as already completed", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "## Notes",
+        "",
+        "- [x] First task",
+        "- [ ] Second task",
+      ].join("\n"),
+    });
+    const task = createTask({ text: "First task", line: 1 });
+
+    checkTaskUsingFileSystem(task, fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "## Notes",
+      "",
+      "- [x] First task",
+      "- [ ] Second task",
+    ].join("\n"));
+  });
+
   it("normalizes for-current metadata to the first item when current value is stale", () => {
     const fileSystem = createFileSystem({
       "todo.md": [

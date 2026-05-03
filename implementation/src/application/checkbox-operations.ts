@@ -258,7 +258,24 @@ export function checkTaskUsingFileSystem(task: Task, fileSystem: FileSystem): vo
   withSerializedFileMutation(task.file, () => {
     const source = fileSystem.readText(task.file);
     const effectiveTask = relocateTask(source, task);
-    const updated = markChecked(source, effectiveTask);
+    if (effectiveTask.checked) {
+      return;
+    }
+
+    let updated: string;
+    try {
+      updated = markChecked(source, effectiveTask);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Could not find unchecked checkbox")) {
+        const line = source.split(/\r?\n/)[effectiveTask.line - 1] ?? "";
+        if (/\[[xX]\]/.test(line)) {
+          return;
+        }
+      }
+      throw error;
+    }
+
     fileSystem.writeText(task.file, updated);
   });
 }

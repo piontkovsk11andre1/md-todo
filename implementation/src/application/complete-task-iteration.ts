@@ -1,5 +1,6 @@
 import { type Task } from "../domain/parser.js";
 import { parseTasks } from "../domain/parser.js";
+import { buildMemoryTemplateVars, buildTaskHierarchyTemplateVars, renderTemplate } from "../domain/template.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { isParallelGroupTaskText } from "../domain/parallel-group.js";
 import { hasUncheckedDescendants } from "../domain/task-selection.js";
@@ -228,6 +229,27 @@ export async function completeTaskIteration(params: {
   // Run verification and optional repair before marking the task as complete.
   const taskForVerification = verificationTask ?? task;
   if (shouldVerify) {
+    const refreshedMemoryTemplateVars = dependencies.memoryResolver
+      ? buildMemoryTemplateVars({
+        memoryMetadata: dependencies.memoryResolver.resolve(taskForVerification.file),
+      })
+      : null;
+    const verificationTemplateVars = refreshedMemoryTemplateVars
+      ? {
+        ...templateVarsWithTrace,
+        ...refreshedMemoryTemplateVars,
+      }
+      : templateVarsWithTrace;
+    const renderedVerificationPrompt = renderTemplate(templates.verify, {
+      ...verificationTemplateVars,
+      task: taskForVerification.text,
+      file: taskForVerification.file,
+      context: expandedContextBefore,
+      taskIndex: taskForVerification.index,
+      taskLine: taskForVerification.line,
+      source: expandedSource,
+      ...buildTaskHierarchyTemplateVars(taskForVerification),
+    });
     const resolvedRepairTemplate = resolveRepairTemplateForTask({
       task: taskForVerification,
       configDir: dependencies.configDir,
@@ -265,8 +287,11 @@ export async function completeTaskIteration(params: {
       task: taskForVerification,
       controllingTaskPath,
     });
+    const verifyPromptForMetrics = renderedVerificationPrompt.length > 0
+      ? renderedVerificationPrompt
+      : verificationPrompt;
     const verifyPhaseTrace = traceRunSession.beginPhase("verify", automationCommand);
-    traceRunSession.emitPromptMetrics(verificationPrompt, expandedContextBefore, "verify.md");
+    traceRunSession.emitPromptMetrics(verifyPromptForMetrics, expandedContextBefore, "verify.md");
     let valid: boolean;
     let failureReason: string | null;
     let usageLimitDetected = false;
@@ -299,7 +324,7 @@ export async function completeTaskIteration(params: {
         maxRepairAttempts,
         maxResolveRepairAttempts,
         allowRepair,
-        templateVars: templateVarsWithTrace,
+        templateVars: verificationTemplateVars,
         executionEnv,
         artifactContext,
         trace,
