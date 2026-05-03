@@ -63,7 +63,7 @@ export interface MigrateTaskDependencies {
   artifactStore: ArtifactStore;
   interactiveInput: InteractiveInputPort;
   output: ApplicationOutputPort;
-  runExplore?: (source: string, cwd: string) => Promise<number>;
+  runExplore: (source: string, cwd: string) => Promise<number>;
   runTask?: (options: {
     source: string;
     cwd?: string;
@@ -460,7 +460,6 @@ async function runMigrateLoop(input: {
         runExplore: dependencies.runExplore,
         migrationPath,
         projectRoot,
-        emit,
       });
     }
 
@@ -564,19 +563,11 @@ function getPendingExecutableMigrationNumbers(
 }
 
 async function runExploreForMigration(input: {
-  runExplore: MigrateTaskDependencies["runExplore"];
+  runExplore: (source: string, cwd: string) => Promise<number>;
   migrationPath: string;
   projectRoot: string;
-  emit: ApplicationOutputPort["emit"];
 }): Promise<void> {
-  const { runExplore, migrationPath, projectRoot, emit } = input;
-  if (!runExplore) {
-    emit({
-      kind: "warn",
-      message: "Explore integration is not configured; skipping enrichment for " + migrationPath,
-    });
-    return;
-  }
+  const { runExplore, migrationPath, projectRoot } = input;
 
   const exploreExitCode = await runExplore(migrationPath, projectRoot);
   if (exploreExitCode !== EXIT_CODE_SUCCESS) {
