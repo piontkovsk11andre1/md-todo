@@ -168,6 +168,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "AGENTS.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "implementation"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "prediction"))).toBe(true);
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
@@ -179,12 +180,14 @@ describeIfStartAvailable("start-project integration", () => {
       workspace?: {
         directories?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
         };
         placement?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
@@ -193,12 +196,14 @@ describeIfStartAvailable("start-project integration", () => {
     };
     expect(defaultConfig.workspace?.directories).toEqual({
       design: "design",
+      implementation: "implementation",
       specs: "specs",
       migrations: "migrations",
       prediction: "prediction",
     });
     expect(defaultConfig.workspace?.placement).toEqual({
       design: "sourcedir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
@@ -246,6 +251,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "implementation"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "prediction"))).toBe(true);
     expect(fs.readdirSync(path.join(workspace, "migrations"))).toEqual([]);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
@@ -256,12 +262,14 @@ describeIfStartAvailable("start-project integration", () => {
       workspace?: {
         directories?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
         };
         placement?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
@@ -270,12 +278,14 @@ describeIfStartAvailable("start-project integration", () => {
     };
     expect(config.workspace?.directories).toEqual({
       design: "design",
+      implementation: "implementation",
       specs: "specs",
       migrations: "migrations",
       prediction: "prediction",
     });
     expect(config.workspace?.placement).toEqual({
       design: "sourcedir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
@@ -391,6 +401,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "docs", "design", "current", "Target.md"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "quality", "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "changesets"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, "implementation"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "prediction"))).toBe(true);
     expect(fs.readdirSync(path.join(projectDir, "changesets"))).toEqual([]);
 
@@ -400,6 +411,7 @@ describeIfStartAvailable("start-project integration", () => {
       workspace?: {
         directories?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
@@ -409,6 +421,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(config.workspace?.directories).toEqual({
       design: "docs/design",
+      implementation: "implementation",
       specs: "quality/specs",
       migrations: "changesets",
       prediction: "prediction",
@@ -444,6 +457,7 @@ describeIfStartAvailable("start-project integration", () => {
       workspace?: {
         placement?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
@@ -453,6 +467,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(config.workspace?.placement).toEqual({
       design: "workdir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "workdir",
       prediction: "sourcedir",
@@ -506,6 +521,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(result.code).toBe(0);
 
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
 
     const targetDesignPath = path.join(projectDir, "design", "current", "Target.md");
@@ -531,6 +547,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
     expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
+    expect(fs.readdirSync(path.join(projectDir, "implementation"))).toEqual([]);
     expect(fs.readdirSync(path.join(projectDir, "prediction"))).toEqual([]);
     expect(fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8")).toBe("");
   });
@@ -723,6 +740,7 @@ describeIfStartAvailable("start-project integration", () => {
       workspace?: {
         directories?: {
           design?: string;
+          implementation?: string;
           specs?: string;
           migrations?: string;
           prediction?: string;
@@ -732,6 +750,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(config.workspace?.directories).toEqual({
       design: "docs/design",
+      implementation: "implementation",
       specs: "quality/specs",
       migrations: "changesets",
       prediction: "prediction",
@@ -969,9 +988,11 @@ function readScaffoldState(projectDir: string): {
   agentsExists: boolean;
   targetSource: string;
   migrationEntries: string[];
+  implementationEntries: string[];
   predictionEntries: string[];
   directories: {
     designCurrentExists: boolean;
+    implementationExists: boolean;
     specsExists: boolean;
     migrationsExists: boolean;
     predictionExists: boolean;
@@ -979,12 +1000,14 @@ function readScaffoldState(projectDir: string): {
   configWorkspace: {
     directories?: {
       design?: string;
+      implementation?: string;
       specs?: string;
       migrations?: string;
       prediction?: string;
     };
     placement?: {
       design?: string;
+      implementation?: string;
       specs?: string;
       migrations?: string;
       prediction?: string;
@@ -998,12 +1021,14 @@ function readScaffoldState(projectDir: string): {
     workspace?: {
       directories?: {
         design?: string;
+        implementation?: string;
         specs?: string;
         migrations?: string;
         prediction?: string;
       };
       placement?: {
         design?: string;
+        implementation?: string;
         specs?: string;
         migrations?: string;
         prediction?: string;
@@ -1017,9 +1042,11 @@ function readScaffoldState(projectDir: string): {
     agentsExists: fs.existsSync(path.join(projectDir, "AGENTS.md")),
     targetSource: fs.readFileSync(path.join(projectDir, "design", "current", "Target.md"), "utf-8"),
     migrationEntries: fs.readdirSync(path.join(projectDir, "migrations")),
+    implementationEntries: fs.readdirSync(path.join(projectDir, "implementation")),
     predictionEntries: fs.readdirSync(path.join(projectDir, "prediction")),
     directories: {
       designCurrentExists: fs.existsSync(path.join(projectDir, "design", "current")),
+      implementationExists: fs.existsSync(path.join(projectDir, "implementation")),
       specsExists: fs.existsSync(path.join(projectDir, "specs")),
       migrationsExists: fs.existsSync(path.join(projectDir, "migrations")),
       predictionExists: fs.existsSync(path.join(projectDir, "prediction")),

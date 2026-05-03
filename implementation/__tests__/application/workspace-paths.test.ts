@@ -66,6 +66,7 @@ describe("prediction workspace config", () => {
         workspace: {
           directories: {
             design: "design-docs",
+            implementation: "implementation-src",
             specs: "quality/specs",
             migrations: "changesets",
             prediction: "predictions-tree",
@@ -76,12 +77,14 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
       design: "sourcedir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
     });
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design-docs"),
+      implementation: path.join(workspaceRoot, "implementation-src"),
       specs: path.join(workspaceRoot, "quality", "specs"),
       migrations: path.join(workspaceRoot, "changesets"),
       prediction: path.join(workspaceRoot, "predictions-tree"),
@@ -94,12 +97,14 @@ describe("prediction workspace config", () => {
 
     expect(DEFAULT_WORKSPACE_DIRECTORIES).toEqual({
       design: "design",
+      implementation: "implementation",
       specs: "specs",
       migrations: "migrations",
       prediction: "prediction",
     });
     expect(DEFAULT_WORKSPACE_PLACEMENT).toEqual({
       design: "sourcedir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
@@ -107,12 +112,14 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspaceDirectories({ fileSystem, workspaceRoot })).toEqual({
       design: "design",
+      implementation: "implementation",
       specs: "specs",
       migrations: "migrations",
       prediction: "prediction",
     });
     expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
       design: "sourcedir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
@@ -134,6 +141,7 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePlacement({ fileSystem, workspaceRoot })).toEqual({
       design: "workdir",
+      implementation: "sourcedir",
       specs: "sourcedir",
       migrations: "sourcedir",
       prediction: "sourcedir",
@@ -221,6 +229,7 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design"),
+      implementation: path.join(workspaceRoot, "implementation"),
       specs: path.join(workspaceRoot, "specs"),
       migrations: path.join(workspaceRoot, "migrations"),
       prediction: path.join(workspaceRoot, "prediction"),
@@ -243,6 +252,7 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design"),
+      implementation: path.join(workspaceRoot, "implementation"),
       specs: path.join(workspaceRoot, "specs"),
       migrations: path.join(workspaceRoot, "migrations"),
       prediction: path.join(invocationRoot, "prediction"),
@@ -258,12 +268,14 @@ describe("prediction workspace config", () => {
         workspace: {
           directories: {
             design: "docs",
+            implementation: "implementation-src",
             specs: "checks/specs",
             migrations: "history",
             prediction: "predicted",
           },
           placement: {
             design: "sourcedir",
+            implementation: "sourcedir",
             specs: "workdir",
             migrations: "workdir",
             prediction: "workdir",
@@ -274,6 +286,7 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "docs"),
+      implementation: path.join(workspaceRoot, "implementation-src"),
       specs: path.join(invocationRoot, "checks", "specs"),
       migrations: path.join(invocationRoot, "history"),
       prediction: path.join(invocationRoot, "predicted"),
@@ -289,12 +302,14 @@ describe("prediction workspace config", () => {
         workspace: {
           directories: {
             design: "design",
+            implementation: "implementation",
             specs: "quality/specs",
             migrations: "changesets",
             prediction: "predicted",
           },
           placement: {
             design: "sourcedir",
+            implementation: "sourcedir",
             specs: "workdir",
             migrations: "workdir",
             prediction: "workdir",
@@ -305,6 +320,7 @@ describe("prediction workspace config", () => {
 
     expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
       design: path.join(workspaceRoot, "design"),
+      implementation: path.join(workspaceRoot, "implementation"),
       specs: path.join(invocationRoot, "quality", "specs"),
       migrations: path.join(invocationRoot, "changesets"),
       prediction: path.join(invocationRoot, "predicted"),
@@ -346,12 +362,14 @@ describe("prediction workspace config", () => {
         invocationRoot,
         directories: {
           design: "../outside",
+          implementation: "implementation",
           specs: "specs",
           migrations: "migrations",
           prediction: "prediction",
         },
         placement: {
           design: "workdir",
+          implementation: "sourcedir",
           specs: "sourcedir",
           migrations: "sourcedir",
           prediction: "sourcedir",
@@ -369,12 +387,14 @@ describe("prediction workspace config", () => {
         workspace: {
           directories: {
             design: "source/design",
+            implementation: "implementation",
             specs: "design",
             migrations: "migrations",
             prediction: "prediction",
           },
           placement: {
             design: "workdir",
+            implementation: "sourcedir",
             specs: "sourcedir",
             migrations: "sourcedir",
             prediction: "sourcedir",
@@ -397,12 +417,14 @@ describe("prediction workspace config", () => {
         workspace: {
           directories: {
             design: "source/design/current",
+            implementation: "implementation",
             specs: "design",
             migrations: "migrations",
             prediction: "prediction",
           },
           placement: {
             design: "workdir",
+            implementation: "sourcedir",
             specs: "sourcedir",
             migrations: "sourcedir",
             prediction: "sourcedir",

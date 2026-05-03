@@ -37,6 +37,7 @@ export interface StartProjectOptions {
 
 interface ValidatedWorkspaceDirectories {
   designDir: string;
+  implementationDir: string;
   specsDir: string;
   migrationsDir: string;
   predictionDir: string;
@@ -44,6 +45,7 @@ interface ValidatedWorkspaceDirectories {
 
 interface ValidatedWorkspacePlacement {
   designPlacement: WorkspacePlacement;
+  implementationPlacement: WorkspacePlacement;
   specsPlacement: WorkspacePlacement;
   migrationsPlacement: WorkspacePlacement;
   predictionPlacement: WorkspacePlacement;
@@ -53,12 +55,14 @@ interface RundownConfigDocument {
   workspace?: {
     directories?: {
       design: string;
+      implementation: string;
       specs: string;
       migrations: string;
       prediction: string;
     };
     placement?: {
       design: WorkspacePlacement;
+      implementation: WorkspacePlacement;
       specs: WorkspacePlacement;
       migrations: WorkspacePlacement;
       prediction: WorkspacePlacement;
@@ -137,6 +141,10 @@ export function createStartProject(
     const migrationsDir = dependencies.pathOperations.join(
       targetDirectory,
       workspaceDirectories.migrationsDir,
+    );
+    const implementationDir = dependencies.pathOperations.join(
+      targetDirectory,
+      workspaceDirectories.implementationDir,
     );
     const specsDir = dependencies.pathOperations.join(
       targetDirectory,
@@ -234,6 +242,11 @@ export function createStartProject(
     if (!dependencies.fileSystem.exists(migrationsDir)) {
       dependencies.fileSystem.mkdir(migrationsDir, { recursive: true });
       emit({ kind: "success", message: "Created " + migrationsDir + "/" });
+    }
+
+    if (!dependencies.fileSystem.exists(implementationDir)) {
+      dependencies.fileSystem.mkdir(implementationDir, { recursive: true });
+      emit({ kind: "success", message: "Created " + implementationDir + "/" });
     }
 
     if (!dependencies.fileSystem.exists(specsDir)) {
@@ -470,6 +483,7 @@ function resolveAndValidateWorkspaceDirectories(input: {
   } = input;
   const defaults = {
     designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
+    implementationDir: DEFAULT_WORKSPACE_DIRECTORIES.implementation,
     specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
     migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
     predictionDir: DEFAULT_WORKSPACE_DIRECTORIES.prediction,
@@ -487,6 +501,12 @@ function resolveAndValidateWorkspaceDirectories(input: {
     "--specs-dir",
     pathOperations,
   );
+  const implementationDir = normalizeWorkspaceDirectoryOverride(
+    targetDirectory,
+    defaults.implementationDir,
+    "implementation directory default",
+    pathOperations,
+  );
   const migrationsDir = normalizeWorkspaceDirectoryOverride(
     targetDirectory,
     migrationsDirOption ?? defaults.migrationsDir,
@@ -502,6 +522,7 @@ function resolveAndValidateWorkspaceDirectories(input: {
 
   const buckets: Array<{ optionName: string; relativeDir: string }> = [
     { optionName: "--design-dir", relativeDir: designDir },
+    { optionName: "implementation directory default", relativeDir: implementationDir },
     { optionName: "--specs-dir", relativeDir: specsDir },
     { optionName: "--migrations-dir", relativeDir: migrationsDir },
     { optionName: "prediction directory default", relativeDir: predictionDir },
@@ -511,6 +532,7 @@ function resolveAndValidateWorkspaceDirectories(input: {
 
   return {
     designDir,
+    implementationDir,
     specsDir,
     migrationsDir,
     predictionDir,
@@ -628,6 +650,10 @@ function resolveAndValidateWorkspacePlacement(input: {
     input.specsPlacementOption ?? DEFAULT_WORKSPACE_PLACEMENT.specs,
     "--specs-placement",
   );
+  const implementationPlacement = normalizeWorkspacePlacementOverride(
+    DEFAULT_WORKSPACE_PLACEMENT.implementation,
+    "implementation placement default",
+  );
   const migrationsPlacement = normalizeWorkspacePlacementOverride(
     input.migrationsPlacementOption ?? DEFAULT_WORKSPACE_PLACEMENT.migrations,
     "--migrations-placement",
@@ -639,6 +665,7 @@ function resolveAndValidateWorkspacePlacement(input: {
 
   return {
     designPlacement,
+    implementationPlacement,
     specsPlacement,
     migrationsPlacement,
     predictionPlacement,
@@ -699,12 +726,14 @@ function persistWorkspaceConfiguration(input: {
       ...existingWorkspace,
       directories: {
         design: directories.designDir,
+        implementation: directories.implementationDir,
         specs: directories.specsDir,
         migrations: directories.migrationsDir,
         prediction: directories.predictionDir,
       },
       placement: {
         design: placement.designPlacement,
+        implementation: placement.implementationPlacement,
         specs: placement.specsPlacement,
         migrations: placement.migrationsPlacement,
         prediction: placement.predictionPlacement,

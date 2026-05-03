@@ -3,6 +3,7 @@ import type { FileSystem } from "../domain/ports/index.js";
 
 export interface WorkspaceDirectories {
   design: string;
+  implementation: string;
   specs: string;
   migrations: string;
   prediction: string;
@@ -16,6 +17,7 @@ export type WorkspacePlacement = typeof WORKSPACE_PLACEMENTS[number];
 
 export interface WorkspacePlacementMap {
   design: WorkspacePlacement;
+  implementation: WorkspacePlacement;
   specs: WorkspacePlacement;
   migrations: WorkspacePlacement;
   prediction: WorkspacePlacement;
@@ -23,6 +25,7 @@ export interface WorkspacePlacementMap {
 
 export interface WorkspacePaths {
   design: string;
+  implementation: string;
   specs: string;
   migrations: string;
   prediction: string;
@@ -47,6 +50,7 @@ interface RundownConfigDocument {
 
 export const DEFAULT_WORKSPACE_DIRECTORIES: WorkspaceDirectories = {
   design: "design",
+  implementation: "implementation",
   specs: "specs",
   migrations: "migrations",
   prediction: "prediction",
@@ -54,6 +58,7 @@ export const DEFAULT_WORKSPACE_DIRECTORIES: WorkspaceDirectories = {
 
 export const DEFAULT_WORKSPACE_PLACEMENT: WorkspacePlacementMap = {
   design: "sourcedir",
+  implementation: "sourcedir",
   specs: "sourcedir",
   migrations: "sourcedir",
   prediction: "sourcedir",
@@ -134,6 +139,12 @@ function resolveWorkspaceConfig(input: {
       value: directoriesSection?.design,
       fallback: DEFAULT_WORKSPACE_DIRECTORIES.design,
     }),
+    implementation: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "implementation",
+      value: directoriesSection?.implementation,
+      fallback: DEFAULT_WORKSPACE_DIRECTORIES.implementation,
+    }),
     specs: normalizeWorkspaceDirectoryValue({
       configPath,
       key: "specs",
@@ -160,6 +171,12 @@ function resolveWorkspaceConfig(input: {
       key: "design",
       value: placementSection?.design,
       fallback: DEFAULT_WORKSPACE_PLACEMENT.design,
+    }),
+    implementation: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "implementation",
+      value: placementSection?.implementation,
+      fallback: DEFAULT_WORKSPACE_PLACEMENT.implementation,
     }),
     specs: normalizeWorkspacePlacementValue({
       configPath,
@@ -260,6 +277,12 @@ export function resolveWorkspacePaths(input: {
       bucket: "design",
       root: resolvePlacementRoot(placement.design, workspaceRoot, invocationRoot),
       relativeDirectory: directories.design,
+    }),
+    implementation: resolveBucketPath({
+      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
+      bucket: "implementation",
+      root: resolvePlacementRoot(placement.implementation, workspaceRoot, invocationRoot),
+      relativeDirectory: directories.implementation,
     }),
     specs: resolveBucketPath({
       configPath: path.join(workspaceRoot, ".rundown", "config.json"),

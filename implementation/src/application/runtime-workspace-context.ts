@@ -28,14 +28,17 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspaceLinkPath",
   "isLinkedWorkspace",
   "workspaceDesignDir",
+  "workspaceImplementationDir",
   "workspaceSpecsDir",
   "workspaceMigrationsDir",
   "workspacePredictionDir",
   "workspaceDesignPlacement",
+  "workspaceImplementationPlacement",
   "workspaceSpecsPlacement",
   "workspaceMigrationsPlacement",
   "workspacePredictionPlacement",
   "workspaceDesignPath",
+  "workspaceImplementationPath",
   "workspaceSpecsPath",
   "workspaceMigrationsPath",
   "workspacePredictionPath",
@@ -97,6 +100,7 @@ export function buildWorkspaceContextTemplateVars(
   const placement = normalizedWorkspace.placement ?? DEFAULT_WORKSPACE_PLACEMENT;
   const paths = normalizedWorkspace.paths ?? {
     design: path.join(resolvePlacementRoot(context, placement.design), directories.design),
+    implementation: path.join(resolvePlacementRoot(context, placement.implementation), directories.implementation),
     specs: path.join(resolvePlacementRoot(context, placement.specs), directories.specs),
     migrations: path.join(resolvePlacementRoot(context, placement.migrations), directories.migrations),
     prediction: path.join(resolvePlacementRoot(context, placement.prediction), directories.prediction),
@@ -108,14 +112,17 @@ export function buildWorkspaceContextTemplateVars(
     workspaceLinkPath: context.workspaceLinkPath,
     isLinkedWorkspace: context.isLinkedWorkspace ? "true" : "false",
     workspaceDesignDir: directories.design,
+    workspaceImplementationDir: directories.implementation,
     workspaceSpecsDir: directories.specs,
     workspaceMigrationsDir: directories.migrations,
     workspacePredictionDir: directories.prediction,
     workspaceDesignPlacement: placement.design,
+    workspaceImplementationPlacement: placement.implementation,
     workspaceSpecsPlacement: placement.specs,
     workspaceMigrationsPlacement: placement.migrations,
     workspacePredictionPlacement: placement.prediction,
     workspaceDesignPath: paths.design,
+    workspaceImplementationPath: paths.implementation,
     workspaceSpecsPath: paths.specs,
     workspaceMigrationsPath: paths.migrations,
     workspacePredictionPath: paths.prediction,
@@ -156,12 +163,13 @@ function isWorkspaceDirectories(value: unknown): value is WorkspaceDirectories {
     return false;
   }
 
-  if (!("design" in value) || !("specs" in value) || !("migrations" in value) || !("prediction" in value)) {
+  if (!("design" in value) || !("implementation" in value) || !("specs" in value) || !("migrations" in value) || !("prediction" in value)) {
     return false;
   }
 
   const record = value as Record<string, unknown>;
   return typeof record.design === "string"
+    && typeof record.implementation === "string"
     && typeof record.specs === "string"
     && typeof record.migrations === "string"
     && typeof record.prediction === "string";
