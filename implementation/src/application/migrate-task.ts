@@ -600,12 +600,16 @@ async function runMigrateLoop(input: {
     if (stagedValidationErrorBeforePromotion) {
       throw new Error(stagedValidationErrorBeforePromotion);
     }
+    const promotedMigrationPaths: string[] = [];
     for (const draft of stagedDrafts) {
       const migrationPath = path.join(migrationsDir, draft.fileName);
       const migrationContent = dependencies.fileSystem.readText(draft.filePath);
       dependencies.fileSystem.writeText(migrationPath, migrationContent);
       createdMigrationFileNames.push(draft.fileName);
+      promotedMigrationPaths.push(migrationPath);
+    }
 
+    for (const migrationPath of promotedMigrationPaths) {
       await runExploreForMigration({
         runExplore: dependencies.runExplore,
         migrationPath,

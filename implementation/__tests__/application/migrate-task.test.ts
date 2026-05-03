@@ -43,7 +43,15 @@ describe("migrate-task", () => {
     );
 
     const events: ApplicationOutputEvent[] = [];
-    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+    let secondMigrationWasPromotedBeforeFirstExplore = false;
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async (source) => {
+      if (source.endsWith(formatMigrationFilename(2, "first-created-migration"))) {
+        secondMigrationWasPromotedBeforeFirstExplore = fs.existsSync(
+          path.join(workspace, "migrations", formatMigrationFilename(3, "second-created-migration")),
+        );
+      }
+      return EXIT_CODE_SUCCESS;
+    });
 
     const workerExecutor: WorkerExecutorPort = {
       runWorker: vi.fn(async ({ prompt }) => {
@@ -154,6 +162,7 @@ describe("migrate-task", () => {
         path.join(workspace, "migrations", formatMigrationFilename(3, "second-created-migration")),
         workspace,
       );
+      expect(secondMigrationWasPromotedBeforeFirstExplore).toBe(true);
       expect(
         fs.existsSync(path.join(workspace, ".rundown", "runs", "run-test", "drafted-migrations", "rev.1")),
       ).toBe(true);
