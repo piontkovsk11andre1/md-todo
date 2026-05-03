@@ -46,12 +46,12 @@ describe("with-task", () => {
         {
           keyPath: "workers.default",
           status: "set",
-          value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          value: ["opencode", "run", "$bootstrap"],
         },
         {
           keyPath: "workers.tui",
           status: "set",
-          value: ["opencode"],
+          value: ["opencode", "--prompt", "$bootstrap"],
         },
         {
           keyPath: "commands.discuss",
@@ -70,8 +70,8 @@ describe("with-task", () => {
     const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
     expect(parsed).toEqual({
       workers: {
-        default: ["opencode", "run", "--file", "$file", "$bootstrap"],
-        tui: ["opencode"],
+        default: ["opencode", "run", "$bootstrap"],
+        tui: ["opencode", "--prompt", "$bootstrap"],
       },
       commands: {
         discuss: ["opencode"],
@@ -136,8 +136,8 @@ describe("with-task", () => {
       workspace?: unknown;
     };
 
-    expect(parsed.workers?.default).toEqual(["opencode", "run", "--file", "$file", "$bootstrap"]);
-    expect(parsed.workers?.tui).toEqual(["opencode"]);
+    expect(parsed.workers?.default).toEqual(["opencode", "run", "$bootstrap"]);
+    expect(parsed.workers?.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
     expect(parsed.workers?.fallbacks).toEqual([["fallback", "run"]]);
     expect(parsed.commands?.discuss).toEqual(["opencode"]);
     expect(parsed.commands?.run).toEqual(["custom", "run"]);
@@ -263,9 +263,9 @@ describe("with-task", () => {
         if (scope === "effective") {
           switch (keyPath) {
             case "workers.default":
-              return ["opencode", "run", "--file", "$file", "$bootstrap"];
+              return ["opencode", "run", "$bootstrap"];
             case "workers.tui":
-              return ["opencode"];
+              return ["opencode", "--prompt", "$bootstrap"];
             case "commands.discuss":
               return ["opencode"];
             default:
@@ -303,12 +303,12 @@ describe("with-task", () => {
       {
         keyPath: "workers.default",
         status: "set",
-        value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+        value: ["opencode", "run", "$bootstrap"],
       },
       {
         keyPath: "workers.tui",
         status: "set",
-        value: ["opencode"],
+        value: ["opencode", "--prompt", "$bootstrap"],
       },
       {
         keyPath: "commands.discuss",
@@ -395,7 +395,7 @@ describe("with-task", () => {
     expect(parsed.workers?.default).toEqual(["opencode-pro", "run", "--file", "$file", "$bootstrap"]);
     expect(parsed.workers?.tui).toEqual(["opencode-pro"]);
     expect(parsed.commands?.discuss).toEqual(["opencode-pro"]);
-    expect(parsed.workers?.default).not.toEqual(["opencode", "run", "--file", "$file", "$bootstrap"]);
+    expect(parsed.workers?.default).not.toEqual(["opencode", "run", "$bootstrap"]);
   });
 
   it("prompts and saves custom worker mappings for unknown harness names", async () => {
@@ -575,8 +575,8 @@ describe("with-task", () => {
     expect(fs.existsSync(explicitConfigPath)).toBe(true);
     expect(JSON.parse(fs.readFileSync(explicitConfigPath, "utf8"))).toEqual({
       workers: {
-        default: ["opencode", "run", "--file", "$file", "$bootstrap"],
-        tui: ["opencode"],
+        default: ["opencode", "run", "$bootstrap"],
+        tui: ["opencode", "--prompt", "$bootstrap"],
       },
       commands: {
         discuss: ["opencode"],
@@ -635,8 +635,8 @@ describe("with-task", () => {
       };
     };
 
-    expect(parsed.workers?.default).toEqual(["opencode", "run", "--file", "$file", "$bootstrap"]);
-    expect(parsed.workers?.tui).toEqual(["opencode"]);
+    expect(parsed.workers?.default).toEqual(["opencode", "run", "$bootstrap"]);
+    expect(parsed.workers?.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
     expect(parsed.workers?.fallbacks).toEqual([["fallback", "run"]]);
     expect(parsed.commands?.discuss).toEqual(["opencode"]);
     expect(parsed.run?.commit).toBe(true);
@@ -703,15 +703,11 @@ describe("with-task", () => {
     expect(readValue(configDir, "local", "workers.default")).toEqual([
       "opencode",
       "run",
-      "--file",
-      "$file",
       "$bootstrap",
     ]);
     expect(readValue(configDir, "effective", "workers.default")).toEqual([
       "opencode",
       "run",
-      "--file",
-      "$file",
       "$bootstrap",
     ]);
 

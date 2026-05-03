@@ -1978,12 +1978,12 @@ describe("createWithCommandAction", () => {
         {
           keyPath: "workers.default",
           status: "set",
-          value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          value: ["opencode", "run", "$bootstrap"],
         },
         {
           keyPath: "workers.tui",
           status: "set",
-          value: ["opencode"],
+          value: ["opencode", "--prompt", "$bootstrap"],
         },
         {
           keyPath: "commands.discuss",
@@ -2032,7 +2032,7 @@ describe("createWithCommandAction", () => {
     expect(emitOutput).toHaveBeenCalledWith({ kind: "info", message: "Starting interactive discuss session..." });
     expect(emitOutput).toHaveBeenCalledWith({
       kind: "info",
-      message: "- workers.default = [\"opencode\",\"run\",\"--file\",\"$file\",\"$bootstrap\"]",
+      message: "- workers.default = [\"opencode\",\"run\",\"$bootstrap\"]",
     });
   });
 
@@ -2102,12 +2102,12 @@ describe("createWithCommandAction", () => {
         {
           keyPath: "workers.default" as const,
           status: "set" as const,
-          value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          value: ["opencode", "run", "$bootstrap"],
         },
         {
           keyPath: "workers.tui" as const,
           status: "set" as const,
-          value: ["opencode"],
+          value: ["opencode", "--prompt", "$bootstrap"],
         },
         {
           keyPath: "commands.discuss" as const,
@@ -2153,12 +2153,12 @@ describe("createWithCommandAction", () => {
         {
           keyPath: "workers.default" as const,
           status: "set" as const,
-          value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          value: ["opencode", "run", "$bootstrap"],
         },
         {
           keyPath: "workers.tui" as const,
           status: "set" as const,
-          value: ["opencode"],
+          value: ["opencode", "--prompt", "$bootstrap"],
         },
         {
           keyPath: "commands.discuss" as const,
@@ -2251,12 +2251,12 @@ describe("createWithCommandAction", () => {
         {
           keyPath: "workers.default" as const,
           status: "set" as const,
-          value: ["opencode", "run", "--file", "$file", "$bootstrap"],
+          value: ["opencode", "run", "$bootstrap"],
         },
         {
           keyPath: "workers.tui" as const,
           status: "set" as const,
-          value: ["opencode"],
+          value: ["opencode", "--prompt", "$bootstrap"],
         },
         {
           keyPath: "commands.discuss" as const,

@@ -30,8 +30,8 @@ export interface HarnessPresetRegistryEntry {
 const HARNESS_PRESET_PAYLOADS: Record<HarnessPresetKey, HarnessPresetPayload> = {
   opencode: {
     workers: {
-      default: ["opencode", "run", "--file", "$file", "$bootstrap"],
-      tui: ["opencode"],
+      default: ["opencode", "run", "$bootstrap"],
+      tui: ["opencode", "--prompt", "$bootstrap"],
     },
     commands: {
       discuss: ["opencode"],

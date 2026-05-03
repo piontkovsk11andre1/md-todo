@@ -28,8 +28,8 @@ describe("harness-preset-registry", () => {
 
     expect(payload).toEqual({
       workers: {
-        default: ["opencode", "run", "--file", "$file", "$bootstrap"],
-        tui: ["opencode"],
+        default: ["opencode", "run", "$bootstrap"],
+        tui: ["opencode", "--prompt", "$bootstrap"],
       },
       commands: {
         discuss: ["opencode"],
@@ -52,8 +52,13 @@ describe("harness-preset-registry", () => {
     for (const key of HARNESS_PRESET_KEYS) {
       const payload = getHarnessPresetPayload(key);
 
-      expect(payload.workers.default).toEqual([key, "run", "--file", "$file", "$bootstrap"]);
-      expect(payload.workers.tui).toEqual([key]);
+      if (key === "opencode") {
+        expect(payload.workers.default).toEqual(["opencode", "run", "$bootstrap"]);
+        expect(payload.workers.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
+      } else {
+        expect(payload.workers.default).toEqual([key, "run", "--file", "$file", "$bootstrap"]);
+        expect(payload.workers.tui).toEqual([key]);
+      }
       expect(payload.commands?.discuss).toEqual([key]);
     }
   });
@@ -76,8 +81,13 @@ describe("harness-preset-registry", () => {
 
   it("surfaces payloads on list entries", () => {
     for (const entry of listHarnessPresetEntries()) {
-      expect(entry.payload.workers.default).toEqual([entry.key, "run", "--file", "$file", "$bootstrap"]);
-      expect(entry.payload.workers.tui).toEqual([entry.key]);
+      if (entry.key === "opencode") {
+        expect(entry.payload.workers.default).toEqual(["opencode", "run", "$bootstrap"]);
+        expect(entry.payload.workers.tui).toEqual(["opencode", "--prompt", "$bootstrap"]);
+      } else {
+        expect(entry.payload.workers.default).toEqual([entry.key, "run", "--file", "$file", "$bootstrap"]);
+        expect(entry.payload.workers.tui).toEqual([entry.key]);
+      }
       expect(entry.payload.commands?.discuss).toEqual([entry.key]);
     }
   });
