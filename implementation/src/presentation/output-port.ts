@@ -79,23 +79,6 @@ function formatProgressLine(progress: ProgressPayload): string {
 }
 
 /**
- * Determines whether animated progress rendering is safe for this terminal session.
- */
-function isInteractiveProgressEnabled(): boolean {
-  if (!process.stdout.isTTY) {
-    return false;
-  }
-
-  const ci = process.env["CI"];
-  if (typeof ci !== "string") {
-    return true;
-  }
-
-  const normalized = ci.trim().toLowerCase();
-  return normalized === "" || normalized === "0" || normalized === "false";
-}
-
-/**
  * Returns the active group line prefix for nested task output.
  */
 function groupLinePrefix(): string {

@@ -281,7 +281,7 @@ describe("cliOutputPort", () => {
     }
   });
 
-  it("renders grouped output with box lines in TTY mode", () => {
+  it("renders grouped output without box lines in TTY mode", () => {
     const hadIsTTY = Object.prototype.hasOwnProperty.call(process.stdout, "isTTY");
     const previousIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
     Object.defineProperty(process.stdout, "isTTY", {
@@ -399,9 +399,9 @@ describe("cliOutputPort", () => {
 
       expect(logSpy).toHaveBeenCalledTimes(4);
       const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
-      expect(lines[0]).toBe("┌ Run 1");
-      expect(lines[1]).toBe("│  ℹ inside group");
-      expect(lines[2]).toBe("└ ✔ Done");
+      expect(lines[0]).toBe("Run 1");
+      expect(lines[1]).toBe("  ℹ inside group");
+      expect(lines[2]).toBe("✔ Done");
       expect(lines[3]).toBe("ℹ next command");
     } finally {
       if (previousCi === undefined) {
@@ -443,7 +443,7 @@ describe("cliOutputPort", () => {
 
       expect(logSpy).toHaveBeenCalledTimes(2);
       const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
-      expect(lines[0]).toBe("┌ Run that crashes");
+      expect(lines[0]).toBe("Run that crashes");
       expect(lines[1]).toBe("ℹ fresh invocation");
     } finally {
       if (previousCi === undefined) {
@@ -490,7 +490,6 @@ describe("cliOutputPort", () => {
       expect(logSpy).toHaveBeenCalledTimes(3);
       const lines = logSpy.mock.calls.map((call) => stripAnsi(call[0] as string));
       expect(lines[0]).toBe("[2/10] Add typed ToolFrontmatter schema parsing/validation...");
-      expect(lines[1]).toBe("    ℹ opencode run [wait]");
       expect(lines[1]).toBe("  ℹ opencode run [wait]");
       expect(lines[2]).toBe("✔ Done");
     } finally {
@@ -611,7 +610,7 @@ describe("cliOutputPort", () => {
 
       expect(errorSpy).toHaveBeenCalledTimes(1);
       const output = stripAnsi(errorSpy.mock.calls[0]?.[0] as string);
-      expect(output).toBe("└ ✖ Failed — repairs exhausted");
+      expect(output).toBe("✖ Failed — repairs exhausted");
     } finally {
       if (previousCi === undefined) {
         delete process.env.CI;
@@ -700,12 +699,9 @@ describe("cliOutputPort", () => {
       cliOutputPort.emit({ kind: "group-end", status: "failure", message: "failed" });
 
       expect(stderrSpy).toHaveBeenCalledTimes(1);
-      expect(stripAnsi(stderrSpy.mock.calls[0]?.[0] as string)).toBe("│  inline failure detail\n");
       expect(stripAnsi(stderrSpy.mock.calls[0]?.[0] as string)).toBe("  inline failure detail\n");
       expect(errorSpy).toHaveBeenCalledTimes(1);
-      expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toBe("└ ✖ Failed — failed");
       expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toBe("✖ Failed — failed");
-      expect(stripAnsi(stderrSpy.mock.calls[0]?.[0] as string)).toBe("  line 1\n  line 2\n");
     } finally {
       if (previousCi === undefined) {
         delete process.env.CI;
@@ -746,7 +742,7 @@ describe("cliOutputPort", () => {
       cliOutputPort.emit({ kind: "group-end", status: "failure", message: "failed" });
 
       expect(stderrSpy).toHaveBeenCalledTimes(1);
-      expect(stripAnsi(stderrSpy.mock.calls[0]?.[0] as string)).toBe("    line-1\n    line-2\n");
+      expect(stripAnsi(stderrSpy.mock.calls[0]?.[0] as string)).toBe("  line-1\n  line-2\n");
       expect(errorSpy).toHaveBeenCalledTimes(1);
       expect(stripAnsi(errorSpy.mock.calls[0]?.[0] as string)).toBe("✖ Failed — failed");
     } finally {
@@ -792,13 +788,11 @@ describe("cliOutputPort", () => {
 
       expect(logSpy).toHaveBeenCalledTimes(3);
       const lines = logSpy.mock.calls.map((call) => stripAnsiKeepTimestamp(call[0] as string));
-      expect(lines[0]).toBe(`┌ ${withTimestamp("Grouped output")}`);
       expect(lines[0]).toBe(withTimestamp("Grouped output"));
       expect(lines[1]).toBe("  line-1\n  line-2");
       expect(lines[2]).toBe(withTimestamp("✔ Done"));
 
       expect(stderrSpy).toHaveBeenCalledTimes(1);
-      expect(stripAnsiKeepTimestamp(stderrSpy.mock.calls[0]?.[0] as string)).toBe("│  err-1\n│  err-2\n");
       expect(stripAnsiKeepTimestamp(stderrSpy.mock.calls[0]?.[0] as string)).toBe("  err-1\n  err-2\n");
     } finally {
       if (previousCi === undefined) {

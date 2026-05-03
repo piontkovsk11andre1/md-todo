@@ -133,12 +133,6 @@ export function createStartProject(
       return EXIT_CODE_FAILURE;
     }
 
-    const designCurrentDir = externalDesignCurrentPath ?? dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.designDir,
-      "current",
-    );
-    const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
     const agentsPath = dependencies.pathOperations.join(targetDirectory, "AGENTS.md");
     const rundownConfigDir = dependencies.pathOperations.join(targetDirectory, ".rundown");
     const rundownConfigPath = dependencies.pathOperations.join(rundownConfigDir, "config.json");
@@ -199,15 +193,35 @@ export function createStartProject(
       emit,
     });
 
+    const configuredExternalDesignCurrentPath = resolveConfiguredExternalDesignCurrentPath({
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      configPath: rundownConfigPath,
+      localDesignCurrentDir: dependencies.pathOperations.join(
+        targetDirectory,
+        workspaceDirectories.designDir,
+        "current",
+      ),
+    });
+    const activeExternalDesignCurrentPath = externalDesignCurrentPath
+      ?? configuredExternalDesignCurrentPath;
+    const designCurrentDir = activeExternalDesignCurrentPath
+      ?? dependencies.pathOperations.join(
+        targetDirectory,
+        workspaceDirectories.designDir,
+        "current",
+      );
+    const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
+
     if (!dependencies.fileSystem.exists(designCurrentDir)) {
       dependencies.fileSystem.mkdir(designCurrentDir, { recursive: true });
       emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
     }
 
-    if (externalDesignCurrentPath) {
+    if (activeExternalDesignCurrentPath) {
       emit({
         kind: "success",
-        message: "Using external directory as design/current: " + externalDesignCurrentPath,
+        message: "Using external directory as design/current: " + activeExternalDesignCurrentPath,
       });
     } else {
       writeFileIfMissing(
@@ -704,6 +718,62 @@ function persistWorkspaceConfiguration(input: {
   }
 
   fileSystem.writeText(configPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+function resolveConfiguredExternalDesignCurrentPath(input: {
+  fileSystem: FileSystem;
+  pathOperations: PathOperationsPort;
+  configPath: string;
+  localDesignCurrentDir: string;
+}): string | undefined {
+  const {
+    fileSystem,
+    pathOperations,
+    configPath,
+    localDesignCurrentDir,
+  } = input;
+  if (!fileSystem.exists(configPath)) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fileSystem.readText(configPath));
+  } catch {
+    return undefined;
+  }
+
+  if (!isPlainObject(parsed)) {
+    return undefined;
+  }
+
+  const workspace = isPlainObject(parsed.workspace) ? parsed.workspace : undefined;
+  const design = workspace && isPlainObject(workspace.design) ? workspace.design : undefined;
+  const configuredPath = typeof design?.currentPath === "string"
+    ? design.currentPath.trim()
+    : "";
+  if (configuredPath.length === 0) {
+    return undefined;
+  }
+
+  const resolvedPath = pathOperations.isAbsolute(configuredPath)
+    ? pathOperations.resolve(configuredPath)
+    : pathOperations.resolve(pathOperations.dirname(configPath), configuredPath);
+  const normalizedResolvedPath = pathOperations.resolve(resolvedPath);
+  const normalizedLocalDesignCurrentDir = pathOperations.resolve(localDesignCurrentDir);
+  if (normalizedResolvedPath === normalizedLocalDesignCurrentDir) {
+    return undefined;
+  }
+
+  if (!fileSystem.exists(normalizedResolvedPath)) {
+    return undefined;
+  }
+
+  if (fileSystem.stat(normalizedResolvedPath)?.isDirectory !== true) {
+    return undefined;
+  }
+
+  return normalizedResolvedPath;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

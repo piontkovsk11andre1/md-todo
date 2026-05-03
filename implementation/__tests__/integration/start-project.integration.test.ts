@@ -697,6 +697,38 @@ describeIfStartAvailable("start-project integration", () => {
     ) as { workspace?: { design?: { currentPath?: string } } };
     expect(config.workspace?.design?.currentPath).toBe(path.normalize(externalDesignDir));
   });
+
+  it("does not create a local Target.md when config already defines external design/current", async () => {
+    const workspace = makeTempWorkspace();
+    const externalDesignDir = path.join(workspace, "external-design");
+
+    fs.mkdirSync(externalDesignDir, { recursive: true });
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          design: {
+            currentPath: externalDesignDir,
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Configured external design",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
+  });
 });
 
 function makeTempWorkspace(): string {

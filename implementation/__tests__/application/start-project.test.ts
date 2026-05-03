@@ -167,6 +167,31 @@ describe("start-project", () => {
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(harness.runExplore).not.toHaveBeenCalled();
   });
+
+  it("does not create local Target.md when external design is already configured", async () => {
+    const workspace = makeTempWorkspace();
+    const externalDesignDir = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          design: {
+            currentPath: externalDesignDir,
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({ description: "Use configured external design/current" });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(false);
+  });
 });
 
 function createHarness(workspaceRoot: string): {
