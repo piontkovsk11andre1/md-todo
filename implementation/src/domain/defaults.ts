@@ -282,7 +282,9 @@ When the selected task uses the \`get:\` prefix, enforce this output contract ex
 When the selected task uses the \`memory:\` prefix (including \`memorize:\`, \`remember:\`, or \`inventory:\` aliases):
 
 - Do not emit \`memory-result:\` lines. Persisted source-local memory artifacts are the authoritative memory state.
-- Do not edit checkbox state for the memory task. rundown marks completion after persistence and validation.
+- Do not mutate checkbox state in the source Markdown task file for memory capture unless the selected task text explicitly requests checkbox edits.
+- Do not insert ad hoc source notes (for example \`memory-result:\` bullets, research notes, headings, or status annotations) into the source Markdown task file unless the selected task text explicitly requests those edits.
+- rundown marks memory-task completion after persistence and validation.
 
 - By default, do not modify the source Markdown task file (\`{{file}}\`).
 - Exception: if the selected task explicitly requires edits to \`{{file}}\`, make only the requested content changes.
