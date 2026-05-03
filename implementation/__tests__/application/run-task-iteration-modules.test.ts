@@ -5899,7 +5899,7 @@ describe("complete-task-iteration", () => {
       [normalizedMemoryTask.file]: [
         "## Notes",
         "",
-        "- memory-result: captured context",
+        "- note: captured context",
         "- [x] memory: capture release context",
       ].join("\n"),
     });
@@ -5977,7 +5977,7 @@ describe("complete-task-iteration", () => {
     expect(fileSystem.readText(normalizedMemoryTask.file)).toBe([
       "## Notes",
       "",
-      "- memory-result: captured context",
+      "- note: captured context",
       "- [x] memory: capture release context",
     ].join("\n"));
   });

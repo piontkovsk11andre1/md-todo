@@ -92,7 +92,7 @@ describe("checkbox-operations", () => {
       "todo.md": [
         "## Notes",
         "",
-        "- memory-result: captured context",
+        "- note: captured context",
         "- [x] memory: capture release context",
         "- [ ] Follow-up task",
       ].join("\n"),
@@ -108,7 +108,7 @@ describe("checkbox-operations", () => {
     expect(fileSystem.readText("todo.md")).toBe([
       "## Notes",
       "",
-      "- memory-result: captured context",
+      "- note: captured context",
       "- [x] memory: capture release context",
       "- [ ] Follow-up task",
     ].join("\n"));
@@ -930,6 +930,23 @@ describe("checkbox-operations", () => {
 
     expect(fileSystem.readText("todo.md")).toBe([
       "- [ ] get: Find current module names",
+      "- [ ] Next task",
+    ].join("\n"));
+  });
+
+  it("removes memory-result metadata annotations during checkbox reset", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "- [x] memory: Capture release context",
+        "  - memory-result: captured context",
+        "- [x] Next task",
+      ].join("\n"),
+    });
+
+    resetFileCheckboxes("todo.md", fileSystem);
+
+    expect(fileSystem.readText("todo.md")).toBe([
+      "- [ ] memory: Capture release context",
       "- [ ] Next task",
     ].join("\n"));
   });
