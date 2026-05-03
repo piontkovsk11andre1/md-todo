@@ -132,6 +132,12 @@ export interface DiscoveredMigrationThread {
   threadSlug: string;
 }
 
+export interface LoadedMigrationThreadState {
+  thread: DiscoveredMigrationThread;
+  migrationsDir: string;
+  state: ReturnType<typeof readMigrationState>;
+}
+
 export function createMigrateTask(
   dependencies: MigrateTaskDependencies,
 ): (options: MigrateTaskOptions) => Promise<number> {
@@ -359,11 +365,18 @@ async function runMigrateLoop(input: {
     DEFAULT_MIGRATE_TEMPLATE,
   );
   const discoveredThreads = discoverMigrationThreads(dependencies.fileSystem, projectRoot);
+  const loadedThreadStates = loadMigrationThreadStates({
+    fileSystem: dependencies.fileSystem,
+    migrationsDir,
+    threads: discoveredThreads,
+  });
   if (discoveredThreads.length > 0) {
-    artifactRunExtra.migrationThreads = discoveredThreads.map((thread) => ({
+    artifactRunExtra.migrationThreads = loadedThreadStates.map(({ thread, migrationsDir: threadMigrationsDir, state }) => ({
       fileName: thread.fileName,
       sourcePathFromWorkspace: thread.sourcePathFromWorkspace,
       threadSlug: thread.threadSlug,
+      migrationsDir: toWorkspaceRelativeMigrationPath(workspaceRoot, threadMigrationsDir),
+      currentPosition: state.currentPosition,
     }));
   }
   let processedAnyRevision = false;
@@ -1389,6 +1402,40 @@ function readMigrationState(fileSystem: FileSystem, migrationsDir: string) {
     .filter((entry) => entry.isFile)
     .map((entry) => path.join(migrationsDir, entry.name));
   return parseMigrationDirectory(files, migrationsDir);
+}
+
+function migrationThreadMigrationsDir(migrationsDir: string, threadSlug: string): string {
+  return path.join(migrationsDir, "threads", threadSlug);
+}
+
+export function loadMigrationThreadStates(input: {
+  fileSystem: FileSystem;
+  migrationsDir: string;
+  threads: readonly DiscoveredMigrationThread[];
+}): LoadedMigrationThreadState[] {
+  const { fileSystem, migrationsDir, threads } = input;
+  return threads.map((thread) => {
+    const threadMigrationsDir = migrationThreadMigrationsDir(migrationsDir, thread.threadSlug);
+    const state = readMigrationStateFromDirectoryOrEmpty(fileSystem, threadMigrationsDir);
+    return {
+      thread,
+      migrationsDir: threadMigrationsDir,
+      state,
+    };
+  });
+}
+
+function readMigrationStateFromDirectoryOrEmpty(fileSystem: FileSystem, migrationsDir: string) {
+  if (!fileSystem.exists(migrationsDir)) {
+    return parseMigrationDirectory([], migrationsDir);
+  }
+
+  const stat = fileSystem.stat(migrationsDir);
+  if (!stat?.isDirectory) {
+    return parseMigrationDirectory([], migrationsDir);
+  }
+
+  return readMigrationState(fileSystem, migrationsDir);
 }
 
 export async function confirmBeforeWrite(

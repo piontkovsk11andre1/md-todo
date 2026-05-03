@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createMigrateTask,
   discoverMigrationThreads,
+  loadMigrationThreadStates,
 } from "../../src/application/migrate-task.js";
 import {
   EXIT_CODE_FAILURE,
@@ -744,6 +745,70 @@ describe("migrate-task", () => {
 
     const noneWhenNoMarkdown = discoverMigrationThreads(createNodeFileSystem(), workspace);
     expect(noneWhenNoMarkdown).toEqual([]);
+  });
+
+  it("loads per-thread migration state from migrations/threads/<thread>", () => {
+    const workspace = makeTempWorkspace();
+    const fileSystem = createNodeFileSystem();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    const migrationsDir = path.join(workspace, "migrations");
+    const billingThreadDir = path.join(migrationsDir, "threads", "billing");
+    const apiReviewThreadDir = path.join(migrationsDir, "threads", "api-review");
+
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "api review.md"), "# API Review\n", "utf-8");
+
+    fs.mkdirSync(path.join(migrationsDir, "threads"), { recursive: true });
+    fs.writeFileSync(path.join(migrationsDir, formatMigrationFilename(50, "root-only")), "# 50. Root Only\n", "utf-8");
+    fs.mkdirSync(billingThreadDir, { recursive: true });
+    fs.writeFileSync(path.join(billingThreadDir, formatMigrationFilename(2, "billing-seed")), "# 2. Billing Seed\n", "utf-8");
+    fs.mkdirSync(apiReviewThreadDir, { recursive: true });
+    fs.writeFileSync(path.join(apiReviewThreadDir, formatMigrationFilename(7, "api-review-seed")), "# 7. Api Review Seed\n", "utf-8");
+
+    const discoveredThreads = discoverMigrationThreads(fileSystem, workspace);
+    const loadedStates = loadMigrationThreadStates({
+      fileSystem,
+      migrationsDir,
+      threads: discoveredThreads,
+    });
+
+    expect(loadedStates.map((entry) => entry.thread.threadSlug)).toEqual(["api-review", "billing"]);
+    expect(loadedStates.map((entry) => entry.migrationsDir)).toEqual([
+      apiReviewThreadDir,
+      billingThreadDir,
+    ]);
+    expect(loadedStates.map((entry) => entry.state.currentPosition)).toEqual([7, 2]);
+    expect(loadedStates[0]?.state.migrations.map((migration) => path.basename(migration.filePath))).toEqual([
+      formatMigrationFilename(7, "api-review-seed"),
+    ]);
+    expect(loadedStates[1]?.state.migrations.map((migration) => path.basename(migration.filePath))).toEqual([
+      formatMigrationFilename(2, "billing-seed"),
+    ]);
+  });
+
+  it("loads empty state for a thread when its migrations directory does not exist", () => {
+    const workspace = makeTempWorkspace();
+    const fileSystem = createNodeFileSystem();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    const migrationsDir = path.join(workspace, "migrations");
+
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "ops.md"), "# Ops\n", "utf-8");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+
+    const discoveredThreads = discoverMigrationThreads(fileSystem, workspace);
+    const loadedStates = loadMigrationThreadStates({
+      fileSystem,
+      migrationsDir,
+      threads: discoveredThreads,
+    });
+
+    expect(loadedStates).toHaveLength(1);
+    expect(loadedStates[0]?.thread.threadSlug).toBe("ops");
+    expect(loadedStates[0]?.migrationsDir).toBe(path.join(migrationsDir, "threads", "ops"));
+    expect(loadedStates[0]?.state.currentPosition).toBe(0);
+    expect(loadedStates[0]?.state.migrations).toEqual([]);
   });
 });
 
