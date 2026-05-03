@@ -11215,6 +11215,8 @@ describe.sequential("CLI integration", () => {
     ].join("\n").toLowerCase();
     expect(combinedOutput.includes("--agents")).toBe(true);
     expect(combinedOutput.includes("unknown option")).toBe(true);
+    expect(combinedOutput.includes("rundown --agents")).toBe(false);
+    expect(combinedOutput.includes("rundown agent --agents")).toBe(false);
   });
 
   it("rejects --agents when used with subcommands", async () => {
@@ -11231,6 +11233,8 @@ describe.sequential("CLI integration", () => {
     ].join("\n").toLowerCase();
     expect(combinedOutput.includes("--agents")).toBe(true);
     expect(combinedOutput.includes("unknown option")).toBe(true);
+    expect(combinedOutput.includes("rundown --agents")).toBe(false);
+    expect(combinedOutput.includes("rundown agent --agents")).toBe(false);
   });
 
   it("rundown agent --agents is rejected as an unsupported option", async () => {
@@ -11247,6 +11251,8 @@ describe.sequential("CLI integration", () => {
     ].join("\n").toLowerCase();
     expect(combinedOutput.includes("--agents")).toBe(true);
     expect(combinedOutput.includes("unknown option")).toBe(true);
+    expect(combinedOutput.includes("rundown --agents")).toBe(false);
+    expect(combinedOutput.includes("rundown agent --agents")).toBe(false);
   });
 
   it("accepts root --continue shorthand flags for bare invocation", async () => {
