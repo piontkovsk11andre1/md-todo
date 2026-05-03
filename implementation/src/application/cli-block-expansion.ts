@@ -66,8 +66,13 @@ export async function expandCliBlocksWithOptions(params: {
   const optionsWithArtifactContext = artifactContext?.keepArtifacts
     ? {
       ...baseCliExpansionOptions,
+      artifactContext,
+      artifactPhase: "worker" as const,
       artifactPhaseLabel,
-      artifactExtra: { promptType: artifactPromptType },
+      artifactExtra: {
+        ...(baseCliExpansionOptions?.artifactExtra ?? {}),
+        promptType: artifactPromptType,
+      },
     }
     : baseCliExpansionOptions;
   const optionsWithTrace = withCliTrace(

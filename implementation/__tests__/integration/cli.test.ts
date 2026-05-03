@@ -2241,6 +2241,151 @@ describe.sequential("CLI integration", () => {
     ].join("\n"));
   });
 
+  it("run expands cli fenced blocks inside tool templates before invoking the worker", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "post.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(
+      toolTemplatePath,
+      [
+        "Tool payload: {{payload}}",
+        "```cli",
+        "echo tool-template-cli-output",
+        "```",
+        "Tool context:",
+        "{{context}}",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(roadmapPath, "- [ ] post: include cli context\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--show-agent-output",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];process.stdout.write(fs.readFileSync(p,'utf-8'));",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(combinedOutput.includes("<command>echo tool-template-cli-output</command>")).toBe(true);
+    expect(combinedOutput.includes("tool-template-cli-output")).toBe(true);
+    expect(combinedOutput.includes("```cli")).toBe(false);
+  });
+
+  it("run --ignore-cli-block leaves tool-template cli fences unexpanded", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const markerPath = path.join(workspace, "tool-template-cli-ignore-marker.txt");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "post.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(
+      toolTemplatePath,
+      [
+        "Tool payload: {{payload}}",
+        "```cli",
+        `node -e \"require('node:fs').writeFileSync(${JSON.stringify(markerPath.replace(/\\/g, "/"))},'1')\"`,
+        "```",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(roadmapPath, "- [ ] post: include cli context\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--ignore-cli-block",
+      "--show-agent-output",
+      "--",
+      "node",
+      "-e",
+      "const fs=require('node:fs');const p=process.argv[process.argv.length-1];process.stdout.write(fs.readFileSync(p,'utf-8'));",
+    ], workspace);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(markerPath)).toBe(false);
+    expect(combinedOutput.includes("```cli")).toBe(true);
+  });
+
+  it("run --keep-artifacts writes cli-tool-template stdout/stderr artifacts", async () => {
+    const workspace = makeTempWorkspace();
+    const roadmapPath = path.join(workspace, "roadmap.md");
+    const toolTemplatePath = path.join(workspace, ".rundown", "tools", "post.md");
+
+    fs.mkdirSync(path.dirname(toolTemplatePath), { recursive: true });
+    fs.writeFileSync(
+      toolTemplatePath,
+      [
+        "Tool payload: {{payload}}",
+        "```cli",
+        "echo cli-tool-template-artifacts",
+        "```",
+      ].join("\n") + "\n",
+      "utf-8",
+    );
+    fs.writeFileSync(roadmapPath, "- [ ] post: include cli context\n", "utf-8");
+
+    const result = await runCli([
+      "run",
+      "roadmap.md",
+      "--no-verify",
+      "--keep-artifacts",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const savedRun = findSavedRunByCommand(workspace, "run");
+    expect(savedRun).toBeDefined();
+
+    const runDir = path.join(workspace, ".rundown", "runs", savedRun!.runId);
+    const cliToolTemplatePhaseDir = fs.readdirSync(runDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(runDir, entry.name))
+      .find((phaseDir) => {
+        const metadataPath = path.join(phaseDir, "metadata.json");
+        if (!fs.existsSync(metadataPath)) {
+          return false;
+        }
+
+        const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as {
+          phaseLabel?: unknown;
+          extra?: { promptType?: unknown };
+        };
+        return metadata.phaseLabel === "cli-tool-template"
+          || metadata.extra?.promptType === "tool-template";
+      });
+
+    expect(cliToolTemplatePhaseDir).toBeDefined();
+    expect(fs.readFileSync(path.join(cliToolTemplatePhaseDir!, "cli-block-1-stdout.txt"), "utf-8").trim())
+      .toBe("cli-tool-template-artifacts");
+    expect(fs.readFileSync(path.join(cliToolTemplatePhaseDir!, "cli-block-1-stderr.txt"), "utf-8"))
+      .toBe("");
+  });
+
   it("run falls through gracefully when a tool prefix has no matching file", async () => {
     const workspace = makeTempWorkspace();
     const roadmapPath = path.join(workspace, "roadmap.md");
