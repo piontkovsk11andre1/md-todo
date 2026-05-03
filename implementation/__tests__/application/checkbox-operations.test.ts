@@ -87,6 +87,33 @@ describe("checkbox-operations", () => {
     ].join("\n"));
   });
 
+  it("treats shifted pre-checked memory tasks as already completed when task text is normalized", () => {
+    const fileSystem = createFileSystem({
+      "todo.md": [
+        "## Notes",
+        "",
+        "- memory-result: captured context",
+        "- [x] memory: capture release context",
+        "- [ ] Follow-up task",
+      ].join("\n"),
+    });
+    const normalizedTask = createTask({
+      text: "capture release context",
+      line: 1,
+      index: 0,
+      file: "todo.md",
+    });
+
+    expect(() => checkTaskUsingFileSystem(normalizedTask, fileSystem)).not.toThrow();
+    expect(fileSystem.readText("todo.md")).toBe([
+      "## Notes",
+      "",
+      "- memory-result: captured context",
+      "- [x] memory: capture release context",
+      "- [ ] Follow-up task",
+    ].join("\n"));
+  });
+
   it("normalizes for-current metadata to the first item when current value is stale", () => {
     const fileSystem = createFileSystem({
       "todo.md": [

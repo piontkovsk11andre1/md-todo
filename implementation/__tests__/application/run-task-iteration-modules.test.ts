@@ -5890,6 +5890,98 @@ describe("complete-task-iteration", () => {
     expect(failRun).toHaveBeenCalledWith(2, "verification-failed", "verification-failed", 2);
   });
 
+  it("does not fail completion when a memory task checkbox is already checked in source", async () => {
+    const normalizedMemoryTask = createTask(path.join(cwd, "tasks.md"), "capture release context", {
+      line: 1,
+      index: 0,
+    });
+    const fileSystem = createInMemoryFileSystem({
+      [normalizedMemoryTask.file]: [
+        "## Notes",
+        "",
+        "- memory-result: captured context",
+        "- [x] memory: capture release context",
+      ].join("\n"),
+    });
+    const { dependencies } = createDependencies({
+      cwd,
+      task: normalizedMemoryTask,
+      fileSystem,
+      gitClient: createGitClientMock(),
+    });
+    const finishRun = vi.fn(async () => 0);
+    const afterTaskCompleteSpy = vi.spyOn(runLifecycleModule, "afterTaskComplete").mockResolvedValue({});
+
+    const result = await completeTaskIteration({
+      dependencies,
+      emit: vi.fn(),
+      state: {
+        traceWriter: dependencies.traceWriter,
+        deferredCommitContext: null,
+        tasksCompleted: 0,
+        runCompleted: false,
+      },
+      traceRunSession: createCompletionSession(),
+      failRun: vi.fn(async () => 1),
+      finishRun,
+      resetArtifacts: vi.fn(),
+      keepArtifacts: true,
+      effectiveRunAll: false,
+      commitAfterComplete: false,
+      deferCommitUntilPostRun: false,
+      commitMessageTemplate: undefined,
+      onCompleteCommand: undefined,
+      onFailCommand: undefined,
+      hideHookOutput: false,
+      maxRepairAttempts: 1,
+      allowRepair: true,
+      trace: false,
+      verbose: false,
+      cliBlockExecutor: dependencies.cliBlockExecutor!,
+      cliExpansionEnabled: true,
+      task: normalizedMemoryTask,
+      sourceText: fileSystem.readText(normalizedMemoryTask.file),
+      expandedSource: fileSystem.readText(normalizedMemoryTask.file),
+      expandedContextBefore: "",
+      templates: {
+        task: "",
+        discuss: "",
+        research: "",
+        verify: "",
+        repair: "",
+        plan: "",
+        trace: "",
+      },
+      templateVarsWithTrace: {},
+      automationCommand: ["opencode", "run"],
+      automationWorkerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
+      shouldVerify: false,
+      runMode: "wait",
+      verificationPrompt: "",
+      artifactContext: {
+        runId: "run-complete",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-complete"),
+        cwd,
+        keepArtifacts: true,
+        commandName: "run",
+      },
+      cliExecutionOptionsWithVerificationTemplateFailureAbort: undefined,
+      verificationFailureMessage: "unused",
+      verificationFailureRunReason: "unused",
+      extraTemplateVars: {},
+    });
+
+    expect(result).toEqual({ continueLoop: false, exitCode: 0, groupEnded: true });
+    expect(afterTaskCompleteSpy).toHaveBeenCalledTimes(1);
+    expect(finishRun).toHaveBeenCalledWith(0, "completed", true, undefined, {});
+    expect(fileSystem.readText(normalizedMemoryTask.file)).toBe([
+      "## Notes",
+      "",
+      "- memory-result: captured context",
+      "- [x] memory: capture release context",
+    ].join("\n"));
+  });
+
   it("returns exit code 2 when resolve outcome is unresolved", async () => {
     const fileSystem = createInMemoryFileSystem({
       [task.file]: "- [ ] Ship release\n",

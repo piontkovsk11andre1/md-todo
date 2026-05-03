@@ -29,6 +29,10 @@ function relocateTask(source: string, task: Task): Task {
   return (
     freshTasks.find((candidate) => candidate.text === task.text && !candidate.checked) ??
     freshTasks.find((candidate) => candidate.text === task.text) ??
+    freshTasks.find((candidate) => candidate.index === task.index && !candidate.checked) ??
+    freshTasks.find((candidate) => candidate.index === task.index) ??
+    freshTasks.find((candidate) => candidate.line === task.line && !candidate.checked) ??
+    freshTasks.find((candidate) => candidate.line === task.line) ??
     task
   );
 }
