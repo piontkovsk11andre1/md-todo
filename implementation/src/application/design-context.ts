@@ -581,6 +581,7 @@ function resolveDesignDiffTarget(
   fileSystem: FileSystem,
   workspace: {
     revisionsRootDir: string;
+    discoveryRevisionsRootDir: string;
     currentDir: string;
   },
   revisions: DesignRevisionDirectory[],
@@ -604,7 +605,7 @@ function resolveDesignDiffTarget(
         plannedAt: null,
         migrations: [],
       },
-      metadataPath: getDesignRevisionMetadataPath(workspace.revisionsRootDir, "current"),
+      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, "current"),
     };
   }
 
@@ -657,14 +658,14 @@ function resolveDesignDiffTarget(
     return {
       kind: "revision",
       name: trimmedTarget,
-      absolutePath: path.join(workspace.revisionsRootDir, trimmedTarget),
+      absolutePath: path.join(workspace.discoveryRevisionsRootDir, trimmedTarget),
       metadata: {
         createdAt: "",
         label: "",
         plannedAt: null,
         migrations: [],
       },
-      metadataPath: getDesignRevisionMetadataPath(workspace.revisionsRootDir, trimmedTarget),
+      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, trimmedTarget),
       revisionIndex: parsedTarget?.index,
     };
   }
@@ -679,7 +680,7 @@ function resolveDesignDiffTarget(
       plannedAt: null,
       migrations: [],
     },
-      metadataPath: getDesignRevisionMetadataPath(workspace.revisionsRootDir, "current"),
+      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, "current"),
     };
 }
 

@@ -916,6 +916,42 @@ describe("design-context revision metadata and immutability", () => {
     expect(diff.changes).toEqual([]);
     expect(diff.sourceReferences.map(normalizePath)).toEqual(["/repo/docs/rev.9"]);
   });
+
+  it("resolves missing explicit revision targets against legacy design/rev.N fallback when canonical revisions are absent", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "rev.2", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/rev.2": [{ name: "Target.md", isDirectory: false, isFile: true }],
+      },
+      files: {
+        "/repo/design/current/Target.md": "current\n",
+        "/repo/design/rev.2/Target.md": "two\n",
+      },
+      stats: {
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/rev.2": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const diff = prepareDesignRevisionDiffContext(fileSystem, "/repo", { target: "rev.9" });
+
+    expect(diff.fromRevision).toBeNull();
+    expect(diff.toTarget).toMatchObject({
+      kind: "revision",
+      name: "rev.9",
+      metadata: { createdAt: "", label: "" },
+      revisionIndex: 9,
+    });
+    expect(normalizePath(diff.toTarget.absolutePath)).toBe("/repo/design/rev.9");
+    expect(normalizePath(diff.toTarget.metadataPath)).toBe("/repo/design/rev.9.meta.json");
+    expect(diff.summary).toBe("Design diff unavailable: target directory does not exist for rev.9.");
+    expect(diff.sourceReferences.map(normalizePath)).toEqual(["/repo/design/rev.9"]);
+  });
 });
 
 describe("design-context canonical workspace resolution", () => {
