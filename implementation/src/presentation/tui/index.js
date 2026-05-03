@@ -33,6 +33,13 @@ import {
   renderWorkersSceneLines,
   runWorkersSceneAction,
 } from "./scenes/workers.js";
+import {
+  createHealthSceneState,
+  handleHealthInput,
+  reloadHealthSceneState,
+  renderHealthSceneLines,
+  runHealthSceneAction,
+} from "./scenes/health.js";
 import { createProfilesSceneState, handleProfilesInput, renderProfilesSceneLines } from "./scenes/profiles.js";
 import {
   createSettingsSceneState,
@@ -69,6 +76,7 @@ function parseFps(value) {
 function createSceneRouterState() {
   return {
     sceneId: "mainMenu",
+    sceneStack: ["mainMenu"],
     showHelpOverlay: false,
     mainMenuHint: "",
     mainMenuState: createMainMenuSceneState(),
@@ -76,15 +84,35 @@ function createSceneRouterState() {
     continueSceneState: createContinueSceneState(),
     runState: createInitialRunState(),
     workersSceneState: createWorkersSceneState(),
+    healthSceneState: createHealthSceneState(),
     profilesSceneState: createProfilesSceneState(),
     settingsSceneState: createSettingsSceneState(),
     helpSceneState: createHelpSceneState(),
     newWorkSceneState: createNewWorkSceneState(),
     agentSessionPending: false,
     workersActionPending: false,
+    healthActionPending: false,
     settingsActionPending: false,
     helpActionPending: false,
   };
+}
+
+function pushScene(state, sceneId) {
+  if (typeof sceneId !== "string" || sceneId.length === 0) {
+    return;
+  }
+  state.sceneStack.push(sceneId);
+  state.sceneId = sceneId;
+}
+
+function popScene(state) {
+  if (!Array.isArray(state.sceneStack) || state.sceneStack.length <= 1) {
+    state.sceneStack = ["mainMenu"];
+    state.sceneId = "mainMenu";
+    return;
+  }
+  state.sceneStack.pop();
+  state.sceneId = state.sceneStack[state.sceneStack.length - 1] || "mainMenu";
 }
 
 function isArrowUp(rawInput) {
@@ -100,6 +128,7 @@ function isBack(rawInput) {
 }
 
 function resetToMainMenu(state) {
+  state.sceneStack = ["mainMenu"];
   state.sceneId = "mainMenu";
   state.showHelpOverlay = false;
   state.mainMenuState = createMainMenuSceneState();
@@ -180,6 +209,9 @@ function buildSceneLines(state, spacing, currentWorkingDirectory, viewportColumn
   }
   if (state.sceneId === "workers") {
     return renderWorkersSceneLines({ state: state.workersSceneState, sectionGap: spacing.sectionGap });
+  }
+  if (state.sceneId === "health") {
+    return renderHealthSceneLines({ state: state.healthSceneState, sectionGap: spacing.sectionGap });
   }
   if (state.sceneId === "profiles") {
     return renderProfilesSceneLines({ state: state.profilesSceneState, sectionGap: spacing.sectionGap });
@@ -311,6 +343,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
 
     let newWorkLoadToken = 0;
     let workersLoadToken = 0;
+    let healthLoadToken = 0;
     let settingsLoadToken = 0;
 
     const openNewWorkScene = () => {
@@ -330,7 +363,7 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
     };
 
     const openWorkersScene = () => {
-      state.sceneId = "workers";
+      pushScene(state, "workers");
       state.showHelpOverlay = false;
       state.workersSceneState = {
         ...createWorkersSceneState(),
@@ -347,6 +380,27 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
           return;
         }
         state.workersSceneState = nextState;
+      });
+    };
+
+    const openHealthScene = () => {
+      pushScene(state, "health");
+      state.showHelpOverlay = false;
+      state.healthSceneState = {
+        ...createHealthSceneState(),
+        loading: true,
+        banner: "",
+      };
+
+      const loadToken = ++healthLoadToken;
+      void reloadHealthSceneState({
+        state: state.healthSceneState,
+        currentWorkingDirectory,
+      }).then((nextState) => {
+        if (loadToken !== healthLoadToken || state.sceneId !== "health") {
+          return;
+        }
+        state.healthSceneState = nextState;
       });
     };
 
@@ -591,12 +645,17 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
         state.workersSceneState = result.state;
         if (result.backToParent || isBack(rawInput)) {
           workersLoadToken += 1;
-          state.sceneId = "mainMenu";
+          popScene(state);
           state.workersActionPending = false;
           state.workersSceneState = {
             ...state.workersSceneState,
             pendingGlobalBootstrap: false,
           };
+          return;
+        }
+
+        if (result.action?.type === "open-health") {
+          openHealthScene();
           return;
         }
 
@@ -619,6 +678,39 @@ export async function runRootTui({ app, workerPattern, cliVersion, argv } = {}) 
             };
           }).finally(() => {
             state.workersActionPending = false;
+          });
+        }
+        return;
+      }
+
+      if (state.sceneId === "health") {
+        const result = handleHealthInput({ rawInput, state: state.healthSceneState });
+        state.healthSceneState = result.state;
+        if (result.backToParent || isBack(rawInput)) {
+          healthLoadToken += 1;
+          state.healthActionPending = false;
+          popScene(state);
+          return;
+        }
+
+        if (result.action && !state.healthActionPending) {
+          state.healthActionPending = true;
+          void runHealthSceneAction({
+            action: result.action,
+            state: state.healthSceneState,
+            currentWorkingDirectory,
+            suspendTui: teardownTuiForWorker,
+            resumeTui: restoreTuiAfterWorker,
+          }).then((nextState) => {
+            state.healthSceneState = nextState;
+          }).catch((error) => {
+            state.healthSceneState = {
+              ...state.healthSceneState,
+              loading: false,
+              banner: error instanceof Error ? error.message : String(error),
+            };
+          }).finally(() => {
+            state.healthActionPending = false;
           });
         }
         return;
