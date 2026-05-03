@@ -7,10 +7,14 @@ import {
   parseMigrationDirectory,
   parseMigrationFilename,
 } from "../domain/migration-parser.js";
-import { parseTasks } from "../domain/parser.js";
+import { parseTasks, type Task } from "../domain/parser.js";
 import type {
   ArtifactStore,
   FileSystem,
+  TaskRepairPort,
+  TaskVerificationPort,
+  TraceWriterPort,
+  VerificationStore,
   SourceResolverPort,
   TemplateLoader,
   WorkerConfigPort,
@@ -35,6 +39,7 @@ import {
   prepareDesignRevisionDiffContext,
   type DesignRevisionDiffContext,
 } from "./design-context.js";
+import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import {
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
@@ -57,10 +62,12 @@ export interface MigrateTaskOptions {
 export interface MigrateTaskDependencies {
   workerExecutor: WorkerExecutorPort;
   fileSystem: FileSystem;
+  traceWriter: TraceWriterPort;
   templateLoader: TemplateLoader;
   sourceResolver: SourceResolverPort;
   workerConfigPort: WorkerConfigPort;
   artifactStore: ArtifactStore;
+  configDir?: string;
   interactiveInput: InteractiveInputPort;
   output: ApplicationOutputPort;
   runExplore: (source: string, cwd: string) => Promise<number>;
@@ -406,54 +413,174 @@ async function runMigrateLoop(input: {
       emit({ kind: "stderr", text: result.stderr });
     }
 
-    const stagedDraftResult = readStagedDraftMigrationsFromArtifactRun(
-      dependencies.fileSystem,
-      artifactContext.rootDir,
+    const syntheticTask = createSyntheticMigrateTask(
+      path.join(migrationDraftDir, "_staged-migration-verification.md"),
       targetRevision.name,
     );
-    if (stagedDraftResult.invalidFileNames.length > 0) {
-      throw new Error(
-        "Drafted migration filenames must be canonical (N. Title.md). Invalid files in "
-          + migrationDraftDir
-          + ": "
-          + stagedDraftResult.invalidFileNames.join(", "),
-      );
-    }
-    const stagedDrafts = stagedDraftResult.drafts;
-    if (stagedDrafts.length === 0) {
-      if (revisionDiff.changes.length === 0) {
-        emit({
-          kind: "info",
-          message: "Planner drafted no migrations for " + targetRevision.name + ": no diff changes detected.",
+    const stagedVerificationStore = createInMemoryVerificationStore();
+    const verifyStagedDraftTaskSet = async (): Promise<{ valid: boolean; stdout?: string }> => {
+      const verification = verifyCurrentStagedDraftSet({
+        fileSystem: dependencies.fileSystem,
+        artifactRunRootDir: artifactContext.rootDir,
+        revisionName: targetRevision.name,
+        revisionDiff,
+        currentPosition: latestState.currentPosition,
+        migrationDraftDir,
+      });
+      const resultText = verification.valid
+        ? "OK"
+        : (verification.failureReason ?? "Verification failed (no details).");
+      stagedVerificationStore.write(syntheticTask, resultText);
+      return {
+        valid: verification.valid,
+        stdout: resultText,
+      };
+    };
+    const stagedTaskVerification: TaskVerificationPort = {
+      verify: async ({ onWorkerOutput }) => {
+        const verification = await verifyStagedDraftTaskSet();
+        if (onWorkerOutput) {
+          onWorkerOutput(verification.stdout ?? "", "");
+        }
+        return verification;
+      },
+    };
+    const stagedTaskRepair: TaskRepairPort = {
+      repair: async ({ onWorkerOutput }) => {
+        const previousFailure = stagedVerificationStore.read(syntheticTask)
+          ?? "Verification failed (no details).";
+        const repairPrompt = buildMigrateRepairPrompt({
+          revisionName: targetRevision.name,
+          migrationDraftDir,
+          migrationsDir,
+          currentPosition: latestState.currentPosition,
+          failureReason: previousFailure,
+          revisionDiff,
         });
-        markRevisionPlanned(
+        const migrationsDirSnapshotBeforeRepair = snapshotDirectoryContents(
           dependencies.fileSystem,
-          workspaceRoot,
-          targetRevision.name,
-          [],
+          migrationsDir,
         );
-        continue;
-      }
+        const repairRunResult = await dependencies.workerExecutor.runWorker({
+          workerPattern: slugWorkerPattern,
+          prompt: repairPrompt,
+          mode: "wait",
+          cwd: workspaceRoot,
+          timeoutMs: workerTimeoutMs,
+          artifactContext,
+          artifactPhase: "repair",
+          artifactPhaseLabel: "migrate-staged-repair",
+          artifactExtra: {
+            revision: targetRevision.name,
+            migrationDraftDir,
+          },
+        });
+        if (onWorkerOutput) {
+          onWorkerOutput(repairRunResult.stdout, repairRunResult.stderr);
+        }
+        if ((repairRunResult.exitCode ?? 1) !== 0) {
+          const failureReason = "Staged migration repair worker failed.";
+          stagedVerificationStore.write(syntheticTask, failureReason);
+          return {
+            valid: false,
+            attempts: 1,
+            repairStdout: repairRunResult.stdout,
+            verificationStdout: failureReason,
+          };
+        }
+        const migrationsDirSnapshotAfterRepair = snapshotDirectoryContents(
+          dependencies.fileSystem,
+          migrationsDir,
+        );
+        const migrationsMutation = diffDirectorySnapshots(
+          migrationsDirSnapshotBeforeRepair,
+          migrationsDirSnapshotAfterRepair,
+        );
+        if (migrationsMutation) {
+          const failureReason = "Repair must mutate staged drafts only; real migrations directory changed ("
+            + migrationsMutation
+            + ").";
+          stagedVerificationStore.write(syntheticTask, failureReason);
+          return {
+            valid: false,
+            attempts: 1,
+            repairStdout: repairRunResult.stdout,
+            verificationStdout: failureReason,
+          };
+        }
+        const verification = await verifyStagedDraftTaskSet();
+        return {
+          valid: verification.valid,
+          attempts: 1,
+          repairStdout: repairRunResult.stdout,
+          verificationStdout: verification.stdout,
+        };
+      },
+    };
 
+    const stagedVerifyRepair = await runVerifyRepairLoop({
+      taskVerification: stagedTaskVerification,
+      taskRepair: stagedTaskRepair,
+      verificationStore: stagedVerificationStore,
+      traceWriter: dependencies.traceWriter,
+      output: dependencies.output,
+    }, {
+      task: syntheticTask,
+      source: "",
+      contextBefore: "",
+      verifyTemplate: "",
+      repairTemplate: "",
+      workerPattern: slugWorkerPattern,
+      configDir: dependencies.configDir,
+      maxRepairAttempts: MIGRATE_MAX_REPAIR_ATTEMPTS,
+      allowRepair: true,
+      templateVars: {},
+      artifactContext,
+      trace: false,
+      showAgentOutput,
+      runMode: "wait",
+      executionOutputCaptured: true,
+      isInlineCliTask: false,
+      isToolExpansionTask: false,
+    });
+
+    if (!stagedVerifyRepair.valid) {
       throw new Error(
-        "Planner did not draft migration files in "
+        "Staged migration drafts failed verification after repair attempts: "
+        + (stagedVerifyRepair.failureReason ?? "Verification failed (no details).")
+        + " Staged drafts preserved in "
         + migrationDraftDir
-        + ". Re-run with --show-agent-output --keep-artifacts to inspect worker output.",
+        + ".",
       );
     }
 
-    const stagedValidationError = validateStagedDraftMigrations(stagedDrafts, latestState.currentPosition);
-    if (stagedValidationError) {
-      throw new Error(stagedValidationError);
-    }
-
-    const stagedCoverageError = verifyStagedDraftCoverage({
+    const stagedDraftVerificationAfterRepair = verifyCurrentStagedDraftSet({
       fileSystem: dependencies.fileSystem,
-      drafts: stagedDrafts,
+      artifactRunRootDir: artifactContext.rootDir,
+      revisionName: targetRevision.name,
       revisionDiff,
+      currentPosition: latestState.currentPosition,
+      migrationDraftDir,
     });
-    if (stagedCoverageError) {
-      throw new Error(stagedCoverageError);
+    if (!stagedDraftVerificationAfterRepair.valid) {
+      throw new Error(
+        stagedDraftVerificationAfterRepair.failureReason
+        ?? "Staged migration drafts failed verification after repair.",
+      );
+    }
+    const stagedDrafts = stagedDraftVerificationAfterRepair.drafts;
+    if (stagedDrafts.length === 0 && revisionDiff.changes.length === 0) {
+      emit({
+        kind: "info",
+        message: "Planner drafted no migrations for " + targetRevision.name + ": no diff changes detected.",
+      });
+      markRevisionPlanned(
+        dependencies.fileSystem,
+        workspaceRoot,
+        targetRevision.name,
+        [],
+      );
+      continue;
     }
 
     emit({
@@ -522,6 +649,7 @@ interface StagedDraftMigration {
 }
 
 const DRAFTED_MIGRATIONS_SUBDIR = "drafted-migrations";
+const MIGRATE_MAX_REPAIR_ATTEMPTS = 2;
 const PLACEHOLDER_DRAFT_LINE_PATTERN = /^(?:[-*]\s*\[[ xX]\]\s*)?(?:todo|to do|tbd|placeholder|implement this migration|implement migration|pending)\b/i;
 const COVERAGE_TOKEN_IGNORE = new Set([
   "md",
@@ -686,6 +814,217 @@ function verifyStagedDraftCoverage(input: {
     return "Drafted migrations are excessively overlapping; split or de-duplicate responsibilities: "
       + overlappingPairs.join(", ")
       + ".";
+  }
+
+  return null;
+}
+
+function verifyCurrentStagedDraftSet(input: {
+  fileSystem: FileSystem;
+  artifactRunRootDir: string;
+  revisionName: string;
+  revisionDiff: DesignRevisionDiffContext;
+  currentPosition: number;
+  migrationDraftDir: string;
+}): {
+  valid: boolean;
+  failureReason: string | null;
+  drafts: StagedDraftMigration[];
+} {
+  const {
+    fileSystem,
+    artifactRunRootDir,
+    revisionName,
+    revisionDiff,
+    currentPosition,
+    migrationDraftDir,
+  } = input;
+  const stagedDraftResult = readStagedDraftMigrationsFromArtifactRun(
+    fileSystem,
+    artifactRunRootDir,
+    revisionName,
+  );
+
+  if (stagedDraftResult.invalidFileNames.length > 0) {
+    return {
+      valid: false,
+      failureReason: "Drafted migration filenames must be canonical (N. Title.md). Invalid files in "
+        + migrationDraftDir
+        + ": "
+        + stagedDraftResult.invalidFileNames.join(", "),
+      drafts: [],
+    };
+  }
+
+  const stagedDrafts = stagedDraftResult.drafts;
+  if (stagedDrafts.length === 0) {
+    if (revisionDiff.changes.length === 0) {
+      return {
+        valid: true,
+        failureReason: null,
+        drafts: [],
+      };
+    }
+
+    return {
+      valid: false,
+      failureReason: "Planner did not draft migration files in "
+        + migrationDraftDir
+        + ". Re-run with --show-agent-output --keep-artifacts to inspect worker output.",
+      drafts: [],
+    };
+  }
+
+  const stagedValidationError = validateStagedDraftMigrations(stagedDrafts, currentPosition);
+  if (stagedValidationError) {
+    return {
+      valid: false,
+      failureReason: stagedValidationError,
+      drafts: [],
+    };
+  }
+
+  const stagedCoverageError = verifyStagedDraftCoverage({
+    fileSystem,
+    drafts: stagedDrafts,
+    revisionDiff,
+  });
+  if (stagedCoverageError) {
+    return {
+      valid: false,
+      failureReason: stagedCoverageError,
+      drafts: [],
+    };
+  }
+
+  return {
+    valid: true,
+    failureReason: null,
+    drafts: stagedDrafts,
+  };
+}
+
+function buildMigrateRepairPrompt(input: {
+  revisionName: string;
+  migrationDraftDir: string;
+  migrationsDir: string;
+  currentPosition: number;
+  failureReason: string;
+  revisionDiff: DesignRevisionDiffContext;
+}): string {
+  const {
+    revisionName,
+    migrationDraftDir,
+    migrationsDir,
+    currentPosition,
+    failureReason,
+    revisionDiff,
+  } = input;
+  return [
+    "Repair staged migration drafts for revision " + revisionName + ".",
+    "",
+    "Rules:",
+    "- Edit only files inside this staging directory: " + migrationDraftDir,
+    "- Do not modify files in real migrations directory: " + migrationsDir,
+    "- Keep canonical migration filenames: N. Title.md",
+    "- Use migration numbers strictly greater than " + String(currentPosition),
+    "- Keep drafted numbers continuous with no gaps",
+    "",
+    "Latest verification failure:",
+    failureReason,
+    "",
+    "Design diff summary:",
+    revisionDiff.summary,
+    "",
+    "Changed files:",
+    revisionDiff.changes.map((change) => "- " + change.kind + ": " + change.relativePath).join("\n"),
+    "",
+    "Update staged draft files now. If no migrations are needed because there is no diff drift, remove all staged files and output DONE.",
+  ].join("\n");
+}
+
+function createSyntheticMigrateTask(filePath: string, revisionName: string): Task {
+  return {
+    text: "verify staged migration drafts for " + revisionName,
+    checked: false,
+    index: 0,
+    line: 1,
+    column: 1,
+    offsetStart: 0,
+    offsetEnd: 0,
+    file: filePath,
+    isInlineCli: false,
+    depth: 0,
+    children: [],
+    subItems: [],
+  };
+}
+
+function createInMemoryVerificationStore(): VerificationStore {
+  const store = new Map<string, string>();
+  const keyOf = (task: Task): string => task.file + "::" + String(task.index);
+  return {
+    write(task, content) {
+      store.set(keyOf(task), content);
+    },
+    read(task) {
+      return store.get(keyOf(task)) ?? null;
+    },
+    remove(task) {
+      store.delete(keyOf(task));
+    },
+  };
+}
+
+function snapshotDirectoryContents(
+  fileSystem: FileSystem,
+  rootDir: string,
+): Map<string, string> {
+  const snapshot = new Map<string, string>();
+  const visit = (currentDir: string, relativePrefix: string): void => {
+    if (!fileSystem.exists(currentDir)) {
+      return;
+    }
+    const entries = fileSystem.readdir(currentDir)
+      .slice()
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      const relativePath = relativePrefix.length > 0
+        ? relativePrefix + "/" + entry.name
+        : entry.name;
+      if (entry.isDirectory) {
+        visit(absolutePath, relativePath);
+        continue;
+      }
+      if (!entry.isFile) {
+        continue;
+      }
+      snapshot.set(relativePath, fileSystem.readText(absolutePath));
+    }
+  };
+
+  visit(rootDir, "");
+  return snapshot;
+}
+
+function diffDirectorySnapshots(
+  before: Map<string, string>,
+  after: Map<string, string>,
+): string | null {
+  const beforeKeys = new Set(before.keys());
+  for (const [relativePath, afterContent] of after) {
+    if (!before.has(relativePath)) {
+      return "unexpected file created: " + relativePath;
+    }
+    beforeKeys.delete(relativePath);
+    const beforeContent = before.get(relativePath);
+    if (beforeContent !== afterContent) {
+      return "unexpected file modified: " + relativePath;
+    }
+  }
+  for (const removedPath of beforeKeys) {
+    return "unexpected file removed: " + removedPath;
   }
 
   return null;

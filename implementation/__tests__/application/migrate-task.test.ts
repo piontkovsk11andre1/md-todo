@@ -11,6 +11,7 @@ import {
 import { formatMigrationFilename } from "../../src/domain/migration-parser.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
 import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
+import { createNoopTraceWriter } from "../../src/infrastructure/adapters/noop-trace-writer.js";
 import type {
   ApplicationOutputEvent,
   ArtifactStore,
@@ -115,6 +116,7 @@ describe("migrate-task", () => {
     const migrateTask = createMigrateTask({
       workerExecutor,
       fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
       templateLoader: {
         load: () => undefined,
       },
@@ -123,6 +125,7 @@ describe("migrate-task", () => {
         load: () => undefined,
       },
       artifactStore,
+      configDir: path.join(workspace, ".rundown"),
       interactiveInput,
       output: {
         emit: (event) => {
@@ -176,7 +179,6 @@ describe("migrate-task", () => {
 
     const events: ApplicationOutputEvent[] = [];
     const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
-
     const workerExecutor: WorkerExecutorPort = {
       runWorker: vi.fn(async ({ prompt }) => {
         if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
@@ -236,6 +238,7 @@ describe("migrate-task", () => {
     const migrateTask = createMigrateTask({
       workerExecutor,
       fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
       templateLoader: {
         load: () => undefined,
       },
@@ -244,6 +247,7 @@ describe("migrate-task", () => {
         load: () => undefined,
       },
       artifactStore,
+      configDir: path.join(workspace, ".rundown"),
       interactiveInput,
       output: {
         emit: (event) => {
@@ -361,6 +365,7 @@ describe("migrate-task", () => {
     const migrateTask = createMigrateTask({
       workerExecutor,
       fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
       templateLoader: {
         load: () => undefined,
       },
@@ -369,6 +374,7 @@ describe("migrate-task", () => {
         load: () => undefined,
       },
       artifactStore,
+      configDir: path.join(workspace, ".rundown"),
       interactiveInput,
       output: {
         emit: (event) => {
@@ -396,6 +402,279 @@ describe("migrate-task", () => {
         .join("\n");
       expect(errorMessages).toContain("Drafted migrations do not appear to cover all changed design areas");
       expect(errorMessages).toContain("BillingFlow.md");
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it("repairs staged drafts and re-verifies before promotion", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "design", "rev.1", "BillingFlow.md"),
+      "# Billing\n\nNew billing workflow requirements.\n",
+      "utf-8",
+    );
+
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+
+    let draftedFileName = "";
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt }) => {
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          draftedFileName = formatMigrationFilename(position + 1, "api-migration");
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, draftedFileName),
+            "# 2. Api Migration\n\n- [ ] Update API handlers only.\n",
+            "utf-8",
+          );
+          return {
+            exitCode: 0,
+            stdout: "drafted migration files",
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("Repair staged migration drafts")) {
+          const draftDirMatch = prompt.match(/Edit only files inside this staging directory:\s*(.+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          fs.writeFileSync(
+            path.join(draftDir, draftedFileName),
+            "# 2. Api Migration\n\n- [ ] Cover BillingFlow.md changes and billing workflow updates.\n",
+            "utf-8",
+          );
+          return {
+            exitCode: 0,
+            stdout: "repaired staged draft",
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => {
+        throw new Error("not used");
+      }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const sourceResolver: SourceResolverPort = {
+      resolveSources: vi.fn(async () => []),
+    };
+
+    const interactiveInput: InteractiveInputPort = {
+      isTTY: () => false,
+      prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: {
+        load: () => undefined,
+      },
+      sourceResolver,
+      workerConfigPort: {
+        load: () => undefined,
+      },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput,
+      output: {
+        emit: () => {},
+      },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      const promotedPath = path.join(workspace, "migrations", formatMigrationFilename(2, "api-migration"));
+      expect(fs.existsSync(promotedPath)).toBe(true);
+      expect(fs.readFileSync(promotedPath, "utf-8")).toContain("BillingFlow.md");
+      expect(runExplore).toHaveBeenCalledTimes(1);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it("fails when repair mutates real migrations directory instead of staged drafts", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "design", "rev.1", "BillingFlow.md"),
+      "# Billing\n\nNew billing workflow requirements.\n",
+      "utf-8",
+    );
+
+    const events: ApplicationOutputEvent[] = [];
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+    let repairWriteCount = 0;
+
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt }) => {
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "api-migration")),
+            "# 2. Api Migration\n\n- [ ] Update API handlers only.\n",
+            "utf-8",
+          );
+          return {
+            exitCode: 0,
+            stdout: "drafted migration files",
+            stderr: "",
+          };
+        }
+
+        if (prompt.includes("Repair staged migration drafts")) {
+          repairWriteCount += 1;
+          fs.writeFileSync(
+            path.join(workspace, "migrations", formatMigrationFilename(900 + repairWriteCount, "bad-repair-write")),
+            "# Bad Repair Write\n\n- [ ] should never be written during staged repair\n",
+            "utf-8",
+          );
+          return {
+            exitCode: 0,
+            stdout: "repaired staged draft",
+            stderr: "",
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => {
+        throw new Error("not used");
+      }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const sourceResolver: SourceResolverPort = {
+      resolveSources: vi.fn(async () => []),
+    };
+
+    const interactiveInput: InteractiveInputPort = {
+      isTTY: () => false,
+      prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: {
+        load: () => undefined,
+      },
+      sourceResolver,
+      workerConfigPort: {
+        load: () => undefined,
+      },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput,
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(runExplore).not.toHaveBeenCalled();
+      const errorMessages = events
+        .filter((event) => event.kind === "error")
+        .map((event) => event.message)
+        .join("\n");
+      expect(errorMessages).toContain("Repair must mutate staged drafts only");
     } finally {
       process.chdir(previousCwd);
     }

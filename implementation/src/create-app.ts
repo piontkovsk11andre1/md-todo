@@ -688,10 +688,12 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     migrateTask: (ports) => createMigrateTask({
       workerExecutor: ports.workerExecutor,
       fileSystem: ports.fileSystem,
+      traceWriter: ports.traceWriter,
       templateLoader: ports.templateLoader,
       sourceResolver: ports.sourceResolver,
       workerConfigPort: ports.workerConfigPort,
       artifactStore: ports.artifactStore,
+      configDir: ports.configDir?.configDir,
       interactiveInput: ports.interactiveInput,
       output: ports.output,
       runTask: runTaskUseCase(ports),
