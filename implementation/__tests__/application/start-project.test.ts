@@ -7,7 +7,6 @@ import {
   EXIT_CODE_SUCCESS,
   type ExitCode,
 } from "../../src/domain/exit-codes.js";
-import { formatMigrationFilename } from "../../src/domain/migration-parser.js";
 import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
 import type {
   ApplicationOutputEvent,
@@ -134,13 +133,7 @@ describe("start-project", () => {
   it("only requests enrichment for files created during start", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
-    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
     fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Existing target\n", "utf-8");
-    fs.writeFileSync(
-      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
-      "# Existing migration\n",
-      "utf-8",
-    );
     const harness = createHarness(workspace);
 
     const code = await harness.startProject({ description: "No new docs" });
@@ -149,23 +142,14 @@ describe("start-project", () => {
     expect(harness.runExplore).not.toHaveBeenCalled();
   });
 
-  it("enriches newly created target and initial migration without configuration warning", async () => {
+  it("does not run explore during start", async () => {
     const workspace = makeTempWorkspace();
     const harness = createHarness(workspace);
 
     const code = await harness.startProject({ description: "Enriched start" });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
-    expect(harness.runExplore).toHaveBeenNthCalledWith(
-      1,
-      path.join(workspace, "design", "current", "Target.md"),
-      workspace,
-    );
-    expect(harness.runExplore).toHaveBeenNthCalledWith(
-      2,
-      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
-      workspace,
-    );
+    expect(harness.runExplore).not.toHaveBeenCalled();
 
     const warningMessages = harness.events
       .filter((event) => event.kind === "warn")
@@ -173,7 +157,7 @@ describe("start-project", () => {
     expect(warningMessages.some((message) => message.includes("Explore integration is not configured"))).toBe(false);
   });
 
-  it("enriches only the newly created migration when using external --from-design", async () => {
+  it("does not enrich when using external --from-design", async () => {
     const workspace = makeTempWorkspace();
     const externalDesignDir = makeTempWorkspace();
     const harness = createHarness(workspace);
@@ -184,11 +168,7 @@ describe("start-project", () => {
     });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
-    expect(harness.runExplore).toHaveBeenCalledTimes(1);
-    expect(harness.runExplore).toHaveBeenCalledWith(
-      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
-      workspace,
-    );
+    expect(harness.runExplore).not.toHaveBeenCalled();
   });
 });
 

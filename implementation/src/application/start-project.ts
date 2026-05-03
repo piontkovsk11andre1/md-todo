@@ -17,7 +17,6 @@ import {
   WORKSPACE_PLACEMENTS,
   type WorkspacePlacement,
 } from "./workspace-paths.js";
-import { formatMigrationFilename } from "../domain/migration-parser.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type {
   FileSystem,
@@ -104,11 +103,6 @@ export function createStartProject(
     const targetDirectory = dirOption
       ? dependencies.pathOperations.resolve(dirOption)
       : invocationDirectory;
-    const targetDirectoryExistedBeforeStart = dependencies.fileSystem.exists(targetDirectory);
-    const targetDirectoryHadFilesBeforeStart = targetDirectoryExistedBeforeStart
-      && dependencies.fileSystem.stat(targetDirectory)?.isDirectory === true
-      && dependencies.fileSystem.readdir(targetDirectory).length > 0;
-
     if (!dependencies.fileSystem.exists(targetDirectory)) {
       dependencies.fileSystem.mkdir(targetDirectory, { recursive: true });
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
@@ -177,11 +171,6 @@ export function createStartProject(
       implementationRoot: targetDirectory,
       excludedRelativePaths: bootstrapExcludedRelativePaths,
     });
-    const initialMigrationPath = dependencies.pathOperations.join(
-      migrationsDir,
-      formatMigrationFilename(1, "initialize"),
-    );
-
     await initGitRepo(dependencies.gitClient, targetDirectory);
 
     const initProject = createInitProject({
@@ -232,23 +221,18 @@ export function createStartProject(
       emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
     }
 
-    const exploreFiles: string[] = [];
-
     if (externalDesignCurrentPath) {
       emit({
         kind: "success",
         message: "Using external directory as design/current: " + externalDesignCurrentPath,
       });
     } else {
-      const createdDesignTarget = writeFileIfMissing(
+      writeFileIfMissing(
         dependencies.fileSystem,
         designPath,
         buildDesignMarkdown(description),
         emit,
       );
-      if (createdDesignTarget) {
-        exploreFiles.push(designPath);
-      }
     }
     writeFileIfMissing(dependencies.fileSystem, agentsPath, getAgentsTemplate(), emit);
 
@@ -265,19 +249,6 @@ export function createStartProject(
     if (!dependencies.fileSystem.exists(predictionDir)) {
       dependencies.fileSystem.mkdir(predictionDir, { recursive: true });
       emit({ kind: "success", message: "Created " + predictionDir + "/" });
-    }
-
-    const createdInitialMigration = writeFileIfMissing(
-      dependencies.fileSystem,
-      initialMigrationPath,
-      buildInitialMigrationMarkdown(description, {
-        seedFromExistingWorkspace: targetDirectoryHadFilesBeforeStart,
-        designDir: workspaceDirectories.designDir,
-      }),
-      emit,
-    );
-    if (createdInitialMigration) {
-      exploreFiles.push(initialMigrationPath);
     }
 
     try {
@@ -310,18 +281,6 @@ export function createStartProject(
         message: error instanceof Error ? error.message : String(error),
       });
       return EXIT_CODE_FAILURE;
-    }
-
-    if (exploreFiles.length > 0) {
-      const exploreExitCode = await runExploreSteps(
-        dependencies.runExplore,
-        targetDirectory,
-        exploreFiles,
-        emit,
-      );
-      if (exploreExitCode !== EXIT_CODE_SUCCESS) {
-        return exploreExitCode;
-      }
     }
 
     try {
@@ -615,42 +574,6 @@ function hasAnyFilesRecursively(fileSystem: FileSystem, rootDirectory: string): 
   return false;
 }
 
-function buildInitialMigrationMarkdown(
-  description: string,
-  options?: {
-    seedFromExistingWorkspace?: boolean;
-    designDir?: string;
-  },
-): string {
-  if (options?.seedFromExistingWorkspace) {
-    const designTargetPath = [options.designDir ?? "design", "current", "Target.md"].join("/");
-    return [
-      "# 1. Initialize",
-      "",
-      "Seed migration generated from project description:",
-      "",
-      "> " + description,
-      "",
-      "- [ ] Research target documents and existing project materials",
-      `- [ ] Create the revision-0 baseline target from ${designTargetPath}`,
-      "",
-    ].join("\n");
-  }
-
-  return [
-    "# 1. Initialize",
-    "",
-    "Seed migration generated from project description:",
-    "",
-    "> " + description,
-    "",
-    "- [ ] Document initial architecture assumptions",
-    "- [ ] Establish baseline project structure",
-    "- [ ] Capture first validation checkpoints",
-    "",
-  ].join("\n");
-}
-
 function buildWorkspaceLinkTarget(
   pathOperations: PathOperationsPort,
   fromDirectory: string,
@@ -832,23 +755,6 @@ function writeFileIfMissing(
   fileSystem.writeText(filePath, content);
   emit({ kind: "success", message: "Created " + filePath });
   return true;
-}
-
-async function runExploreSteps(
-  runExplore: (source: string, cwd: string) => Promise<number>,
-  cwd: string,
-  files: string[],
-  emit: ApplicationOutputPort["emit"],
-): Promise<number> {
-  for (const filePath of files) {
-    const exploreExitCode = await runExplore(filePath, cwd);
-    if (exploreExitCode !== EXIT_CODE_SUCCESS) {
-      emit({ kind: "error", message: "Explore failed for " + filePath });
-      return exploreExitCode;
-    }
-  }
-
-  return EXIT_CODE_SUCCESS;
 }
 
 function resolveAndValidateWorkspaceDirectories(input: {

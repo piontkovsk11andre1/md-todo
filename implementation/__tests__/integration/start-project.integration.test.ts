@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatMigrationFilename } from "../../src/domain/migration-parser.js";
 
 const tempDirs: string[] = [];
 
@@ -170,17 +169,9 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "migrations"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "prediction"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize")))).toBe(true);
+    expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
     expect(fs.existsSync(path.join(projectDir, ".rundown", "workspace.link"))).toBe(true);
     expect(fs.readFileSync(path.join(projectDir, ".rundown", "workspace.link"), "utf-8").trim()).toBe("..");
-
-    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
-    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
-    expect(initialMigrationSource).toContain("- [ ] Document initial architecture assumptions");
-    expect(initialMigrationSource).toContain("- [ ] Establish baseline project structure");
-    expect(initialMigrationSource).toContain("- [ ] Capture first validation checkpoints");
-    expect(initialMigrationSource).not.toContain("Research target documents and existing project materials");
-    expect(initialMigrationSource).not.toContain("Create the revision-0 baseline target");
 
     const defaultConfig = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
@@ -256,7 +247,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(workspace, "specs"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "migrations"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "prediction"))).toBe(true);
-    expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")))).toBe(true);
+    expect(fs.readdirSync(path.join(workspace, "migrations"))).toEqual([]);
     expect(fs.readFileSync(path.join(workspace, ".rundown", "workspace.link"), "utf-8").trim()).toBe(".");
 
     const config = JSON.parse(
@@ -401,7 +392,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "quality", "specs"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "changesets"))).toBe(true);
     expect(fs.existsSync(path.join(projectDir, "prediction"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, "changesets", formatMigrationFilename(1, "initialize")))).toBe(true);
+    expect(fs.readdirSync(path.join(projectDir, "changesets"))).toEqual([]);
 
     const config = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
@@ -468,7 +459,7 @@ describeIfStartAvailable("start-project integration", () => {
     });
   });
 
-  it("seeds first migration for existing directories with research and revision-0 baseline tasks", async () => {
+  it("does not create migration files for existing directories", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-project";
     const projectDir = path.join(workspace, projectDirName);
@@ -514,10 +505,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
-    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
-    expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
-    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from design/current/Target.md");
+    expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
 
     const targetDesignPath = path.join(projectDir, "design", "current", "Target.md");
     const targetDesignSource = fs.readFileSync(targetDesignPath, "utf-8");
@@ -597,7 +585,7 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(projectDir, "prediction", "src", "large.bin"))).toBe(false);
   });
 
-  it("uses configured design directory path in non-empty workspace migration seed", async () => {
+  it("keeps custom design dir while leaving migrations empty in non-empty workspace", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-custom-design";
     const projectDir = path.join(workspace, projectDirName);
@@ -645,13 +633,11 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "migrations", formatMigrationFilename(1, "initialize"));
-    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
-    expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
-    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");
+    expect(fs.readdirSync(path.join(projectDir, "migrations"))).toEqual([]);
+    expect(fs.existsSync(path.join(projectDir, "docs", "design", "current", "Target.md"))).toBe(true);
   });
 
-  it("seeds existing-directory migration with custom workspace mapping and persists it in config", async () => {
+  it("uses custom workspace mapping and leaves custom migrations dir empty", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-custom-workspace";
     const projectDir = path.join(workspace, projectDirName);
@@ -703,10 +689,7 @@ describeIfStartAvailable("start-project integration", () => {
 
     expect(result.code).toBe(0);
 
-    const initialMigrationPath = path.join(projectDir, "changesets", formatMigrationFilename(1, "initialize"));
-    const initialMigrationSource = fs.readFileSync(initialMigrationPath, "utf-8");
-    expect(initialMigrationSource).toContain("- [ ] Research target documents and existing project materials");
-    expect(initialMigrationSource).toContain("- [ ] Create the revision-0 baseline target from docs/design/current/Target.md");
+    expect(fs.readdirSync(path.join(projectDir, "changesets"))).toEqual([]);
 
     const config = JSON.parse(
       fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
