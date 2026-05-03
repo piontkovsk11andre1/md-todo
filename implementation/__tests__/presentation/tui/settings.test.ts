@@ -58,9 +58,7 @@ describe("tui settings integration", () => {
   it("cycles scope effective -> local -> global -> effective", async () => {
     const harness = await createTuiHarness({ initialScene: "settings" });
 
-    expect(harness.frame()).toContain("scope: effective");
-    expect(harness.frame()).toContain("provenance shown");
-    expect(harness.frame()).toContain("◀ local");
+    expect(harness.frame()).toMatchSnapshot();
 
     await harness.press("s");
     expect(harness.frame()).toContain("scope: local");

@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`tui settings integration > cycles scope effective -> local -> global -> effective 1`] = `
+"██████  ██   ██ ███    ██ ██████   ██████  ██     ██ ███    ██
+██   ██ ██   ██ ████   ██ ██   ██ ██    ██ ██     ██ ████   ██
+██████  ██   ██ ██ ██  ██ ██   ██ ██    ██ ██  █  ██ ██ ██  ██
+██   ██ ██   ██ ██  ██ ██ ██   ██ ██    ██ ██ ███ ██ ██  ██ ██
+██   ██  █████  ██   ████ ██████   ██████   ███ ███  ██   ████
+
+
+Status:  READY 
+==========================================================================
+
+Settings ─ scope: effective ─ provenance shown
+
+> alpha         1  ◀ local
+  beta          true  ◀ global
+
+[s] scope ▸ effective | local | global
+[e] edit current scope file in $EDITOR   [o] reveal config file path
+[↵] inspect value (full text + raw JSON)
+[Esc] Back to menu
+
+Press ?/h for help, Esc/Backspace to go back, q or Ctrl+C to quit."
+`;

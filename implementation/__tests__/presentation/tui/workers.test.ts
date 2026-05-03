@@ -24,27 +24,7 @@ describe("tui workers integration", () => {
       initialScene: "workers",
     });
 
-    const frame = harness.frame();
-
-    expect(frame).toContain("Workers");
-    expect(frame).toContain("Pool");
-    expect(frame).toMatch(/default\s+opencode run --model gpt-5/);
-    expect(frame).toMatch(/tui\s+opencode run --model gpt-5-mini/);
-    expect(frame).toMatch(/fallbacks\s+1\. opencode run --model gpt-4\.1-mini/);
-    expect(frame).toMatch(/workerTimeoutMs\s+45000/);
-
-    expect(frame).toContain("Per-command overrides (commands.<name>)");
-    expect(frame).toMatch(/verify\s+opencode run --model gpt-4\.1-mini/);
-    expect(frame).toContain("tools.post-on-giteaopencode run --model gpt-5.3-mini --no-approval");
-
-    expect(frame).toContain("Phase routing (run.workerRouting) - summary");
-    expect(frame).toContain("2 attempt rules");
-    expect(frame).toContain("1 attempt rule");
-    expect(frame).toContain("inherits");
-
-    expect(frame).toContain("ready");
-    expect(frame).toContain("cooling until");
-    expect(frame).toContain("unavailable");
+    expect(harness.frame()).toMatchSnapshot();
     expect(createApp).toHaveBeenCalled();
   });
 

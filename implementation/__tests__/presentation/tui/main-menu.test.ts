@@ -18,15 +18,7 @@ async function flushMicrotasks(): Promise<void> {
 describe("tui main menu integration", () => {
   it("renders all six menu rows", async () => {
     const harness = await createTuiHarness();
-    const frame = harness.frame();
-
-    expect(frame).toContain("Main Menu:");
-    expect(frame).toContain("1. Continue");
-    expect(frame).toContain("2. New Work");
-    expect(frame).toContain("3. Workers");
-    expect(frame).toContain("4. Profiles");
-    expect(frame).toContain("5. Settings");
-    expect(frame).toContain("6. Help");
+    expect(harness.frame()).toMatchSnapshot();
   });
 
   it("wraps navigation from first row to last and back", async () => {
