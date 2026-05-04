@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveWorkspaceRootForPathSensitiveCommand } from "../../src/application/workspace-selection.js";
+import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
 
 const tempDirs: string[] = [];
 
@@ -510,6 +512,56 @@ describeIfStartAvailable("start-project integration", () => {
       implementation: path.normalize(workspace),
       "implementation/generated": path.normalize(generatedDir),
     });
+  });
+
+  it("keeps attached invocation directories discoverable via workspace.link for mounted bootstrap", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDirName = "attached-app";
+    const invocationDir = path.join(workspace, invocationDirName);
+    const controlDir = path.join(workspace, "control");
+
+    fs.mkdirSync(invocationDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Mounted discoverability",
+      "--dir",
+      "../control",
+      "--mount",
+      "implementation=.",
+    ], invocationDir);
+
+    expect(result.code).toBe(0);
+
+    const invocationWorkspaceLinkPath = path.join(invocationDir, ".rundown", "workspace.link");
+    expect(fs.existsSync(invocationWorkspaceLinkPath)).toBe(true);
+
+    const sourceLink = JSON.parse(fs.readFileSync(invocationWorkspaceLinkPath, "utf-8")) as {
+      schemaVersion: number;
+      records: Array<{ workspacePath: string }>;
+    };
+    expect(sourceLink.schemaVersion).toBe(1);
+    expect(sourceLink.records.map((record) => record.workspacePath)).toContain("../control");
+
+    const targetWorkspaceLinkPath = path.join(controlDir, ".rundown", "workspace.link");
+    expect(fs.existsSync(targetWorkspaceLinkPath)).toBe(true);
+    expect(fs.readFileSync(targetWorkspaceLinkPath, "utf-8").trim()).toBe("../attached-app");
+
+    const selection = resolveWorkspaceRootForPathSensitiveCommand({
+      fileSystem: createNodeFileSystem(),
+      invocationDir,
+    });
+    expect(selection.ok).toBe(true);
+    if (!selection.ok) {
+      throw new Error(selection.message);
+    }
+
+    expect(path.resolve(selection.workspaceRoot)).toBe(path.resolve(controlDir));
+    expect(selection.executionContext.isLinkedWorkspace).toBe(true);
   });
 
   it("materializes only local buckets for bare mounted control workspace", async () => {

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createInitProject } from "./init-project.js";
 import { initGitRepo } from "./git-operations.js";
 import {
@@ -462,6 +463,11 @@ function writeFileIfChanged(
   content: string,
   emit: ApplicationOutputPort["emit"],
 ): void {
+  const parentDirectory = path.dirname(filePath);
+  if (!fileSystem.exists(parentDirectory)) {
+    fileSystem.mkdir(parentDirectory, { recursive: true });
+  }
+
   if (fileSystem.exists(filePath)) {
     const existingContent = fileSystem.readText(filePath);
     if (existingContent === content) {
