@@ -409,6 +409,7 @@ type TestAction = "new";
 interface MigrateCommandOptions {
   dir?: string;
   workspace?: string;
+  compactBeforeExit: boolean;
   confirm: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
@@ -420,6 +421,7 @@ interface DesignCommandOptions {
   action?: "release" | "diff";
   dir?: string;
   workspace?: string;
+  compactBeforeExit: boolean;
   label?: string;
   target?: string;
   from?: string;
@@ -1470,6 +1472,7 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(app)({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
+      compactBeforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
       confirm: Boolean(opts.confirm as boolean | undefined),
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
@@ -1577,6 +1580,7 @@ export function createDesignReleaseCommandAction({
       action: "release",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
+      compactBeforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
       label: normalizeOptionalString(opts.label),
     });
   };
@@ -1638,6 +1642,7 @@ export function createDesignDiffCommandAction({
     return resolveDesignDiffCommandHandler(getApp())({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
+      compactBeforeExit: false,
       target: normalizeOptionalString(target),
       from: normalizeOptionalString(opts.from),
     });
@@ -2863,6 +2868,7 @@ function resolveDesignDiffCommandHandler(appInstance: CliApp): (options: {
     action: "diff",
     dir: options.dir,
     workspace: options.workspace,
+    compactBeforeExit: false,
     target: options.target,
   });
 }

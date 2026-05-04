@@ -2370,6 +2370,7 @@ describe("createMigrateCommandAction", () => {
     expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
       dir: "migrations",
       workspace: "../workspace-source",
+      compactBeforeExit: false,
       workerPattern: {
         command: ["opencode", "run", "--model", "gpt-5.3-codex"],
         usesBootstrap: false,
@@ -2409,7 +2410,27 @@ describe("createMigrateCommandAction", () => {
       usesFile: false,
       appendFile: true,
     });
+    expect(request?.compactBeforeExit).toBe(false);
     expect(request?.slugWorkerPattern).toBeUndefined();
+  });
+
+  it("forwards compact-before-exit flag to migrateTask", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action(undefined, undefined, {
+      compactBeforeExit: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
+      compactBeforeExit: true,
+    }));
   });
 
   it("rejects removed migrate revision actions without compatibility aliases", () => {
@@ -2540,8 +2561,26 @@ describe("createDesignReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
+      compactBeforeExit: false,
       label: "Initial baseline",
     });
+  });
+
+  it("forwards compact-before-exit flag to design release handler", async () => {
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
+    const action = createDesignReleaseCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({ compactBeforeExit: true });
+
+    expect(exitCode).toBe(0);
+    expect(designTask).toHaveBeenCalledTimes(1);
+    expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
+      action: "release",
+      compactBeforeExit: true,
+    }));
   });
 
   it("falls back to docsTask release action when designTask is unavailable", async () => {
@@ -2563,6 +2602,7 @@ describe("createDesignReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
+      compactBeforeExit: false,
       label: "Initial baseline",
     });
   });
@@ -2594,6 +2634,7 @@ describe("createDocsReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
+      compactBeforeExit: false,
       label: "Initial baseline",
     });
   });
@@ -2625,6 +2666,7 @@ describe("createDocsPublishCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
+      compactBeforeExit: false,
       label: "Initial baseline",
     });
   });

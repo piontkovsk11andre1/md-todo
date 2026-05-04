@@ -11571,8 +11571,20 @@ describe.sequential("CLI integration", () => {
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--workspace <dir> Workspace directory to use for linked/multi-workspace resolution");
+    expect(compactHelpOutput).toContain("--compact-before-exit Run compaction as a post-success follow-up before exit");
     expect(compactHelpOutput).toContain("Linked workspace selection:");
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
+  });
+
+  it("design release --help exposes compact-before-exit flag", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["design", "release", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("--compact-before-exit Run compaction as a post-success follow-up before exit");
   });
 
   it("compact --help lists archive controls and retention options", async () => {

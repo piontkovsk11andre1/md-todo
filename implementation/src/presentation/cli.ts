@@ -90,6 +90,8 @@ const COMMIT_MODES = ["per-task", "file-done"] as const;
 const DEFAULT_PLAN_DEEP = 0;
 const DEFAULT_FORCE_ATTEMPTS = 2;
 const DEFAULT_VARS_FILE_HELP = "Load extra template variables from a JSON file (default: <config-dir>/vars.json)";
+const COMPACT_BEFORE_EXIT_FLAG = "--compact-before-exit";
+const COMPACT_BEFORE_EXIT_OPTION_HELP = "Run compaction as a post-success follow-up before exit";
 const STALE_CALL_CLI_CACHE_RELATIVE_PATH = path.join("cache", "cli-blocks");
 const EXIT_CODES_HELP_TEXT = [
   "",
@@ -445,6 +447,7 @@ const migrateCommand = program
   .description("Generate revision-aware migration files.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
   .option("--confirm", "Show generated content and confirm before writing files", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
@@ -513,6 +516,7 @@ designCommand
   .description("Release design/current/ into the next immutable design/revisions/rev.N/ snapshot.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
   .option("--label <text>", "Optional label to store in revision metadata")
   .allowUnknownOption(false)
   .action(withCliAction(createDesignReleaseCommandAction({
