@@ -21,18 +21,13 @@ This makes the checkbox a consequence of successful work, not a guess.
 In addition to execute/verify task running, rundown supports a prediction-oriented migration workflow:
 
 - `start` bootstraps a design-first project workspace.
-- `design release` snapshots `design/current/` into the next immutable `design/revisions/rev.N/` revision.
-- `design diff [target]` compares revision state for `design/current/` using shorthand or explicit selectors.
+- `design/current/` remains the mutable draft workspace.
+- `migrate` performs a preflight revision sync: when `design/current/` differs from the latest released snapshot (or no release exists yet), it writes the next immutable `design/revisions/rev.N/` revision before planning.
 - Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
 - Compatibility fallback remains additive for older projects: legacy `design/rev.*/`, `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
 - `migrate` advances a numbered migration track using a convergence loop and writes snapshot checkpoints.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test` verifies assertion specs against predicted migration state.
-
-Command-boundary rule:
-
-- `rd design ...` is the canonical naming for design-doc revision lifecycle (`release`, `diff`).
-- `rundown migrate ...` is for migration lifecycle (`migrate`, `migrate up`, `migrate down [n]`).
 
 Prediction migration naming convention:
 
@@ -44,12 +39,11 @@ Backlog is a singleton file: `migrations/Backlog.md`.
 
 Prediction migration loop model:
 
-1. Edit design docs.
-2. Run `rd design release`.
-3. Run `rundown migrate` (loop: planner proposes migration names; execution continues until planner returns `DONE`).
-4. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
-5. Optionally revise design and release again, then repeat.
-6. Run `rundown materialize` to turn prediction state into implementation execution.
+1. Edit `design/current/**`.
+2. Run `rundown migrate` (it auto-releases the next immutable revision when the draft changed, then continues the planner loop until `DONE`).
+3. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
+4. Optionally revise `design/current/**` and run `rundown migrate` again.
+5. Run `rundown materialize` to turn prediction state into implementation execution.
 
 Predicted-state test semantics:
 

@@ -456,65 +456,39 @@ Terminal-stop examples:
 - `return: ...` stops only when the condition evaluates true.
 - `optional: ...` keeps sibling-skip behavior only; it does not stop full run/loop.
 
-## 21. Release design revisions and diff before migration
+## 21. Single-step design edit -> migrate planning
 
-Use `rd design` when you want to manage design-document revisions directly.
-
-```bash
-# Release design/current into the next immutable design/revisions/rev.N snapshot
-rd design release --dir ./migrations
-
-# Add optional label metadata to the released revision
-rd design release --dir ./migrations --label "Auth v2 baseline"
-
-# When linked workspace selection is ambiguous, choose explicitly
-rd design release --dir ./migrations --workspace ../source-workspace --label "Auth v2 baseline"
-
-# Shorthand diff against current draft
-rd design diff --dir ./migrations
-
-# Preview diff with revision source references
-rd design diff preview --dir ./migrations
-
-# Explicit selector form
-rd design diff --dir ./migrations --from rev.3 --to current
-```
-
-What happens:
-
-1. `design release` snapshots `design/current/` into `design/revisions/rev.N/` with monotonic revision numbering.
-2. `rev.0` is the explicit baseline snapshot when present; if no lower revision exists for a selected target (including `rev.1` as first discovered revision), diff semantics are `nothing -> target`.
-3. Legacy flat `design/rev.*/`, `docs/current/Design.md`, and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
-4. If there is no byte-level change from the latest revision, release is a no-op.
-5. `design diff` supports shorthand (`current` / `preview`) and explicit `--from/--to` selectors.
-6. Diff output is deterministic and suitable for both human review and migration context.
-
-## 22. Generate migrations after design revision work
-
-After releasing or reviewing diffs, switch back to `migrate` for migration lifecycle commands.
+Use `rundown migrate` as the canonical revision-aware workflow.
 
 ```bash
-# Propose next migration from revision-aware context
+# Edit design/current/**, then run migrate.
 rundown migrate --dir ./migrations -- opencode run
 
-# When workspace.link has multiple records, select explicitly
+# When workspace.link has multiple records, select explicitly.
 rundown migrate --dir ./migrations --workspace ../source-workspace -- opencode run
 
-# Generate satellites for the latest migration position
+# Generate satellites for the latest migration position.
 rundown migrate context --dir ./migrations -- opencode run
 rundown migrate snapshot --dir ./migrations -- opencode run
 rundown migrate backlog --dir ./migrations -- opencode run
 
-# Execute or roll back migration tasks
+# Execute or roll back migration tasks.
 rundown migrate up --dir ./migrations -- opencode run
 rundown migrate down 1 --dir ./migrations -- opencode run
 ```
 
-`migrate` intentionally excludes design-revision actions; use `rd design release` and `rd design diff` for revision lifecycle work.
+What happens:
 
-If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), `migrate`/`design` commands fail with candidate guidance and require `--workspace <dir>`.
+1. `migrate` runs design revision preflight first.
+2. If `design/current/` differs from the latest release (or no release exists), preflight creates exactly one new immutable `design/revisions/rev.N/` snapshot.
+3. If there is no byte-level change, no new revision is created.
+4. Planning still targets released revision metadata boundaries (`plannedAt`, `migrations`).
+5. Legacy flat `design/rev.*/`, `docs/current/Design.md`, and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
+6. `migrate context` can be used to inspect revision-aware context after preflight when you want to review what planning sees.
 
-## 23. Mounted routing examples (local, linked, bare control)
+If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), path-sensitive commands such as `migrate` fail with candidate guidance and require `--workspace <dir>`.
+
+## 22. Mounted routing examples (local, linked, bare control)
 
 Local default workspace (no link, single root):
 

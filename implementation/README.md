@@ -168,9 +168,9 @@ Or any combinations of those.
 A concrete example:
 
 ```text
-design/rev.0/Target.md             # Last released revision (`rd design release`)
-design/rev.1/Target.md
-design/current/Target.md           # Current design document
+design/revisions/rev.0/Target.md   # First released immutable revision (created by `rundown migrate` preflight)
+design/revisions/rev.1/Target.md   # Next released immutable revision
+design/current/Target.md           # Editable design draft workspace
 
 migrations/1. Initialization.md    # First migration
 migrations/2. Add Feature.md       # Adding a feature (changes relative to rev.0)
@@ -181,7 +181,7 @@ specs/end-to-end-tests.md
 specs/ux-tests.md
 ```
 
-Revision contract for `design diff` and migration context:
+Revision contract for released revisions and migration context:
 
 - `rev.0` is the explicit initial baseline revision.
 - The first discovered revision in a repository compares from nothing, even when that first revision is `rev.1`.
@@ -251,7 +251,6 @@ bun add -g @p10i/rundown
 - [CLI: `do`](docs/cli-do.md) — execute unchecked tasks in a markdown task document
 - [CLI: `all`](docs/cli-all.md) — execute all tasks across a file or directory
 - [CLI: `discuss`](docs/cli-discuss.md) — collaborate on plans and next actions from task files
-- [CLI: `design`](docs/cli-design.md) — manage design revisions and release snapshots
 - [CLI: `explore`](docs/cli-explore.md) — generate codebase research and findings artifacts
 - [CLI: `list`](docs/cli-list.md) — list tasks, runs, and actionable work items
 - [CLI: `next`](docs/cli-next.md) — surface the next executable task in a workflow

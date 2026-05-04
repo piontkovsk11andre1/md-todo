@@ -2,6 +2,15 @@
 
 Generate and manage prediction migrations.
 
+`rundown migrate` is the canonical revision-aware planning command.
+Before migration planning, it performs a design-revision preflight sync:
+
+- If `design/current/` changed from the latest released revision, it creates the next immutable `design/revisions/rev.N/` snapshot.
+- If unchanged, it creates no new revision.
+- If no released revisions exist yet and managed design workspace is present, it bootstraps `rev.0` from `design/current/`.
+
+Planning then proceeds against released revision metadata boundaries (`plannedAt`, `migrations`) as usual.
+
 Without an action, `migrate` runs a convergence loop:
 
 1. Ask the planner worker for uncovered migration names.
@@ -54,13 +63,13 @@ Auto-compact defaults:
 - You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
 - Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
 
-Workspace selection notes (`migrate`, `design release`, `design diff`):
+Workspace selection notes (`migrate`):
 
 - By default, path-sensitive commands resolve workspace from `.rundown/workspace.link`.
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
 - Use `--workspace <dir>` to select the effective workspace explicitly (relative to invocation directory).
 
-Prediction workspace routing notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
+Prediction workspace routing notes (`migrate`, `test`, `plan`, `research`, `run` prompt context):
 
 - Logical roots (`design`, `implementation`, `specs`, `migrations`, `prediction`) resolve to authoritative absolute targets before prompt rendering.
 - Prompt/runtime consumers should treat resolved `workspace*Path` values as canonical and should not recompute paths from `workspaceDir` + bucket names.

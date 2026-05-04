@@ -90,10 +90,6 @@ See the command-focused reference: [cli-start.md](cli-start.md).
 
 See the command-focused reference: [cli-migrate.md](cli-migrate.md).
 
-### `rundown design`
-
-See the command-focused reference: [cli-design.md](cli-design.md).
-
 ### `rundown run <source>`
 
 See the command-focused reference: [cli-run.md](cli-run.md).
