@@ -39,6 +39,13 @@ export interface WorkspaceMount {
   source: WorkspaceMountSource;
 }
 
+export interface ResolvedWorkspaceMountPath {
+  logicalPath: string;
+  absolutePath: string;
+  mount: WorkspaceMount;
+  mountRelativePath: string;
+}
+
 export type WorkspaceMountMap = Record<string, WorkspaceMount>;
 
 interface WorkspaceConfig {
@@ -110,6 +117,53 @@ export function resolveWorkspaceMounts(input: {
   invocationRoot?: string;
 }): WorkspaceMountMap {
   return resolveWorkspaceConfig(input).mounts;
+}
+
+export function normalizeWorkspaceLogicalPath(logicalPath: string): string {
+  const trimmed = logicalPath.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Logical path cannot be empty.");
+  }
+
+  const normalized = path.posix.normalize(trimmed.replace(/\\/g, "/"));
+  if (normalized.length === 0 || normalized === ".") {
+    throw new Error("Logical path resolves to an empty path.");
+  }
+  if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
+    throw new Error("Logical path must be a normalized rundown logical path.");
+  }
+
+  return normalized;
+}
+
+export function resolveWorkspaceMountPath(input: {
+  mounts: WorkspaceMountMap;
+  logicalPath: string;
+}): ResolvedWorkspaceMountPath {
+  const normalizedLogicalPath = normalizeWorkspaceLogicalPath(input.logicalPath);
+  const mount = findLongestPrefixWorkspaceMount({
+    mounts: input.mounts,
+    logicalPath: normalizedLogicalPath,
+  });
+  if (!mount) {
+    throw new Error(`No workspace mount found for logical path "${normalizedLogicalPath}".`);
+  }
+
+  const mountRelativePath =
+    normalizedLogicalPath === mount.logicalPath
+      ? ""
+      : normalizedLogicalPath.slice(mount.logicalPath.length + 1);
+  const absolutePath =
+    mountRelativePath.length === 0
+      ? mount.absoluteTargetPath
+      : path.resolve(mount.absoluteTargetPath, ...mountRelativePath.split("/"));
+
+  return {
+    logicalPath: normalizedLogicalPath,
+    absolutePath,
+    mount,
+    mountRelativePath,
+  };
 }
 
 function resolveWorkspaceConfig(input: {
@@ -293,6 +347,29 @@ function normalizeDesignCurrentPathValue(input: {
   return path.normalize(trimmed);
 }
 
+function findLongestPrefixWorkspaceMount(input: {
+  mounts: WorkspaceMountMap;
+  logicalPath: string;
+}): WorkspaceMount | undefined {
+  const normalizedLogicalPath = normalizeWorkspaceLogicalPath(input.logicalPath);
+  let winner: WorkspaceMount | undefined;
+
+  for (const mount of Object.values(input.mounts)) {
+    const mountLogicalPath = normalizeWorkspaceLogicalPath(mount.logicalPath);
+    if (
+      normalizedLogicalPath !== mountLogicalPath
+      && !normalizedLogicalPath.startsWith(mountLogicalPath + "/")
+    ) {
+      continue;
+    }
+    if (!winner || mountLogicalPath.length > winner.logicalPath.length) {
+      winner = mount;
+    }
+  }
+
+  return winner;
+}
+
 export function resolveWorkspacePath(input: {
   fileSystem: FileSystem;
   workspaceRoot: string;
@@ -465,26 +542,24 @@ function buildLegacyWorkspaceMounts(input: {
 
 function normalizeLogicalMountPath(input: { configPath: string; key: string }): string {
   const { configPath, key } = input;
-  const trimmed = key.trim();
-  if (trimmed.length === 0) {
-    throw new Error(
-      `Invalid project config at ${configPath}: "workspace.mounts" cannot contain an empty logical mount key.`,
-    );
-  }
-
-  const normalized = path.posix.normalize(trimmed.replace(/\\/g, "/"));
-  if (normalized.length === 0 || normalized === ".") {
-    throw new Error(
-      `Invalid project config at ${configPath}: "workspace.mounts.${key}" resolves to an empty logical path.`,
-    );
-  }
-  if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
+  try {
+    return normalizeWorkspaceLogicalPath(key);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "Logical path cannot be empty.") {
+      throw new Error(
+        `Invalid project config at ${configPath}: "workspace.mounts" cannot contain an empty logical mount key.`,
+      );
+    }
+    if (message === "Logical path resolves to an empty path.") {
+      throw new Error(
+        `Invalid project config at ${configPath}: "workspace.mounts.${key}" resolves to an empty logical path.`,
+      );
+    }
     throw new Error(
       `Invalid project config at ${configPath}: "workspace.mounts.${key}" must be a normalized rundown logical path.`,
     );
   }
-
-  return normalized;
 }
 
 function normalizeMountTargetPath(input: {

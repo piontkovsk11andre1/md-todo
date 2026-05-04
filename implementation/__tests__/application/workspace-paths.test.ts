@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
+  normalizeWorkspaceLogicalPath,
+  resolveWorkspaceMountPath,
   resolveWorkspaceMounts,
   resolveWorkspaceDirectories,
   resolveWorkspacePath,
@@ -179,6 +181,56 @@ describe("prediction workspace config", () => {
       absoluteTargetPath: path.normalize("/notes/current"),
       source: "explicit",
     });
+  });
+
+  it("normalizes logical paths for mount lookups", () => {
+    expect(normalizeWorkspaceLogicalPath(" implementation\\generated\\schema.ts ")).toBe(
+      "implementation/generated/schema.ts",
+    );
+  });
+
+  it("rejects invalid logical paths for mount lookups", () => {
+    expect(() => normalizeWorkspaceLogicalPath("   ")).toThrow("Logical path cannot be empty.");
+    expect(() => normalizeWorkspaceLogicalPath("/implementation")).toThrow(
+      "Logical path must be a normalized rundown logical path.",
+    );
+  });
+
+  it("resolves logical paths by deterministic longest-prefix mount matching", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            implementation: "../app",
+            "implementation/generated": "../shared/generated",
+          },
+        },
+      }),
+    });
+
+    const mounts = resolveWorkspaceMounts({ fileSystem, workspaceRoot });
+    expect(resolveWorkspaceMountPath({ mounts, logicalPath: "implementation/foo.ts" })).toEqual({
+      logicalPath: "implementation/foo.ts",
+      absolutePath: path.resolve(workspaceRoot, "../app", "foo.ts"),
+      mount: mounts.implementation,
+      mountRelativePath: "foo.ts",
+    });
+    expect(
+      resolveWorkspaceMountPath({ mounts, logicalPath: "implementation/generated/schema.ts" }),
+    ).toEqual({
+      logicalPath: "implementation/generated/schema.ts",
+      absolutePath: path.resolve(workspaceRoot, "../shared/generated", "schema.ts"),
+      mount: mounts["implementation/generated"],
+      mountRelativePath: "schema.ts",
+    });
+  });
+
+  it("fails when no mount matches a logical path", () => {
+    expect(() => resolveWorkspaceMountPath({ mounts: {}, logicalPath: "implementation/foo.ts" })).toThrow(
+      'No workspace mount found for logical path "implementation/foo.ts".',
+    );
   });
 
   it("lets explicit mounts override legacy-normalized mounts", () => {
