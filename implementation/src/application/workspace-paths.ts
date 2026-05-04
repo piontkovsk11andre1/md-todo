@@ -31,16 +31,28 @@ export interface WorkspacePaths {
   prediction: string;
 }
 
+export type WorkspaceMountSource = "legacy" | "explicit";
+
+export interface WorkspaceMount {
+  logicalPath: string;
+  absoluteTargetPath: string;
+  source: WorkspaceMountSource;
+}
+
+export type WorkspaceMountMap = Record<string, WorkspaceMount>;
+
 interface WorkspaceConfig {
   directories: WorkspaceDirectories;
   placement: WorkspacePlacementMap;
   designCurrentPath?: string;
+  mounts: WorkspaceMountMap;
 }
 
 interface RundownConfigDocument {
   workspace?: {
     directories?: Partial<Record<WorkspaceBucket, unknown>>;
     placement?: Partial<Record<WorkspaceBucket, unknown>>;
+    mounts?: Record<string, unknown>;
     design?: {
       currentPath?: unknown;
     };
@@ -92,16 +104,34 @@ export function resolveDesignCurrentPathOverride(input: {
   return resolveWorkspaceConfig(input).designCurrentPath;
 }
 
+export function resolveWorkspaceMounts(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot?: string;
+}): WorkspaceMountMap {
+  return resolveWorkspaceConfig(input).mounts;
+}
+
 function resolveWorkspaceConfig(input: {
   fileSystem: FileSystem;
   workspaceRoot: string;
+  invocationRoot?: string;
 }): WorkspaceConfig {
   const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
   const configPath = path.join(workspaceRoot, ".rundown", "config.json");
   if (!fileSystem.exists(configPath)) {
+    const defaultDirectories = { ...DEFAULT_WORKSPACE_DIRECTORIES };
+    const defaultPlacement = { ...DEFAULT_WORKSPACE_PLACEMENT };
     return {
-      directories: { ...DEFAULT_WORKSPACE_DIRECTORIES },
-      placement: { ...DEFAULT_WORKSPACE_PLACEMENT },
+      directories: defaultDirectories,
+      placement: defaultPlacement,
+      mounts: buildLegacyWorkspaceMounts({
+        directories: defaultDirectories,
+        placement: defaultPlacement,
+        workspaceRoot,
+        invocationRoot,
+      }),
     };
   }
 
@@ -130,6 +160,10 @@ function resolveWorkspaceConfig(input: {
   const placementSection = workspaceSection?.placement;
   if (placementSection !== undefined && !isPlainObject(placementSection)) {
     throw new Error(`Invalid project config at ${configPath}: "workspace.placement" must be an object.`);
+  }
+  const mountsSection = workspaceSection?.mounts;
+  if (mountsSection !== undefined && !isPlainObject(mountsSection)) {
+    throw new Error(`Invalid project config at ${configPath}: "workspace.mounts" must be an object.`);
   }
 
   const directories = {
@@ -209,10 +243,28 @@ function resolveWorkspaceConfig(input: {
     value: designSection?.currentPath,
   });
 
+  const legacyMounts = buildLegacyWorkspaceMounts({
+    directories,
+    placement,
+    workspaceRoot,
+    invocationRoot,
+    ...(designCurrentPath ? { designCurrentPath } : {}),
+  });
+  const explicitMounts = normalizeExplicitWorkspaceMounts({
+    configPath,
+    workspaceRoot,
+    mountsSection,
+  });
+  const mounts = {
+    ...legacyMounts,
+    ...explicitMounts,
+  };
+
   return {
     directories,
     placement,
     ...(designCurrentPath ? { designCurrentPath } : {}),
+    mounts,
   };
 }
 
@@ -340,6 +392,126 @@ function normalizeWorkspacePlacementValue(input: {
   }
 
   return value as WorkspacePlacement;
+}
+
+function normalizeExplicitWorkspaceMounts(input: {
+  configPath: string;
+  workspaceRoot: string;
+  mountsSection: Record<string, unknown> | undefined;
+}): WorkspaceMountMap {
+  const { configPath, workspaceRoot, mountsSection } = input;
+  if (!mountsSection) {
+    return {};
+  }
+
+  const normalizedMounts: WorkspaceMountMap = {};
+  for (const [rawLogicalPath, rawTarget] of Object.entries(mountsSection)) {
+    const logicalPath = normalizeLogicalMountPath({
+      configPath,
+      key: rawLogicalPath,
+    });
+    const absoluteTargetPath = normalizeMountTargetPath({
+      configPath,
+      logicalPath,
+      value: rawTarget,
+      workspaceRoot,
+    });
+    if (normalizedMounts[logicalPath]) {
+      throw new Error(
+        `Invalid project config at ${configPath}: "workspace.mounts" contains duplicate logical mount key "${logicalPath}" after normalization.`,
+      );
+    }
+
+    normalizedMounts[logicalPath] = {
+      logicalPath,
+      absoluteTargetPath,
+      source: "explicit",
+    };
+  }
+
+  return normalizedMounts;
+}
+
+function buildLegacyWorkspaceMounts(input: {
+  directories: WorkspaceDirectories;
+  placement: WorkspacePlacementMap;
+  workspaceRoot: string;
+  invocationRoot: string;
+  designCurrentPath?: string;
+}): WorkspaceMountMap {
+  const { directories, placement, workspaceRoot, invocationRoot, designCurrentPath } = input;
+  const legacyMounts: WorkspaceMountMap = {};
+
+  const buckets = Object.keys(DEFAULT_WORKSPACE_DIRECTORIES) as WorkspaceBucket[];
+  for (const bucket of buckets) {
+    const bucketRoot = resolvePlacementRoot(placement[bucket], workspaceRoot, invocationRoot);
+    legacyMounts[bucket] = {
+      logicalPath: bucket,
+      absoluteTargetPath: path.resolve(bucketRoot, directories[bucket]),
+      source: "legacy",
+    };
+  }
+
+  if (designCurrentPath) {
+    legacyMounts["design/current"] = {
+      logicalPath: "design/current",
+      absoluteTargetPath: designCurrentPath,
+      source: "legacy",
+    };
+  }
+
+  return legacyMounts;
+}
+
+function normalizeLogicalMountPath(input: { configPath: string; key: string }): string {
+  const { configPath, key } = input;
+  const trimmed = key.trim();
+  if (trimmed.length === 0) {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.mounts" cannot contain an empty logical mount key.`,
+    );
+  }
+
+  const normalized = path.posix.normalize(trimmed.replace(/\\/g, "/"));
+  if (normalized.length === 0 || normalized === ".") {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.mounts.${key}" resolves to an empty logical path.`,
+    );
+  }
+  if (normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.mounts.${key}" must be a normalized rundown logical path.`,
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeMountTargetPath(input: {
+  configPath: string;
+  logicalPath: string;
+  value: unknown;
+  workspaceRoot: string;
+}): string {
+  const { configPath, logicalPath, value, workspaceRoot } = input;
+  if (typeof value !== "string") {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.mounts.${logicalPath}" must be a string path target.`,
+    );
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error(
+      `Invalid project config at ${configPath}: "workspace.mounts.${logicalPath}" cannot be empty.`,
+    );
+  }
+
+  if (path.isAbsolute(trimmed)) {
+    return path.normalize(trimmed);
+  }
+
+  return path.resolve(workspaceRoot, trimmed);
 }
 
 function normalizeWorkspaceDirectoryValue(input: {

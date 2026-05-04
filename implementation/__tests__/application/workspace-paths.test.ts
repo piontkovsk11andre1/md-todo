@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
+  resolveWorkspaceMounts,
   resolveWorkspaceDirectories,
   resolveWorkspacePath,
   resolveWorkspacePaths,
@@ -124,6 +125,156 @@ describe("prediction workspace config", () => {
       migrations: "sourcedir",
       prediction: "sourcedir",
     });
+    expect(resolveWorkspaceMounts({ fileSystem, workspaceRoot })).toEqual({
+      design: {
+        logicalPath: "design",
+        absoluteTargetPath: path.resolve(workspaceRoot, "design"),
+        source: "legacy",
+      },
+      implementation: {
+        logicalPath: "implementation",
+        absoluteTargetPath: path.resolve(workspaceRoot, "implementation"),
+        source: "legacy",
+      },
+      specs: {
+        logicalPath: "specs",
+        absoluteTargetPath: path.resolve(workspaceRoot, "specs"),
+        source: "legacy",
+      },
+      migrations: {
+        logicalPath: "migrations",
+        absoluteTargetPath: path.resolve(workspaceRoot, "migrations"),
+        source: "legacy",
+      },
+      prediction: {
+        logicalPath: "prediction",
+        absoluteTargetPath: path.resolve(workspaceRoot, "prediction"),
+        source: "legacy",
+      },
+    });
+  });
+
+  it("normalizes explicit workspace mounts with absolute targets", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            "implementation/generated": "../shared/generated",
+            "design/current": "/notes/current",
+          },
+        },
+      }),
+    });
+
+    const mounts = resolveWorkspaceMounts({ fileSystem, workspaceRoot });
+    expect(mounts["implementation/generated"]).toEqual({
+      logicalPath: "implementation/generated",
+      absoluteTargetPath: path.resolve(workspaceRoot, "../shared/generated"),
+      source: "explicit",
+    });
+    expect(mounts["design/current"]).toEqual({
+      logicalPath: "design/current",
+      absoluteTargetPath: path.normalize("/notes/current"),
+      source: "explicit",
+    });
+  });
+
+  it("lets explicit mounts override legacy-normalized mounts", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            implementation: "implementation-src",
+          },
+          mounts: {
+            implementation: "../external-app",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspaceMounts({ fileSystem, workspaceRoot }).implementation).toEqual({
+      logicalPath: "implementation",
+      absoluteTargetPath: path.resolve(workspaceRoot, "../external-app"),
+      source: "explicit",
+    });
+  });
+
+  it("normalizes legacy design.currentPath into a design/current mount", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const externalCurrentPath = path.join(path.sep, "repo", "design-current");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          design: {
+            currentPath: externalCurrentPath,
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspaceMounts({ fileSystem, workspaceRoot })["design/current"]).toEqual({
+      logicalPath: "design/current",
+      absoluteTargetPath: path.normalize(externalCurrentPath),
+      source: "legacy",
+    });
+  });
+
+  it("rejects invalid workspace.mounts types", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: true,
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceMounts({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: "workspace.mounts" must be an object.`,
+    );
+  });
+
+  it("rejects non-string workspace mount targets", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            implementation: 123,
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceMounts({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: "workspace.mounts.implementation" must be a string path target.`,
+    );
+  });
+
+  it("rejects empty workspace mount keys after normalization", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            "   ": "implementation",
+          },
+        },
+      }),
+    });
+
+    expect(() => resolveWorkspaceMounts({ fileSystem, workspaceRoot })).toThrow(
+      `Invalid project config at ${configPath}: "workspace.mounts" cannot contain an empty logical mount key.`,
+    );
   });
 
   it("falls back to sourcedir placement for buckets not configured", () => {
