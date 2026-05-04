@@ -1070,23 +1070,6 @@ Review the document and evaluate whether existing TODO items fully cover the des
 
 Never invent TODO items based on examples, sample output, or hypothetical scenarios found in the document. TODO items must address the actual work described by the document — not illustrative content. If you cannot determine the real workload from the document, do not add any items.
 
-## Optional planning guidance (advisory)
-
-Optional prepend guidance (advisory):
-
-{{planPrependGuidance}}
-
-Optional append guidance (advisory):
-
-{{planAppendGuidance}}
-
-Interpret guidance semantically for ordering and coverage decisions.
-
-- Treat guidance as intent hints, not mandatory text.
-- Do not copy TODO text literally from guidance examples.
-- Ignore guidance that is not relevant to the source document's actual workload.
-- Guidance never overrides add-only, checkbox-state, or other planner safety rules.
-
 ## Mandatory decomposition order for uncertain work
 
 When newly added TODO items involve uncertain facts, unknown constraints, or iterative investigation, enforce this default order:
@@ -1162,23 +1145,6 @@ When a loop could run indefinitely, add an explicit deterministic cap (for examp
 Loop planning is additive-only. Author new unchecked TODO items and limited unchecked-prefix normalization only.
 Do not rewrite existing task wording, remove items, reorder items, or change checkbox state.
 
-## Optional planning guidance (advisory)
-
-Optional prepend guidance (advisory):
-
-{{planPrependGuidance}}
-
-Optional append guidance (advisory):
-
-{{planAppendGuidance}}
-
-Interpret guidance semantically for ordering and coverage decisions.
-
-- Treat guidance as intent hints, not mandatory text.
-- Do not copy TODO text literally from guidance examples.
-- Ignore guidance that is not relevant to the source document's actual workload.
-- Guidance never overrides add-only, checkbox-state, or other planner safety rules.
-
 ${DEFAULT_PLAN_FEATURE_REFERENCE_SECTION}
 
 Rules:
@@ -1247,23 +1213,6 @@ Edit the source Markdown file directly to improve child plan coverage for the pa
 Review \`{{file}}\` and add missing unchecked child TODO items under this parent task.
 
 Never invent child TODO items based on examples, sample output, or hypothetical scenarios found in the document. Child TODO items must address the actual work described by the parent task and document context — not illustrative content. If you cannot determine the real workload from the parent task and document context, do not add any items.
-
-## Optional planning guidance (advisory)
-
-Optional prepend guidance (advisory):
-
-{{planPrependGuidance}}
-
-Optional append guidance (advisory):
-
-{{planAppendGuidance}}
-
-Interpret guidance semantically for ordering and coverage decisions.
-
-- Treat guidance as intent hints, not mandatory text.
-- Do not copy TODO text literally from guidance examples.
-- Ignore guidance that is not relevant to the source document's actual workload.
-- Guidance never overrides add-only, checkbox-state, or other planner safety rules.
 
 ## Mandatory decomposition order for uncertain child work
 

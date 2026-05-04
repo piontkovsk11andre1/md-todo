@@ -406,30 +406,15 @@ describe("plan-task", () => {
     expect(prompt).toContain("Scan count: unlimited (emergency cap: 15)");
   });
 
-  it("loads optional planner prepend/append guidance from the resolved config directory", async () => {
+  it("leaves legacy prepend/append placeholders unresolved in custom plan templates", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
-    const markdownContent = "# Roadmap\nBuild a new release process.\n";
     const { dependencies, events } = createDependencies({
       cwd,
       markdownFile,
-      fileContent: markdownContent,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
     });
-    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
-    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
 
-    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
-      if (filePath === markdownFile) {
-        return markdownContent;
-      }
-      if (filePath === prependPath) {
-        return "Prefer early discovery and setup checks.";
-      }
-      if (filePath === appendPath) {
-        return "Prefer final verification and handoff tasks when relevant.";
-      }
-      return "";
-    });
     vi.mocked(dependencies.templateLoader.load).mockReturnValue([
       "prepend={{planPrependGuidance}}",
       "append={{planAppendGuidance}}",
@@ -440,164 +425,8 @@ describe("plan-task", () => {
 
     expect(code).toBe(0);
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("prepend=Prefer early discovery and setup checks.");
-    expect(prompt).toContain("append=Prefer final verification and handoff tasks when relevant.");
-  });
-
-  it("treats missing, unreadable, or empty planner guidance files as empty values", async () => {
-    const cwd = "/workspace";
-    const markdownFile = path.join(cwd, "roadmap.md");
-    const markdownContent = "# Roadmap\nBuild a new release process.\n";
-    const { dependencies, events } = createDependencies({
-      cwd,
-      markdownFile,
-      fileContent: markdownContent,
-    });
-    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
-    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
-
-    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
-      if (filePath === markdownFile) {
-        return markdownContent;
-      }
-      if (filePath === prependPath) {
-        throw new Error("unreadable");
-      }
-      if (filePath === appendPath) {
-        return "   \n\t  ";
-      }
-      return "";
-    });
-    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
-      "prepend=|{{planPrependGuidance}}|",
-      "append=|{{planAppendGuidance}}|",
-    ].join("\n"));
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
-
-    expect(code).toBe(0);
-    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("prepend=||");
-    expect(prompt).toContain("append=||");
-  });
-
-  it("uses empty prepend guidance when only append guidance exists", async () => {
-    const cwd = "/workspace";
-    const markdownFile = path.join(cwd, "roadmap.md");
-    const markdownContent = "# Roadmap\nBuild a new release process.\n";
-    const { dependencies, events } = createDependencies({
-      cwd,
-      markdownFile,
-      fileContent: markdownContent,
-    });
-    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
-    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
-
-    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
-      if (filePath === markdownFile) {
-        return markdownContent;
-      }
-      if (filePath === prependPath) {
-        throw new Error("missing file");
-      }
-      if (filePath === appendPath) {
-        return "Prefer final verification and handoff tasks when relevant.";
-      }
-      return "";
-    });
-    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
-      "prepend=|{{planPrependGuidance}}|",
-      "append=|{{planAppendGuidance}}|",
-    ].join("\n"));
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
-
-    expect(code).toBe(0);
-    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("prepend=||");
-    expect(prompt).toContain("append=|Prefer final verification and handoff tasks when relevant.|");
-  });
-
-  it("uses empty append guidance when only prepend guidance exists", async () => {
-    const cwd = "/workspace";
-    const markdownFile = path.join(cwd, "roadmap.md");
-    const markdownContent = "# Roadmap\nBuild a new release process.\n";
-    const { dependencies, events } = createDependencies({
-      cwd,
-      markdownFile,
-      fileContent: markdownContent,
-    });
-    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
-    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
-
-    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
-      if (filePath === markdownFile) {
-        return markdownContent;
-      }
-      if (filePath === prependPath) {
-        return "Prefer early discovery and setup checks.";
-      }
-      if (filePath === appendPath) {
-        throw new Error("missing file");
-      }
-      return "";
-    });
-    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
-      "prepend=|{{planPrependGuidance}}|",
-      "append=|{{planAppendGuidance}}|",
-    ].join("\n"));
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
-
-    expect(code).toBe(0);
-    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("prepend=|Prefer early discovery and setup checks.|");
-    expect(prompt).toContain("append=||");
-  });
-
-  it("keeps custom plan templates backward compatible when guidance placeholders are absent", async () => {
-    const cwd = "/workspace";
-    const markdownFile = path.join(cwd, "roadmap.md");
-    const markdownContent = "# Roadmap\nBuild a new release process.\n";
-    const { dependencies, events } = createDependencies({
-      cwd,
-      markdownFile,
-      fileContent: markdownContent,
-    });
-    const prependPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-prepend.md");
-    const appendPath = dependencies.pathOperations.join(dependencies.configDir!.configDir, "plan-append.md");
-
-    vi.mocked(dependencies.fileSystem.readText).mockImplementation((filePath: string) => {
-      if (filePath === markdownFile) {
-        return markdownContent;
-      }
-      if (filePath === prependPath) {
-        return "Prefer early setup checks.";
-      }
-      if (filePath === appendPath) {
-        return "Prefer final validation tasks.";
-      }
-      return "";
-    });
-    vi.mocked(dependencies.templateLoader.load).mockReturnValue([
-      "# Custom Plan Prompt",
-      "Task={{task}}",
-      "File={{file}}",
-    ].join("\n"));
-
-    const planTask = createPlanTask(dependencies);
-    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
-
-    expect(code).toBe(0);
-    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("# Custom Plan Prompt");
-    expect(prompt).toContain("Task=Roadmap");
-    expect(prompt).toContain(`File=${markdownFile}`);
-    expect(prompt).not.toContain("Prefer early setup checks.");
-    expect(prompt).not.toContain("Prefer final validation tasks.");
+    expect(prompt).toContain("prepend={{planPrependGuidance}}");
+    expect(prompt).toContain("append={{planAppendGuidance}}");
   });
 
   it("includes memory path and summary in plan prompt without memory body text", async () => {
@@ -2776,7 +2605,7 @@ describe("plan-task", () => {
     );
   });
 
-  it("includes prepend/append advisory guidance in deep prompt context during deep planning", async () => {
+  it("does not include prepend/append advisory guidance in deep prompt context", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");
     const content = "# Roadmap\n- [ ] Build release flow\n";
@@ -2785,16 +2614,6 @@ describe("plan-task", () => {
       markdownFile,
       fileContent: content,
     });
-    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
-      if (filePath.endsWith("/plan-prepend.md") || filePath.endsWith("\\plan-prepend.md")) {
-        return "Prefer prerequisite discovery before implementation tasks.";
-      }
-      if (filePath.endsWith("/plan-append.md") || filePath.endsWith("\\plan-append.md")) {
-        return "Prefer final verification and handoff checks when applicable.";
-      }
-      return null;
-    });
-
     vi.mocked(workerExecutor.runWorker)
       .mockResolvedValueOnce({
         exitCode: 0,
@@ -2812,10 +2631,8 @@ describe("plan-task", () => {
     expect(code).toBe(0);
     expect(vi.mocked(workerExecutor.runWorker)).toHaveBeenCalledTimes(2);
     const deepPrompt = vi.mocked(workerExecutor.runWorker).mock.calls[1]?.[0]?.prompt ?? "";
-    expect(deepPrompt).toContain("Optional prepend guidance (advisory)");
-    expect(deepPrompt).toContain("Optional append guidance (advisory)");
-    expect(deepPrompt).toContain("Prefer prerequisite discovery before implementation tasks.");
-    expect(deepPrompt).toContain("Prefer final verification and handoff checks when applicable.");
+    expect(deepPrompt).not.toContain("Optional prepend guidance (advisory)");
+    expect(deepPrompt).not.toContain("Optional append guidance (advisory)");
     expect(deepPrompt).toContain("there is no explicit target file write/edit/create in that child task");
     expect(deepPrompt).toContain("Do NOT use `memory:` when the child task asks to write/edit/create/update any file");
     expect(deepPrompt).toContain("prepare notes section in this doc");
