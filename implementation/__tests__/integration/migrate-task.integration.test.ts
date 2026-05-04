@@ -571,6 +571,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ...result.stderrWrites,
     ].join("\n"));
     expect(result.code, debugOutput).toBe(0);
+    expect(debugOutput).toContain("Released design revision rev.2 from current design before migration planning.");
     expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "docs", "rev.3", "Design.md"))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "docs", "rev.3.meta.json"))).toBe(false);

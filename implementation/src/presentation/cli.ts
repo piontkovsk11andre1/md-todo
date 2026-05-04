@@ -431,7 +431,7 @@ program
 
 const migrateCommand = program
   .command("migrate")
-  .description("Generate revision-aware migration files.")
+  .description("Sync design revisions and generate migration files.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
@@ -465,8 +465,11 @@ migrateCommand.addHelpText(
   [
     "",
     "Revision-aware behavior:",
-    "  - Reads design context from design/current/** first (legacy docs/current/** and root Design.md are compatibility-only fallbacks)",
-    "  - Migration generation includes revision diff context from previous revision vs current draft",
+    "  - Runs a preflight revision sync before planning",
+    "  - If design/current/** changed, snapshots the next immutable design/revisions/rev.N/ automatically",
+    "  - If no released revisions exist yet, bootstraps rev.0 from design/current/**",
+    "  - Plans against the lowest unplanned released revision (plannedAt/migrations metadata remain authoritative)",
+    "  - Legacy docs/current/** and root Design.md are compatibility-only fallbacks",
     "",
     "Linked workspace selection:",
     "  - Use --workspace <dir> to choose the effective workspace explicitly",
