@@ -385,7 +385,19 @@ export function resolveWorkspacePath(input: {
     return path.resolve(workspaceRoot, trimmedOverride);
   }
 
-  return resolveWorkspacePaths(input)[bucket];
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem: input.fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  return resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: bucket,
+  }).absolutePath;
 }
 
 export function resolveWorkspacePaths(input: {
@@ -397,40 +409,20 @@ export function resolveWorkspacePaths(input: {
 }): WorkspacePaths {
   const { fileSystem, workspaceRoot } = input;
   const invocationRoot = input.invocationRoot ?? workspaceRoot;
-  const directories = input.directories ?? resolveWorkspaceDirectories({ fileSystem, workspaceRoot });
-  const placement = input.placement ?? resolveWorkspacePlacement({ fileSystem, workspaceRoot });
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
 
   const resolvedPaths = {
-    design: resolveBucketPath({
-      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-      bucket: "design",
-      root: resolvePlacementRoot(placement.design, workspaceRoot, invocationRoot),
-      relativeDirectory: directories.design,
-    }),
-    implementation: resolveBucketPath({
-      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-      bucket: "implementation",
-      root: resolvePlacementRoot(placement.implementation, workspaceRoot, invocationRoot),
-      relativeDirectory: directories.implementation,
-    }),
-    specs: resolveBucketPath({
-      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-      bucket: "specs",
-      root: resolvePlacementRoot(placement.specs, workspaceRoot, invocationRoot),
-      relativeDirectory: directories.specs,
-    }),
-    migrations: resolveBucketPath({
-      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-      bucket: "migrations",
-      root: resolvePlacementRoot(placement.migrations, workspaceRoot, invocationRoot),
-      relativeDirectory: directories.migrations,
-    }),
-    prediction: resolveBucketPath({
-      configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-      bucket: "prediction",
-      root: resolvePlacementRoot(placement.prediction, workspaceRoot, invocationRoot),
-      relativeDirectory: directories.prediction,
-    }),
+    design: resolveWorkspaceMountPath({ mounts, logicalPath: "design" }).absolutePath,
+    implementation: resolveWorkspaceMountPath({ mounts, logicalPath: "implementation" }).absolutePath,
+    specs: resolveWorkspaceMountPath({ mounts, logicalPath: "specs" }).absolutePath,
+    migrations: resolveWorkspaceMountPath({ mounts, logicalPath: "migrations" }).absolutePath,
+    prediction: resolveWorkspaceMountPath({ mounts, logicalPath: "prediction" }).absolutePath,
   } satisfies WorkspacePaths;
 
   validateResolvedBucketConflicts({
@@ -439,6 +431,159 @@ export function resolveWorkspacePaths(input: {
   });
 
   return resolvedPaths;
+}
+
+function resolveWorkspaceMountsForPathHelpers(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): WorkspaceMountMap {
+  const { fileSystem, workspaceRoot, invocationRoot } = input;
+  const normalizedMounts = resolveWorkspaceMounts({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+  });
+  const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+  const resolvedDirectories = input.directories ?? resolveWorkspaceDirectories({ fileSystem, workspaceRoot });
+  const directories = {
+    design: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "design",
+      value: resolvedDirectories.design,
+      fallback: resolvedDirectories.design,
+    }),
+    implementation: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "implementation",
+      value: resolvedDirectories.implementation,
+      fallback: resolvedDirectories.implementation,
+    }),
+    specs: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "specs",
+      value: resolvedDirectories.specs,
+      fallback: resolvedDirectories.specs,
+    }),
+    migrations: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "migrations",
+      value: resolvedDirectories.migrations,
+      fallback: resolvedDirectories.migrations,
+    }),
+    prediction: normalizeWorkspaceDirectoryValue({
+      configPath,
+      key: "prediction",
+      value: resolvedDirectories.prediction,
+      fallback: resolvedDirectories.prediction,
+    }),
+  } satisfies WorkspaceDirectories;
+  validateDirectoryConflicts(directories, configPath);
+
+  const resolvedPlacement = input.placement ?? resolveWorkspacePlacement({ fileSystem, workspaceRoot });
+  const placement = {
+    design: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "design",
+      value: resolvedPlacement.design,
+      fallback: resolvedPlacement.design,
+    }),
+    implementation: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "implementation",
+      value: resolvedPlacement.implementation,
+      fallback: resolvedPlacement.implementation,
+    }),
+    specs: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "specs",
+      value: resolvedPlacement.specs,
+      fallback: resolvedPlacement.specs,
+    }),
+    migrations: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "migrations",
+      value: resolvedPlacement.migrations,
+      fallback: resolvedPlacement.migrations,
+    }),
+    prediction: normalizeWorkspacePlacementValue({
+      configPath,
+      key: "prediction",
+      value: resolvedPlacement.prediction,
+      fallback: resolvedPlacement.prediction,
+    }),
+  } satisfies WorkspacePlacementMap;
+
+  const designCurrentPath = resolveDesignCurrentPathOverride({
+    fileSystem,
+    workspaceRoot,
+  });
+  const legacyMounts = buildLegacyWorkspaceMountsForPathHelpers({
+    directories,
+    placement,
+    workspaceRoot,
+    invocationRoot,
+    ...(designCurrentPath ? { designCurrentPath } : {}),
+  });
+
+  return {
+    ...legacyMounts,
+    ...extractExplicitWorkspaceMounts({ mounts: normalizedMounts, configPath }),
+  };
+}
+
+function buildLegacyWorkspaceMountsForPathHelpers(input: {
+  directories: WorkspaceDirectories;
+  placement: WorkspacePlacementMap;
+  workspaceRoot: string;
+  invocationRoot: string;
+  designCurrentPath?: string;
+}): WorkspaceMountMap {
+  const { directories, placement, workspaceRoot, invocationRoot, designCurrentPath } = input;
+  const legacyMounts: WorkspaceMountMap = {};
+
+  const buckets = Object.keys(DEFAULT_WORKSPACE_DIRECTORIES) as WorkspaceBucket[];
+  for (const bucket of buckets) {
+    const bucketRoot = resolvePlacementRoot(placement[bucket], workspaceRoot, invocationRoot);
+    legacyMounts[bucket] = {
+      logicalPath: bucket,
+      absoluteTargetPath: path.join(bucketRoot, directories[bucket]),
+      source: "legacy",
+    };
+  }
+
+  if (designCurrentPath) {
+    legacyMounts["design/current"] = {
+      logicalPath: "design/current",
+      absoluteTargetPath: designCurrentPath,
+      source: "legacy",
+    };
+  }
+
+  return legacyMounts;
+}
+
+function extractExplicitWorkspaceMounts(input: {
+  mounts: WorkspaceMountMap;
+  configPath: string;
+}): WorkspaceMountMap {
+  const explicitMounts: WorkspaceMountMap = {};
+  const entries = Object.entries(input.mounts);
+  for (const [logicalPath, mount] of entries) {
+    if (mount.source !== "explicit") {
+      continue;
+    }
+    if (explicitMounts[logicalPath]) {
+      throw new Error(
+        `Invalid project config at ${input.configPath}: duplicate explicit workspace mount key "${logicalPath}".`,
+      );
+    }
+    explicitMounts[logicalPath] = mount;
+  }
+
+  return explicitMounts;
 }
 
 function resolvePlacementRoot(
@@ -658,23 +803,6 @@ function validateDirectoryConflicts(directories: WorkspaceDirectories, configPat
 
 function isAncestorOrDescendantPath(left: string, right: string): boolean {
   return left.startsWith(right + "/") || right.startsWith(left + "/");
-}
-
-function resolveBucketPath(input: {
-  configPath: string;
-  bucket: WorkspaceBucket;
-  root: string;
-  relativeDirectory: string;
-}): string {
-  const { configPath, bucket, root, relativeDirectory } = input;
-  const normalizedRelativeDirectory = normalizeWorkspaceDirectoryValue({
-    configPath,
-    key: bucket,
-    value: relativeDirectory,
-    fallback: relativeDirectory,
-  });
-
-  return path.join(root, normalizedRelativeDirectory);
 }
 
 function validateResolvedBucketConflicts(input: { configPath: string; paths: WorkspacePaths }): void {
