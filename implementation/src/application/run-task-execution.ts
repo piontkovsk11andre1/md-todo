@@ -39,7 +39,6 @@ import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
-  resolveWorkspacePlacement,
 } from "./workspace-paths.js";
 import {
   buildWorkspaceContextTemplateVars,
@@ -699,22 +698,15 @@ export function createRunTaskExecution(
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
     });
-    const workspacePlacement = resolveWorkspacePlacement({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
-    });
     const workspacePaths = resolveWorkspacePaths({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
       {
         directories: workspaceDirectories,
-        placement: workspacePlacement,
         paths: workspacePaths,
       },
     );

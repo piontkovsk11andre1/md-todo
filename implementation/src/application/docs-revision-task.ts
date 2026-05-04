@@ -10,7 +10,6 @@ import {
   resolveDesignCurrentPathOverride,
   resolveWorkspaceDirectories,
   resolveWorkspacePath,
-  resolveWorkspacePlacement,
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
@@ -63,16 +62,10 @@ export function createDocsRevisionTask(
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
     });
-    const workspacePlacement = resolveWorkspacePlacement({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
     const workspacePaths = resolveWorkspacePaths({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
       invocationRoot: executionContext.invocationDir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
     const migrationsDir = resolveWorkspacePath({
       fileSystem: dependencies.fileSystem,
@@ -80,8 +73,6 @@ export function createDocsRevisionTask(
       invocationRoot: executionContext.invocationDir,
       bucket: "migrations",
       overrideDir: options.dir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {

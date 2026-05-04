@@ -45,7 +45,6 @@ import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import {
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
-  resolveWorkspacePlacement,
   resolveWorkspacePath,
 } from "./workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
@@ -169,16 +168,10 @@ export function createMigrateTask(
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
     });
-    const workspacePlacement = resolveWorkspacePlacement({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
     const workspacePaths = resolveWorkspacePaths({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
       invocationRoot: executionContext.invocationDir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
     const migrationsDir = resolveWorkspacePath({
       fileSystem: dependencies.fileSystem,
@@ -186,8 +179,6 @@ export function createMigrateTask(
       invocationRoot: executionContext.invocationDir,
       bucket: "migrations",
       overrideDir: options.dir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {
@@ -255,7 +246,6 @@ export function createMigrateTask(
         invocationRoot: executionContext.invocationDir,
         workspaceRoot,
         workspaceDirectories,
-        workspacePlacement,
         workspacePaths,
         workerPattern: resolvedWorker.workerPattern,
         slugWorkerPattern,
@@ -329,7 +319,6 @@ async function runMigrateLoop(input: {
   invocationRoot: string;
   workspaceRoot: string;
   workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>;
-  workspacePlacement: ReturnType<typeof resolveWorkspacePlacement>;
   workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern: ParsedWorkerPattern;
@@ -353,7 +342,6 @@ async function runMigrateLoop(input: {
     invocationRoot,
     workspaceRoot,
     workspaceDirectories,
-    workspacePlacement,
     workspacePaths,
     workerPattern,
     slugWorkerPattern,
@@ -517,7 +505,6 @@ async function runMigrateLoop(input: {
         projectRoot,
         invocationRoot,
         workspaceDirectories,
-        workspacePlacement,
         workspacePaths,
         slugWorkerPattern,
         artifactContext,
@@ -602,7 +589,6 @@ async function runMigrationLaneDrafting(input: {
   projectRoot: string;
   invocationRoot: string;
   workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>;
-  workspacePlacement: ReturnType<typeof resolveWorkspacePlacement>;
   workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
   slugWorkerPattern: ParsedWorkerPattern;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
@@ -629,7 +615,6 @@ async function runMigrationLaneDrafting(input: {
     projectRoot,
     invocationRoot,
     workspaceDirectories,
-    workspacePlacement,
     workspacePaths,
     slugWorkerPattern,
     artifactContext,
@@ -651,7 +636,6 @@ async function runMigrationLaneDrafting(input: {
     projectRoot,
     invocationRoot,
     workspaceDirectories,
-    workspacePlacement,
     workspacePaths,
     designRevisionTarget: targetRevisionName,
     revisionDiff,
@@ -1551,7 +1535,6 @@ function buildTemplateVars(input: {
   projectRoot: string;
   invocationRoot: string;
   workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>;
-  workspacePlacement: ReturnType<typeof resolveWorkspacePlacement>;
   workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
   designRevisionTarget?: string | number;
   revisionDiff?: DesignRevisionDiffContext;
@@ -1573,7 +1556,6 @@ function buildTemplateVars(input: {
     projectRoot,
     invocationRoot,
     workspaceDirectories,
-    workspacePlacement,
     workspacePaths,
     designRevisionTarget,
     revisionDiff: providedRevisionDiff,
@@ -1668,9 +1650,9 @@ function buildTemplateVars(input: {
     workspaceSpecsDir: workspaceDirectories.specs,
     workspaceMigrationsDir: workspaceDirectories.migrations,
     workspacePredictionDir: workspaceDirectories.prediction,
-    workspaceDesignPlacement: workspacePlacement.design,
-    workspaceSpecsPlacement: workspacePlacement.specs,
-    workspaceMigrationsPlacement: workspacePlacement.migrations,
+    workspaceDesignPlacement: "",
+    workspaceSpecsPlacement: "",
+    workspaceMigrationsPlacement: "",
     workspaceDesignPath: workspacePaths.design,
     workspaceSpecsPath: workspacePaths.specs,
     workspaceMigrationsPath: workspacePaths.migrations,

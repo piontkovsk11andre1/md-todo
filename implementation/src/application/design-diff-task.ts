@@ -8,9 +8,7 @@ import {
   prepareDesignRevisionDiffContext,
 } from "./design-context.js";
 import {
-  resolveWorkspaceDirectories,
   resolveWorkspacePath,
-  resolveWorkspacePlacement,
 } from "./workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
 
@@ -45,22 +43,12 @@ export function createDesignDiffTask(
 
     const workspaceRoot = workspaceSelection.workspaceRoot;
     const executionContext = workspaceSelection.executionContext;
-    const workspaceDirectories = resolveWorkspaceDirectories({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
-    const workspacePlacement = resolveWorkspacePlacement({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
     const migrationsDir = resolveWorkspacePath({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
       invocationRoot: executionContext.invocationDir,
       bucket: "migrations",
       overrideDir: options.dir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
 
     if (!dependencies.fileSystem.exists(migrationsDir)) {

@@ -16,9 +16,7 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { resolveEffectiveWorkspaceRoot } from "../domain/workspace-link.js";
 import {
-  resolveWorkspaceDirectories,
   resolveWorkspacePath,
-  resolveWorkspacePlacement,
 } from "./workspace-paths.js";
 
 interface TestRunResult {
@@ -63,22 +61,12 @@ export function createTestSpecs(
       ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)?.workerTimeoutMs
       : undefined;
     const workspaceRoot = resolveWorkspaceRootFromCurrentDir(dependencies.fileSystem, invocationDir);
-    const workspaceDirectories = resolveWorkspaceDirectories({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
-    const workspacePlacement = resolveWorkspacePlacement({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-    });
     const specsDir = resolveWorkspacePath({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
       invocationRoot: invocationDir,
       bucket: "specs",
       overrideDir: options.dir,
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     });
     if (options.action === "new") {
       const assertion = (options.prompt ?? "").trim();
@@ -306,20 +294,10 @@ function buildTestContext(
   projectRoot: string,
   invocationRoot: string,
 ): TestContext {
-  const workspaceDirectories = resolveWorkspaceDirectories({
-    fileSystem,
-    workspaceRoot: projectRoot,
-  });
-  const workspacePlacement = resolveWorkspacePlacement({
-    fileSystem,
-    workspaceRoot: projectRoot,
-  });
   const includeExclude = buildIncludedAndExcludedDirectories(
     fileSystem,
     projectRoot,
     invocationRoot,
-    workspaceDirectories,
-    workspacePlacement,
   );
 
   return {
@@ -345,8 +323,6 @@ function buildIncludedAndExcludedDirectories(
   fileSystem: FileSystem,
   workspaceRoot: string,
   invocationRoot: string,
-  workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>,
-  workspacePlacement: ReturnType<typeof resolveWorkspacePlacement>,
 ): {
   included: string;
   includedList: string[];
@@ -359,24 +335,18 @@ function buildIncludedAndExcludedDirectories(
       workspaceRoot,
       invocationRoot,
       bucket: "design",
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     }),
     resolveWorkspacePath({
       fileSystem,
       workspaceRoot,
       invocationRoot,
       bucket: "specs",
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     }),
     resolveWorkspacePath({
       fileSystem,
       workspaceRoot,
       invocationRoot,
       bucket: "migrations",
-      directories: workspaceDirectories,
-      placement: workspacePlacement,
     }),
   ];
 
