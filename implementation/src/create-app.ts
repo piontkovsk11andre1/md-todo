@@ -41,14 +41,6 @@ import {
   createExploreTask,
   type ExploreTaskOptions,
 } from "./application/explore-task.js";
-import {
-  createDesignTask,
-  type DesignTaskOptions,
-} from "./application/docs-task.js";
-import {
-  createDesignDiffTask,
-  type DesignDiffTaskOptions,
-} from "./application/design-diff-task.js";
 import { createTestSpecs, type TestSpecsOptions } from "./application/test-specs.js";
 import {
   createStartProject,
@@ -176,9 +168,6 @@ export type App = {
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   undoTask: (options: UndoTaskOptions) => Promise<number>;
   migrateTask: (options: MigrateTaskOptions) => Promise<number>;
-  designTask: (options: DesignTaskOptions) => Promise<number>;
-  designDiffTask: (options: DesignDiffTaskOptions) => Promise<number>;
-  docsTask: (options: DesignTaskOptions) => Promise<number>;
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
@@ -548,11 +537,6 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
     output: ports.output,
   });
 
-  const designTaskUseCase = (ports: AppPorts) => createDesignTask({
-    fileSystem: ports.fileSystem,
-    output: ports.output,
-  });
-
   const exploreTaskUseCase = (ports: AppPorts) => createExploreTask({
     output: ports.output,
     researchTask: createResearchTask({
@@ -716,12 +700,6 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       }),
       runExplore: (source, cwd) => runInternalExploreForCreatedFile(ports, source, cwd),
     }),
-    designTask: (ports) => designTaskUseCase(ports),
-    designDiffTask: (ports) => createDesignDiffTask({
-      fileSystem: ports.fileSystem,
-      output: ports.output,
-    }),
-    docsTask: (ports) => designTaskUseCase(ports),
     testSpecs: (ports) => testSpecsUseCase(ports),
     planTask: (ports) => {
       const runPlanTask = planTaskUseCase(ports);
@@ -935,18 +913,9 @@ function createAppFromFactories(
   factoryOverrides: Partial<AppUseCaseFactories> = {},
 ): App {
   const defaultFactories = createDefaultUseCaseFactories();
-  const designTaskFactory = factoryOverrides.designTask
-    ?? factoryOverrides.docsTask
-    ?? defaultFactories.designTask;
-  const docsTaskFactory = factoryOverrides.docsTask
-    ?? factoryOverrides.designTask
-    ?? defaultFactories.docsTask;
-
   const factories: AppUseCaseFactories = {
     ...defaultFactories,
     ...factoryOverrides,
-    designTask: designTaskFactory,
-    docsTask: docsTaskFactory,
   };
 
   const helpTask = factories.helpTask(ports);
@@ -961,9 +930,6 @@ function createAppFromFactories(
   const revertTask = factories.revertTask(ports);
   const undoTask = factories.undoTask(ports);
   const migrateTask = factories.migrateTask(ports);
-  const designTask = factories.designTask(ports);
-  const designDiffTask = factories.designDiffTask(ports);
-  const docsTask = factories.docsTask(ports);
   const testSpecs = factories.testSpecs(ports);
   const planTask = factories.planTask(ports);
   const researchTask = factories.researchTask(ports);
@@ -1056,23 +1022,6 @@ function createAppFromFactories(
     undoTask,
     migrateTask: async (options) => {
       const primaryExitCode = await migrateTask(options);
-      return runPostSuccessAutoCompact({
-        primaryExitCode,
-        autoCompact: options.autoCompact,
-        workspace: options.workspace,
-      });
-    },
-    designTask: async (options) => {
-      const primaryExitCode = await designTask(options);
-      return runPostSuccessAutoCompact({
-        primaryExitCode,
-        autoCompact: options.autoCompact,
-        workspace: options.workspace,
-      });
-    },
-    designDiffTask,
-    docsTask: async (options) => {
-      const primaryExitCode = await docsTask(options);
       return runPostSuccessAutoCompact({
         primaryExitCode,
         autoCompact: options.autoCompact,

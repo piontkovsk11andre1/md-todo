@@ -429,21 +429,9 @@ interface MigrateCommandOptions {
   showAgentOutput: boolean;
 }
 
-interface DesignCommandOptions {
-  action?: "release" | "diff";
-  dir?: string;
-  workspace?: string;
-  autoCompact?: AutoCompactCliOptions;
-  label?: string;
-  target?: string;
-  from?: string;
-}
-
 interface AutoCompactCliOptions {
   beforeExit: boolean;
 }
-
-type DesignCommandHandler = (options: DesignCommandOptions) => CliActionResult;
 
 type MigrateCommandHandler = (options: MigrateCommandOptions) => CliActionResult;
 
@@ -1604,108 +1592,6 @@ function parseCompactTarget(
 }
 
 /**
- * Creates the `design release` command action handler.
- *
- * The returned action reuses the revision snapshot flow currently implemented by
- * the design revision use case and forwards release-specific options.
- */
-export function createDesignReleaseCommandAction({
-  getApp,
-  getInvocationArgv,
-}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
-  return (opts: CliOpts) => {
-    return resolveDesignCommandHandler(getApp())({
-      action: "release",
-      dir: normalizeOptionalString(opts.dir),
-      workspace: normalizeOptionalString(opts.workspace),
-      autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
-      label: normalizeOptionalString(opts.label),
-    });
-  };
-}
-
-/**
- * Creates the deprecated `docs release` compatibility command action handler.
- */
-export function createDocsReleaseCommandAction({
-  getApp,
-  getInvocationArgv,
-}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
-  return (opts: CliOpts) => {
-    const app = getApp();
-    app.emitOutput?.({
-      kind: "warn",
-      message: "`rundown docs release` is deprecated; use `rundown design release`.",
-    });
-
-    return createDesignReleaseCommandAction({ getApp: () => app, getInvocationArgv })(opts);
-  };
-}
-
-/**
- * Creates the deprecated `docs publish` compatibility command action handler.
- */
-export function createDocsPublishCommandAction({
-  getApp,
-  getInvocationArgv,
-}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
-  return (opts: CliOpts) => {
-    const app = getApp();
-    app.emitOutput?.({
-      kind: "warn",
-      message: "`rundown docs publish` is deprecated; use `rundown design release`.",
-    });
-
-    return createDesignReleaseCommandAction({ getApp: () => app, getInvocationArgv })(opts);
-  };
-}
-
-/**
- * Creates the removed `docs save` command action handler.
- */
-export function createDocsSaveCommandAction(): () => CliActionResult {
-  return () => {
-    throw new Error("`rundown docs save` was removed. Use `rundown design release` (preferred) or `rundown docs publish` (deprecated alias).");
-  };
-}
-
-/**
- * Creates the `design diff` command action handler.
- *
- * The returned action maps design diff selectors and shorthand target form to the
- * current revision diff behavior while preserving deterministic defaults.
- */
-export function createDesignDiffCommandAction({
-  getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (target: string | undefined, opts: CliOpts) => CliActionResult {
-  return (target: string | undefined, opts: CliOpts) => {
-    return resolveDesignDiffCommandHandler(getApp())({
-      dir: normalizeOptionalString(opts.dir),
-      workspace: normalizeOptionalString(opts.workspace),
-      target: normalizeOptionalString(target),
-      from: normalizeOptionalString(opts.from),
-    });
-  };
-}
-
-/**
- * Creates the deprecated `docs diff` compatibility command action handler.
- */
-export function createDocsDiffCommandAction({
-  getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (target: string | undefined, opts: CliOpts) => CliActionResult {
-  return (target: string | undefined, opts: CliOpts) => {
-    const app = getApp();
-    app.emitOutput?.({
-      kind: "warn",
-      message: "`rundown docs diff` is deprecated; use `rundown design diff`.",
-    });
-
-    return createDesignDiffCommandAction({ getApp: () => app })(target, opts);
-  };
-}
-
-/**
  * Creates the `test` command action handler.
  *
  * The returned action validates `test` action routing and forwards the request
@@ -2863,53 +2749,6 @@ function resolveMigrateCommandHandler(appInstance: CliApp): MigrateCommandHandle
   }
 
   throw new Error("The `migrate` command is not available in this build.");
-}
-
-/**
- * Resolves the active design command implementation for the current app build.
- */
-function resolveDesignCommandHandler(appInstance: CliApp): DesignCommandHandler {
-  const maybeDesignHandler = appInstance as CliApp & {
-    designTask?: DesignCommandHandler;
-    docsTask?: DesignCommandHandler;
-  };
-
-  if (typeof maybeDesignHandler.designTask === "function") {
-    return maybeDesignHandler.designTask;
-  }
-
-  if (typeof maybeDesignHandler.docsTask === "function") {
-    return maybeDesignHandler.docsTask;
-  }
-
-  throw new Error("The `design` command is not available in this build.");
-}
-
-function resolveDesignDiffCommandHandler(appInstance: CliApp): (options: {
-  dir?: string;
-  workspace?: string;
-  target?: string;
-  from?: string;
-}) => CliActionResult {
-  const maybeDesignDiffHandler = appInstance as CliApp & {
-    designDiffTask?: (options: {
-      dir?: string;
-      workspace?: string;
-      target?: string;
-      from?: string;
-    }) => CliActionResult;
-  };
-
-  if (typeof maybeDesignDiffHandler.designDiffTask === "function") {
-    return maybeDesignDiffHandler.designDiffTask;
-  }
-
-  return (options) => resolveDesignCommandHandler(appInstance)({
-    action: "diff",
-    dir: options.dir,
-    workspace: options.workspace,
-    target: options.target,
-  });
 }
 
 /**

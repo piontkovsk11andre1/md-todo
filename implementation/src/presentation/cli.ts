@@ -1,4 +1,4 @@
-import { Argument, Command, InvalidArgumentError } from "commander";
+import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
 import type { ProcessRunMode } from "../domain/ports/index.js";
@@ -37,8 +37,6 @@ import {
   createLoopCommandAction,
   createDiscussCommandAction,
   createDoCommandAction,
-  createDesignDiffCommandAction,
-  createDesignReleaseCommandAction,
   createExploreCommandAction,
   createHelpCommandAction,
   createRootTuiAction,
@@ -101,17 +99,6 @@ const EXIT_CODES_HELP_TEXT = [
   "  2  verification failure",
   "  3  no-work / no actionable target",
 ].join("\n");
-
-function parseDesignRevisionName(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (!/^rev\.[0-9]+$/.test(normalized)) {
-    throw new InvalidArgumentError(
-      `Invalid revision value: ${value}. Expected format rev.<n> (for example: rev.1).`,
-    );
-  }
-
-  return normalized;
-}
 
 type CliActionResult = number | Promise<number>;
 
@@ -492,63 +479,6 @@ migrateCommand.addHelpText(
     "  - workspaceMountSummary (when present) is the canonical logical-path routing map",
   ].join("\n"),
 );
-
-const designCommand = program
-  .command("design")
-  .description("Manage design revision lifecycle (release and diff).")
-  .configureHelp({ showGlobalOptions: true })
-  .addHelpText(
-    "after",
-    [
-      "",
-      "Examples:",
-      "  - rd design release --label \"Initial baseline\"",
-      "  - rd design release --workspace ../source-workspace --label \"Initial baseline\"",
-      "  - rd design diff",
-      "  - rd design diff rev.2",
-      "  - rd design diff rev.2 --from rev.0",
-      "  - rd design diff --workspace ../source-workspace",
-    ].join("\n"),
-  );
-
-designCommand
-  .command("release")
-  .description("Release design/current/ into the next immutable design/revisions/rev.N/ snapshot.")
-  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
-  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
-  .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
-  .option("--label <text>", "Optional label to store in revision metadata")
-  .allowUnknownOption(false)
-  .action(withCliAction(createDesignReleaseCommandAction({
-    getApp,
-    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
-  })));
-
-designCommand
-  .command("diff")
-  .description("Show the design revision diff migrate would use for a target revision.")
-  .addArgument(
-    new Argument("[target]", "Optional target revision (format: rev.<n>)")
-      .argParser(parseDesignRevisionName),
-  )
-  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
-  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
-  .option("--from <revName>", "Optional source revision override (format: rev.<n>)", parseDesignRevisionName)
-  .allowUnknownOption(false)
-  .action(withCliAction(createDesignDiffCommandAction({
-    getApp,
-  })))
-  .addHelpText(
-    "after",
-    [
-      "",
-      "Examples:",
-      "  - rd design diff",
-      "  - rd design diff rev.1",
-      "  - rd design diff rev.2 --from rev.0",
-      "  - rd design diff --workspace ../source-workspace",
-    ].join("\n"),
-  );
 
 program
   .command("test")
