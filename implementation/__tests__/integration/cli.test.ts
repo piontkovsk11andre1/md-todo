@@ -11685,6 +11685,38 @@ describe.sequential("CLI integration", () => {
     ]));
   });
 
+  it("compact does not touch run artifacts and does not create compressed archives", async () => {
+    const workspace = makeTempWorkspace();
+    setupCompactFixture(workspace);
+
+    const runDir = path.join(workspace, ".rundown", "runs", "run-20260504T120000000Z-compact-scope");
+    fs.mkdirSync(path.join(runDir, "01-execute"), { recursive: true });
+    const runJsonPath = path.join(runDir, "run.json");
+    const phasePromptPath = path.join(runDir, "01-execute", "prompt.md");
+    const runJson = JSON.stringify({ runId: "run-20260504T120000000Z-compact-scope", status: "completed" }, null, 2) + "\n";
+    const phasePrompt = "# Execute\n\nartifact payload\n";
+    fs.writeFileSync(runJsonPath, runJson, "utf-8");
+    fs.writeFileSync(phasePromptPath, phasePrompt, "utf-8");
+
+    const result = await runCli([
+      "compact",
+      "--target",
+      "all",
+      "--keep",
+      "0",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(runJsonPath)).toBe(true);
+    expect(fs.existsSync(phasePromptPath)).toBe(true);
+    expect(fs.readFileSync(runJsonPath, "utf-8")).toBe(runJson);
+    expect(fs.readFileSync(phasePromptPath, "utf-8")).toBe(phasePrompt);
+
+    const compressedArchiveFiles = listFilesRecursively(workspace)
+      .filter((filePath) => filePath.endsWith(".tar") || filePath.endsWith(".gz") || filePath.endsWith(".tgz"));
+    expect(compressedArchiveFiles).toEqual([]);
+  });
+
   it("compact rejects invalid target and retention scope combinations", async () => {
     const workspace = makeTempWorkspace();
 
