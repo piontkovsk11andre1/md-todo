@@ -74,6 +74,14 @@ Human-readable CLI output uses deterministic local-time ISO-8601 timestamps (wit
 - Task/detail listing payloads (`task` events) and raw worker transcript text (`text`/`stderr`) keep their existing shape.
 - Text output is human-oriented and may evolve; for machine consumers, use `--json` on supported commands.
 
+### Auto-compact follow-up exit semantics
+
+Commands that expose `--compact-before-exit` run compaction only after the primary command has already reached success.
+
+- If the primary command fails or exits no-work, auto-compaction does not run and the primary exit code is preserved.
+- If the primary command succeeds and auto-compaction succeeds (or reports no-work), the command exits `0`.
+- If the primary command succeeds but requested auto-compaction fails, rundown reports the compaction failure as a follow-up error and exits `1`.
+
 ### `rundown start <description>`
 
 See the command-focused reference: [cli-start.md](cli-start.md).

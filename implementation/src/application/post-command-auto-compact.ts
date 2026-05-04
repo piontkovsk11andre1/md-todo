@@ -19,6 +19,12 @@ export interface PostCommandAutoCompactInput {
   output: ApplicationOutputPort;
 }
 
+/**
+ * Exit-code contract for post-success auto-compaction:
+ * - preserve non-success primary outcomes without running compaction,
+ * - preserve primary success when compaction succeeds or reports no-work,
+ * - return failure when requested compaction fails after a successful primary command.
+ */
 export async function runPostCommandAutoCompact(
   input: PostCommandAutoCompactInput,
 ): Promise<number> {
