@@ -55,6 +55,7 @@ import {
   createConfigPathCommandAction,
   createConfigSetCommandAction,
   createConfigUnsetCommandAction,
+  createCompactCommandAction,
   createWorkspaceRemoveCommandAction,
   createWorkspaceUnlinkCommandAction,
   createWithCommandAction,
@@ -455,6 +456,19 @@ const migrateCommand = program
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
+
+program
+  .command("compact")
+  .description("Archive older design revision and migration payloads while keeping history reads transparent.")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--target <revisions|migrations|all>", "Compaction scope", "all")
+  .option("--dry-run", "Show what would be moved without modifying files", false)
+  .option("--keep <n>", "Default count of newest payloads to keep hot per lane", "5")
+  .option("--keep-revisions <n>", "Keep newest N planned revision payload directories hot")
+  .option("--keep-migrations-root <n>", "Keep newest N root-lane migration payloads hot")
+  .option("--keep-migrations-threads <n>", "Keep newest N migration payloads hot per thread lane")
+  .allowUnknownOption(false)
+  .action(withCliAction(createCompactCommandAction({ getApp })));
 
 migrateCommand.addHelpText(
   "after",

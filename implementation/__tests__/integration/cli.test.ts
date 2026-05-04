@@ -11575,6 +11575,23 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
   });
 
+  it("compact --help lists archive controls and retention options", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["compact", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("compact [options]");
+    expect(compactHelpOutput).toContain("--target <revisions|migrations|all> Compaction scope");
+    expect(compactHelpOutput).toContain("--dry-run Show what would be moved without modifying files");
+    expect(compactHelpOutput).toContain("--keep <n> Default count of newest payloads to keep hot per lane");
+    expect(compactHelpOutput).toContain("--keep-revisions <n> Keep newest N planned revision payload directories hot");
+    expect(compactHelpOutput).toContain("--keep-migrations-root <n> Keep newest N root-lane migration payloads hot");
+    expect(compactHelpOutput).toContain("--keep-migrations-threads <n> Keep newest N migration payloads hot per thread lane");
+  });
+
   it("design diff --help includes --workspace examples", async () => {
     const workspace = makeTempWorkspace();
 

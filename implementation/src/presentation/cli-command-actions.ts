@@ -1480,6 +1480,62 @@ export function createMigrateCommandAction({
 }
 
 /**
+ * Creates the `compact` command action handler.
+ *
+ * The returned action normalizes target/retention options and forwards them to
+ * the application `compactTask` use case.
+ */
+export function createCompactCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    const target = parseCompactTarget(opts.target);
+    return getApp().compactTask({
+      workspace: normalizeOptionalString(opts.workspace),
+      target,
+      dryRun: Boolean(opts.dryRun as boolean | undefined),
+      keepCount: parseCompactKeepCount(opts.keep, "keep"),
+      keepRevisions: parseCompactKeepCount(opts.keepRevisions, "keep-revisions"),
+      keepMigrationsRoot: parseCompactKeepCount(opts.keepMigrationsRoot, "keep-migrations-root"),
+      keepMigrationsThreads: parseCompactKeepCount(opts.keepMigrationsThreads, "keep-migrations-threads"),
+    });
+  };
+}
+
+function parseCompactKeepCount(value: string | string[] | boolean | undefined, optionName: string): number | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    throw new Error(`Invalid --${optionName} value: ${normalized}. Must be a non-negative integer.`);
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid --${optionName} value: ${normalized}. Must be a safe non-negative integer.`);
+  }
+
+  return parsed;
+}
+
+function parseCompactTarget(
+  value: string | string[] | boolean | undefined,
+): "revisions" | "migrations" | "all" | undefined {
+  const normalized = normalizeOptionalString(value);
+  if (normalized === undefined) {
+    return undefined;
+  }
+
+  if (normalized === "revisions" || normalized === "migrations" || normalized === "all") {
+    return normalized;
+  }
+
+  throw new Error(`Invalid --target value: ${normalized}. Allowed: revisions, migrations, all.`);
+}
+
+/**
  * Creates the `design release` command action handler.
  *
  * The returned action reuses the revision snapshot flow currently implemented by

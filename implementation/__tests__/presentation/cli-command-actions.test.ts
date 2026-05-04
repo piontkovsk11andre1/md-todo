@@ -10,6 +10,7 @@ import {
 import type { ApplicationOutputEvent } from "../../src/domain/ports/output-port.js";
 import {
   createAddCommandAction,
+  createCompactCommandAction,
   createWithCommandAction,
   createDesignDiffCommandAction,
   createDesignReleaseCommandAction,
@@ -2426,6 +2427,64 @@ describe("createMigrateCommandAction", () => {
     expect(migrateTask).not.toHaveBeenCalled();
   });
 
+});
+
+describe("createCompactCommandAction", () => {
+  it("forwards compact options to compactTask", async () => {
+    const compactTask = vi.fn(async () => 0);
+    const app = { compactTask } as unknown as CliApp;
+    const action = createCompactCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({
+      workspace: "../workspace-source",
+      target: "migrations",
+      dryRun: true,
+      keep: "7",
+      keepRevisions: "3",
+      keepMigrationsRoot: "2",
+      keepMigrationsThreads: "4",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(compactTask).toHaveBeenCalledTimes(1);
+    expect(compactTask).toHaveBeenCalledWith({
+      workspace: "../workspace-source",
+      target: "migrations",
+      dryRun: true,
+      keepCount: 7,
+      keepRevisions: 3,
+      keepMigrationsRoot: 2,
+      keepMigrationsThreads: 4,
+    });
+  });
+
+  it("rejects unknown compact target values", () => {
+    const compactTask = vi.fn(async () => 0);
+    const app = { compactTask } as unknown as CliApp;
+    const action = createCompactCommandAction({
+      getApp: () => app,
+    });
+
+    expect(() => action({ target: "history" })).toThrow(
+      "Invalid --target value: history. Allowed: revisions, migrations, all.",
+    );
+    expect(compactTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-numeric keep values", () => {
+    const compactTask = vi.fn(async () => 0);
+    const app = { compactTask } as unknown as CliApp;
+    const action = createCompactCommandAction({
+      getApp: () => app,
+    });
+
+    expect(() => action({ keep: "abc" })).toThrow(
+      "Invalid --keep value: abc. Must be a non-negative integer.",
+    );
+    expect(compactTask).not.toHaveBeenCalled();
+  });
 });
 
 describe("createDesignReleaseCommandAction", () => {
