@@ -112,6 +112,16 @@ export function createStartProject(
     let externalDesignCurrentPath: string | undefined;
     let normalizedMounts: Record<string, string> | undefined;
     try {
+      validateUnsupportedStartFlagCombinations({
+        mounts: options.mounts,
+        designDirOption: options.designDir,
+        specsDirOption: options.specsDir,
+        migrationsDirOption: options.migrationsDir,
+        designPlacementOption: options.designPlacement,
+        specsPlacementOption: options.specsPlacement,
+        migrationsPlacementOption: options.migrationsPlacement,
+        fromDesignOption: options.fromDesign,
+      });
       workspaceDirectories = resolveAndValidateWorkspaceDirectories({
         targetDirectory,
         designDirOption: options.designDir,
@@ -777,7 +787,7 @@ function resolveAndNormalizeCliMounts(input: {
   const normalized: Record<string, string> = {};
   for (const rawMount of mounts) {
     const parsed = parseCliMountDeclaration(rawMount);
-    const logicalPath = normalizeWorkspaceLogicalPath(parsed.logicalPath);
+    const logicalPath = normalizeCliMountLogicalPath(parsed.logicalPath);
     if (normalized[logicalPath]) {
       throw new Error(
         `Invalid --mount declarations: logical path "${logicalPath}" was provided more than once.`,
@@ -791,6 +801,72 @@ function resolveAndNormalizeCliMounts(input: {
   }
 
   return normalized;
+}
+
+function normalizeCliMountLogicalPath(rawLogicalPath: string): string {
+  try {
+    return normalizeWorkspaceLogicalPath(rawLogicalPath);
+  } catch (error) {
+    throw new Error(
+      `Invalid --mount logical path: "${rawLogicalPath}". ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function validateUnsupportedStartFlagCombinations(input: {
+  mounts: string[] | undefined;
+  designDirOption: string | undefined;
+  specsDirOption: string | undefined;
+  migrationsDirOption: string | undefined;
+  designPlacementOption: string | undefined;
+  specsPlacementOption: string | undefined;
+  migrationsPlacementOption: string | undefined;
+  fromDesignOption: string | undefined;
+}): void {
+  const {
+    mounts,
+    designDirOption,
+    specsDirOption,
+    migrationsDirOption,
+    designPlacementOption,
+    specsPlacementOption,
+    migrationsPlacementOption,
+    fromDesignOption,
+  } = input;
+  if (!mounts || mounts.length === 0) {
+    return;
+  }
+
+  const conflicts: string[] = [];
+  if (designDirOption !== undefined) {
+    conflicts.push("--design-dir");
+  }
+  if (specsDirOption !== undefined) {
+    conflicts.push("--specs-dir");
+  }
+  if (migrationsDirOption !== undefined) {
+    conflicts.push("--migrations-dir");
+  }
+  if (designPlacementOption !== undefined) {
+    conflicts.push("--design-placement");
+  }
+  if (specsPlacementOption !== undefined) {
+    conflicts.push("--specs-placement");
+  }
+  if (migrationsPlacementOption !== undefined) {
+    conflicts.push("--migrations-placement");
+  }
+  if (fromDesignOption !== undefined) {
+    conflicts.push("--from-design");
+  }
+
+  if (conflicts.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Unsupported start option combination: --mount cannot be combined with ${conflicts.join(", ")}. Use --mount declarations only for mounted bootstrap, or remove --mount to use legacy directory/placement flags.`,
+  );
 }
 
 function parseCliMountDeclaration(rawMount: string): { logicalPath: string; targetPath: string } {

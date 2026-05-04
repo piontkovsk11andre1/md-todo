@@ -546,6 +546,76 @@ describeIfStartAvailable("start-project integration", () => {
     expect(stderr).toContain("provided more than once");
   });
 
+  it("fails when --mount logical paths normalize to the same value", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Normalized duplicate mounts",
+      "--mount",
+      "implementation=.",
+      "--mount",
+      "implementation/.=./generated",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --mount declarations");
+    expect(stderr).toContain("provided more than once");
+  });
+
+  it("fails when --mount logical path is invalid", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Invalid logical mount",
+      "--mount",
+      "../implementation=.",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --mount logical path");
+    expect(stderr).toContain("normalized rundown logical path");
+  });
+
+  it("fails when --mount is combined with legacy directory flags", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Conflicting flags",
+      "--mount",
+      "implementation=.",
+      "--design-dir",
+      "docs/design",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Unsupported start option combination");
+    expect(stderr).toContain("--mount cannot be combined with --design-dir");
+  });
+
+  it("fails when --mount is combined with --from-design", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Conflicting external design",
+      "--mount",
+      "implementation=.",
+      "--from-design",
+      ".",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Unsupported start option combination");
+    expect(stderr).toContain("--from-design");
+  });
+
   it("creates the same clean scaffold for non-empty directories", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-project";
