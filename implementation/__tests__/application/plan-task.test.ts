@@ -429,6 +429,39 @@ describe("plan-task", () => {
     expect(prompt).toContain("append={{planAppendGuidance}}");
   });
 
+  it("ignores legacy sidecar guidance files when rendering plan prompts", async () => {
+    const cwd = "/workspace";
+    const markdownFile = path.join(cwd, "roadmap.md");
+    const { dependencies, events } = createDependencies({
+      cwd,
+      markdownFile,
+      fileContent: "# Roadmap\nBuild a new release process.\n",
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((filePath: string) => {
+      if (filePath.endsWith("/plan.md") || filePath.endsWith("\\plan.md")) {
+        return "# Plan Prompt\nTask={{task}}";
+      }
+      if (filePath.endsWith("/plan-prepend.md") || filePath.endsWith("\\plan-prepend.md")) {
+        return "LEGACY PREPEND GUIDANCE";
+      }
+      if (filePath.endsWith("/plan-append.md") || filePath.endsWith("\\plan-append.md")) {
+        return "LEGACY APPEND GUIDANCE";
+      }
+      return null;
+    });
+
+    const planTask = createPlanTask(dependencies);
+    const code = await planTask(createOptions({ source: markdownFile, printPrompt: true }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("# Plan Prompt");
+    expect(prompt).toContain("Task=Roadmap");
+    expect(prompt).not.toContain("LEGACY PREPEND GUIDANCE");
+    expect(prompt).not.toContain("LEGACY APPEND GUIDANCE");
+  });
+
   it("includes memory path and summary in plan prompt without memory body text", async () => {
     const cwd = "/workspace";
     const markdownFile = path.join(cwd, "roadmap.md");

@@ -2,9 +2,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_AGENT_TEMPLATE,
-  DEFAULT_PLAN_APPEND_TEMPLATE,
   DEFAULT_PLAN_LOOP_TEMPLATE,
-  DEFAULT_PLAN_PREPEND_TEMPLATE,
   DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_DISCUSS_FINISHED_TEMPLATE,
@@ -52,7 +50,7 @@ describe("project-templates", () => {
     const templateLoader: TemplateLoader = { load: vi.fn(() => null) };
     const templates = loadProjectTemplatesFromPorts(undefined, templateLoader, path);
 
-    expect(templates).toEqual({
+    expect(templates).toMatchObject({
       agent: DEFAULT_AGENT_TEMPLATE,
       task: DEFAULT_TASK_TEMPLATE,
       help: DEFAULT_HELP_TEMPLATE,
@@ -63,8 +61,6 @@ describe("project-templates", () => {
       resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
       planLoop: DEFAULT_PLAN_LOOP_TEMPLATE,
-      planPrepend: DEFAULT_PLAN_PREPEND_TEMPLATE,
-      planAppend: DEFAULT_PLAN_APPEND_TEMPLATE,
       deepPlan: DEFAULT_DEEP_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       researchVerify: DEFAULT_RESEARCH_VERIFY_TEMPLATE,
@@ -114,7 +110,7 @@ describe("project-templates", () => {
       path,
     );
 
-    expect(templates).toEqual({
+    expect(templates).toMatchObject({
       agent: DEFAULT_AGENT_TEMPLATE,
       task: "TASK",
       help: DEFAULT_HELP_TEMPLATE,
@@ -125,8 +121,6 @@ describe("project-templates", () => {
       resolve: DEFAULT_RESOLVE_TEMPLATE,
       plan: DEFAULT_PLAN_TEMPLATE,
       planLoop: DEFAULT_PLAN_LOOP_TEMPLATE,
-      planPrepend: DEFAULT_PLAN_PREPEND_TEMPLATE,
-      planAppend: DEFAULT_PLAN_APPEND_TEMPLATE,
       deepPlan: DEFAULT_DEEP_PLAN_TEMPLATE,
       research: DEFAULT_RESEARCH_TEMPLATE,
       researchVerify: DEFAULT_RESEARCH_VERIFY_TEMPLATE,
@@ -156,8 +150,6 @@ describe("project-templates", () => {
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research-resolve.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "research-output-contract.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "resolve.md"));
-    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "plan-prepend.md"));
-    expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "plan-append.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "plan-loop.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "deep-plan.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "trace.md"));
@@ -173,6 +165,44 @@ describe("project-templates", () => {
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-stream-execute.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "query-aggregate.md"));
     expect(templateLoader.load).toHaveBeenCalledWith(path.join(configDir, "translate.md"));
+  });
+
+  it("ignores legacy plan sidecar overrides when they are present", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("/plan.md") || filePath.endsWith("\\plan.md")) {
+          return "PLAN";
+        }
+        if (filePath.endsWith("/deep-plan.md") || filePath.endsWith("\\deep-plan.md")) {
+          return "DEEP_PLAN";
+        }
+        if (filePath.endsWith("/plan-loop.md") || filePath.endsWith("\\plan-loop.md")) {
+          return "PLAN_LOOP";
+        }
+        if (filePath.endsWith("/plan-prepend.md") || filePath.endsWith("\\plan-prepend.md")) {
+          return "LEGACY_PREPEND";
+        }
+        if (filePath.endsWith("/plan-append.md") || filePath.endsWith("\\plan-append.md")) {
+          return "LEGACY_APPEND";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.plan).toBe("PLAN");
+    expect(templates.planLoop).toBe("PLAN_LOOP");
+    expect(templates.deepPlan).toBe("DEEP_PLAN");
+    expect(templates.plan).not.toContain("LEGACY_PREPEND");
+    expect(templates.plan).not.toContain("LEGACY_APPEND");
+    expect(templates.deepPlan).not.toContain("LEGACY_PREPEND");
+    expect(templates.deepPlan).not.toContain("LEGACY_APPEND");
   });
 
   it("loads undo/test/migrate template overrides from project templates", () => {

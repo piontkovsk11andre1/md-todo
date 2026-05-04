@@ -149,5 +149,9 @@ describe("localize-project", () => {
     expect(localeConfig.language).toBe("Chinese");
     expect(localeConfig.aliases).toEqual({ "记忆:": "memory:", "验证:": "verify:" });
     expect(Object.keys(localeConfig.messages).sort()).toEqual(Object.keys(MESSAGES).sort());
+    expect(fileWrites.has("/repo/.rundown/plan-prepend.md")).toBe(false);
+    expect(fileWrites.has("/repo/.rundown/plan-append.md")).toBe(false);
+    expect(templateLoader.load).not.toHaveBeenCalledWith("/repo/.rundown/plan-prepend.md");
+    expect(templateLoader.load).not.toHaveBeenCalledWith("/repo/.rundown/plan-append.md");
   });
 });

@@ -85,8 +85,6 @@ function expectedInitSuccessLines(displayConfigDir: string): string[] {
     `✔ Created ${displayConfigDir}/resolve.md`,
     `✔ Created ${displayConfigDir}/plan.md`,
     `✔ Created ${displayConfigDir}/plan-loop.md`,
-    `✔ Created ${displayConfigDir}/plan-prepend.md`,
-    `✔ Created ${displayConfigDir}/plan-append.md`,
     `✔ Created ${displayConfigDir}/deep-plan.md`,
     `✔ Created ${displayConfigDir}/research.md`,
     `✔ Created ${displayConfigDir}/research-verify.md`,

@@ -58,6 +58,14 @@ describe("init-project", () => {
       "/workspace/.rundown/plan-loop.md",
       expect.any(String),
     );
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/.rundown/plan-prepend.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/.rundown/plan-append.md",
+      expect.any(String),
+    );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/.rundown/research-verify.md",
       expect.any(String),
@@ -171,6 +179,14 @@ describe("init-project", () => {
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
       "/workspace/config/.rundown-custom/plan-loop.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/config/.rundown-custom/plan-prepend.md",
+      expect.any(String),
+    );
+    expect(vi.mocked(fileSystem.writeText)).not.toHaveBeenCalledWith(
+      "/workspace/config/.rundown-custom/plan-append.md",
       expect.any(String),
     );
     expect(vi.mocked(fileSystem.writeText)).toHaveBeenCalledWith(
