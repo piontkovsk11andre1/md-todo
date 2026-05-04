@@ -22,6 +22,8 @@ Use `--mount <logical-path=target-path>` to attach logical workspace paths to ex
 - Relative target paths are resolved from the invocation directory (where `rundown start` is run), then persisted as normalized absolute targets in workspace config.
 - `--mount` is repeatable.
 
+Adoption pattern: place the controlling rundown workspace in a separate satellite directory with `--dir`, then mount existing directories from the invocation tree into logical paths.
+
 Compatibility note: `--design-dir`, `--specs-dir`, `--migrations-dir`, placement flags, and `--from-design` remain supported as transition-era shorthands.
 
 Use `--design-placement`, `--specs-placement`, and `--migrations-placement` to choose the placement root for each bucket:
@@ -93,6 +95,7 @@ Examples:
 rundown start "Adopt existing app" --dir ../control --mount implementation=. -- opencode run
 rundown start "Adopt existing app" --dir ../control --mount specs=. -- opencode run
 rundown start "Adopt existing app" --dir ../control --mount implementation/generated=./generated -- opencode run
+rundown start "Adopt existing app" --dir ../control --mount implementation=. --mount specs=./specs --mount migrations=../control/migrations -- opencode run
 rundown start "Ship auth flow" -- opencode run
 rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
 rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run
