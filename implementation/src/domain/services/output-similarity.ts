@@ -32,6 +32,7 @@ const KNOWN_USAGE_LIMIT_PATTERNS: RegExp[] = [
   /\bquota\s+(?:exceeded|reached)\b/i,
   /\busage\s+limit\b/i,
   /\btoo\s+many\s+requests\b/i,
+  /\bbilling\s+issue\b/i,
   /\b(?:http\s*)?429\b/i,
 ];
 
