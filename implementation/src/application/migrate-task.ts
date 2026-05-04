@@ -49,11 +49,13 @@ import {
   resolveWorkspacePath,
 } from "./workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
+import type { AutoCompactCommandOptions } from "./post-command-auto-compact.js";
 
 export interface MigrateTaskOptions {
   action?: string;
   dir?: string;
   workspace?: string;
+  autoCompact?: AutoCompactCommandOptions;
   confirm?: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;

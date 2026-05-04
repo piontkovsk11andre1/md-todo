@@ -63,6 +63,7 @@ import {
   createCompactTask,
   type CompactTaskOptions,
 } from "./application/compact-task.js";
+import { runPostCommandAutoCompact } from "./application/post-command-auto-compact.js";
 import {
   createConfigGet,
   createConfigList,
@@ -988,6 +989,20 @@ function createAppFromFactories(
   const workspaceRemoveTask = factories.workspaceRemoveTask(ports);
   const inFlightRunTasks = new Set<Promise<number>>();
 
+  const runPostSuccessAutoCompact = async (input: {
+    primaryExitCode: number;
+    autoCompact?: { beforeExit?: boolean };
+    workspace?: string;
+  }): Promise<number> => {
+    return runPostCommandAutoCompact({
+      primaryExitCode: input.primaryExitCode,
+      autoCompact: input.autoCompact,
+      workspace: input.workspace,
+      compactTask,
+      output: ports.output,
+    });
+  };
+
   const trackInFlightRun = (taskRun: Promise<number>): Promise<number> => {
     inFlightRunTasks.add(taskRun);
     void taskRun.finally(() => {
@@ -1008,10 +1023,31 @@ function createAppFromFactories(
     reverifyTask,
     revertTask,
     undoTask,
-    migrateTask,
-    designTask,
+    migrateTask: async (options) => {
+      const primaryExitCode = await migrateTask(options);
+      return runPostSuccessAutoCompact({
+        primaryExitCode,
+        autoCompact: options.autoCompact,
+        workspace: options.workspace,
+      });
+    },
+    designTask: async (options) => {
+      const primaryExitCode = await designTask(options);
+      return runPostSuccessAutoCompact({
+        primaryExitCode,
+        autoCompact: options.autoCompact,
+        workspace: options.workspace,
+      });
+    },
     designDiffTask,
-    docsTask,
+    docsTask: async (options) => {
+      const primaryExitCode = await docsTask(options);
+      return runPostSuccessAutoCompact({
+        primaryExitCode,
+        autoCompact: options.autoCompact,
+        workspace: options.workspace,
+      });
+    },
     testSpecs,
     planTask,
     researchTask,

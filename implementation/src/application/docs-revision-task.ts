@@ -13,6 +13,7 @@ import {
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
+import type { AutoCompactCommandOptions } from "./post-command-auto-compact.js";
 
 type DocsRevisionAction = "release" | "diff";
 
@@ -24,6 +25,7 @@ export interface DocsRevisionTaskOptions {
   action?: DocsRevisionAction;
   dir?: string;
   workspace?: string;
+  autoCompact?: AutoCompactCommandOptions;
   label?: string;
   target?: string;
   from?: string;

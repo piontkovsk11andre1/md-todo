@@ -421,7 +421,7 @@ interface DesignCommandOptions {
   action?: "release" | "diff";
   dir?: string;
   workspace?: string;
-  autoCompact: AutoCompactCliOptions;
+  autoCompact?: AutoCompactCliOptions;
   label?: string;
   target?: string;
   from?: string;
@@ -1652,7 +1652,6 @@ export function createDesignDiffCommandAction({
     return resolveDesignDiffCommandHandler(getApp())({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      autoCompact: { beforeExit: false },
       target: normalizeOptionalString(target),
       from: normalizeOptionalString(opts.from),
     });
@@ -2878,7 +2877,6 @@ function resolveDesignDiffCommandHandler(appInstance: CliApp): (options: {
     action: "diff",
     dir: options.dir,
     workspace: options.workspace,
-    autoCompact: { beforeExit: false },
     target: options.target,
   });
 }
