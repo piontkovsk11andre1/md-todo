@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { FileSystem } from "../domain/ports/index.js";
 import {
+  resolveArchiveWorkspacePaths,
   resolveWorkspaceMountPath,
   resolveWorkspaceMounts,
   resolveWorkspaceDirectories,
@@ -287,31 +288,22 @@ export function discoverDesignRevisionDirectories(
   options?: { invocationRoot?: string },
 ): DesignRevisionDirectory[] {
   const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot, options?.invocationRoot);
-  if (!isDirectory(fileSystem, workspace.discoveryRevisionsRootDir)) {
+  const metadataEntries = listDesignRevisionMetadataEntries(fileSystem, workspace);
+  if (metadataEntries.length === 0) {
     return [];
   }
 
   const revisions: DesignRevisionDirectory[] = [];
-  const entries = fileSystem.readdir(workspace.discoveryRevisionsRootDir)
-    .slice()
-    .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
-
-  for (const entry of entries) {
-    if (!entry.isDirectory) {
-      continue;
-    }
-
-    const parsed = parseDesignRevisionDirectoryName(entry.name);
-    if (!parsed) {
-      continue;
-    }
+  for (const metadataEntry of metadataEntries) {
+    const hotPayloadPath = path.join(workspace.payloadRevisionsRootDir, metadataEntry.name);
+    const archivedPayloadPath = path.join(workspace.archiveRevisionsRootDir, metadataEntry.name);
 
     revisions.push({
-      index: parsed.index,
-      name: entry.name,
-      absolutePath: path.join(workspace.discoveryRevisionsRootDir, entry.name),
-      metadata: readDesignRevisionMetadata(fileSystem, workspace.discoveryRevisionsRootDir, entry.name, parsed.index),
-      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, entry.name),
+      index: metadataEntry.index,
+      name: metadataEntry.name,
+      absolutePath: resolveRevisionPayloadAbsolutePath(fileSystem, hotPayloadPath, archivedPayloadPath),
+      metadata: readDesignRevisionMetadata(fileSystem, metadataEntry.metadataPath, metadataEntry.name, metadataEntry.index),
+      metadataPath: metadataEntry.metadataPath,
     });
   }
 
@@ -358,13 +350,7 @@ export function markRevisionPlanned(
   }
 
   const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot);
-  const existingRevision = discoverDesignRevisionDirectories(fileSystem, workspaceRoot).find((revision) =>
-    revision.name.toLowerCase() === revisionName.toLowerCase()
-  );
-  const metadataRootDir = existingRevision
-    ? path.dirname(existingRevision.absolutePath)
-    : workspace.revisionsRootDir;
-  const metadataPath = getDesignRevisionMetadataPath(metadataRootDir, revisionName);
+  const metadataPath = getDesignRevisionMetadataPath(workspace.metadataRevisionsRootDir, revisionName);
   const nowIso = new Date().toISOString();
   const existingMetadata = readRevisionMetadataRecord(fileSystem, metadataPath);
 
@@ -580,8 +566,8 @@ function collectDesignFiles(fileSystem: FileSystem, directoryPath: string): stri
 function resolveDesignDiffTarget(
   fileSystem: FileSystem,
   workspace: {
-    revisionsRootDir: string;
-    discoveryRevisionsRootDir: string;
+    payloadRevisionsRootDir: string;
+    metadataRevisionsRootDir: string;
     currentDir: string;
   },
   revisions: DesignRevisionDirectory[],
@@ -605,7 +591,7 @@ function resolveDesignDiffTarget(
         plannedAt: null,
         migrations: [],
       },
-      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, "current"),
+      metadataPath: getDesignRevisionMetadataPath(workspace.metadataRevisionsRootDir, "current"),
     };
   }
 
@@ -658,14 +644,14 @@ function resolveDesignDiffTarget(
     return {
       kind: "revision",
       name: trimmedTarget,
-      absolutePath: path.join(workspace.discoveryRevisionsRootDir, trimmedTarget),
+      absolutePath: path.join(workspace.payloadRevisionsRootDir, trimmedTarget),
       metadata: {
         createdAt: "",
         label: "",
         plannedAt: null,
         migrations: [],
       },
-      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, trimmedTarget),
+      metadataPath: getDesignRevisionMetadataPath(workspace.metadataRevisionsRootDir, trimmedTarget),
       revisionIndex: parsedTarget?.index,
     };
   }
@@ -680,7 +666,7 @@ function resolveDesignDiffTarget(
       plannedAt: null,
       migrations: [],
     },
-      metadataPath: getDesignRevisionMetadataPath(workspace.discoveryRevisionsRootDir, "current"),
+      metadataPath: getDesignRevisionMetadataPath(workspace.metadataRevisionsRootDir, "current"),
     };
 }
 
@@ -788,11 +774,10 @@ function toTemplateRevisionMetadata(
 
 function readDesignRevisionMetadata(
   fileSystem: FileSystem,
-  docsDir: string,
+  metadataPath: string,
   revisionName: string,
   revisionIndex: number,
 ): DesignRevisionMetadata {
-  const metadataPath = getDesignRevisionMetadataPath(docsDir, revisionName);
   const fallbackMetadata: DesignRevisionMetadata = {
     createdAt: "",
     label: "",
@@ -1503,7 +1488,10 @@ function resolveDesignWorkspaceForRevisions(
 ): {
   designRootDir: string;
   revisionsRootDir: string;
-  discoveryRevisionsRootDir: string;
+  payloadRevisionsRootDir: string;
+  archiveRevisionsRootDir: string;
+  metadataRevisionsRootDir: string;
+  metadataFallbackRootDir: string;
   currentDir: string;
   relativeDesignRootDir: string;
   relativeRevisionsRootDir: string;
@@ -1512,18 +1500,23 @@ function resolveDesignWorkspaceForRevisions(
   const configuredWorkspace = resolveConfiguredDesignWorkspace(fileSystem, workspaceRoot, invocationRoot);
   const canonicalRootDir = configuredWorkspace.workspacePath;
   const canonicalCurrentDir = configuredWorkspace.currentPath;
+  const canonicalArchivePaths = resolveArchiveWorkspacePaths({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+  });
   const canonicalRelativeCurrentDir = configuredWorkspace.currentPathIsExternal
     ? canonicalCurrentDir
     : configuredWorkspace.workspaceDir + "/current";
   if (isDirectory(fileSystem, canonicalCurrentDir)) {
     const canonicalRevisionsRootDir = path.join(canonicalRootDir, REVISION_ARCHIVE_DIR);
-    const canonicalRevisionEntries = isDirectory(fileSystem, canonicalRevisionsRootDir)
-      ? listRevisionEntries(fileSystem, canonicalRevisionsRootDir)
-      : [];
     return {
       designRootDir: canonicalRootDir,
       revisionsRootDir: canonicalRevisionsRootDir,
-      discoveryRevisionsRootDir: canonicalRevisionEntries.length > 0 ? canonicalRevisionsRootDir : canonicalRootDir,
+      payloadRevisionsRootDir: canonicalRevisionsRootDir,
+      archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+      metadataRevisionsRootDir: canonicalRevisionsRootDir,
+      metadataFallbackRootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
       relativeDesignRootDir: configuredWorkspace.workspaceDir,
       relativeRevisionsRootDir: configuredWorkspace.workspaceDir + "/" + REVISION_ARCHIVE_DIR,
@@ -1537,7 +1530,10 @@ function resolveDesignWorkspaceForRevisions(
     return {
       designRootDir: legacyRootDir,
       revisionsRootDir: legacyRootDir,
-      discoveryRevisionsRootDir: legacyRootDir,
+      payloadRevisionsRootDir: legacyRootDir,
+      archiveRevisionsRootDir: path.join(legacyRootDir, "archive", REVISION_ARCHIVE_DIR),
+      metadataRevisionsRootDir: legacyRootDir,
+      metadataFallbackRootDir: legacyRootDir,
       currentDir: legacyCurrentDir,
       relativeDesignRootDir: LEGACY_WORKSPACE_DIR,
       relativeRevisionsRootDir: LEGACY_WORKSPACE_DIR,
@@ -1547,13 +1543,13 @@ function resolveDesignWorkspaceForRevisions(
 
   if (isDirectory(fileSystem, canonicalRootDir)) {
     const canonicalRevisionsRootDir = path.join(canonicalRootDir, REVISION_ARCHIVE_DIR);
-    const canonicalRevisionEntries = isDirectory(fileSystem, canonicalRevisionsRootDir)
-      ? listRevisionEntries(fileSystem, canonicalRevisionsRootDir)
-      : [];
     return {
       designRootDir: canonicalRootDir,
       revisionsRootDir: canonicalRevisionsRootDir,
-      discoveryRevisionsRootDir: canonicalRevisionEntries.length > 0 ? canonicalRevisionsRootDir : canonicalRootDir,
+      payloadRevisionsRootDir: canonicalRevisionsRootDir,
+      archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+      metadataRevisionsRootDir: canonicalRevisionsRootDir,
+      metadataFallbackRootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
       relativeDesignRootDir: configuredWorkspace.workspaceDir,
       relativeRevisionsRootDir: configuredWorkspace.workspaceDir + "/" + REVISION_ARCHIVE_DIR,
@@ -1565,7 +1561,10 @@ function resolveDesignWorkspaceForRevisions(
     return {
       designRootDir: legacyRootDir,
       revisionsRootDir: legacyRootDir,
-      discoveryRevisionsRootDir: legacyRootDir,
+      payloadRevisionsRootDir: legacyRootDir,
+      archiveRevisionsRootDir: path.join(legacyRootDir, "archive", REVISION_ARCHIVE_DIR),
+      metadataRevisionsRootDir: legacyRootDir,
+      metadataFallbackRootDir: legacyRootDir,
       currentDir: legacyCurrentDir,
       relativeDesignRootDir: LEGACY_WORKSPACE_DIR,
       relativeRevisionsRootDir: LEGACY_WORKSPACE_DIR,
@@ -1576,12 +1575,93 @@ function resolveDesignWorkspaceForRevisions(
   return {
     designRootDir: canonicalRootDir,
     revisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
-    discoveryRevisionsRootDir: canonicalRootDir,
+    payloadRevisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
+    archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+    metadataRevisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
+    metadataFallbackRootDir: canonicalRootDir,
     currentDir: canonicalCurrentDir,
     relativeDesignRootDir: configuredWorkspace.workspaceDir,
     relativeRevisionsRootDir: configuredWorkspace.workspaceDir + "/" + REVISION_ARCHIVE_DIR,
     relativeCurrentDir: canonicalRelativeCurrentDir,
   };
+}
+
+function listDesignRevisionMetadataEntries(
+  fileSystem: FileSystem,
+  workspace: {
+    metadataRevisionsRootDir: string;
+    metadataFallbackRootDir: string;
+  },
+): Array<{ name: string; index: number; metadataPath: string }> {
+  const primaryEntries = listRevisionMetadataEntries(fileSystem, workspace.metadataRevisionsRootDir);
+  if (primaryEntries.length > 0 || workspace.metadataFallbackRootDir === workspace.metadataRevisionsRootDir) {
+    return primaryEntries;
+  }
+
+  return listRevisionMetadataEntries(fileSystem, workspace.metadataFallbackRootDir);
+}
+
+function listRevisionMetadataEntries(
+  fileSystem: FileSystem,
+  metadataRootDir: string,
+): Array<{ name: string; index: number; metadataPath: string }> {
+  if (!isDirectory(fileSystem, metadataRootDir)) {
+    return [];
+  }
+
+  const entries: Array<{ name: string; index: number; metadataPath: string }> = [];
+  for (const entry of fileSystem.readdir(metadataRootDir)) {
+    if (!entry.isFile) {
+      continue;
+    }
+
+    const revisionName = parseRevisionNameFromMetadataFileName(entry.name);
+    if (!revisionName) {
+      continue;
+    }
+
+    const parsed = parseDesignRevisionDirectoryName(revisionName);
+    if (!parsed) {
+      continue;
+    }
+
+    entries.push({
+      name: revisionName,
+      index: parsed.index,
+      metadataPath: path.join(metadataRootDir, entry.name),
+    });
+  }
+
+  return entries.sort((left, right) => {
+    if (left.index !== right.index) {
+      return left.index - right.index;
+    }
+
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+}
+
+function parseRevisionNameFromMetadataFileName(name: string): string | null {
+  if (!name.toLowerCase().endsWith(REVISION_METADATA_FILE_SUFFIX)) {
+    return null;
+  }
+
+  return name.slice(0, name.length - REVISION_METADATA_FILE_SUFFIX.length);
+}
+
+function resolveRevisionPayloadAbsolutePath(
+  fileSystem: FileSystem,
+  hotPayloadPath: string,
+  archivedPayloadPath: string,
+): string {
+  if (isDirectory(fileSystem, hotPayloadPath)) {
+    return hotPayloadPath;
+  }
+  if (isDirectory(fileSystem, archivedPayloadPath)) {
+    return archivedPayloadPath;
+  }
+
+  return hotPayloadPath;
 }
 
 function getConfiguredDesignWorkspaceDir(fileSystem: FileSystem, workspaceRoot: string): string {

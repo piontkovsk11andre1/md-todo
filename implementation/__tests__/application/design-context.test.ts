@@ -165,6 +165,73 @@ describe("design-context revision metadata and immutability", () => {
     });
   });
 
+  it("discovers metadata-hot revisions and resolves archived payload directories", () => {
+    const fileSystem = new InMemoryFileSystem({
+      directories: {
+        "/repo/design": [
+          { name: "current", isDirectory: true, isFile: false },
+          { name: "revisions", isDirectory: true, isFile: false },
+          { name: "archive", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/current": [{ name: "Target.md", isDirectory: false, isFile: true }],
+        "/repo/design/revisions": [
+          { name: "rev.5.meta.json", isDirectory: false, isFile: true },
+        ],
+        "/repo/design/archive": [
+          { name: "revisions", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/archive/revisions": [
+          { name: "rev.5", isDirectory: true, isFile: false },
+        ],
+        "/repo/design/archive/revisions/rev.5": [
+          { name: "Target.md", isDirectory: false, isFile: true },
+        ],
+      },
+      files: {
+        "/repo/.rundown/config.json": JSON.stringify({
+          workspace: {
+            mounts: {
+              design: "/repo/design",
+              "design/current": "/repo/design/current",
+              "design/archive/revisions": "/repo/design/archive/revisions",
+            },
+          },
+        }),
+        "/repo/design/current/Target.md": "current\n",
+        "/repo/design/revisions/rev.5.meta.json": JSON.stringify({
+          revision: "rev.5",
+          index: 5,
+          createdAt: "2026-01-05T00:00:00.000Z",
+          plannedAt: null,
+          migrations: [],
+        }),
+        "/repo/design/archive/revisions/rev.5/Target.md": "archived\n",
+      },
+      stats: {
+        "/repo/.rundown/config.json": { isDirectory: false, isFile: true },
+        "/repo/design": { isDirectory: true, isFile: false },
+        "/repo/design/current": { isDirectory: true, isFile: false },
+        "/repo/design/revisions": { isDirectory: true, isFile: false },
+        "/repo/design/archive": { isDirectory: true, isFile: false },
+        "/repo/design/archive/revisions": { isDirectory: true, isFile: false },
+        "/repo/design/archive/revisions/rev.5": { isDirectory: true, isFile: false },
+      },
+    });
+
+    const revisions = discoverDesignRevisionDirectories(fileSystem, "/repo");
+    expect(revisions).toHaveLength(1);
+    expect(revisions[0]).toMatchObject({
+      name: "rev.5",
+      index: 5,
+      metadata: {
+        createdAt: "2026-01-05T00:00:00.000Z",
+        plannedAt: null,
+      },
+    });
+    expect(normalizePath(revisions[0]?.absolutePath ?? "")).toBe("/repo/design/archive/revisions/rev.5");
+    expect(normalizePath(revisions[0]?.metadataPath ?? "")).toBe("/repo/design/revisions/rev.5.meta.json");
+  });
+
   it("falls back to flat design/rev.N revisions when design/revisions exists but has no revision entries", () => {
     const fileSystem = new InMemoryFileSystem({
       directories: {
