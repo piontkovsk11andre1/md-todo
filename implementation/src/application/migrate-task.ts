@@ -393,6 +393,7 @@ async function runMigrateLoop(input: {
     }));
   }
   let processedAnyRevision = false;
+  let completedRevisionCount = 0;
 
   const preflightExitCode = runDesignRevisionReleasePreflight({
     fileSystem: dependencies.fileSystem,
@@ -565,16 +566,18 @@ async function runMigrateLoop(input: {
       }
     }
 
-    for (const lane of laneResults) {
-      if (lane.errorMessage) {
-        continue;
-      }
-      for (const migrationPath of lane.promotedMigrationPaths) {
-        await runExploreForMigration({
-          runExplore: dependencies.runExplore,
-          migrationPath,
-          projectRoot,
-        });
+    if (completedRevisionCount === 0) {
+      for (const lane of laneResults) {
+        if (lane.errorMessage) {
+          continue;
+        }
+        for (const migrationPath of lane.promotedMigrationPaths) {
+          await runExploreForMigration({
+            runExplore: dependencies.runExplore,
+            migrationPath,
+            projectRoot,
+          });
+        }
       }
     }
 
@@ -598,6 +601,10 @@ async function runMigrateLoop(input: {
         targetRevision.name,
         [],
       );
+      completedRevisionCount += 1;
+      if (discoveredThreads.length > 0) {
+        return EXIT_CODE_SUCCESS;
+      }
       continue;
     }
 
@@ -607,6 +614,10 @@ async function runMigrateLoop(input: {
       targetRevision.name,
       promotedMigrationMetadataPaths,
     );
+    completedRevisionCount += 1;
+    if (discoveredThreads.length > 0) {
+      return EXIT_CODE_SUCCESS;
+    }
   }
 }
 

@@ -104,7 +104,6 @@ function hasInitializedWorkspaceStructure(cwd: string, configDocument: Record<st
 
   const directories = resolveWorkspaceDirectories(configDocument);
   return isDirectory(path.join(cwd, directories.design))
-    && isDirectory(path.join(cwd, directories.implementation))
     && isDirectory(path.join(cwd, directories.specs))
     && isDirectory(path.join(cwd, directories.migrations));
 }

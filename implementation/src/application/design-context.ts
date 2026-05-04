@@ -288,22 +288,23 @@ export function discoverDesignRevisionDirectories(
   options?: { invocationRoot?: string },
 ): DesignRevisionDirectory[] {
   const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot, options?.invocationRoot);
-  const metadataEntries = listDesignRevisionMetadataEntries(fileSystem, workspace);
-  if (metadataEntries.length === 0) {
+  const revisionEntries = collectDiscoveredDesignRevisionEntries(fileSystem, workspace);
+  if (revisionEntries.length === 0) {
     return [];
   }
 
   const revisions: DesignRevisionDirectory[] = [];
-  for (const metadataEntry of metadataEntries) {
-    const hotPayloadPath = path.join(workspace.payloadRevisionsRootDir, metadataEntry.name);
-    const archivedPayloadPath = path.join(workspace.archiveRevisionsRootDir, metadataEntry.name);
+  for (const revisionEntry of revisionEntries) {
+    const hotPayloadPath = path.join(revisionEntry.payloadRootDir, revisionEntry.name);
+    const archivedPayloadPath = path.join(revisionEntry.archiveRootDir, revisionEntry.name);
+    const metadataPath = getDesignRevisionMetadataPath(revisionEntry.metadataRootDir, revisionEntry.name);
 
     revisions.push({
-      index: metadataEntry.index,
-      name: metadataEntry.name,
+      index: revisionEntry.index,
+      name: revisionEntry.name,
       absolutePath: resolveRevisionPayloadAbsolutePath(fileSystem, hotPayloadPath, archivedPayloadPath),
-      metadata: readDesignRevisionMetadata(fileSystem, metadataEntry.metadataPath, metadataEntry.name, metadataEntry.index),
-      metadataPath: metadataEntry.metadataPath,
+      metadata: readDesignRevisionMetadata(fileSystem, metadataPath, revisionEntry.name, revisionEntry.index),
+      metadataPath,
     });
   }
 
@@ -350,7 +351,10 @@ export function markRevisionPlanned(
   }
 
   const workspace = resolveDesignWorkspaceForRevisions(fileSystem, workspaceRoot);
-  const metadataPath = getDesignRevisionMetadataPath(workspace.metadataRevisionsRootDir, revisionName);
+  const existingRevision = discoverDesignRevisionDirectories(fileSystem, workspaceRoot)
+    .find((revision) => revision.name.toLowerCase() === revisionName.toLowerCase());
+  const metadataPath = existingRevision?.metadataPath
+    ?? getDesignRevisionMetadataPath(selectDesignRevisionRoots(fileSystem, workspace).metadataRootDir, revisionName);
   const nowIso = new Date().toISOString();
   const existingMetadata = readRevisionMetadataRecord(fileSystem, metadataPath);
 
@@ -482,8 +486,13 @@ export function prepareDesignRevisionDiffContext(
   const revisions = discoverDesignRevisionDirectories(fileSystem, workspaceRoot, {
     invocationRoot: options?.invocationRoot,
   });
+  const revisionRoots = selectDesignRevisionRoots(fileSystem, workspace);
 
-  const target = resolveDesignDiffTarget(fileSystem, workspace, revisions, options?.target);
+  const target = resolveDesignDiffTarget(fileSystem, {
+    payloadRevisionsRootDir: revisionRoots.payloadRootDir,
+    metadataRevisionsRootDir: revisionRoots.metadataRootDir,
+    currentDir: workspace.currentDir,
+  }, revisions, options?.target);
   const sourceReferences = [target.absolutePath];
 
   if (!isDirectory(fileSystem, target.absolutePath)) {
@@ -1464,6 +1473,10 @@ function listRevisionEntries(fileSystem: FileSystem, revisionsRootDir: string): 
   name: string;
   parsed: { index: number } | null;
 }> {
+  if (!isDirectory(fileSystem, revisionsRootDir)) {
+    return [];
+  }
+
   return fileSystem.readdir(revisionsRootDir)
     .filter((entry) => entry.isDirectory && parseDesignRevisionDirectoryName(entry.name) !== null)
     .map((entry) => ({
@@ -1489,6 +1502,7 @@ function resolveDesignWorkspaceForRevisions(
   designRootDir: string;
   revisionsRootDir: string;
   payloadRevisionsRootDir: string;
+  payloadFallbackRootDir: string;
   archiveRevisionsRootDir: string;
   metadataRevisionsRootDir: string;
   metadataFallbackRootDir: string;
@@ -1505,6 +1519,10 @@ function resolveDesignWorkspaceForRevisions(
     workspaceRoot,
     invocationRoot,
   });
+  const canonicalArchiveRevisionsRootDir = normalizeResolvedDesignPathForWorkspace(
+    workspaceRoot,
+    canonicalArchivePaths.designRevisionPayloads,
+  );
   const canonicalRelativeCurrentDir = configuredWorkspace.currentPathIsExternal
     ? canonicalCurrentDir
     : configuredWorkspace.workspaceDir + "/current";
@@ -1514,7 +1532,8 @@ function resolveDesignWorkspaceForRevisions(
       designRootDir: canonicalRootDir,
       revisionsRootDir: canonicalRevisionsRootDir,
       payloadRevisionsRootDir: canonicalRevisionsRootDir,
-      archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+      payloadFallbackRootDir: canonicalRootDir,
+      archiveRevisionsRootDir: canonicalArchiveRevisionsRootDir,
       metadataRevisionsRootDir: canonicalRevisionsRootDir,
       metadataFallbackRootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
@@ -1531,6 +1550,7 @@ function resolveDesignWorkspaceForRevisions(
       designRootDir: legacyRootDir,
       revisionsRootDir: legacyRootDir,
       payloadRevisionsRootDir: legacyRootDir,
+      payloadFallbackRootDir: legacyRootDir,
       archiveRevisionsRootDir: path.join(legacyRootDir, "archive", REVISION_ARCHIVE_DIR),
       metadataRevisionsRootDir: legacyRootDir,
       metadataFallbackRootDir: legacyRootDir,
@@ -1547,7 +1567,8 @@ function resolveDesignWorkspaceForRevisions(
       designRootDir: canonicalRootDir,
       revisionsRootDir: canonicalRevisionsRootDir,
       payloadRevisionsRootDir: canonicalRevisionsRootDir,
-      archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+      payloadFallbackRootDir: canonicalRootDir,
+      archiveRevisionsRootDir: canonicalArchiveRevisionsRootDir,
       metadataRevisionsRootDir: canonicalRevisionsRootDir,
       metadataFallbackRootDir: canonicalRootDir,
       currentDir: canonicalCurrentDir,
@@ -1562,6 +1583,7 @@ function resolveDesignWorkspaceForRevisions(
       designRootDir: legacyRootDir,
       revisionsRootDir: legacyRootDir,
       payloadRevisionsRootDir: legacyRootDir,
+      payloadFallbackRootDir: legacyRootDir,
       archiveRevisionsRootDir: path.join(legacyRootDir, "archive", REVISION_ARCHIVE_DIR),
       metadataRevisionsRootDir: legacyRootDir,
       metadataFallbackRootDir: legacyRootDir,
@@ -1576,7 +1598,8 @@ function resolveDesignWorkspaceForRevisions(
     designRootDir: canonicalRootDir,
     revisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
     payloadRevisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
-    archiveRevisionsRootDir: canonicalArchivePaths.designRevisionPayloads,
+    payloadFallbackRootDir: canonicalRootDir,
+    archiveRevisionsRootDir: canonicalArchiveRevisionsRootDir,
     metadataRevisionsRootDir: path.join(canonicalRootDir, REVISION_ARCHIVE_DIR),
     metadataFallbackRootDir: canonicalRootDir,
     currentDir: canonicalCurrentDir,
@@ -1584,6 +1607,138 @@ function resolveDesignWorkspaceForRevisions(
     relativeRevisionsRootDir: configuredWorkspace.workspaceDir + "/" + REVISION_ARCHIVE_DIR,
     relativeCurrentDir: canonicalRelativeCurrentDir,
   };
+}
+
+function selectDesignRevisionRoots(
+  fileSystem: FileSystem,
+  workspace: {
+    payloadRevisionsRootDir: string;
+    payloadFallbackRootDir: string;
+    archiveRevisionsRootDir: string;
+    metadataRevisionsRootDir: string;
+    metadataFallbackRootDir: string;
+  },
+): {
+  payloadRootDir: string;
+  archiveRootDir: string;
+  metadataRootDir: string;
+} {
+  const hasPrimaryPayloadEntries = listRevisionEntries(fileSystem, workspace.payloadRevisionsRootDir).length > 0;
+  const hasPrimaryArchiveEntries = listRevisionEntries(fileSystem, workspace.archiveRevisionsRootDir).length > 0;
+  const hasPrimaryMetadataEntries = listRevisionMetadataEntries(fileSystem, workspace.metadataRevisionsRootDir).length > 0;
+  if (
+    workspace.payloadFallbackRootDir === workspace.payloadRevisionsRootDir
+    || (hasPrimaryPayloadEntries || hasPrimaryArchiveEntries || hasPrimaryMetadataEntries)
+  ) {
+    return {
+      payloadRootDir: workspace.payloadRevisionsRootDir,
+      archiveRootDir: workspace.archiveRevisionsRootDir,
+      metadataRootDir: workspace.metadataRevisionsRootDir,
+    };
+  }
+
+  return {
+    payloadRootDir: workspace.payloadFallbackRootDir,
+    archiveRootDir: workspace.payloadFallbackRootDir,
+    metadataRootDir: workspace.metadataFallbackRootDir,
+  };
+}
+
+function collectDiscoveredDesignRevisionEntries(
+  fileSystem: FileSystem,
+  workspace: {
+    payloadRevisionsRootDir: string;
+    payloadFallbackRootDir: string;
+    archiveRevisionsRootDir: string;
+    metadataRevisionsRootDir: string;
+    metadataFallbackRootDir: string;
+  },
+): Array<{
+  name: string;
+  index: number;
+  payloadRootDir: string;
+  archiveRootDir: string;
+  metadataRootDir: string;
+}> {
+  const entries = new Map<string, {
+    name: string;
+    index: number;
+    payloadRootDir: string;
+    archiveRootDir: string;
+    metadataRootDir: string;
+  }>();
+
+  addDiscoveredDesignRevisionEntries(fileSystem, entries, {
+    payloadRootDir: workspace.payloadRevisionsRootDir,
+    archiveRootDir: workspace.archiveRevisionsRootDir,
+    metadataRootDir: workspace.metadataRevisionsRootDir,
+  });
+
+  if (
+    workspace.payloadFallbackRootDir !== workspace.payloadRevisionsRootDir
+    || workspace.metadataFallbackRootDir !== workspace.metadataRevisionsRootDir
+  ) {
+    addDiscoveredDesignRevisionEntries(fileSystem, entries, {
+      payloadRootDir: workspace.payloadFallbackRootDir,
+      archiveRootDir: workspace.payloadFallbackRootDir,
+      metadataRootDir: workspace.metadataFallbackRootDir,
+    });
+  }
+
+  return [...entries.values()].sort((left, right) => {
+    if (left.index !== right.index) {
+      return left.index - right.index;
+    }
+
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+}
+
+function addDiscoveredDesignRevisionEntries(
+  fileSystem: FileSystem,
+  entries: Map<string, {
+    name: string;
+    index: number;
+    payloadRootDir: string;
+    archiveRootDir: string;
+    metadataRootDir: string;
+  }>,
+  roots: {
+    payloadRootDir: string;
+    archiveRootDir: string;
+    metadataRootDir: string;
+  },
+): void {
+  for (const metadataEntry of listRevisionMetadataEntries(fileSystem, roots.metadataRootDir)) {
+    if (entries.has(metadataEntry.name)) {
+      continue;
+    }
+
+    entries.set(metadataEntry.name, {
+      name: metadataEntry.name,
+      index: metadataEntry.index,
+      payloadRootDir: roots.payloadRootDir,
+      archiveRootDir: roots.archiveRootDir,
+      metadataRootDir: roots.metadataRootDir,
+    });
+  }
+
+  for (const payloadEntry of [
+    ...listRevisionEntries(fileSystem, roots.payloadRootDir),
+    ...listRevisionEntries(fileSystem, roots.archiveRootDir),
+  ]) {
+    if (entries.has(payloadEntry.name) || !payloadEntry.parsed) {
+      continue;
+    }
+
+    entries.set(payloadEntry.name, {
+      name: payloadEntry.name,
+      index: payloadEntry.parsed.index,
+      payloadRootDir: roots.payloadRootDir,
+      archiveRootDir: roots.archiveRootDir,
+      metadataRootDir: roots.metadataRootDir,
+    });
+  }
 }
 
 function listDesignRevisionMetadataEntries(
@@ -1698,8 +1853,23 @@ function resolveConfiguredDesignWorkspace(
 
   return {
     workspaceDir,
-    workspacePath: designRootPath.absolutePath,
-    currentPath: designCurrentPath.absolutePath,
+    workspacePath: normalizeResolvedDesignPathForWorkspace(workspaceRoot, designRootPath.absolutePath),
+    currentPath: normalizeResolvedDesignPathForWorkspace(workspaceRoot, designCurrentPath.absolutePath),
     currentPathIsExternal: designCurrentPath.mount.logicalPath !== "design",
   };
+}
+
+function normalizeResolvedDesignPathForWorkspace(workspaceRoot: string, targetPath: string): string {
+  const normalizedWorkspaceRoot = workspaceRoot.replace(/\\/g, "/");
+  const normalizedTargetPath = targetPath.replace(/\\/g, "/");
+  if (!normalizedWorkspaceRoot.startsWith("/")) {
+    return targetPath;
+  }
+
+  const drivePrefixedMatch = /^[A-Za-z]:(\/.*)$/.exec(normalizedTargetPath);
+  if (!drivePrefixedMatch) {
+    return targetPath;
+  }
+
+  return drivePrefixedMatch[1] ?? targetPath;
 }
