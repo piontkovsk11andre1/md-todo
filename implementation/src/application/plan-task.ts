@@ -32,6 +32,7 @@ import {
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import {
   resolveWorkspaceDirectories,
+  resolveWorkspaceMounts,
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
 import {
@@ -240,11 +241,17 @@ export function createPlanTask(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        mounts: workspaceMounts,
       },
     );
     const cliExecutionOptions = cliBlockTimeoutMs === undefined

@@ -5,6 +5,7 @@ import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
   type WorkspaceDirectories,
+  type WorkspaceMountMap,
   type WorkspacePaths,
   type WorkspacePlacementMap,
 } from "./workspace-paths.js";
@@ -42,6 +43,7 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspaceSpecsPath",
   "workspaceMigrationsPath",
   "workspacePredictionPath",
+  "workspaceMountSummary",
 ] as const;
 
 /**
@@ -93,6 +95,7 @@ export function buildWorkspaceContextTemplateVars(
     directories?: WorkspaceDirectories;
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
+    mounts?: WorkspaceMountMap;
   },
 ): ExtraTemplateVars {
   const normalizedWorkspace = normalizeWorkspaceTemplateInput(workspace);
@@ -105,6 +108,11 @@ export function buildWorkspaceContextTemplateVars(
     migrations: path.join(resolvePlacementRoot(context, placement.migrations), directories.migrations),
     prediction: path.join(resolvePlacementRoot(context, placement.prediction), directories.prediction),
   };
+  const workspaceMountSummary = JSON.stringify(buildWorkspaceMountSummary({
+    context,
+    paths,
+    mounts: normalizedWorkspace.mounts,
+  }));
 
   return {
     invocationDir: context.invocationDir,
@@ -126,6 +134,7 @@ export function buildWorkspaceContextTemplateVars(
     workspaceSpecsPath: paths.specs,
     workspaceMigrationsPath: paths.migrations,
     workspacePredictionPath: paths.prediction,
+    workspaceMountSummary,
   };
 }
 
@@ -141,11 +150,13 @@ function normalizeWorkspaceTemplateInput(
     directories?: WorkspaceDirectories;
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
+    mounts?: WorkspaceMountMap;
   } | undefined,
 ): {
   directories?: WorkspaceDirectories;
   placement?: WorkspacePlacementMap;
   paths?: WorkspacePaths;
+  mounts?: WorkspaceMountMap;
 } {
   if (!input) {
     return {};
@@ -173,6 +184,65 @@ function isWorkspaceDirectories(value: unknown): value is WorkspaceDirectories {
     && typeof record.specs === "string"
     && typeof record.migrations === "string"
     && typeof record.prediction === "string";
+}
+
+function buildWorkspaceMountSummary(input: {
+  context: RuntimeWorkspaceContext;
+  paths: WorkspacePaths;
+  mounts?: WorkspaceMountMap;
+}): {
+  invocationDir: string;
+  workspaceDir: string;
+  isLinkedWorkspace: boolean;
+  mounts: Array<{
+    logicalPath: string;
+    absoluteTargetPath: string;
+    source: "legacy" | "explicit";
+  }>;
+} {
+  const { context, paths } = input;
+  const mounts = input.mounts ?? {
+    design: {
+      logicalPath: "design",
+      absoluteTargetPath: paths.design,
+      source: "legacy",
+    },
+    implementation: {
+      logicalPath: "implementation",
+      absoluteTargetPath: paths.implementation,
+      source: "legacy",
+    },
+    specs: {
+      logicalPath: "specs",
+      absoluteTargetPath: paths.specs,
+      source: "legacy",
+    },
+    migrations: {
+      logicalPath: "migrations",
+      absoluteTargetPath: paths.migrations,
+      source: "legacy",
+    },
+    prediction: {
+      logicalPath: "prediction",
+      absoluteTargetPath: paths.prediction,
+      source: "legacy",
+    },
+  } satisfies WorkspaceMountMap;
+
+  const sortedMounts = Object.values(mounts)
+    .sort((left, right) => left.logicalPath.localeCompare(right.logicalPath))
+    .map((mount) => ({
+      logicalPath: mount.logicalPath,
+      absoluteTargetPath: mount.absoluteTargetPath,
+      source: mount.source,
+    }));
+
+  return {
+    invocationDir: context.invocationDir,
+    workspaceDir: context.workspaceDir,
+    isLinkedWorkspace: context.isLinkedWorkspace,
+    mounts: sortedMounts,
+  };
 }
 
 /**

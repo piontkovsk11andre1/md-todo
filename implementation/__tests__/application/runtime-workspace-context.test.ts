@@ -7,6 +7,50 @@ import {
 } from "../../src/application/runtime-workspace-context.js";
 import { createNodePathOperationsAdapter } from "../../src/infrastructure/adapters/node-path-operations-adapter.js";
 
+function buildMountSummary(params: {
+  invocationDir: string;
+  workspaceDir: string;
+  isLinkedWorkspace: boolean;
+  designPath: string;
+  implementationPath: string;
+  specsPath: string;
+  migrationsPath: string;
+  predictionPath: string;
+}): string {
+  return JSON.stringify({
+    invocationDir: params.invocationDir,
+    workspaceDir: params.workspaceDir,
+    isLinkedWorkspace: params.isLinkedWorkspace,
+    mounts: [
+      {
+        logicalPath: "design",
+        absoluteTargetPath: params.designPath,
+        source: "legacy",
+      },
+      {
+        logicalPath: "implementation",
+        absoluteTargetPath: params.implementationPath,
+        source: "legacy",
+      },
+      {
+        logicalPath: "migrations",
+        absoluteTargetPath: params.migrationsPath,
+        source: "legacy",
+      },
+      {
+        logicalPath: "prediction",
+        absoluteTargetPath: params.predictionPath,
+        source: "legacy",
+      },
+      {
+        logicalPath: "specs",
+        absoluteTargetPath: params.specsPath,
+        source: "legacy",
+      },
+    ],
+  });
+}
+
 describe("resolveRuntimeWorkspaceContext", () => {
   const pathOperations = createNodePathOperationsAdapter();
 
@@ -137,6 +181,16 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/invocation", "specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "migrations"),
       workspacePredictionPath: path.join("/workspace/invocation", "prediction"),
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/invocation",
+        isLinkedWorkspace: false,
+        designPath: path.join("/workspace/invocation", "design"),
+        implementationPath: path.join("/workspace/invocation", "implementation"),
+        specsPath: path.join("/workspace/invocation", "specs"),
+        migrationsPath: path.join("/workspace/invocation", "migrations"),
+        predictionPath: path.join("/workspace/invocation", "prediction"),
+      }),
     });
   });
 
@@ -175,6 +229,16 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/source", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/source", "changesets"),
       workspacePredictionPath: path.join("/workspace/source", "predicted"),
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/source",
+        isLinkedWorkspace: true,
+        designPath: path.join("/workspace/source", "docs/design"),
+        implementationPath: path.join("/workspace/source", "source/implementation"),
+        specsPath: path.join("/workspace/source", "quality/specs"),
+        migrationsPath: path.join("/workspace/source", "changesets"),
+        predictionPath: path.join("/workspace/source", "predicted"),
+      }),
     });
   });
 
@@ -229,6 +293,16 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: "/workspace/invocation/quality/specs",
       workspaceMigrationsPath: "/workspace/invocation/changesets",
       workspacePredictionPath: "/workspace/invocation/predicted",
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/source",
+        isLinkedWorkspace: true,
+        designPath: "/workspace/source/design-docs",
+        implementationPath: "/workspace/invocation/implementation-src",
+        specsPath: "/workspace/invocation/quality/specs",
+        migrationsPath: "/workspace/invocation/changesets",
+        predictionPath: "/workspace/invocation/predicted",
+      }),
     });
   });
 
@@ -276,6 +350,16 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/invocation", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "changesets"),
       workspacePredictionPath: path.join("/workspace/invocation", "predicted"),
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/source",
+        isLinkedWorkspace: true,
+        designPath: path.join("/workspace/source", "design-docs"),
+        implementationPath: path.join("/workspace/invocation", "implementation-src"),
+        specsPath: path.join("/workspace/invocation", "quality/specs"),
+        migrationsPath: path.join("/workspace/invocation", "changesets"),
+        predictionPath: path.join("/workspace/invocation", "predicted"),
+      }),
     });
   });
 });
@@ -317,6 +401,16 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceSpecsPath: "/real/workspace/quality/specs",
         workspaceMigrationsPath: "/real/workspace/changesets",
         workspacePredictionPath: "/real/workspace/predicted",
+        workspaceMountSummary: buildMountSummary({
+          invocationDir: "/real/invocation",
+          workspaceDir: "/real/workspace",
+          isLinkedWorkspace: true,
+          designPath: "/real/workspace/design-docs",
+          implementationPath: "/real/workspace/implementation-src",
+          specsPath: "/real/workspace/quality/specs",
+          migrationsPath: "/real/workspace/changesets",
+          predictionPath: "/real/workspace/predicted",
+        }),
       },
     );
 
@@ -340,6 +434,16 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceSpecsPath: "/real/workspace/quality/specs",
       workspaceMigrationsPath: "/real/workspace/changesets",
       workspacePredictionPath: "/real/workspace/predicted",
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/real/invocation",
+        workspaceDir: "/real/workspace",
+        isLinkedWorkspace: true,
+        designPath: "/real/workspace/design-docs",
+        implementationPath: "/real/workspace/implementation-src",
+        specsPath: "/real/workspace/quality/specs",
+        migrationsPath: "/real/workspace/changesets",
+        predictionPath: "/real/workspace/predicted",
+      }),
       source: "cli",
     });
   });
@@ -374,6 +478,16 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceSpecsPath: "/workspace/invocation/specs",
         workspaceMigrationsPath: "/workspace/invocation/migrations",
         workspacePredictionPath: "/workspace/invocation/prediction",
+        workspaceMountSummary: buildMountSummary({
+          invocationDir: "/workspace/invocation",
+          workspaceDir: "/workspace/invocation",
+          isLinkedWorkspace: false,
+          designPath: "/workspace/invocation/design",
+          implementationPath: "/workspace/invocation/implementation",
+          specsPath: "/workspace/invocation/specs",
+          migrationsPath: "/workspace/invocation/migrations",
+          predictionPath: "/workspace/invocation/prediction",
+        }),
       },
     );
 
@@ -400,6 +514,16 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceSpecsPath: "/workspace/invocation/specs",
       workspaceMigrationsPath: "/workspace/invocation/migrations",
       workspacePredictionPath: "/workspace/invocation/prediction",
+      workspaceMountSummary: buildMountSummary({
+        invocationDir: "/workspace/invocation",
+        workspaceDir: "/workspace/invocation",
+        isLinkedWorkspace: false,
+        designPath: "/workspace/invocation/design",
+        implementationPath: "/workspace/invocation/implementation",
+        specsPath: "/workspace/invocation/specs",
+        migrationsPath: "/workspace/invocation/migrations",
+        predictionPath: "/workspace/invocation/prediction",
+      }),
     });
   });
 });

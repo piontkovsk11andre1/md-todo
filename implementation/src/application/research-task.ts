@@ -25,6 +25,7 @@ import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import {
   resolveWorkspaceDirectories,
+  resolveWorkspaceMounts,
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
 import {
@@ -179,11 +180,17 @@ export function createResearchTask(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        mounts: workspaceMounts,
       },
     );
     const projectRoot = runtimeWorkspaceContext.workspaceDir;

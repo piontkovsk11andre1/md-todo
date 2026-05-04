@@ -38,6 +38,7 @@ import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
   resolveWorkspaceDirectories,
+  resolveWorkspaceMounts,
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
 import {
@@ -703,11 +704,17 @@ export function createRunTaskExecution(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
       runtimeWorkspaceContext,
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        mounts: workspaceMounts,
       },
     );
 
