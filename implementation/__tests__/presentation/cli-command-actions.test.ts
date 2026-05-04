@@ -2656,6 +2656,7 @@ describe("createStartCommandAction", () => {
 
     const exitCode = await action("Ship auth flow", {
       dir: "./predict-auth",
+      mount: ["implementation=.", "specs=./specs"],
       designDir: "design-docs",
       designPlacement: "workdir",
       specsDir: "assertions",
@@ -2669,6 +2670,7 @@ describe("createStartCommandAction", () => {
     expect(startProject).toHaveBeenCalledWith({
       description: "Ship auth flow",
       dir: "./predict-auth",
+      mounts: ["implementation=.", "specs=./specs"],
       designDir: "design-docs",
       designPlacement: "workdir",
       specsDir: "assertions",

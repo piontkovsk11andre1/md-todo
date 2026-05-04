@@ -25,6 +25,7 @@ import type {
 export interface StartProjectOptions {
   description?: string;
   dir?: string;
+  mounts?: string[];
   designDir?: string;
   specsDir?: string;
   migrationsDir?: string;

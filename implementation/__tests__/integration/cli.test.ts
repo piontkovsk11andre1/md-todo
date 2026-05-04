@@ -11557,6 +11557,9 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--specs-placement <mode>");
     expect(compactHelpOutput).toContain("--migrations-placement <mode>");
     expect(compactHelpOutput).toContain("Design placement root: sourcedir or workdir (default: sourcedir)");
+    expect(compactHelpOutput).toContain("Mounted bootstrap:");
+    expect(compactHelpOutput).toContain("--mount <logical-path=target-path>");
+    expect(compactHelpOutput).toContain("repeatable and is the authoritative surface for mounted workspace onboarding");
   });
 
   it("migrate --help explains explicit workspace selection for ambiguous links", async () => {

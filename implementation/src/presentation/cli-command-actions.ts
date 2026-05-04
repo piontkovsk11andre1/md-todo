@@ -1414,9 +1414,17 @@ export function createStartCommandAction({
   getApp,
 }: Pick<WorkerActionDependencies, "getApp">): (description: string, opts: CliOpts) => CliActionResult {
   return (description: string, opts: CliOpts) => {
+    const mountOption = opts.mount;
+    const mounts = Array.isArray(mountOption)
+      ? mountOption
+      : typeof mountOption === "string"
+        ? [mountOption]
+        : [];
+
     return getApp().startProject({
       description,
       dir: normalizeOptionalString(opts.dir),
+      mounts,
       designDir: normalizeOptionalString(opts.designDir),
       designPlacement: normalizeOptionalString(opts.designPlacement),
       specsDir: normalizeOptionalString(opts.specsDir),

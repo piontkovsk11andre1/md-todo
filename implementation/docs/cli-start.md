@@ -2,6 +2,8 @@
 
 Scaffold a prediction-oriented project workspace.
 
+`--mount <logical-path=target-path>` is the authoritative bootstrap surface for mounted workspace adoption and may be repeated.
+
 By default, `start` creates a design-first project structure and prepares migration/spec workflows:
 
 - `design/current/`
@@ -12,6 +14,15 @@ By default, `start` creates a design-first project structure and prepares migrat
 - `.rundown/`
 
 Use `--design-dir`, `--specs-dir`, and `--migrations-dir` to override these workspace directories at bootstrap time. Rundown persists the resolved mapping in `.rundown/config.json` and reuses it across prediction flows (`migrate`, `design`, `test`, and related commands).
+
+Use `--mount <logical-path=target-path>` to attach logical workspace paths to existing directories:
+
+- `logical-path` must be a normalized rundown logical path prefix (for example, `implementation`, `specs`, `implementation/generated`).
+- `target-path` may be absolute or relative.
+- Relative target paths are resolved from the invocation directory (where `rundown start` is run), then persisted as normalized absolute targets in workspace config.
+- `--mount` is repeatable.
+
+Compatibility note: `--design-dir`, `--specs-dir`, `--migrations-dir`, placement flags, and `--from-design` remain supported as transition-era shorthands.
 
 Use `--design-placement`, `--specs-placement`, and `--migrations-placement` to choose the placement root for each bucket:
 
@@ -54,8 +65,8 @@ Compatibility note: legacy `docs/current/Design.md` and root `Design.md` are sti
 Synopsis:
 
 ```bash
-rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] -- <command>
-rundown start "<description>" [--dir <path>] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
+rundown start "<description>" [--dir <path>] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] -- <command>
+rundown start "<description>" [--dir <path>] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
 ```
 
 Arguments:
@@ -67,6 +78,7 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--dir <path>` | Target directory for scaffold output. | current working directory |
+| `--mount <logical-path=target-path>` | Repeatable logical-path mount declaration for mounted workspace adoption. Relative targets resolve from invocation directory. | unset |
 | `--design-dir <path>` | Design workspace directory name/path for start scaffold. | `design` |
 | `--specs-dir <path>` | Specs workspace directory name/path for start scaffold. | `specs` |
 | `--migrations-dir <path>` | Migrations workspace directory name/path for start scaffold. | `migrations` |
@@ -78,6 +90,9 @@ Options:
 Examples:
 
 ```bash
+rundown start "Adopt existing app" --dir ../control --mount implementation=. -- opencode run
+rundown start "Adopt existing app" --dir ../control --mount specs=. -- opencode run
+rundown start "Adopt existing app" --dir ../control --mount implementation/generated=./generated -- opencode run
 rundown start "Ship auth flow" -- opencode run
 rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
 rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run

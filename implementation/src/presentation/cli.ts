@@ -369,9 +369,15 @@ program
 
 program
   .command("start")
-  .description("Scaffold a new workspace with design/ and migrations/ tracks.")
+  .description("Scaffold a new workspace and optionally mount logical paths.")
   .argument("<description>", "Project description")
   .option("--dir <path>", "Target project directory (default: current working directory)")
+  .option(
+    "--mount <logical-path=target-path>",
+    "Mount logical workspace path to a target directory (repeatable). Relative targets resolve from invocation directory.",
+    collectOption,
+    [],
+  )
   .option("--design-dir <path>", "Design workspace directory (default: design)", "design")
   .option("--design-placement <mode>", "Design placement root: sourcedir or workdir (default: sourcedir)", "sourcedir")
   .option("--specs-dir <path>", "Specs workspace directory (default: specs)", "specs")
@@ -405,12 +411,21 @@ program
       "  - Historical snapshots are stored under design/revisions/rev.N/ as immutable revisions",
       "  - Legacy docs/current/Design.md and root Design.md remain supported only as compatibility-only fallbacks",
       "",
+      "Mounted bootstrap:",
+      "  - Use --mount <logical-path=target-path> to attach existing directories during start",
+      "  - --mount is repeatable and is the authoritative surface for mounted workspace onboarding",
+      "  - Relative mount targets are resolved from the invocation directory",
+      "  - Legacy --design-dir/--specs-dir/--migrations-dir and placement flags remain supported as compatibility shorthands",
+      "",
       "Linked workspace behavior:",
       "  - When started from a linked directory, start writes link metadata in both target and source workspaces",
       "  - Source .rundown/workspace.link supports multiple records for multiple started targets",
       "  - New target workspace receives a single legacy-compatible link to the source workspace",
       "",
       "Examples:",
+      "  - rundown start \"Adopt existing app\" --dir ../control --mount implementation=. -- opencode run",
+      "  - rundown start \"Adopt existing app\" --dir ../control --mount specs=. -- opencode run",
+      "  - rundown start \"Adopt existing app\" --dir ../control --mount implementation/generated=./generated -- opencode run",
       "  - rundown start \"Ship auth flow\" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
       "  - rundown start \"Ship auth flow\" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run",
       "  - rundown start \"Ship auth flow\" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run",
