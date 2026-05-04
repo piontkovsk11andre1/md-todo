@@ -384,20 +384,6 @@ export function createPlanTask(
         ? dependencies.pathOperations.join(dependencies.configDir.configDir, planTemplateFileName)
         : undefined;
       const deepPlanTemplate = templates.deepPlan ?? DEFAULT_DEEP_PLAN_TEMPLATE;
-      const planPrependGuidance = loadOptionalPlannerGuidance({
-        configDir: dependencies.configDir,
-        fileSystem: dependencies.fileSystem,
-        pathOperations: dependencies.pathOperations,
-        templateLoader: dependencies.templateLoader,
-        fileName: "plan-prepend.md",
-      });
-      const planAppendGuidance = loadOptionalPlannerGuidance({
-        configDir: dependencies.configDir,
-        fileSystem: dependencies.fileSystem,
-        pathOperations: dependencies.pathOperations,
-        templateLoader: dependencies.templateLoader,
-        fileName: "plan-append.md",
-      });
 
       const planPromptDocumentContext = buildPlanPromptDocumentContext(source);
       const scanStrategy = resolvePlanScanStrategy(scanCount);
@@ -420,8 +406,6 @@ export function createPlanTask(
         insertedTotal: initialInsertedTotal,
         existingTodoCount,
         hasExistingTodos: hasExistingTodos ? "true" : "false",
-        planPrependGuidance,
-        planAppendGuidance,
       };
 
       const renderedPrompt = renderTemplate(planTemplate, vars);
@@ -507,8 +491,6 @@ export function createPlanTask(
                 deep,
                 maxItems,
                 insertedTotal: initialInsertedTotal,
-                planPrependGuidance,
-                planAppendGuidance,
               });
               emit({ kind: "text", text: deepPrompt });
             }
@@ -595,8 +577,6 @@ export function createPlanTask(
               deep,
               maxItems,
               insertedTotal: initialInsertedTotal,
-              planPrependGuidance,
-              planAppendGuidance,
             });
             emit({
               kind: "info",
@@ -1130,8 +1110,6 @@ export function createPlanTask(
                 deep,
                 maxItems,
                 insertedTotal,
-                planPrependGuidance,
-                planAppendGuidance,
               });
 
               if (verbose) {
@@ -1641,8 +1619,6 @@ function buildPlanDeepPrompt(options: {
   deep: number;
   maxItems: number | undefined;
   insertedTotal: number;
-  planPrependGuidance: string;
-  planAppendGuidance: string;
 }): string {
   const remainingItemBudget = options.maxItems === undefined
     ? undefined
@@ -1661,8 +1637,6 @@ function buildPlanDeepPrompt(options: {
     maxItems: options.maxItems,
     insertedTotal: options.insertedTotal,
     remainingItemBudget,
-    planPrependGuidance: options.planPrependGuidance,
-    planAppendGuidance: options.planAppendGuidance,
   };
 
   const renderedTemplate = renderTemplate(options.deepPlanTemplate, deepVars);
@@ -1676,41 +1650,6 @@ function buildPlanDeepPrompt(options: {
   }
 
   return `${renderedTemplate}\n\n## Deep Pass Context\n\n${deepContextParts.join("\n")}\n\nTreat this deep pass as a clean standalone worker session. Do not rely on prior prompt history or prior deep-pass outputs.\n\nEdit the source file directly at: ${options.parentTask.file}\n\nIf no useful child TODO edits are needed for the selected parent task, leave the file unchanged.`;
-}
-
-function loadOptionalPlannerGuidance(options: {
-  configDir: ConfigDirResult | undefined;
-  fileSystem: FileSystem;
-  pathOperations: PathOperationsPort;
-  templateLoader: TemplateLoader;
-  fileName: string;
-}): string {
-  if (!options.configDir) {
-    return "";
-  }
-
-  const guidancePath = options.pathOperations.join(options.configDir.configDir, options.fileName);
-  try {
-    const content = options.fileSystem.readText(guidancePath);
-    if (content.trim().length > 0) {
-      return content.trim();
-    }
-  } catch {
-    // Fall through to template-loader fallback for test doubles that provide
-    // guidance via `templateLoader.load` instead of `fileSystem.readText`.
-  }
-
-  const fallbackContent = options.templateLoader.load(guidancePath);
-  if (!fallbackContent || fallbackContent.trim().length === 0) {
-    return "";
-  }
-
-  const normalized = fallbackContent.trim();
-  if (normalized.includes("{{planPrependGuidance}}") || normalized.includes("{{planAppendGuidance}}")) {
-    return "";
-  }
-
-  return normalized;
 }
 
 /**
