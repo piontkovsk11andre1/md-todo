@@ -473,6 +473,79 @@ describeIfStartAvailable("start-project integration", () => {
     });
   });
 
+  it("normalizes CLI mount targets from invocation directory and persists resolved mounts", async () => {
+    const workspace = makeTempWorkspace();
+    const projectDirName = "mounted-control";
+    const projectDir = path.join(workspace, projectDirName);
+    const generatedDir = path.join(workspace, "generated");
+
+    fs.mkdirSync(generatedDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Mounted workspace",
+      "--dir",
+      projectDirName,
+      "--mount",
+      "implementation=.",
+      "--mount",
+      "implementation/generated=./generated",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(projectDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        mounts?: Record<string, string>;
+      };
+    };
+
+    expect(config.workspace?.mounts).toEqual({
+      implementation: path.normalize(workspace),
+      "implementation/generated": path.normalize(generatedDir),
+    });
+  });
+
+  it("fails when --mount declaration is malformed", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Malformed mount",
+      "--mount",
+      "implementation",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --mount value");
+    expect(stderr).toContain("logical-path=target-path");
+  });
+
+  it("fails when --mount reuses the same logical path", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli([
+      "start",
+      "Duplicate mount",
+      "--mount",
+      "implementation=.",
+      "--mount",
+      "implementation=./src",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --mount declarations");
+    expect(stderr).toContain("provided more than once");
+  });
+
   it("creates the same clean scaffold for non-empty directories", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-project";

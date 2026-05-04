@@ -12,6 +12,7 @@ import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
   WORKSPACE_PLACEMENTS,
+  normalizeWorkspaceLogicalPath,
   type WorkspacePlacement,
 } from "./workspace-paths.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -70,6 +71,7 @@ interface RundownConfigDocument {
     design?: {
       currentPath?: string;
     };
+    mounts?: Record<string, string>;
   };
   [key: string]: unknown;
 }
@@ -108,6 +110,7 @@ export function createStartProject(
     let workspaceDirectories: ValidatedWorkspaceDirectories;
     let workspacePlacement: ValidatedWorkspacePlacement;
     let externalDesignCurrentPath: string | undefined;
+    let normalizedMounts: Record<string, string> | undefined;
     try {
       workspaceDirectories = resolveAndValidateWorkspaceDirectories({
         targetDirectory,
@@ -125,6 +128,11 @@ export function createStartProject(
         fromDesignOption: options.fromDesign,
         invocationDirectory,
         fileSystem: dependencies.fileSystem,
+        pathOperations: dependencies.pathOperations,
+      });
+      normalizedMounts = resolveAndNormalizeCliMounts({
+        mounts: options.mounts,
+        invocationDirectory,
         pathOperations: dependencies.pathOperations,
       });
     } catch (error) {
@@ -177,6 +185,7 @@ export function createStartProject(
         directories: workspaceDirectories,
         placement: workspacePlacement,
         designCurrentPath: externalDesignCurrentPath,
+        mounts: normalizedMounts,
       });
       emit({
         kind: "success",
@@ -693,8 +702,9 @@ function persistWorkspaceConfiguration(input: {
   directories: ValidatedWorkspaceDirectories;
   placement: ValidatedWorkspacePlacement;
   designCurrentPath?: string;
+  mounts?: Record<string, string>;
 }): void {
-  const { fileSystem, configPath, directories, placement, designCurrentPath } = input;
+  const { fileSystem, configPath, directories, placement, designCurrentPath, mounts } = input;
   const existingSource = fileSystem.exists(configPath)
     ? fileSystem.readText(configPath)
     : "{}\n";
@@ -739,6 +749,7 @@ function persistWorkspaceConfiguration(input: {
         ...existingDesignSection,
         ...(designCurrentPath ? { currentPath: designCurrentPath } : {}),
       },
+      ...(mounts ? { mounts } : {}),
     },
   };
 
@@ -751,6 +762,55 @@ function persistWorkspaceConfiguration(input: {
   }
 
   fileSystem.writeText(configPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+function resolveAndNormalizeCliMounts(input: {
+  mounts: string[] | undefined;
+  invocationDirectory: string;
+  pathOperations: PathOperationsPort;
+}): Record<string, string> | undefined {
+  const { mounts, invocationDirectory, pathOperations } = input;
+  if (!mounts || mounts.length === 0) {
+    return undefined;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const rawMount of mounts) {
+    const parsed = parseCliMountDeclaration(rawMount);
+    const logicalPath = normalizeWorkspaceLogicalPath(parsed.logicalPath);
+    if (normalized[logicalPath]) {
+      throw new Error(
+        `Invalid --mount declarations: logical path "${logicalPath}" was provided more than once.`,
+      );
+    }
+
+    const absoluteTargetPath = pathOperations.isAbsolute(parsed.targetPath)
+      ? pathOperations.resolve(parsed.targetPath)
+      : pathOperations.resolve(invocationDirectory, parsed.targetPath);
+    normalized[logicalPath] = absoluteTargetPath;
+  }
+
+  return normalized;
+}
+
+function parseCliMountDeclaration(rawMount: string): { logicalPath: string; targetPath: string } {
+  const trimmed = rawMount.trim();
+  const separatorIndex = trimmed.indexOf("=");
+  if (separatorIndex <= 0 || separatorIndex === trimmed.length - 1) {
+    throw new Error(
+      `Invalid --mount value: "${rawMount}". Expected <logical-path=target-path>.`,
+    );
+  }
+
+  const logicalPath = trimmed.slice(0, separatorIndex).trim();
+  const targetPath = trimmed.slice(separatorIndex + 1).trim();
+  if (logicalPath.length === 0 || targetPath.length === 0) {
+    throw new Error(
+      `Invalid --mount value: "${rawMount}". Expected <logical-path=target-path>.`,
+    );
+  }
+
+  return { logicalPath, targetPath };
 }
 
 function resolveConfiguredExternalDesignCurrentPath(input: {
