@@ -385,6 +385,99 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).not.toContain("satellite");
   });
 
+  it("migrate plans with equivalent prompt context when older revision and migration payloads are archived", async () => {
+    const hotWorkspace = makeTempWorkspace();
+    const archivedWorkspace = makeTempWorkspace();
+    scaffoldArchiveTransparencyMigrateProject(hotWorkspace);
+    scaffoldArchiveTransparencyMigrateProject(archivedWorkspace);
+    archiveOldHistoryForTransparencyFixture(archivedWorkspace);
+
+    const hotResult = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildPlannerPromptCaptureWorkerScript(),
+    ], hotWorkspace);
+    const archivedResult = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildPlannerPromptCaptureWorkerScript(),
+    ], archivedWorkspace);
+
+    expect(hotResult.code).toBe(0);
+    expect(archivedResult.code).toBe(0);
+    expect(fs.existsSync(path.join(hotWorkspace, "migrations", formatMigrationFilename(2, "prompt-capture-migration")))).toBe(true);
+    expect(fs.existsSync(path.join(archivedWorkspace, "migrations", formatMigrationFilename(2, "prompt-capture-migration")))).toBe(true);
+
+    const hotPrompt = fs.readFileSync(path.join(hotWorkspace, ".captured-migrate-planner-prompt.txt"), "utf-8");
+    const archivedPrompt = fs.readFileSync(path.join(archivedWorkspace, ".captured-migrate-planner-prompt.txt"), "utf-8");
+
+    expect(hotPrompt).toContain("Current migration number:");
+    expect(archivedPrompt).toContain("Current migration number:");
+    expect(hotPrompt).toContain("- 1. Initialize.md");
+    expect(archivedPrompt).toContain("- 1. Initialize.md");
+    expect(hotPrompt).toContain("-legacy anchor from rev.0");
+    expect(archivedPrompt).toContain("-legacy anchor from rev.0");
+    expect(hotPrompt).toContain("+updated anchor in rev.1");
+    expect(archivedPrompt).toContain("+updated anchor in rev.1");
+    expect(extractPromptChangedFilesSection(hotPrompt)).toBe(extractPromptChangedFilesSection(archivedPrompt));
+    expect(extractPromptDiffSection(hotPrompt)).toBe(extractPromptDiffSection(archivedPrompt));
+  });
+
+  it("design diff output stays equivalent when the previous revision payload is archived", async () => {
+    const hotWorkspace = makeTempWorkspace();
+    const archivedWorkspace = makeTempWorkspace();
+    scaffoldArchiveTransparencyDesignDiffProject(hotWorkspace);
+    scaffoldArchiveTransparencyDesignDiffProject(archivedWorkspace);
+    archivePreviousDesignRevisionPayloadForDiffFixture(archivedWorkspace);
+
+    const hotResult = await runCli([
+      "design",
+      "diff",
+      "rev.1",
+      "--dir",
+      "migrations",
+    ], hotWorkspace);
+    const archivedResult = await runCli([
+      "design",
+      "diff",
+      "rev.1",
+      "--dir",
+      "migrations",
+    ], archivedWorkspace);
+
+    expect(hotResult.code).toBe(0);
+    expect(archivedResult.code).toBe(0);
+
+    const hotOutput = stripAnsi([
+      ...hotResult.logs,
+      ...hotResult.errors,
+      ...hotResult.stdoutWrites,
+      ...hotResult.stderrWrites,
+    ].join("\n"));
+    const archivedOutput = stripAnsi([
+      ...archivedResult.logs,
+      ...archivedResult.errors,
+      ...archivedResult.stdoutWrites,
+      ...archivedResult.stderrWrites,
+    ].join("\n"));
+
+    expect(hotOutput).toContain("rev.0 → rev.1");
+    expect(archivedOutput).toContain("rev.0 → rev.1");
+    expect(hotOutput).toContain("-legacy baseline line");
+    expect(archivedOutput).toContain("-legacy baseline line");
+    expect(hotOutput).toContain("+updated release line");
+    expect(archivedOutput).toContain("+updated release line");
+    expect(hotOutput).toBe(archivedOutput);
+  });
+
   it("migrate exits success with caught-up message when all released revisions are planned", async () => {
     const workspace = makeTempWorkspace();
     scaffoldReleasedDesignRevisions(workspace, "docs");
@@ -896,6 +989,53 @@ describeIfDocsDiffAvailable("design revision command integration", () => {
     expect(combinedOutput).toContain("+new");
   });
 
+  it("design diff output stays equivalent when the previous revision payload is archived", async () => {
+    const hotWorkspace = makeTempWorkspace();
+    const archivedWorkspace = makeTempWorkspace();
+    scaffoldArchiveTransparencyDesignDiffProject(hotWorkspace);
+    scaffoldArchiveTransparencyDesignDiffProject(archivedWorkspace);
+    archivePreviousDesignRevisionPayloadForDiffFixture(archivedWorkspace);
+
+    const hotResult = await runCli([
+      "design",
+      "diff",
+      "rev.1",
+      "--dir",
+      "migrations",
+    ], hotWorkspace);
+    const archivedResult = await runCli([
+      "design",
+      "diff",
+      "rev.1",
+      "--dir",
+      "migrations",
+    ], archivedWorkspace);
+
+    expect(hotResult.code).toBe(0);
+    expect(archivedResult.code).toBe(0);
+
+    const hotOutput = stripAnsi([
+      ...hotResult.logs,
+      ...hotResult.errors,
+      ...hotResult.stdoutWrites,
+      ...hotResult.stderrWrites,
+    ].join("\n"));
+    const archivedOutput = stripAnsi([
+      ...archivedResult.logs,
+      ...archivedResult.errors,
+      ...archivedResult.stdoutWrites,
+      ...archivedResult.stderrWrites,
+    ].join("\n"));
+
+    expect(hotOutput).toContain("rev.0 -> rev.1");
+    expect(archivedOutput).toContain("rev.0 -> rev.1");
+    expect(hotOutput).toContain("-legacy baseline line");
+    expect(archivedOutput).toContain("-legacy baseline line");
+    expect(hotOutput).toContain("+updated release line");
+    expect(archivedOutput).toContain("+updated release line");
+    expect(hotOutput).toBe(archivedOutput);
+  });
+
   it("design diff without target defaults to rev.0 -> rev.1 and includes changed file hunks", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
@@ -1251,6 +1391,95 @@ function scaffoldRevisionPlanningStampProjectThroughRev3(workspace: string): voi
     plannedAt: null,
     migrations: [],
   }, null, 2) + "\n", "utf-8");
+}
+
+function scaffoldArchiveTransparencyMigrateProject(workspace: string): void {
+  scaffoldRevisionPlanningStampProject(workspace);
+
+  const rev2MetaPath = path.join(workspace, "docs", "rev.2.meta.json");
+  const rev2Meta = JSON.parse(fs.readFileSync(rev2MetaPath, "utf-8")) as {
+    createdAt: string;
+    plannedAt?: string | null;
+    migrations?: string[];
+  };
+  rev2Meta.plannedAt = rev2Meta.createdAt;
+  rev2Meta.migrations = [formatMigrationFilename(99, "already-planned")];
+  fs.writeFileSync(rev2MetaPath, JSON.stringify(rev2Meta, null, 2) + "\n", "utf-8");
+
+  fs.writeFileSync(
+    path.join(workspace, "docs", "rev.0", "Target.md"),
+    "# Target\n\nshared line\nlegacy anchor from rev.0\n",
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(workspace, "docs", "rev.1", "Target.md"),
+    "# Target\n\nshared line\nupdated anchor in rev.1\n",
+    "utf-8",
+  );
+}
+
+function archiveOldHistoryForTransparencyFixture(workspace: string): void {
+  const archivedRevisionDir = path.join(workspace, "docs", "archive", "revisions");
+  const archivedRootMigrationsDir = path.join(workspace, "migrations", "archive", "root");
+  fs.mkdirSync(archivedRevisionDir, { recursive: true });
+  fs.mkdirSync(archivedRootMigrationsDir, { recursive: true });
+  fs.renameSync(
+    path.join(workspace, "docs", "rev.0"),
+    path.join(archivedRevisionDir, "rev.0"),
+  );
+  fs.renameSync(
+    path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+    path.join(archivedRootMigrationsDir, formatMigrationFilename(1, "initialize")),
+  );
+}
+
+function extractPromptChangedFilesSection(prompt: string): string {
+  const match = prompt.match(/### Changed files\n\n([\s\S]*?)\n\n### Diff/);
+  return match?.[1]?.trim() ?? "";
+}
+
+function extractPromptDiffSection(prompt: string): string {
+  const match = prompt.match(/### Diff\n\n([\s\S]*?)\n\n### Diff source references/);
+  return match?.[1]?.trim() ?? "";
+}
+
+function scaffoldArchiveTransparencyDesignDiffProject(workspace: string): void {
+  fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+  fs.mkdirSync(path.join(workspace, "docs", "rev.0"), { recursive: true });
+  fs.mkdirSync(path.join(workspace, "docs", "rev.1"), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, "docs", "rev.0", "Target.md"),
+    "# Target\n\nlegacy baseline line\nshared line\n",
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(workspace, "docs", "rev.1", "Target.md"),
+    "# Target\n\nupdated release line\nshared line\n",
+    "utf-8",
+  );
+  fs.writeFileSync(path.join(workspace, "docs", "rev.0.meta.json"), JSON.stringify({
+    revision: "rev.0",
+    index: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    plannedAt: "2026-01-01T00:00:00.000Z",
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
+  fs.writeFileSync(path.join(workspace, "docs", "rev.1.meta.json"), JSON.stringify({
+    revision: "rev.1",
+    index: 1,
+    createdAt: "2026-01-02T00:00:00.000Z",
+    plannedAt: null,
+    migrations: [],
+  }, null, 2) + "\n", "utf-8");
+}
+
+function archivePreviousDesignRevisionPayloadForDiffFixture(workspace: string): void {
+  const archivedRevisionDir = path.join(workspace, "docs", "archive", "revisions");
+  fs.mkdirSync(archivedRevisionDir, { recursive: true });
+  fs.renameSync(
+    path.join(workspace, "docs", "rev.0"),
+    path.join(archivedRevisionDir, "rev.0"),
+  );
 }
 
 function seedPlannedRevisionMigrations(
