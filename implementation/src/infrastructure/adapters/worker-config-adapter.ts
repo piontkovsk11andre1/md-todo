@@ -15,6 +15,7 @@ import {
   WORKER_HEALTH_POLICY_UNAVAILABLE_REEVALUATION_MANUAL,
   WORKER_CONFIG_COMMAND_NAMES,
   type WorkerHealthPolicyConfig,
+  type AutoCompactDefaultsConfig,
   type RunDefaultsConfig,
   type RunAttemptScopedWorkerRoutingConfig,
   type RunWorkerAttemptRouteConfig,
@@ -251,6 +252,22 @@ function validateRunDefaults(value: unknown, keyPath: string): RunDefaultsConfig
 
   if (value.workerRouting !== undefined) {
     result.workerRouting = validateRunWorkerRouting(value.workerRouting, `${keyPath}.workerRouting`);
+  }
+
+  return result;
+}
+
+function validateAutoCompactDefaults(value: unknown, keyPath: string): AutoCompactDefaultsConfig {
+  if (!isPlainObject(value)) {
+    throw new Error(`Invalid worker config at ${keyPath}: expected object.`);
+  }
+
+  const result: AutoCompactDefaultsConfig = {};
+  if (value.beforeExit !== undefined && typeof value.beforeExit !== "boolean") {
+    throw new Error(`Invalid worker config at ${keyPath}.beforeExit: expected boolean.`);
+  }
+  if (typeof value.beforeExit === "boolean") {
+    result.beforeExit = value.beforeExit;
   }
 
   return result;
@@ -548,6 +565,7 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
   const workerTimeoutMs = value.workerTimeoutMs;
   const commands = value.commands;
   const profiles = value.profiles;
+  const autoCompact = value.autoCompact;
 
   return {
     workers: workers === undefined ? undefined : validateWorkers(workers, "workers"),
@@ -561,6 +579,9 @@ function validateWorkerConfig(value: unknown): WorkerConfig {
       : validateTraceStatisticsConfig(value.traceStatistics, "traceStatistics"),
     healthPolicy: validateHealthPolicy(value.healthPolicy, "healthPolicy"),
     run: value.run === undefined ? undefined : validateRunDefaults(value.run, "run"),
+    ...(autoCompact === undefined
+      ? {}
+      : { autoCompact: validateAutoCompactDefaults(autoCompact, "autoCompact") }),
   };
 }
 
@@ -683,6 +704,22 @@ function cloneRunDefaults(value: RunDefaultsConfig | undefined): RunDefaultsConf
     && cloned.commitMode === undefined
     && cloned.workerRouting === undefined
   ) {
+    return undefined;
+  }
+
+  return cloned;
+}
+
+function cloneAutoCompactDefaults(value: AutoCompactDefaultsConfig | undefined): AutoCompactDefaultsConfig | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const cloned: AutoCompactDefaultsConfig = {
+    beforeExit: value.beforeExit,
+  };
+
+  if (cloned.beforeExit === undefined) {
     return undefined;
   }
 
@@ -875,6 +912,25 @@ function mergeRunDefaults(
   return merged;
 }
 
+function mergeAutoCompactDefaults(
+  base: AutoCompactDefaultsConfig | undefined,
+  override: AutoCompactDefaultsConfig | undefined,
+): AutoCompactDefaultsConfig | undefined {
+  if (!base && !override) {
+    return undefined;
+  }
+
+  const merged: AutoCompactDefaultsConfig = {
+    beforeExit: override?.beforeExit ?? base?.beforeExit,
+  };
+
+  if (merged.beforeExit === undefined) {
+    return undefined;
+  }
+
+  return merged;
+}
+
 function mergeWorkers(base: WorkersConfig | undefined, override: WorkersConfig | undefined): WorkersConfig | undefined {
   if (!base && !override) {
     return undefined;
@@ -985,6 +1041,7 @@ function mergeWorkerConfig(
   }
 
   const mergedHealthPolicy = mergeHealthPolicy(base?.healthPolicy, override?.healthPolicy);
+  const mergedAutoCompact = mergeAutoCompactDefaults(base?.autoCompact, override?.autoCompact);
 
   return {
     workers: mergeWorkers(base?.workers, override?.workers),
@@ -996,6 +1053,7 @@ function mergeWorkerConfig(
       : cloneTraceStatistics(base?.traceStatistics),
     healthPolicy: mergedHealthPolicy,
     run: mergeRunDefaults(base?.run, override?.run),
+    ...(mergedAutoCompact === undefined ? {} : { autoCompact: mergedAutoCompact }),
   };
 }
 
@@ -1014,9 +1072,12 @@ function applyBuiltInDefaults(config: WorkerConfig | undefined): WorkerConfig | 
       : {
         enabled: false,
         fields: [...DEFAULT_TRACE_STATISTICS_FIELDS],
-      },
+    },
     healthPolicy: cloneHealthPolicy(config.healthPolicy),
     run: cloneRunDefaults(config.run),
+    ...(config.autoCompact !== undefined
+      ? { autoCompact: cloneAutoCompactDefaults(config.autoCompact) }
+      : {}),
   };
 }
 

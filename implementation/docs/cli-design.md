@@ -34,7 +34,13 @@ Options:
 |---|---|---|
 | `--dir <path>` | Migration directory to operate on (used to resolve project root). | `./migrations` |
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. | unset |
+| `--compact-before-exit` | Run post-success compaction as a follow-up step before command exit. | off |
 | `--label <text>` | Optional label stored in revision sidecar metadata. | unset |
+
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
 
 Examples:
 

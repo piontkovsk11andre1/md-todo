@@ -206,6 +206,18 @@ function loadRunDefaultsFromConfig(invocationArgv: string[]): RunDefaultsConfig 
   return loadedConfig?.run;
 }
 
+function loadAutoCompactDefaultsFromConfig(invocationArgv: string[]): AutoCompactCliOptions | undefined {
+  const configDir = resolveConfigDirForInvocation(invocationArgv)?.configDir;
+  if (!configDir) {
+    return undefined;
+  }
+
+  const loadedConfig = createWorkerConfigAdapter().load(configDir);
+  return {
+    beforeExit: loadedConfig?.autoCompact?.beforeExit === true,
+  };
+}
+
 function resolveWorkerWorkspaceRuntimeOptions(): WorkerWorkspaceRuntimeOptions {
   const workspaceContext = resolveInvocationWorkspaceContext();
   return {
@@ -452,9 +464,22 @@ type ConfigMutationScope = "local" | "global";
 type ConfigReadScope = "effective" | "local" | "global";
 type ConfigValueType = "auto" | "string" | "number" | "boolean" | "json";
 
-function resolveAutoCompactCliOptions(opts: CliOpts): AutoCompactCliOptions {
+function resolveAutoCompactCliOptions(
+  opts: CliOpts,
+  getInvocationArgv?: () => string[],
+): AutoCompactCliOptions {
+  const invocationArgv = getInvocationArgv
+    ? resolveInvocationArgv(getInvocationArgv)
+    : process.argv.slice(2);
+  if (hasCliOption(invocationArgv, "--compact-before-exit")) {
+    return {
+      beforeExit: true,
+    };
+  }
+
+  const configDefaults = loadAutoCompactDefaultsFromConfig(invocationArgv);
   return {
-    beforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
+    beforeExit: configDefaults?.beforeExit === true || Boolean(opts.compactBeforeExit as boolean | undefined),
   };
 }
 
@@ -1457,6 +1482,7 @@ export function createStartCommandAction({
 export function createMigrateCommandAction({
   getApp,
   getWorkerFromSeparator,
+  getInvocationArgv,
 }: WorkerActionDependencies): (
   actionOrOpts: string | CliOpts | undefined,
   countOrOpts?: string | CliOpts,
@@ -1482,7 +1508,7 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(app)({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      autoCompact: resolveAutoCompactCliOptions(opts),
+      autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       confirm: Boolean(opts.confirm as boolean | undefined),
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
@@ -1584,13 +1610,14 @@ function parseCompactTarget(
  */
 export function createDesignReleaseCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  getInvocationArgv,
+}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     return resolveDesignCommandHandler(getApp())({
       action: "release",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      autoCompact: resolveAutoCompactCliOptions(opts),
+      autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       label: normalizeOptionalString(opts.label),
     });
   };
@@ -1601,7 +1628,8 @@ export function createDesignReleaseCommandAction({
  */
 export function createDocsReleaseCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  getInvocationArgv,
+}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     const app = getApp();
     app.emitOutput?.({
@@ -1609,7 +1637,7 @@ export function createDocsReleaseCommandAction({
       message: "`rundown docs release` is deprecated; use `rundown design release`.",
     });
 
-    return createDesignReleaseCommandAction({ getApp: () => app })(opts);
+    return createDesignReleaseCommandAction({ getApp: () => app, getInvocationArgv })(opts);
   };
 }
 
@@ -1618,7 +1646,8 @@ export function createDocsReleaseCommandAction({
  */
 export function createDocsPublishCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  getInvocationArgv,
+}: Pick<WorkerActionDependencies, "getApp" | "getInvocationArgv">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     const app = getApp();
     app.emitOutput?.({
@@ -1626,7 +1655,7 @@ export function createDocsPublishCommandAction({
       message: "`rundown docs publish` is deprecated; use `rundown design release`.",
     });
 
-    return createDesignReleaseCommandAction({ getApp: () => app })(opts);
+    return createDesignReleaseCommandAction({ getApp: () => app, getInvocationArgv })(opts);
   };
 }
 

@@ -104,6 +104,13 @@ Worker timeout key (`workerTimeoutMs`):
 - `0` explicitly disables timeout enforcement.
 - timeout failure stderr is deterministic: `Worker process timed out after <N>ms.`
 
+Auto-compact defaults (`autoCompact.beforeExit`):
+
+- optional nested key that enables post-success compaction defaults for commands that support `--compact-before-exit`.
+- value must be a boolean.
+- default behavior remains disabled unless explicitly set to `true`.
+- CLI flag precedence is preserved: passing `--compact-before-exit` enables compaction for that invocation regardless of config.
+
 Examples:
 
 ```bash
@@ -124,6 +131,12 @@ rundown config set workerTimeoutMs 120000 --type number --scope local
 
 # Disable worker timeout explicitly
 rundown config set workerTimeoutMs 0 --type number --scope local
+
+# Enable auto-compact follow-up by default for supported commands
+rundown config set autoCompact.beforeExit true --type boolean --scope local
+
+# Disable auto-compact follow-up default
+rundown config set autoCompact.beforeExit false --type boolean --scope local
 
 # Remove a local command override so global/default can apply
 rundown config unset commands.plan --scope local

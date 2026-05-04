@@ -44,9 +44,15 @@ Options:
 |---|---|---|
 | `--dir <path>` | Migration directory to operate on. | `./migrations` |
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. Required when link metadata is ambiguous. | unset |
+| `--compact-before-exit` | Run post-success compaction as a follow-up step before command exit. | off |
 | `--confirm` | During loop mode, pause after migration files are created so you can edit them before continuing to `migrate up`. | off |
 | `--no-backlog` | For `migrate down`, do not append removed migration content to `migrations/Backlog.md`. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
+
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
 
 Workspace selection notes (`migrate`, `design release`, `design diff`):
 

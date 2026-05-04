@@ -157,6 +157,10 @@ export interface RunDefaultsConfig {
   workerRouting?: RunWorkerRoutingConfig;
 }
 
+export interface AutoCompactDefaultsConfig {
+  beforeExit?: boolean;
+}
+
 /**
  * Worker configuration loaded from user or project settings.
  */
@@ -176,6 +180,8 @@ export interface WorkerConfig {
   healthPolicy?: WorkerHealthPolicyConfig;
   // Optional run command defaults.
   run?: RunDefaultsConfig;
+  // Optional defaults for post-success automatic compaction.
+  autoCompact?: AutoCompactDefaultsConfig;
 }
 
 export const WORKER_CONFIG_VALUE_SOURCES = ["built-in", "global", "local", "mixed"] as const;

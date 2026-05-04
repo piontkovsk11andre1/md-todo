@@ -521,6 +521,7 @@ designCommand
   .allowUnknownOption(false)
   .action(withCliAction(createDesignReleaseCommandAction({
     getApp,
+    getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
   })));
 
 designCommand

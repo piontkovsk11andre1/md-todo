@@ -804,6 +804,87 @@ describe("createWorkerConfigAdapter", () => {
     });
   });
 
+  it("loads autoCompact defaults when configured", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        autoCompact: {
+          beforeExit: true,
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      autoCompact: {
+        beforeExit: true,
+      },
+    });
+  });
+
+  it("merges autoCompact defaults with local values overriding global", () => {
+    const configDir = makeTempConfigDir();
+    writeConfig(
+      configDir,
+      JSON.stringify({
+        autoCompact: {
+          beforeExit: true,
+        },
+      }),
+    );
+    const globalConfigPath = writeGlobalConfig(
+      JSON.stringify({
+        autoCompact: {
+          beforeExit: false,
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter({
+      resolveGlobalConfigPath: () => ({ discoveredPath: globalConfigPath }),
+    });
+
+    expect(adapter.load(configDir)).toEqual({
+      workers: undefined,
+      commands: undefined,
+      profiles: undefined,
+      traceStatistics: {
+        enabled: false,
+        fields: ["total_time", "tokens_estimated"],
+      },
+      autoCompact: {
+        beforeExit: true,
+      },
+    });
+  });
+
+  it("rejects invalid autoCompact.beforeExit values", () => {
+    const configDir = makeTempConfigDir();
+    const configPath = writeConfig(
+      configDir,
+      JSON.stringify({
+        autoCompact: {
+          beforeExit: "yes",
+        },
+      }),
+    );
+
+    const adapter = createWorkerConfigAdapter();
+
+    expect(() => adapter.load(configDir)).toThrow(
+      `Invalid worker config at "${configPath}": Invalid worker config at autoCompact.beforeExit: expected boolean.`,
+    );
+  });
+
   it("rejects invalid run.commitMode values", () => {
     const configDir = makeTempConfigDir();
     const configPath = writeConfig(

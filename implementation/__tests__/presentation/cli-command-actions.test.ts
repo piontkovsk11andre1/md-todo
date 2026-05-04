@@ -2433,6 +2433,42 @@ describe("createMigrateCommandAction", () => {
     }));
   });
 
+  it("uses config autoCompact.beforeExit default when CLI flag is omitted", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-migrate-auto-compact-"));
+    const configDir = path.join(tempRoot, ".rundown");
+
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+      autoCompact: {
+        beforeExit: true,
+      },
+    }, null, 2) + "\n", "utf8");
+
+    try {
+      const action = createMigrateCommandAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        getInvocationArgv: () => [
+          "--config-dir",
+          configDir,
+          "migrate",
+        ],
+      });
+
+      const exitCode = await action(undefined, undefined, {});
+
+      expect(exitCode).toBe(0);
+      expect(migrateTask).toHaveBeenCalledTimes(1);
+      expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
+        autoCompact: { beforeExit: true },
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects removed migrate revision actions without compatibility aliases", () => {
     const migrateTask = vi.fn(async () => 0);
     const app = { migrateTask } as unknown as CliApp;
@@ -2581,6 +2617,43 @@ describe("createDesignReleaseCommandAction", () => {
       action: "release",
       autoCompact: { beforeExit: true },
     }));
+  });
+
+  it("uses config autoCompact.beforeExit default for design release when flag is omitted", async () => {
+    const designTask = vi.fn(async () => 0);
+    const app = { designTask } as unknown as CliApp;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-design-auto-compact-"));
+    const configDir = path.join(tempRoot, ".rundown");
+
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+      autoCompact: {
+        beforeExit: true,
+      },
+    }, null, 2) + "\n", "utf8");
+
+    try {
+      const action = createDesignReleaseCommandAction({
+        getApp: () => app,
+        getInvocationArgv: () => [
+          "--config-dir",
+          configDir,
+          "design",
+          "release",
+        ],
+      });
+
+      const exitCode = await action({});
+
+      expect(exitCode).toBe(0);
+      expect(designTask).toHaveBeenCalledTimes(1);
+      expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
+        action: "release",
+        autoCompact: { beforeExit: true },
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("falls back to docsTask release action when designTask is unavailable", async () => {
