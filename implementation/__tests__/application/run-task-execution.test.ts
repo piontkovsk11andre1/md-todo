@@ -337,6 +337,230 @@ describe("run-task-execution helpers", () => {
     expect(prompt).not.toContain(path.resolve("/real/invocation/.rundown/workspace.link"));
   });
 
+  it("renders legacy workspace config into runtime prompt context with authoritative resolved paths", async () => {
+    const invocationDir = "/repo/invocation";
+    const workspaceDir = "/repo/workspace";
+    const resolvedInvocationDir = path.resolve(invocationDir);
+    const resolvedWorkspaceDir = path.resolve(workspaceDir);
+    const taskFile = path.join(resolvedWorkspaceDir, "tasks.md");
+    const configPath = path.join(resolvedWorkspaceDir, ".rundown", "config.json");
+    const { dependencies, events } = createDependencies({
+      cwd: invocationDir,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] build release\n",
+        [configPath]: JSON.stringify({
+          workspace: {
+            directories: {
+              design: "design-docs",
+              implementation: "implementation-src",
+              specs: "quality/specs",
+              migrations: "changesets",
+              prediction: "predicted",
+            },
+            placement: {
+              design: "sourcedir",
+              implementation: "sourcedir",
+              specs: "workdir",
+              migrations: "workdir",
+              prediction: "workdir",
+            },
+          },
+        }),
+      }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return [
+          "workspaceDesignPlacement={{workspaceDesignPlacement}}",
+          "workspaceSpecsPlacement={{workspaceSpecsPlacement}}",
+          "workspaceDesignPath={{workspaceDesignPath}}",
+          "workspaceImplementationPath={{workspaceImplementationPath}}",
+          "workspaceSpecsPath={{workspaceSpecsPath}}",
+          "workspaceMountSummary={{workspaceMountSummary}}",
+        ].join("\n");
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      printPrompt: true,
+      verify: false,
+      invocationDir,
+      workspaceDir,
+      workspaceLinkPath: `${invocationDir}/.rundown/workspace.link`,
+      isLinkedWorkspace: true,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("workspaceDesignPlacement=sourcedir");
+    expect(prompt).toContain("workspaceSpecsPlacement=sourcedir");
+    expect(prompt).toContain(`workspaceDesignPath=${path.resolve(resolvedWorkspaceDir, "design-docs")}`);
+    expect(prompt).toContain(`workspaceImplementationPath=${path.resolve(resolvedWorkspaceDir, "implementation-src")}`);
+    expect(prompt).toContain(`workspaceSpecsPath=${path.resolve(resolvedInvocationDir, "quality", "specs")}`);
+
+    const summaryLine = prompt.split("\n").find((line) => line.startsWith("workspaceMountSummary="));
+    expect(summaryLine).toBeDefined();
+    const workspaceMountSummary = JSON.parse((summaryLine ?? "").slice("workspaceMountSummary=".length));
+    expect(workspaceMountSummary).toEqual(expect.objectContaining({
+      invocationDir: resolvedInvocationDir,
+      workspaceDir: resolvedWorkspaceDir,
+      isLinkedWorkspace: true,
+    }));
+    expect(workspaceMountSummary.mounts).toEqual(expect.arrayContaining([
+      {
+        logicalPath: "design",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "design-docs"),
+        source: "legacy",
+      },
+      {
+        logicalPath: "specs",
+        absoluteTargetPath: path.resolve(resolvedInvocationDir, "quality", "specs"),
+        source: "legacy",
+      },
+    ]));
+  });
+
+  it("renders explicit workspace mounts as authoritative runtime prompt paths", async () => {
+    const workspaceDir = "/repo/control";
+    const resolvedWorkspaceDir = path.resolve(workspaceDir);
+    const taskFile = path.join(resolvedWorkspaceDir, "tasks.md");
+    const configPath = path.join(resolvedWorkspaceDir, ".rundown", "config.json");
+    const { dependencies, events } = createDependencies({
+      cwd: workspaceDir,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] build release\n",
+        [configPath]: JSON.stringify({
+          workspace: {
+            mounts: {
+              design: "../docs/design",
+              implementation: "../app/src",
+              specs: "../app/specs",
+            },
+          },
+        }),
+      }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return [
+          "workspaceDesignPath={{workspaceDesignPath}}",
+          "workspaceImplementationPath={{workspaceImplementationPath}}",
+          "workspaceSpecsPath={{workspaceSpecsPath}}",
+          "workspaceMountSummary={{workspaceMountSummary}}",
+        ].join("\n");
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      printPrompt: true,
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`workspaceDesignPath=${path.resolve(resolvedWorkspaceDir, "../docs/design")}`);
+    expect(prompt).toContain(`workspaceImplementationPath=${path.resolve(resolvedWorkspaceDir, "../app/src")}`);
+    expect(prompt).toContain(`workspaceSpecsPath=${path.resolve(resolvedWorkspaceDir, "../app/specs")}`);
+
+    const summaryLine = prompt.split("\n").find((line) => line.startsWith("workspaceMountSummary="));
+    expect(summaryLine).toBeDefined();
+    const workspaceMountSummary = JSON.parse((summaryLine ?? "").slice("workspaceMountSummary=".length));
+    expect(workspaceMountSummary.mounts).toEqual(expect.arrayContaining([
+      {
+        logicalPath: "design",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../docs/design"),
+        source: "explicit",
+      },
+      {
+        logicalPath: "implementation",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../app/src"),
+        source: "explicit",
+      },
+      {
+        logicalPath: "specs",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../app/specs"),
+        source: "explicit",
+      },
+    ]));
+  });
+
+  it("includes nested mount overrides in runtime workspace mount summary", async () => {
+    const workspaceDir = "/repo/control";
+    const resolvedWorkspaceDir = path.resolve(workspaceDir);
+    const taskFile = path.join(resolvedWorkspaceDir, "tasks.md");
+    const configPath = path.join(resolvedWorkspaceDir, ".rundown", "config.json");
+    const { dependencies, events } = createDependencies({
+      cwd: workspaceDir,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] build release\n",
+        [configPath]: JSON.stringify({
+          workspace: {
+            mounts: {
+              implementation: "../app/src",
+              "implementation/generated": "../shared/generated",
+              "design/current": "../drafts/current-design",
+            },
+          },
+        }),
+      }),
+      gitClient: createGitClientMock(),
+    });
+    dependencies.templateLoader.load = (templatePath: string) => {
+      if (templatePath.endsWith("execute.md")) {
+        return [
+          "workspaceDesignPath={{workspaceDesignPath}}",
+          "workspaceImplementationPath={{workspaceImplementationPath}}",
+          "workspaceMountSummary={{workspaceMountSummary}}",
+        ].join("\n");
+      }
+      return null;
+    };
+
+    const runTask = createRunTaskExecution(dependencies);
+    const code = await runTask(createOptions({
+      printPrompt: true,
+      verify: false,
+      workerCommand: ["opencode", "run"],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`workspaceDesignPath=${path.resolve(resolvedWorkspaceDir, "design")}`);
+    expect(prompt).toContain(`workspaceImplementationPath=${path.resolve(resolvedWorkspaceDir, "../app/src")}`);
+
+    const summaryLine = prompt.split("\n").find((line) => line.startsWith("workspaceMountSummary="));
+    expect(summaryLine).toBeDefined();
+    const workspaceMountSummary = JSON.parse((summaryLine ?? "").slice("workspaceMountSummary=".length));
+    expect(workspaceMountSummary.mounts).toEqual(expect.arrayContaining([
+      {
+        logicalPath: "implementation",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../app/src"),
+        source: "explicit",
+      },
+      {
+        logicalPath: "implementation/generated",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../shared/generated"),
+        source: "explicit",
+      },
+      {
+        logicalPath: "design/current",
+        absoluteTargetPath: path.resolve(resolvedWorkspaceDir, "../drafts/current-design"),
+        source: "explicit",
+      },
+    ]));
+  });
+
   it("keeps execution cwd rooted at resolved workspace even when link metadata falls back", async () => {
     const invocationDir = "/workspace/invocation";
     const workspaceDir = "/workspace/resolved";
