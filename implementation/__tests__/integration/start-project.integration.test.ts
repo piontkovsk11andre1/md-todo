@@ -1062,6 +1062,58 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.readFileSync(implementationKeepPath, "utf-8")).toBe(preservedImplementationSource);
   });
 
+  it("does not overwrite or relocate mounted external implementation content when start is re-run", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDirName = "external-implementation-app";
+    const invocationDir = path.join(workspace, invocationDirName);
+    const controlDir = path.join(workspace, "mounted-control-rerun");
+
+    fs.mkdirSync(path.join(invocationDir, "src"), { recursive: true });
+    const implementationFilePath = path.join(invocationDir, "src", "main.ts");
+    const originalImplementationSource = "export const mounted = true;\n";
+    fs.writeFileSync(implementationFilePath, originalImplementationSource, "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const firstRun = await runCli([
+      "start",
+      "Mounted rerun",
+      "--dir",
+      "../mounted-control-rerun",
+      "--mount",
+      "implementation=.",
+    ], invocationDir);
+    expect(firstRun.code).toBe(0);
+
+    const secondRun = await runCli([
+      "start",
+      "Mounted rerun",
+      "--dir",
+      "../mounted-control-rerun",
+      "--mount",
+      "implementation=.",
+    ], invocationDir);
+
+    expect(secondRun.code).toBe(0);
+    expect(fs.existsSync(implementationFilePath)).toBe(true);
+    expect(fs.readFileSync(implementationFilePath, "utf-8")).toBe(originalImplementationSource);
+    expect(fs.existsSync(path.join(controlDir, "implementation", "src", "main.ts"))).toBe(false);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        mounts?: Record<string, string>;
+      };
+    };
+
+    expect(config.workspace?.mounts).toEqual({
+      implementation: path.normalize(invocationDir),
+    });
+  });
+
   it("keeps custom design dir while leaving migrations empty in non-empty workspace", async () => {
     const workspace = makeTempWorkspace();
     const projectDirName = "existing-custom-design";
