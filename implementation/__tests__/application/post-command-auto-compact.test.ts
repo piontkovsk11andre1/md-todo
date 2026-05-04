@@ -1,21 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_NO_WORK,
+  normalizeExitCode,
+} from "../../src/domain/exit-codes.js";
+import {
   runPostCommandAutoCompact,
 } from "../../src/application/post-command-auto-compact.js";
 
 describe("runPostCommandAutoCompact", () => {
-  it("skips compaction when primary command is not successful", async () => {
+  it.each([
+    { condition: "failure", primaryExitCode: EXIT_CODE_FAILURE },
+    { condition: "no-work", primaryExitCode: EXIT_CODE_NO_WORK },
+    { condition: "dry-run", primaryExitCode: EXIT_CODE_NO_WORK },
+    { condition: "print-only", primaryExitCode: EXIT_CODE_NO_WORK },
+    { condition: "cancellation", primaryExitCode: 130 },
+  ])("skips compaction for $condition primary outcomes", async ({ primaryExitCode }) => {
     const compactTask = vi.fn(async () => 0);
     const emit = vi.fn();
 
     const exitCode = await runPostCommandAutoCompact({
-      primaryExitCode: 3,
+      primaryExitCode,
       autoCompact: { beforeExit: true },
       compactTask,
       output: { emit },
     });
 
-    expect(exitCode).toBe(3);
+    expect(exitCode).toBe(normalizeExitCode(primaryExitCode));
     expect(compactTask).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
   });
