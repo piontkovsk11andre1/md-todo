@@ -514,6 +514,130 @@ describeIfStartAvailable("start-project integration", () => {
     });
   });
 
+  it("bootstraps a control workspace with current directory mounted as implementation", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDirName = "existing-implementation-app";
+    const invocationDir = path.join(workspace, invocationDirName);
+    const controlDir = path.join(workspace, "implementation-control");
+
+    fs.mkdirSync(invocationDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Adopt implementation directory",
+      "--dir",
+      "../implementation-control",
+      "--mount",
+      "implementation=.",
+    ], invocationDir);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        mounts?: Record<string, string>;
+      };
+    };
+    expect(config.workspace?.mounts).toEqual({
+      implementation: path.normalize(invocationDir),
+    });
+  });
+
+  it("bootstraps a control workspace with current directory mounted as specs", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDirName = "existing-specs-app";
+    const invocationDir = path.join(workspace, invocationDirName);
+    const controlDir = path.join(workspace, "specs-control");
+
+    fs.mkdirSync(invocationDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Adopt specs directory",
+      "--dir",
+      "../specs-control",
+      "--mount",
+      "specs=.",
+    ], invocationDir);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        mounts?: Record<string, string>;
+      };
+    };
+    expect(config.workspace?.mounts).toEqual({
+      specs: path.normalize(invocationDir),
+    });
+  });
+
+  it("keeps implementation local when only a nested implementation subpath is mounted", async () => {
+    const workspace = makeTempWorkspace();
+    const controlDirName = "nested-subpath-control";
+    const controlDir = path.join(workspace, controlDirName);
+    const generatedDir = path.join(workspace, "generated");
+
+    fs.mkdirSync(generatedDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Nested implementation mount",
+      "--dir",
+      controlDirName,
+      "--mount",
+      "implementation/generated=./generated",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "implementation", "generated"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        mounts?: Record<string, string>;
+      };
+    };
+    expect(config.workspace?.mounts).toEqual({
+      "implementation/generated": path.normalize(generatedDir),
+    });
+  });
+
   it("keeps attached invocation directories discoverable via workspace.link for mounted bootstrap", async () => {
     const workspace = makeTempWorkspace();
     const invocationDirName = "attached-app";
