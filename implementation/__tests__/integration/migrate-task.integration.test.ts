@@ -521,6 +521,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ...result.stderrWrites,
     ].join("\n"));
     expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision). Edit design/current/ and run rundown migrate to release and plan the next revision.");
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2.meta.json"))).toBe(false);
   });
 
   it("migrate preflight releases changed current design before planning", async () => {
@@ -570,6 +572,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     ].join("\n"));
     expect(result.code, debugOutput).toBe(0);
     expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.3", "Design.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.3.meta.json"))).toBe(false);
     const rev2Meta = readRevisionMeta(workspace, "docs", 2);
     expect(rev2Meta.plannedAt).toBeTypeOf("string");
   });
@@ -594,6 +598,8 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(result.code).toBe(0);
     expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.0", "Target.md"))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.0.meta.json"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.1", "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.1.meta.json"))).toBe(false);
   });
 
   it("migrate skips re-planning on re-run", async () => {
