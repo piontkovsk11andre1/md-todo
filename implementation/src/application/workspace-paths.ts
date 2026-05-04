@@ -31,6 +31,12 @@ export interface WorkspacePaths {
   prediction: string;
 }
 
+export interface ArchiveWorkspacePaths {
+  designRevisionPayloads: string;
+  migrationRootLane: string;
+  migrationThreads: string;
+}
+
 export type WorkspaceMountSource = "legacy" | "explicit";
 
 export interface WorkspaceMount {
@@ -443,6 +449,64 @@ export function resolveWorkspacePaths(input: {
   });
 
   return resolvedPaths;
+}
+
+export function resolveArchiveWorkspacePaths(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): ArchiveWorkspacePaths {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  return {
+    designRevisionPayloads: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "design/archive/revisions",
+    }).absolutePath,
+    migrationRootLane: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "migrations/archive/root",
+    }).absolutePath,
+    migrationThreads: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "migrations/archive/threads",
+    }).absolutePath,
+  };
+}
+
+export function resolveMigrationThreadArchivePath(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  threadSlug: string;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): string {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  const normalizedThreadSlug = normalizeWorkspaceLogicalPath(input.threadSlug);
+  return resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: `migrations/archive/threads/${normalizedThreadSlug}`,
+  }).absolutePath;
 }
 
 function resolveWorkspaceMountsForPathHelpers(input: {

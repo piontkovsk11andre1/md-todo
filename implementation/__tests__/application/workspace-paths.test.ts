@@ -1,6 +1,8 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  resolveArchiveWorkspacePaths,
+  resolveMigrationThreadArchivePath,
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
   normalizeWorkspaceLogicalPath,
@@ -451,6 +453,49 @@ describe("prediction workspace config", () => {
       absoluteTargetPath: path.normalize(externalCurrentPath),
       source: "legacy",
     });
+  });
+
+  it("resolves canonical archive roots from default workspace buckets", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolveArchiveWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      designRevisionPayloads: path.resolve(workspaceRoot, "design", "archive", "revisions"),
+      migrationRootLane: path.resolve(workspaceRoot, "migrations", "archive", "root"),
+      migrationThreads: path.resolve(workspaceRoot, "migrations", "archive", "threads"),
+    });
+  });
+
+  it("resolves canonical archive roots through explicit bucket mounts", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            design: "../shared/design-root",
+            migrations: "../shared/migrations-root",
+          },
+        },
+      }),
+    });
+
+    expect(resolveArchiveWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      designRevisionPayloads: path.resolve(workspaceRoot, "../shared/design-root", "archive", "revisions"),
+      migrationRootLane: path.resolve(workspaceRoot, "../shared/migrations-root", "archive", "root"),
+      migrationThreads: path.resolve(workspaceRoot, "../shared/migrations-root", "archive", "threads"),
+    });
+  });
+
+  it("resolves canonical migration thread archive paths with normalized slugs", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolveMigrationThreadArchivePath({
+      fileSystem,
+      workspaceRoot,
+      threadSlug: " billing\\north-america ",
+    })).toBe(path.resolve(workspaceRoot, "migrations", "archive", "threads", "billing", "north-america"));
   });
 
   it("rejects invalid workspace.mounts types", () => {
