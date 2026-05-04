@@ -101,6 +101,29 @@ describe("createApp", () => {
     expect(emit).toHaveBeenCalledWith({ kind: "info", message: "next-task output" });
   });
 
+  it("exposes compactTask and wires app ports into compact factory", async () => {
+    const fileSystem = createInMemoryFileSystem();
+    let capturedPorts: AppPorts | undefined;
+
+    const app = createApp({
+      ports: {
+        fileSystem,
+      },
+      useCaseFactories: {
+        compactTask: (ports) => async () => {
+          capturedPorts = ports;
+          return 0;
+        },
+      },
+    });
+
+    const code = await app.compactTask({} as never);
+
+    expect(code).toBe(0);
+    expect(capturedPorts).toBeDefined();
+    expect(capturedPorts?.fileSystem).toBe(fileSystem);
+  });
+
   it("provides a default no-op fileLock port", async () => {
     let capturedPorts: AppPorts | undefined;
     const app = createApp({

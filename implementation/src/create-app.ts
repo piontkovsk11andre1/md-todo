@@ -60,6 +60,10 @@ import {
   type ManageArtifactsOptions,
 } from "./application/manage-artifacts.js";
 import {
+  createCompactTask,
+  type CompactTaskOptions,
+} from "./application/compact-task.js";
+import {
   createConfigGet,
   createConfigList,
   createConfigPath,
@@ -188,6 +192,7 @@ export type App = {
   localizeProject: (options: LocalizeProjectOptions) => Promise<number>;
   startProject: (options?: StartProjectOptions) => Promise<number>;
   manageArtifacts: (options: ManageArtifactsOptions) => number;
+  compactTask: (options: CompactTaskOptions) => Promise<number>;
   configGet: (options: ConfigGetOptions) => number;
   configList: (options: ConfigListOptions) => number;
   configPath: (options: ConfigPathOptions) => number;
@@ -874,6 +879,10 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       configDir: ports.configDir,
       output: ports.output,
     }),
+    compactTask: (ports) => createCompactTask({
+      fileSystem: ports.fileSystem,
+      output: ports.output,
+    }),
     configGet: (ports) => createConfigGet({
       workerConfigPort: ports.workerConfigPort,
       configDir: ports.configDir,
@@ -968,6 +977,7 @@ function createAppFromFactories(
   const localizeProject = factories.localizeProject(ports);
   const startProject = factories.startProject(ports);
   const manageArtifacts = factories.manageArtifacts(ports);
+  const compactTask = factories.compactTask(ports);
   const configGet = factories.configGet(ports);
   const configList = factories.configList(ports);
   const configPath = factories.configPath(ports);
@@ -1016,6 +1026,7 @@ function createAppFromFactories(
     localizeProject,
     startProject,
     manageArtifacts,
+    compactTask,
     configGet,
     configList,
     configPath,
