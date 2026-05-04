@@ -13,6 +13,8 @@ import {
   DEFAULT_WORKSPACE_PLACEMENT,
   WORKSPACE_PLACEMENTS,
   normalizeWorkspaceLogicalPath,
+  resolveWorkspaceMountPath,
+  resolveWorkspaceMounts,
   type WorkspacePlacement,
 } from "./workspace-paths.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
@@ -155,22 +157,6 @@ export function createStartProject(
 
     const rundownConfigDir = dependencies.pathOperations.join(targetDirectory, ".rundown");
     const rundownConfigPath = dependencies.pathOperations.join(rundownConfigDir, "config.json");
-    const migrationsDir = dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.migrationsDir,
-    );
-    const implementationDir = dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.implementationDir,
-    );
-    const specsDir = dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.specsDir,
-    );
-    const predictionDir = dependencies.pathOperations.join(
-      targetDirectory,
-      workspaceDirectories.predictionDir,
-    );
     await initGitRepo(dependencies.gitClient, targetDirectory);
 
     const initProject = createInitProject({
@@ -217,6 +203,11 @@ export function createStartProject(
       emit,
     });
 
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: targetDirectory,
+      invocationRoot: invocationDirectory,
+    });
     const configuredExternalDesignCurrentPath = resolveConfiguredExternalDesignCurrentPath({
       fileSystem: dependencies.fileSystem,
       pathOperations: dependencies.pathOperations,
@@ -229,25 +220,33 @@ export function createStartProject(
     });
     const activeExternalDesignCurrentPath = externalDesignCurrentPath
       ?? configuredExternalDesignCurrentPath;
-    const designCurrentDir = activeExternalDesignCurrentPath
-      ?? dependencies.pathOperations.join(
-        targetDirectory,
-        workspaceDirectories.designDir,
-        "current",
-      );
+    const designCurrentDir = resolveWorkspaceMountPath({
+      mounts: workspaceMounts,
+      logicalPath: "design/current",
+    }).absolutePath;
     const designPath = dependencies.pathOperations.join(designCurrentDir, "Target.md");
-
-    if (!dependencies.fileSystem.exists(designCurrentDir)) {
-      dependencies.fileSystem.mkdir(designCurrentDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
-    }
+    const designCurrentIsLocal = isTargetWorkspaceLocalPath({
+      pathOperations: dependencies.pathOperations,
+      targetDirectory,
+      absolutePath: designCurrentDir,
+    });
 
     if (activeExternalDesignCurrentPath) {
       emit({
         kind: "success",
         message: "Using external directory as design/current: " + activeExternalDesignCurrentPath,
       });
+    } else if (!designCurrentIsLocal) {
+      emit({
+        kind: "info",
+        message: "Skipping local design/current scaffold for external path: " + designCurrentDir,
+      });
     } else {
+      if (!dependencies.fileSystem.exists(designCurrentDir)) {
+        dependencies.fileSystem.mkdir(designCurrentDir, { recursive: true });
+        emit({ kind: "success", message: "Created " + designCurrentDir + "/" });
+      }
+
       writeFileIfMissing(
         dependencies.fileSystem,
         designPath,
@@ -255,25 +254,42 @@ export function createStartProject(
         emit,
       );
     }
-    if (!dependencies.fileSystem.exists(migrationsDir)) {
-      dependencies.fileSystem.mkdir(migrationsDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + migrationsDir + "/" });
-    }
 
-    if (!dependencies.fileSystem.exists(implementationDir)) {
-      dependencies.fileSystem.mkdir(implementationDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + implementationDir + "/" });
-    }
+    createLocalWorkspaceBucketDirectory({
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      targetDirectory,
+      mounts: workspaceMounts,
+      logicalPath: "migrations",
+      emit,
+    });
 
-    if (!dependencies.fileSystem.exists(specsDir)) {
-      dependencies.fileSystem.mkdir(specsDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + specsDir + "/" });
-    }
+    createLocalWorkspaceBucketDirectory({
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      targetDirectory,
+      mounts: workspaceMounts,
+      logicalPath: "implementation",
+      emit,
+    });
 
-    if (!dependencies.fileSystem.exists(predictionDir)) {
-      dependencies.fileSystem.mkdir(predictionDir, { recursive: true });
-      emit({ kind: "success", message: "Created " + predictionDir + "/" });
-    }
+    createLocalWorkspaceBucketDirectory({
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      targetDirectory,
+      mounts: workspaceMounts,
+      logicalPath: "specs",
+      emit,
+    });
+
+    createLocalWorkspaceBucketDirectory({
+      fileSystem: dependencies.fileSystem,
+      pathOperations: dependencies.pathOperations,
+      targetDirectory,
+      mounts: workspaceMounts,
+      logicalPath: "prediction",
+      emit,
+    });
 
     try {
       await dependencies.gitClient.run(["add", "-A", "--", "."], targetDirectory);
@@ -943,6 +959,57 @@ function resolveConfiguredExternalDesignCurrentPath(input: {
   }
 
   return normalizedResolvedPath;
+}
+
+function createLocalWorkspaceBucketDirectory(input: {
+  fileSystem: FileSystem;
+  pathOperations: PathOperationsPort;
+  targetDirectory: string;
+  mounts: ReturnType<typeof resolveWorkspaceMounts>;
+  logicalPath: "migrations" | "implementation" | "specs" | "prediction";
+  emit: ApplicationOutputPort["emit"];
+}): void {
+  const { fileSystem, pathOperations, targetDirectory, mounts, logicalPath, emit } = input;
+  const bucketDirectory = resolveWorkspaceMountPath({ mounts, logicalPath }).absolutePath;
+  const isLocal = isTargetWorkspaceLocalPath({
+    pathOperations,
+    targetDirectory,
+    absolutePath: bucketDirectory,
+  });
+  if (!isLocal) {
+    emit({
+      kind: "info",
+      message: `Skipping local ${logicalPath}/ scaffold for external path: ${bucketDirectory}`,
+    });
+    return;
+  }
+
+  if (!fileSystem.exists(bucketDirectory)) {
+    fileSystem.mkdir(bucketDirectory, { recursive: true });
+    emit({ kind: "success", message: "Created " + bucketDirectory + "/" });
+  }
+}
+
+function isTargetWorkspaceLocalPath(input: {
+  pathOperations: PathOperationsPort;
+  targetDirectory: string;
+  absolutePath: string;
+}): boolean {
+  const { pathOperations, targetDirectory, absolutePath } = input;
+  const normalizedTargetDirectory = pathOperations.resolve(targetDirectory);
+  const normalizedAbsolutePath = pathOperations.resolve(absolutePath);
+  const relativePath = pathOperations
+    .relative(normalizedTargetDirectory, normalizedAbsolutePath)
+    .replace(/\\/g, "/");
+
+  if (relativePath.length === 0 || relativePath === ".") {
+    return true;
+  }
+  if (relativePath === ".." || relativePath.startsWith("../")) {
+    return false;
+  }
+
+  return !pathOperations.isAbsolute(relativePath);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

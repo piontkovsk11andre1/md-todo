@@ -512,6 +512,84 @@ describeIfStartAvailable("start-project integration", () => {
     });
   });
 
+  it("materializes only local buckets for bare mounted control workspace", async () => {
+    const workspace = makeTempWorkspace();
+    const controlDirName = "mounted-control-bare";
+    const controlDir = path.join(workspace, controlDirName);
+    const externalSpecsDir = path.join(workspace, ".specs");
+    const externalDesignDir = path.join(workspace, ".design");
+    const externalMigrationsDir = path.join(workspace, ".migrations");
+    const externalPredictionDir = path.join(workspace, ".prediction");
+
+    fs.mkdirSync(externalSpecsDir, { recursive: true });
+    fs.mkdirSync(externalDesignDir, { recursive: true });
+    fs.mkdirSync(externalMigrationsDir, { recursive: true });
+    fs.mkdirSync(externalPredictionDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Bare mounted control",
+      "--dir",
+      controlDirName,
+      "--mount",
+      "implementation=.",
+      "--mount",
+      "specs=./.specs",
+      "--mount",
+      "design=./.design",
+      "--mount",
+      "migrations=./.migrations",
+      "--mount",
+      "prediction=./.prediction",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "design"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, ".rundown", "config.json"))).toBe(true);
+  });
+
+  it("materializes only unmapped local buckets for mixed mounted start", async () => {
+    const workspace = makeTempWorkspace();
+    const controlDirName = "mounted-control-mixed";
+    const controlDir = path.join(workspace, controlDirName);
+    const externalSpecsDir = path.join(workspace, ".specs");
+
+    fs.mkdirSync(externalSpecsDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "Mixed mounted control",
+      "--dir",
+      controlDirName,
+      "--mount",
+      "implementation=.",
+      "--mount",
+      "specs=./.specs",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(false);
+
+    expect(fs.existsSync(path.join(controlDir, "design", "current", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
+  });
+
   it("fails when --mount declaration is malformed", async () => {
     const workspace = makeTempWorkspace();
 
