@@ -2,7 +2,7 @@
 
 Verify assertion specs in either materialized or prediction mode.
 
-By default, `test` validates assertions against the materialized workspace and explicitly excludes prediction inputs (`design/`, `specs/`, `migrations/`) from test context.
+By default, `test` validates assertions against the materialized workspace and explicitly excludes prediction inputs (`design/`, `implementation/`, `specs/`, `migrations/`, `prediction/`) from test context.
 
 When `--future` is set, `test` switches to prediction mode and validates assertions using design + migration context only.
 

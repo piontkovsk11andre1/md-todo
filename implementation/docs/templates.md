@@ -197,14 +197,20 @@ Built-in worker-facing templates include:
   - `{{workspaceLinkPath}}`
   - `{{isLinkedWorkspace}}`
   - `{{workspaceDesignDir}}`
+  - `{{workspaceImplementationDir}}`
   - `{{workspaceSpecsDir}}`
   - `{{workspaceMigrationsDir}}`
+  - `{{workspacePredictionDir}}`
   - `{{workspaceDesignPlacement}}`
+  - `{{workspaceImplementationPlacement}}`
   - `{{workspaceSpecsPlacement}}`
   - `{{workspaceMigrationsPlacement}}`
+  - `{{workspacePredictionPlacement}}`
   - `{{workspaceDesignPath}}`
+  - `{{workspaceImplementationPath}}`
   - `{{workspaceSpecsPath}}`
   - `{{workspaceMigrationsPath}}`
+  - `{{workspacePredictionPath}}`
 - A `## Variables` section that renders `{{userVariables}}`.
 
 These workspace fields are available in worker-facing prompt paths (`run`, `discuss`,
@@ -229,14 +235,20 @@ In non-linked mode, both terms resolve to the same absolute path. In linked mode
 | `{{workspaceLinkPath}}` | Absolute path to `.rundown/workspace.link` when linked workspace mode is active; otherwise empty. |
 | `{{isLinkedWorkspace}}` | String boolean: `"true"` when linked mode is active, otherwise `"false"`. |
 | `{{workspaceDesignDir}}` | Project-relative design workspace directory from prediction workspace config (default: `design`). |
+| `{{workspaceImplementationDir}}` | Project-relative implementation workspace directory from prediction workspace config (default: `implementation`). |
 | `{{workspaceSpecsDir}}` | Project-relative specs workspace directory from prediction workspace config (default: `specs`). |
 | `{{workspaceMigrationsDir}}` | Project-relative migrations workspace directory from prediction workspace config (default: `migrations`). |
+| `{{workspacePredictionDir}}` | Project-relative prediction workspace directory from prediction workspace config (default: `prediction`). |
 | `{{workspaceDesignPlacement}}` | Placement mode for design bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
+| `{{workspaceImplementationPlacement}}` | Placement mode for implementation bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
 | `{{workspaceSpecsPlacement}}` | Placement mode for specs bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
 | `{{workspaceMigrationsPlacement}}` | Placement mode for migrations bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
+| `{{workspacePredictionPlacement}}` | Placement mode for prediction bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
 | `{{workspaceDesignPath}}` | Absolute path to effective design bucket (`workspaceDesignDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
+| `{{workspaceImplementationPath}}` | Absolute path to effective implementation bucket (`workspaceImplementationDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
 | `{{workspaceSpecsPath}}` | Absolute path to effective specs bucket (`workspaceSpecsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
 | `{{workspaceMigrationsPath}}` | Absolute path to effective migrations bucket (`workspaceMigrationsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
+| `{{workspacePredictionPath}}` | Absolute path to effective prediction bucket (`workspacePredictionDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
 
 Fallback semantics are deterministic:
 
@@ -249,7 +261,7 @@ Fallback semantics are deterministic:
 
 Placement behavior notes:
 
-- `workspaceDesignPath`, `workspaceSpecsPath`, and `workspaceMigrationsPath` are computed from both configured bucket directory names and bucket placement modes.
+- `workspaceDesignPath`, `workspaceImplementationPath`, `workspaceSpecsPath`, `workspaceMigrationsPath`, and `workspacePredictionPath` are computed from both configured bucket directory names and bucket placement modes.
 - Default placement for all buckets is `sourcedir` when `workspace.placement` keys are omitted.
 - Mixed placement is supported and represented explicitly via `workspace*Placement` variables.
 - Prompt consumers should treat the resolved `workspace*Path` variables as authoritative instead of recomputing paths.
@@ -264,11 +276,15 @@ Mixed placement (non-linked workspace where `invocationDir === workspaceDir`):
 | Variable | Example value |
 | --- | --- |
 | `{{workspaceDesignPlacement}}` | `sourcedir` |
+| `{{workspaceImplementationPlacement}}` | `sourcedir` |
 | `{{workspaceSpecsPlacement}}` | `workdir` |
 | `{{workspaceMigrationsPlacement}}` | `sourcedir` |
+| `{{workspacePredictionPlacement}}` | `sourcedir` |
 | `{{workspaceDesignPath}}` | `/repo/design` |
+| `{{workspaceImplementationPath}}` | `/repo/implementation` |
 | `{{workspaceSpecsPath}}` | `/repo/specs` |
 | `{{workspaceMigrationsPath}}` | `/repo/migrations` |
+| `{{workspacePredictionPath}}` | `/repo/prediction` |
 
 Mixed placement (linked workspace where roots differ):
 
@@ -277,11 +293,15 @@ Mixed placement (linked workspace where roots differ):
 | `{{invocationDir}}` | `/work/client-a` |
 | `{{workspaceDir}}` | `/work/platform-core` |
 | `{{workspaceDesignPlacement}}` | `sourcedir` |
+| `{{workspaceImplementationPlacement}}` | `sourcedir` |
 | `{{workspaceSpecsPlacement}}` | `workdir` |
 | `{{workspaceMigrationsPlacement}}` | `sourcedir` |
+| `{{workspacePredictionPlacement}}` | `sourcedir` |
 | `{{workspaceDesignPath}}` | `/work/platform-core/design` |
+| `{{workspaceImplementationPath}}` | `/work/platform-core/implementation` |
 | `{{workspaceSpecsPath}}` | `/work/client-a/specs` |
 | `{{workspaceMigrationsPath}}` | `/work/platform-core/migrations` |
+| `{{workspacePredictionPath}}` | `/work/platform-core/prediction` |
 
 `{{userVariables}}` is a formatted dump of all extra template variables (merged from
 `--vars-file` and `--var`, with `--var` winning on conflicts).

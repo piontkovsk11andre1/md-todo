@@ -884,7 +884,7 @@ Output ONLY the verdict line and nothing else.
 Interpretation rules:
 
 - This run is in \`materialized\` mode. Evaluate only the materialized workspace state under included directories.
-- Ignore prediction inputs entirely (design/specs/migrations) for verdict decisions.
+- Ignore prediction inputs entirely (design/implementation/specs/migrations/prediction) for verdict decisions.
 {{traceInstructions}}
 `;
 

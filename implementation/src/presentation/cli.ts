@@ -416,7 +416,7 @@ program
       "  - --mount is repeatable and is the authoritative surface for mounted workspace onboarding",
       "  - Use --dir to place the satellite rundown workspace while mounting current directories into logical paths",
       "  - Relative mount targets are resolved from the invocation directory",
-      "  - Legacy --design-dir/--specs-dir/--migrations-dir and placement flags remain supported as compatibility shorthands",
+      "  - Legacy --design-dir/--specs-dir/--migrations-dir and placement flags remain supported as compatibility shorthands (implementation/prediction buckets stay available in resolved workspace context)",
       "",
       "Linked workspace behavior:",
       "  - When started from a linked directory, start writes link metadata in both target and source workspaces",

@@ -4,7 +4,7 @@ Scaffold a prediction-oriented project workspace.
 
 `--mount <logical-path=target-path>` is the authoritative bootstrap surface for mounted workspace adoption and may be repeated.
 
-By default, `start` creates a design-first project structure and prepares migration/spec workflows:
+By default, `start` creates a design-first project structure and prepares implementation/spec/migration workflows:
 
 - `design/current/`
 - `design/current/Target.md`
@@ -13,7 +13,7 @@ By default, `start` creates a design-first project structure and prepares migrat
 - `specs/`
 - `.rundown/`
 
-Use `--design-dir`, `--specs-dir`, and `--migrations-dir` to override these workspace directories at bootstrap time. Rundown persists the resolved mapping in `.rundown/config.json` and reuses it across prediction flows (`migrate`, `design`, `test`, and related commands).
+Use `--design-dir`, `--specs-dir`, and `--migrations-dir` to override these workspace directories at bootstrap time. The implementation workspace directory is also part of the persisted workspace mapping (default: `implementation`) and can be remapped with `--mount implementation=<target-path>` for adoption scenarios. Rundown persists the resolved mapping in `.rundown/config.json` and reuses it across prediction flows (`migrate`, `design`, `test`, and related commands), including implementation-aware workspace context.
 
 Use `--mount <logical-path=target-path>` to attach logical workspace paths to existing directories:
 
@@ -24,12 +24,14 @@ Use `--mount <logical-path=target-path>` to attach logical workspace paths to ex
 
 Adoption pattern: place the controlling rundown workspace in a separate satellite directory with `--dir`, then mount existing directories from the invocation tree into logical paths.
 
-Compatibility note: `--design-dir`, `--specs-dir`, `--migrations-dir`, placement flags, and `--from-design` remain supported as transition-era shorthands.
+Compatibility note: `--design-dir`, `--specs-dir`, `--migrations-dir`, placement flags, and `--from-design` remain supported as transition-era shorthands. Implementation workspace routing remains part of the same compatibility surface via persisted defaults and mount mappings.
 
-Use `--design-placement`, `--specs-placement`, and `--migrations-placement` to choose the placement root for each bucket:
+Use `--design-placement`, `--specs-placement`, and `--migrations-placement` to choose the placement root for configurable buckets:
 
 - `sourcedir` (default): resolve bucket path under the effective workspace/source directory.
 - `workdir`: resolve bucket path under the invocation/working directory.
+
+Implementation and prediction buckets are also placement-aware in runtime workspace context; when not otherwise configured, both default to `sourcedir`.
 
 Placement defaults are persisted to `.rundown/config.json` under `workspace.placement` and apply to path-sensitive prediction flows.
 
@@ -82,6 +84,7 @@ Options:
 | `--dir <path>` | Target directory for scaffold output. | current working directory |
 | `--mount <logical-path=target-path>` | Repeatable logical-path mount declaration for mounted workspace adoption. Relative targets resolve from invocation directory. | unset |
 | `--design-dir <path>` | Design workspace directory name/path for start scaffold. | `design` |
+| `--mount implementation=<target-path>` | Common adoption mapping to route logical `implementation` to an existing codebase directory. | unset |
 | `--specs-dir <path>` | Specs workspace directory name/path for start scaffold. | `specs` |
 | `--migrations-dir <path>` | Migrations workspace directory name/path for start scaffold. | `migrations` |
 | `--design-placement <mode>` | Design placement root: `sourcedir` or `workdir`. | `sourcedir` |
@@ -97,7 +100,7 @@ rundown start "Adopt existing app" --dir ../control --mount specs=. -- opencode 
 rundown start "Adopt existing app" --dir ../control --mount implementation/generated=./generated -- opencode run
 rundown start "Adopt existing app" --dir ../control --mount implementation=. --mount specs=./specs --mount migrations=../control/migrations -- opencode run
 rundown start "Ship auth flow" -- opencode run
-rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
-rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir -- opencode run
-rundown start "Ship auth flow" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations -- opencode run
+rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=./implementation -- opencode run
+rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir --mount implementation=./implementation -- opencode run
+rundown start "Ship auth flow" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=../app -- opencode run
 ```

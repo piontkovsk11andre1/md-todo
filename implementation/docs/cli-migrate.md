@@ -58,8 +58,8 @@ Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `rese
 
 - Bucket paths are resolved from two config layers: `workspace.directories.<bucket>` and `workspace.placement.<bucket>`.
 - Effective bucket path rule: selected root (`sourcedir` or `workdir`) + configured relative bucket directory.
-- Default placement is `sourcedir` for `design`, `specs`, and `migrations` when placement config is omitted.
-- Mixed placement is valid (for example, `design` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`).
+- Default placement is `sourcedir` for `design`, `implementation`, `specs`, `migrations`, and `prediction` when placement config is omitted.
+- Mixed placement is valid (for example, `design` on `sourcedir`, `implementation` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`, `prediction` on `sourcedir`).
 - In linked mode, `sourcedir` maps to the resolved linked workspace, while `workdir` stays at the invocation directory.
 - If any two buckets resolve to the same absolute path (including across different roots), command resolution fails with a placement conflict error.
 
@@ -70,13 +70,17 @@ Mixed-placement example:
   "workspace": {
     "directories": {
       "design": "design",
+      "implementation": "implementation",
       "specs": "specs",
-      "migrations": "migrations"
+      "migrations": "migrations",
+      "prediction": "prediction"
     },
     "placement": {
       "design": "sourcedir",
+      "implementation": "sourcedir",
       "specs": "workdir",
-      "migrations": "sourcedir"
+      "migrations": "sourcedir",
+      "prediction": "sourcedir"
     }
   }
 }
@@ -88,8 +92,10 @@ Linked workspace example (resolved roots):
 - resolved workspace (`sourcedir`): `/Users/alex/platform-core`
 - effective paths:
   - design -> `/Users/alex/platform-core/design`
+  - implementation -> `/Users/alex/platform-core/implementation`
   - specs -> `/Users/alex/client-a/specs`
   - migrations -> `/Users/alex/platform-core/migrations`
+  - prediction -> `/Users/alex/platform-core/prediction`
 
 Examples:
 
