@@ -54,16 +54,16 @@ Workspace selection notes (`migrate`, `design release`, `design diff`):
 - If link metadata has multiple records and no default, command resolution is ambiguous and the command fails with candidate paths.
 - Use `--workspace <dir>` to select the effective workspace explicitly (relative to invocation directory).
 
-Prediction workspace placement notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
+Prediction workspace routing notes (`migrate`, `design`, `test`, `plan`, `research`, `run` prompt context):
 
-- Bucket paths are resolved from two config layers: `workspace.directories.<bucket>` and `workspace.placement.<bucket>`.
-- Effective bucket path rule: selected root (`sourcedir` or `workdir`) + configured relative bucket directory.
-- Default placement is `sourcedir` for `design`, `implementation`, `specs`, `migrations`, and `prediction` when placement config is omitted.
-- Mixed placement is valid (for example, `design` on `sourcedir`, `implementation` on `sourcedir`, `specs` on `workdir`, `migrations` on `sourcedir`, `prediction` on `sourcedir`).
-- In linked mode, `sourcedir` maps to the resolved linked workspace, while `workdir` stays at the invocation directory.
-- If any two buckets resolve to the same absolute path (including across different roots), command resolution fails with a placement conflict error.
+- Logical roots (`design`, `implementation`, `specs`, `migrations`, `prediction`) resolve to authoritative absolute targets before prompt rendering.
+- Prompt/runtime consumers should treat resolved `workspace*Path` values as canonical and should not recompute paths from `workspaceDir` + bucket names.
+- If present, `workspaceMountSummary` is the canonical routing map for logical-path resolution, including nested overrides.
+- Nested mount overrides are valid (for example `implementation/generated` routed separately from `implementation`).
+- In linked mode, `workspaceDir` may differ from `invocationDir`; resolved absolute targets remain authoritative in both modes.
+- If any two required logical roots resolve to the same absolute path, command resolution fails with a workspace routing conflict error.
 
-Mixed-placement example:
+Legacy placement compatibility example:
 
 ```json
 {
@@ -86,6 +86,8 @@ Mixed-placement example:
 }
 ```
 
+The placement map above remains supported for transition-era compatibility; runtime prompt routing is still based on resolved absolute workspace targets.
+
 Linked workspace example (resolved roots):
 
 - invocation (`workdir`): `/Users/alex/client-a`
@@ -96,6 +98,17 @@ Linked workspace example (resolved roots):
   - specs -> `/Users/alex/client-a/specs`
   - migrations -> `/Users/alex/platform-core/migrations`
   - prediction -> `/Users/alex/platform-core/prediction`
+
+Bare control workspace example (major content mounted elsewhere):
+
+- invocation: `/Users/alex/app`
+- control workspace: `/Users/alex/control`
+- effective paths:
+  - design -> `/Users/alex/docs/design`
+  - implementation -> `/Users/alex/app`
+  - specs -> `/Users/alex/qa/specs`
+  - migrations -> `/Users/alex/control/migrations`
+  - prediction -> `/Users/alex/control/prediction`
 
 Examples:
 

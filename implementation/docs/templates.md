@@ -201,16 +201,12 @@ Built-in worker-facing templates include:
   - `{{workspaceSpecsDir}}`
   - `{{workspaceMigrationsDir}}`
   - `{{workspacePredictionDir}}`
-  - `{{workspaceDesignPlacement}}`
-  - `{{workspaceImplementationPlacement}}`
-  - `{{workspaceSpecsPlacement}}`
-  - `{{workspaceMigrationsPlacement}}`
-  - `{{workspacePredictionPlacement}}`
   - `{{workspaceDesignPath}}`
   - `{{workspaceImplementationPath}}`
   - `{{workspaceSpecsPath}}`
   - `{{workspaceMigrationsPath}}`
   - `{{workspacePredictionPath}}`
+  - `{{workspaceMountSummary}}`
 - A `## Variables` section that renders `{{userVariables}}`.
 
 These workspace fields are available in worker-facing prompt paths (`run`, `discuss`,
@@ -221,34 +217,35 @@ phase prompts when those phases are active).
 
 All workspace-context fields are runtime-injected as absolute normalized paths/values:
 
-Placement term contract used across config, CLI docs, and prompt variables:
+Authoritative routing contract:
 
-- `sourcedir`: effective workspace/source directory chosen by command resolution.
-- `workdir`: invocation directory where the command was launched.
-
-In non-linked mode, both terms resolve to the same absolute path. In linked mode, they may differ.
+- Treat resolved absolute `workspace*Path` values as canonical.
+- Do not reconstruct paths from `workspaceDir` + directory names.
+- If `{{workspaceMountSummary}}` is present, treat it as the canonical logical-path routing map.
+- Logical paths can resolve outside both `workspaceDir` and `invocationDir` when mounts target external directories.
 
 | Variable | Meaning |
 | --- | --- |
 | `{{invocationDir}}` | Absolute directory where the CLI command was invoked. |
-| `{{workspaceDir}}` | Absolute effective workspace directory used for execution/source resolution. |
+| `{{workspaceDir}}` | Absolute effective control workspace directory used for config and command resolution. |
 | `{{workspaceLinkPath}}` | Absolute path to `.rundown/workspace.link` when linked workspace mode is active; otherwise empty. |
 | `{{isLinkedWorkspace}}` | String boolean: `"true"` when linked mode is active, otherwise `"false"`. |
-| `{{workspaceDesignDir}}` | Project-relative design workspace directory from prediction workspace config (default: `design`). |
-| `{{workspaceImplementationDir}}` | Project-relative implementation workspace directory from prediction workspace config (default: `implementation`). |
-| `{{workspaceSpecsDir}}` | Project-relative specs workspace directory from prediction workspace config (default: `specs`). |
-| `{{workspaceMigrationsDir}}` | Project-relative migrations workspace directory from prediction workspace config (default: `migrations`). |
-| `{{workspacePredictionDir}}` | Project-relative prediction workspace directory from prediction workspace config (default: `prediction`). |
-| `{{workspaceDesignPlacement}}` | Placement mode for design bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
-| `{{workspaceImplementationPlacement}}` | Placement mode for implementation bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
-| `{{workspaceSpecsPlacement}}` | Placement mode for specs bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
-| `{{workspaceMigrationsPlacement}}` | Placement mode for migrations bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
-| `{{workspacePredictionPlacement}}` | Placement mode for prediction bucket: `sourcedir` or `workdir` (default: `sourcedir`). |
-| `{{workspaceDesignPath}}` | Absolute path to effective design bucket (`workspaceDesignDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
-| `{{workspaceImplementationPath}}` | Absolute path to effective implementation bucket (`workspaceImplementationDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
-| `{{workspaceSpecsPath}}` | Absolute path to effective specs bucket (`workspaceSpecsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
-| `{{workspaceMigrationsPath}}` | Absolute path to effective migrations bucket (`workspaceMigrationsDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
-| `{{workspacePredictionPath}}` | Absolute path to effective prediction bucket (`workspacePredictionDir` resolved under `workspaceDir` for `sourcedir`, or `invocationDir` for `workdir`). |
+| `{{workspaceDesignDir}}` | Logical design root name from workspace config (default: `design`). |
+| `{{workspaceImplementationDir}}` | Logical implementation root name from workspace config (default: `implementation`). |
+| `{{workspaceSpecsDir}}` | Logical specs root name from workspace config (default: `specs`). |
+| `{{workspaceMigrationsDir}}` | Logical migrations root name from workspace config (default: `migrations`). |
+| `{{workspacePredictionDir}}` | Logical prediction root name from workspace config (default: `prediction`). |
+| `{{workspaceDesignPath}}` | Resolved absolute target for logical `design`. |
+| `{{workspaceImplementationPath}}` | Resolved absolute target for logical `implementation`. |
+| `{{workspaceSpecsPath}}` | Resolved absolute target for logical `specs`. |
+| `{{workspaceMigrationsPath}}` | Resolved absolute target for logical `migrations`. |
+| `{{workspacePredictionPath}}` | Resolved absolute target for logical `prediction`. |
+| `{{workspaceMountSummary}}` | JSON summary of resolved logical-path mounts (routing map used to resolve logical paths and nested overrides). |
+| `{{workspaceDesignPlacement}}` | Legacy compatibility placement for design (`sourcedir`/`workdir`) when placement config is in use. |
+| `{{workspaceImplementationPlacement}}` | Legacy compatibility placement for implementation (`sourcedir`/`workdir`) when placement config is in use. |
+| `{{workspaceSpecsPlacement}}` | Legacy compatibility placement for specs (`sourcedir`/`workdir`) when placement config is in use. |
+| `{{workspaceMigrationsPlacement}}` | Legacy compatibility placement for migrations (`sourcedir`/`workdir`) when placement config is in use. |
+| `{{workspacePredictionPlacement}}` | Legacy compatibility placement for prediction (`sourcedir`/`workdir`) when placement config is in use. |
 
 Fallback semantics are deterministic:
 
@@ -259,49 +256,62 @@ Fallback semantics are deterministic:
 - Stale/broken link targets: values fall back to non-linked semantics so prompts do not
   claim a linked workspace when resolution is invalid.
 
-Placement behavior notes:
+Mount behavior notes:
 
-- `workspaceDesignPath`, `workspaceImplementationPath`, `workspaceSpecsPath`, `workspaceMigrationsPath`, and `workspacePredictionPath` are computed from both configured bucket directory names and bucket placement modes.
-- Default placement for all buckets is `sourcedir` when `workspace.placement` keys are omitted.
-- Mixed placement is supported and represented explicitly via `workspace*Placement` variables.
-- Prompt consumers should treat the resolved `workspace*Path` variables as authoritative instead of recomputing paths.
+- `workspaceDesignPath`, `workspaceImplementationPath`, `workspaceSpecsPath`, `workspaceMigrationsPath`, and `workspacePredictionPath` are resolved absolute mount targets.
+- Nested logical prefixes can override parent roots (for example `implementation/generated` can route differently from `implementation`).
+- Prompt consumers should treat resolved `workspace*Path` values and `workspaceMountSummary` as authoritative routing data.
+- Legacy placement variables remain available for transition-era templates, but are compatibility metadata and not the primary routing contract.
 
 Workspace-context keys are authoritative runtime fields and cannot be overridden by
 user-provided `--var` or `--vars-file` values.
 
-### Placement examples
+### Workspace routing examples
 
-Mixed placement (non-linked workspace where `invocationDir === workspaceDir`):
+Local default workspace (single-root, no link):
 
 | Variable | Example value |
 | --- | --- |
-| `{{workspaceDesignPlacement}}` | `sourcedir` |
-| `{{workspaceImplementationPlacement}}` | `sourcedir` |
-| `{{workspaceSpecsPlacement}}` | `workdir` |
-| `{{workspaceMigrationsPlacement}}` | `sourcedir` |
-| `{{workspacePredictionPlacement}}` | `sourcedir` |
+| `{{invocationDir}}` | `/repo` |
+| `{{workspaceDir}}` | `/repo` |
+| `{{isLinkedWorkspace}}` | `false` |
 | `{{workspaceDesignPath}}` | `/repo/design` |
 | `{{workspaceImplementationPath}}` | `/repo/implementation` |
 | `{{workspaceSpecsPath}}` | `/repo/specs` |
 | `{{workspaceMigrationsPath}}` | `/repo/migrations` |
 | `{{workspacePredictionPath}}` | `/repo/prediction` |
 
-Mixed placement (linked workspace where roots differ):
+Linked workspace (control and invocation directories differ):
 
 | Variable | Example value |
 | --- | --- |
 | `{{invocationDir}}` | `/work/client-a` |
 | `{{workspaceDir}}` | `/work/platform-core` |
-| `{{workspaceDesignPlacement}}` | `sourcedir` |
-| `{{workspaceImplementationPlacement}}` | `sourcedir` |
-| `{{workspaceSpecsPlacement}}` | `workdir` |
-| `{{workspaceMigrationsPlacement}}` | `sourcedir` |
-| `{{workspacePredictionPlacement}}` | `sourcedir` |
+| `{{workspaceLinkPath}}` | `/work/client-a/.rundown/workspace.link` |
+| `{{isLinkedWorkspace}}` | `true` |
 | `{{workspaceDesignPath}}` | `/work/platform-core/design` |
 | `{{workspaceImplementationPath}}` | `/work/platform-core/implementation` |
-| `{{workspaceSpecsPath}}` | `/work/client-a/specs` |
-| `{{workspaceMigrationsPath}}` | `/work/platform-core/migrations` |
-| `{{workspacePredictionPath}}` | `/work/platform-core/prediction` |
+
+Bare control workspace (all major content mounted elsewhere):
+
+| Variable | Example value |
+| --- | --- |
+| `{{invocationDir}}` | `/work/app` |
+| `{{workspaceDir}}` | `/work/control` |
+| `{{workspaceDesignPath}}` | `/work/docs/design` |
+| `{{workspaceImplementationPath}}` | `/work/app` |
+| `{{workspaceSpecsPath}}` | `/work/qa/specs` |
+| `{{workspaceMigrationsPath}}` | `/work/control/migrations` |
+| `{{workspacePredictionPath}}` | `/work/control/prediction` |
+
+Nested override (`implementation/generated` routed separately):
+
+| Variable | Example value |
+| --- | --- |
+| `{{workspaceImplementationPath}}` | `/work/app` |
+| `{{workspaceMountSummary}}` | `{"mounts":[{"logicalPath":"implementation","absoluteTargetPath":"/work/app"},{"logicalPath":"implementation/generated","absoluteTargetPath":"/work/app-generated"}]}` |
+
+In this case, consumers should resolve files under logical `implementation/generated/**` from the nested mount entry, not by concatenating `workspaceImplementationPath` with `generated`.
 
 `{{userVariables}}` is a formatted dump of all extra template variables (merged from
 `--vars-file` and `--var`, with `--var` winning on conflicts).

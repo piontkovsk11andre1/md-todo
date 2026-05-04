@@ -513,3 +513,59 @@ rundown migrate down 1 --dir ./migrations -- opencode run
 `migrate` intentionally excludes design-revision actions; use `rd design release` and `rd design diff` for revision lifecycle work.
 
 If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), `migrate`/`design` commands fail with candidate guidance and require `--workspace <dir>`.
+
+## 23. Mounted routing examples (local, linked, bare control)
+
+Local default workspace (no link, single root):
+
+```text
+invocationDir=/repo
+workspaceDir=/repo
+workspaceDesignPath=/repo/design
+workspaceImplementationPath=/repo/implementation
+workspaceSpecsPath=/repo/specs
+workspaceMigrationsPath=/repo/migrations
+workspacePredictionPath=/repo/prediction
+```
+
+Linked workspace (control workspace differs from invocation directory):
+
+```text
+invocationDir=/work/client-a
+workspaceDir=/work/platform-core
+isLinkedWorkspace=true
+workspaceDesignPath=/work/platform-core/design
+workspaceImplementationPath=/work/platform-core/implementation
+workspaceSpecsPath=/work/client-a/specs
+workspaceMigrationsPath=/work/platform-core/migrations
+workspacePredictionPath=/work/platform-core/prediction
+```
+
+Bare control workspace with mounted content:
+
+```bash
+rundown start "Adopt existing app" --dir ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run
+```
+
+Resulting routing shape:
+
+```text
+workspaceDir=/work/control
+workspaceDesignPath=/work/docs/design
+workspaceImplementationPath=/work/app
+workspaceSpecsPath=/work/qa/specs
+workspaceMigrationsPath=/work/control/migrations
+workspacePredictionPath=/work/control/prediction
+```
+
+Nested mount override example:
+
+```bash
+rundown start "Adopt generated output" --dir ../control --mount implementation=. --mount implementation/generated=./generated -- opencode run
+```
+
+Runtime prompt contract for these scenarios:
+
+1. `workspace*Path` values are already resolved absolute targets and are authoritative.
+2. Do not recompute paths from `workspaceDir` and logical directory names.
+3. When present, `workspaceMountSummary` is the canonical logical-path routing map.
