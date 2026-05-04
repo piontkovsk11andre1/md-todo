@@ -36,6 +36,11 @@ Options:
 - Supports `make`-phase options for bootstrap (`--scan-count`, `--dry-run`, `--print-prompt`, `--vars-file`, `--var`, `--worker`, etc.).
 - Supports run-like execution options for the final phase (`--sort`, `--verify/--no-verify`, `--repair-attempts`, `--commit`, `--on-complete`, `--on-fail`, `--redo`, `--clean`, `--rounds`, and related flags).
 
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
+
 Examples:
 
 ```bash

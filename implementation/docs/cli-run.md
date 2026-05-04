@@ -61,6 +61,7 @@ Options:
 - `--reset-after`: Reset completion state after processing so tasks can be run again.
 - `--clean`: Shorthand for `--redo --reset-after`.
 - `--rounds <n>`: Repeat clean cycles `N` times (default: `1`).
+- `--compact-before-exit`: Run post-success compaction as a follow-up step before command exit.
 - `--force-unlock`: Break stale source lockfiles before acquiring run locks.
 - `--worker <pattern>`: Optional worker pattern override (alternative to `-- <command>`).
 - `--ignore-cli-block`: Disable execution of `cli` fenced blocks during prompt expansion.

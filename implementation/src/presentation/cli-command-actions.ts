@@ -585,6 +585,7 @@ export function createRunCommandAction({
     return getApp().runTask({
       source,
       ...workerWorkspaceRuntimeOptions,
+      autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       mode,
       workerPattern,
       sortMode,
@@ -2157,6 +2158,7 @@ export function createDoCommandAction({
     return app.runTask({
       source: targetMarkdownFile,
       ...workspaceRuntimeOptions,
+      autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       mode,
       workerPattern: sharedWorkerPattern,
       sortMode: runSortMode,

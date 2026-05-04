@@ -35,6 +35,11 @@ Options:
 - Supports the same run-like options as `rundown run` (verification/repair, commit/hook, output, vars, lock, and worker options).
 - `--all`, `--clean`, and `--cache-cli-blocks` are always enforced by `call`; user-supplied values for those flags are ignored.
 
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
+
 Behavior notes:
 
 - Explicit user-supplied values for `--all`, `--clean`, and `--cache-cli-blocks` are ignored because `call` enforces them.

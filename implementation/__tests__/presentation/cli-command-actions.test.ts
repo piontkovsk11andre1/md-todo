@@ -1589,6 +1589,97 @@ describe("verification exit code propagation", () => {
   });
 });
 
+describe("run/do auto-compact options", () => {
+  it("forwards compact-before-exit flag to runTask", async () => {
+    const runTask = vi.fn(async () => 0);
+    const app = { runTask } as unknown as CliApp;
+    const action = createRunCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      runnerModes: ["wait"],
+    });
+
+    const exitCode = await action("tasks.md", {
+      compactBeforeExit: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      autoCompact: { beforeExit: true },
+    }));
+  });
+
+  it("uses config autoCompact.beforeExit default for run when flag is omitted", async () => {
+    const runTask = vi.fn(async () => 0);
+    const app = { runTask } as unknown as CliApp;
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-run-auto-compact-"));
+    const configDir = path.join(tempRoot, ".rundown");
+
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, "config.json"), JSON.stringify({
+      autoCompact: {
+        beforeExit: true,
+      },
+    }, null, 2) + "\n", "utf8");
+
+    try {
+      const action = createRunCommandAction({
+        getApp: () => app,
+        getWorkerFromSeparator: () => undefined,
+        runnerModes: ["wait"],
+        getInvocationArgv: () => [
+          "--config-dir",
+          configDir,
+          "run",
+          "tasks.md",
+        ],
+      });
+
+      const exitCode = await action("tasks.md", {});
+
+      expect(exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        autoCompact: { beforeExit: true },
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("forwards compact-before-exit to do execution phase", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-do-auto-compact-"));
+    const targetFile = path.join(tempRoot, "migrations", "seed.md");
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+
+    const researchTask = vi.fn(async () => 0);
+    const planTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const app = { researchTask, planTask, runTask } as unknown as CliApp;
+    const action = createDoCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      makeModes: ["wait"],
+      getInvocationArgv: () => ["do"],
+    });
+
+    try {
+      const exitCode = await action("Run rollout preparation checklist", targetFile, {
+        compactBeforeExit: true,
+      });
+
+      expect(exitCode).toBe(0);
+      expect(runTask).toHaveBeenCalledTimes(1);
+      expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        autoCompact: { beforeExit: true },
+      }));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("createMaterializeCommandAction", () => {
   it("matches run --all --revertable core action fields", async () => {
     const runViaRunTask = vi.fn(async (_request: Record<string, unknown>) => 0);

@@ -29,6 +29,11 @@ Options:
 - Supports the same options as `rundown run`.
 - `--all` behavior is implicit; you do not need to pass `--all` when using `all`.
 
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
+
 Examples:
 
 ```bash

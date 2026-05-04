@@ -34,6 +34,11 @@ Options:
 - `materialize` accepts the same run-like options as `run` (`--verify`, `--repair-attempts`, `--sort`, `--trace`, `--vars-file`, `--worker`, and related flags).
 - Explicit user-supplied values for `--all` and `--revertable` are ignored because `materialize` enforces them.
 
+Auto-compact defaults:
+
+- You can opt in persistently by setting `autoCompact.beforeExit=true` in config.
+- Defaults remain off unless explicitly enabled by config or `--compact-before-exit`.
+
 Examples:
 
 ```bash

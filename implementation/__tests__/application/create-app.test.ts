@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  EXIT_CODE_FAILURE,
+  EXIT_CODE_SUCCESS,
+} from "../../src/domain/exit-codes.js";
+import {
   createApp,
   type AppPorts,
 } from "../../src/create-app.js";
@@ -307,6 +311,106 @@ describe("createApp", () => {
     expect(fileLock.acquire).not.toHaveBeenCalled();
     expect(fileLock.release).not.toHaveBeenCalled();
     expect(fileLock.forceRelease).not.toHaveBeenCalled();
+  });
+
+  it("runs post-success auto-compaction for runTask when enabled", async () => {
+    const runTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+    const compactTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+
+    const app = createApp({
+      useCaseFactories: {
+        runTask: () => runTaskUseCase,
+        compactTask: () => compactTaskUseCase,
+      },
+    });
+
+    const code = await app.runTask({
+      source: "tasks.md",
+      mode: "wait",
+      workerPattern: { command: ["opencode", "run"], usesBootstrap: false, usesFile: false, appendFile: true },
+      sortMode: "name-sort",
+      verify: true,
+      onlyVerify: false,
+      forceExecute: false,
+      forceAttempts: 2,
+      noRepair: false,
+      repairAttempts: 1,
+      dryRun: false,
+      printPrompt: false,
+      keepArtifacts: false,
+      varsFileOption: undefined,
+      cliTemplateVarArgs: [],
+      commitAfterComplete: false,
+      commitMode: "per-task",
+      runAll: false,
+      redo: false,
+      resetAfter: false,
+      clean: false,
+      rounds: 1,
+      showAgentOutput: false,
+      trace: false,
+      traceOnly: false,
+      forceUnlock: false,
+      ignoreCliBlock: false,
+      verbose: false,
+      autoCompact: { beforeExit: true },
+    });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(runTaskUseCase).toHaveBeenCalledTimes(1);
+    expect(compactTaskUseCase).toHaveBeenCalledTimes(1);
+    expect(compactTaskUseCase).toHaveBeenCalledWith(expect.objectContaining({
+      target: "all",
+      dryRun: false,
+    }));
+  });
+
+  it("returns failure when runTask succeeds but requested auto-compaction fails", async () => {
+    const runTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+    const compactTaskUseCase = vi.fn(async () => EXIT_CODE_FAILURE);
+
+    const app = createApp({
+      useCaseFactories: {
+        runTask: () => runTaskUseCase,
+        compactTask: () => compactTaskUseCase,
+      },
+    });
+
+    const code = await app.runTask({
+      source: "tasks.md",
+      mode: "wait",
+      workerPattern: { command: ["opencode", "run"], usesBootstrap: false, usesFile: false, appendFile: true },
+      sortMode: "name-sort",
+      verify: true,
+      onlyVerify: false,
+      forceExecute: false,
+      forceAttempts: 2,
+      noRepair: false,
+      repairAttempts: 1,
+      dryRun: false,
+      printPrompt: false,
+      keepArtifacts: false,
+      varsFileOption: undefined,
+      cliTemplateVarArgs: [],
+      commitAfterComplete: false,
+      commitMode: "per-task",
+      runAll: false,
+      redo: false,
+      resetAfter: false,
+      clean: false,
+      rounds: 1,
+      showAgentOutput: false,
+      trace: false,
+      traceOnly: false,
+      forceUnlock: false,
+      ignoreCliBlock: false,
+      verbose: false,
+      autoCompact: { beforeExit: true },
+    });
+
+    expect(code).toBe(EXIT_CODE_FAILURE);
+    expect(runTaskUseCase).toHaveBeenCalledTimes(1);
+    expect(compactTaskUseCase).toHaveBeenCalledTimes(1);
   });
 });
 

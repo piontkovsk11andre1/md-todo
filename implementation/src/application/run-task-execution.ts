@@ -616,6 +616,9 @@ export interface RunTaskOptions {
   cacheCliBlocks?: boolean;
   verbose: boolean;
   taskTemplateOverride?: string;
+  autoCompact?: {
+    beforeExit?: boolean;
+  };
   onTerminalStop?: (signal: TerminalStopSignal) => void;
 }
 

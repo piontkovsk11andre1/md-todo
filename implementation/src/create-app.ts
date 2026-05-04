@@ -1003,6 +1003,26 @@ function createAppFromFactories(
     });
   };
 
+  const resolveWorkspaceOverrideForAutoCompact = (input: {
+    workspace?: string;
+    cwd?: string;
+    workspaceDir?: string;
+  }): string | undefined => {
+    if (typeof input.workspace === "string" && input.workspace.trim().length > 0) {
+      return input.workspace;
+    }
+
+    if (typeof input.workspaceDir === "string" && input.workspaceDir.trim().length > 0) {
+      return input.workspaceDir;
+    }
+
+    if (typeof input.cwd === "string" && input.cwd.trim().length > 0) {
+      return input.cwd;
+    }
+
+    return undefined;
+  };
+
   const trackInFlightRun = (taskRun: Promise<number>): Promise<number> => {
     inFlightRunTasks.add(taskRun);
     void taskRun.finally(() => {
@@ -1013,7 +1033,18 @@ function createAppFromFactories(
 
   return {
     helpTask,
-    runTask: (options) => trackInFlightRun(runTask(options)),
+    runTask: (options) => trackInFlightRun((async () => {
+      const primaryExitCode = await runTask(options);
+      return runPostSuccessAutoCompact({
+        primaryExitCode,
+        autoCompact: options.autoCompact,
+        workspace: resolveWorkspaceOverrideForAutoCompact({
+          workspace: undefined,
+          cwd: options.cwd,
+          workspaceDir: options.workspaceDir,
+        }),
+      });
+    })()),
     discussTask,
     viewMemory,
     validateMemory,
