@@ -69,7 +69,13 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ]),
     ], workspace);
 
-    expect(result.code).toBe(0);
+    const debugOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(result.code, debugOutput).toBe(0);
     expect(fs.existsSync(path.join(workspace, "changesets", formatMigrationFilename(2, "configured-dir-migration")))).toBe(true);
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "configured-dir-migration")))).toBe(false);
   });
@@ -514,7 +520,80 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision). Edit design/current/ and run rundown design release to create the next revision.");
+    expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision). Edit design/current/ and run rundown migrate to release and plan the next revision.");
+  });
+
+  it("migrate preflight releases changed current design before planning", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        commands: {
+          research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+          plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+
+    const rev1MetaPath = path.join(workspace, "docs", "rev.1.meta.json");
+    const rev1Meta = JSON.parse(fs.readFileSync(rev1MetaPath, "utf-8")) as {
+      createdAt: string;
+      plannedAt?: string | null;
+      migrations?: string[];
+    };
+    rev1Meta.plannedAt = rev1Meta.createdAt;
+    rev1Meta.migrations = ["migrations/1. Initialize.md"];
+    fs.writeFileSync(rev1MetaPath, JSON.stringify(rev1Meta, null, 2) + "\n", "utf-8");
+
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Design\n\nDraft changed after rev.1.\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["preflight-release-check"]),
+    ], workspace);
+
+    const debugOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(result.code, debugOutput).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(true);
+    const rev2Meta = readRevisionMeta(workspace, "docs", 2);
+    expect(rev2Meta.plannedAt).toBeTypeOf("string");
+  });
+
+  it("migrate bootstraps rev.0 from design/current when no released revisions exist", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Target\n\nInitial baseline\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.0", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.0.meta.json"))).toBe(true);
   });
 
   it("migrate skips re-planning on re-run", async () => {
@@ -1269,7 +1348,7 @@ function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): 
   fs.mkdirSync(path.join(designRoot, "rev.0"), { recursive: true });
   fs.mkdirSync(path.join(designRoot, "rev.1"), { recursive: true });
 
-  fs.writeFileSync(path.join(designRoot, "current", "Design.md"), "# Design\n\nWorking draft in current/.\n", "utf-8");
+  fs.writeFileSync(path.join(designRoot, "current", "Design.md"), "# Design\n\nReleased rev.1 design.\n", "utf-8");
   fs.writeFileSync(path.join(designRoot, "rev.0", "Design.md"), "# Design\n\nBaseline design.\n", "utf-8");
   fs.writeFileSync(path.join(designRoot, "rev.1", "Design.md"), "# Design\n\nReleased rev.1 design.\n", "utf-8");
 
@@ -1892,7 +1971,9 @@ function buildPlannerPromptCaptureWorkerScript(): string {
     "    `- [ ] Cover design diff paths: ${coverageLine}.`,",
     "  ].join('\\n');",
     "  fs.writeFileSync(path.join(draftDir,`${migrationNumber}. Prompt Capture Migration.md`),draftBody+'\\n','utf-8');",
-    "  fs.writeFileSync(capturedPath,prompt,'utf-8');",
+    "  if(!fs.existsSync(capturedPath)){",
+    "    fs.writeFileSync(capturedPath,prompt,'utf-8');",
+    "  }",
     "  console.log('drafted migration files');",
     "  process.exit(0);",
     "}",

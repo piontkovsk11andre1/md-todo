@@ -39,6 +39,7 @@ import {
   formatRevisionDesignContext,
   markRevisionPlanned,
   prepareDesignRevisionDiffContext,
+  saveDesignRevisionSnapshot,
   type DesignRevisionDiffContext,
 } from "./design-context.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
@@ -393,6 +394,16 @@ async function runMigrateLoop(input: {
   }
   let processedAnyRevision = false;
 
+  const preflightExitCode = runDesignRevisionReleasePreflight({
+    fileSystem: dependencies.fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    emit,
+  });
+  if (preflightExitCode !== EXIT_CODE_SUCCESS) {
+    return preflightExitCode;
+  }
+
   for (;;) {
     const targetRevision = findLowestUnplannedRevision(
       dependencies.fileSystem,
@@ -413,12 +424,12 @@ async function runMigrateLoop(input: {
             message:
               "Migrations are caught up to "
               + highestReleasedRevision.name
-              + " (highest released revision). Edit design/current/ and run rundown design release to create the next revision.",
+              + " (highest released revision). Edit design/current/ and run rundown migrate to release and plan the next revision.",
           });
         } else {
           emit({
             kind: "info",
-            message: "No released design revisions yet. Run rundown design release to create rev.0.",
+            message: "No released design revisions yet. Add design/current/ and run rundown migrate to bootstrap rev.0.",
           });
         }
       }
@@ -596,6 +607,38 @@ async function runMigrateLoop(input: {
       targetRevision.name,
       promotedMigrationMetadataPaths,
     );
+  }
+}
+
+function runDesignRevisionReleasePreflight(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  emit: ApplicationOutputPort["emit"];
+}): number {
+  const { fileSystem, workspaceRoot, invocationRoot, emit } = input;
+
+  try {
+    const saveResult = saveDesignRevisionSnapshot(fileSystem, workspaceRoot, {
+      invocationRoot,
+    });
+    if (saveResult.kind === "saved") {
+      emit({
+        kind: "info",
+        message: "Released design revision " + saveResult.revision.name + " from current design before migration planning.",
+      });
+    }
+    return EXIT_CODE_SUCCESS;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (
+      errorMessage.includes("Design working directory is missing:")
+      || errorMessage.includes("ENOENT")
+    ) {
+      return EXIT_CODE_SUCCESS;
+    }
+    emit({ kind: "error", message: error instanceof Error ? error.message : String(error) });
+    return EXIT_CODE_FAILURE;
   }
 }
 
