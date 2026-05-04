@@ -484,6 +484,36 @@ describe("project-templates", () => {
     );
   });
 
+  it("expands each override against its own bundled default only", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("execute.md")) {
+          return "execute-prefix\n{{defaultTemplate}}\nexecute-suffix";
+        }
+        if (filePath.endsWith("help.md")) {
+          return "help-prefix\n{{defaultTemplate}}\nhelp-suffix";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.task).toBe(
+      ["execute-prefix", DEFAULT_TASK_TEMPLATE, "execute-suffix"].join("\n"),
+    );
+    expect(templates.help).toBe(
+      ["help-prefix", DEFAULT_HELP_TEMPLATE, "help-suffix"].join("\n"),
+    );
+    expect(templates.task).not.toContain(DEFAULT_HELP_TEMPLATE);
+    expect(templates.help).not.toContain(DEFAULT_TASK_TEMPLATE);
+  });
+
   it("only resolves default placeholder and leaves runtime placeholders intact", () => {
     const configDir = "/workspace/.rundown";
     const templateLoader: TemplateLoader = {
