@@ -407,4 +407,102 @@ describe("project-templates", () => {
     expect(templates.help).toBe(DEFAULT_HELP_TEMPLATE);
     expect(templates.queryExecute).toBe(DEFAULT_QUERY_EXECUTION_TEMPLATE);
   });
+
+  it("keeps full override behavior when default placeholder is not present", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("execute.md")) {
+          return "Repository-specific execute instructions only.";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.task).toBe("Repository-specific execute instructions only.");
+  });
+
+  it("expands default placeholder with prefix and suffix content", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("execute.md")) {
+          return [
+            "Repo preface.",
+            "",
+            "{{defaultTemplate}}",
+            "",
+            "Repo postscript.",
+          ].join("\n");
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.task).toBe(
+      [
+        "Repo preface.",
+        "",
+        DEFAULT_TASK_TEMPLATE,
+        "",
+        "Repo postscript.",
+      ].join("\n"),
+    );
+  });
+
+  it("expands all default placeholder occurrences in one template", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("help.md")) {
+          return "before\n{{defaultTemplate}}\nmid\n{{defaultTemplate}}\nafter";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.help).toBe(
+      `before\n${DEFAULT_HELP_TEMPLATE}\nmid\n${DEFAULT_HELP_TEMPLATE}\nafter`,
+    );
+  });
+
+  it("only resolves default placeholder and leaves runtime placeholders intact", () => {
+    const configDir = "/workspace/.rundown";
+    const templateLoader: TemplateLoader = {
+      load: vi.fn((filePath: string) => {
+        if (filePath.endsWith("plan.md")) {
+          return "Header\n{{defaultTemplate}}\nTask: {{task}}\nFooter";
+        }
+        return null;
+      }),
+    };
+
+    const templates = loadProjectTemplatesFromPorts(
+      { configDir, isExplicit: false },
+      templateLoader,
+      path,
+    );
+
+    expect(templates.plan).toContain(DEFAULT_PLAN_TEMPLATE);
+    expect(templates.plan).toContain("Task: {{task}}");
+    expect(templates.plan).not.toContain("{{defaultTemplate}}");
+  });
 });

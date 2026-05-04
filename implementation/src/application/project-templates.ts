@@ -88,6 +88,8 @@ export function loadProjectTemplatesFromPorts(
   templateLoader: TemplateLoader,
   pathOperations: PathOperationsPort,
 ): ProjectTemplates {
+  const DEFAULT_TEMPLATE_PLACEHOLDER = "{{defaultTemplate}}";
+
   // Use only built-in defaults when no project config directory is available.
   if (!configDir) {
     return {
@@ -129,9 +131,13 @@ export function loadProjectTemplatesFromPorts(
   const dir = configDir.configDir;
   const loadTemplateWithFallback = (fileName: string, fallback: string): string => {
     const loadedTemplate = templateLoader.load(pathOperations.join(dir, fileName));
-    return loadedTemplate !== null && loadedTemplate.trim().length > 0
-      ? loadedTemplate
-      : fallback;
+    if (loadedTemplate === null || loadedTemplate.trim().length === 0) {
+      return fallback;
+    }
+
+    return loadedTemplate.includes(DEFAULT_TEMPLATE_PLACEHOLDER)
+      ? loadedTemplate.replaceAll(DEFAULT_TEMPLATE_PLACEHOLDER, fallback)
+      : loadedTemplate;
   };
 
   return {
