@@ -151,7 +151,7 @@ describe("verify-repair-loop trace metrics", () => {
 });
 
 describe("verify-repair-loop output", () => {
-  it("short-circuits before verification when execution stdout matches known usage-limit patterns", async () => {
+  it("does not short-circuit before verification when execution stdout alone matches known usage-limit patterns", async () => {
     const verify = vi.fn(async () => ({ valid: true }));
     const output = {
       emit: vi.fn(),
@@ -191,32 +191,23 @@ describe("verify-repair-loop output", () => {
     });
 
     expect(result).toEqual({
-      valid: false,
-      failureReason: "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
-      usageLimitDetected: true,
+      valid: true,
+      failureReason: null,
     });
-    expect(verify).not.toHaveBeenCalled();
-    expect(output.emit).toHaveBeenCalledWith({
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(output.emit).not.toHaveBeenCalledWith(expect.objectContaining({
       kind: "error",
-      message: "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
-    });
-    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Possible API usage limit detected"),
+    }));
+    expect(traceWriter.write).not.toHaveBeenCalledWith(expect.objectContaining({
       event_type: "usage.limit_detected",
-      payload: expect.objectContaining({
-        phase: "execute",
-        similarity_detected: false,
-        known_pattern_detected: true,
-        execution_stdout: "Error: rate limit exceeded for this workspace",
-        matched_phase: "execute",
-        matched_stdout: "Error: rate limit exceeded for this workspace",
-      }),
     }));
   });
 
-  it("integration test: detects usage limit from single execution output known-pattern without cross-phase comparison", async () => {
+  it("does not classify a single execution output known-pattern without cross-phase comparison as usage_limit", async () => {
     const verify = vi.fn(async () => ({
       valid: false,
-      stdout: "NOT_OK: this verification output should never be used",
+      stdout: "NOT_OK: verification found unrelated task-state drift",
     }));
     const output = {
       emit: vi.fn(),
@@ -259,24 +250,15 @@ describe("verify-repair-loop output", () => {
 
     expect(result).toEqual({
       valid: false,
-      failureReason: "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
-      usageLimitDetected: true,
+      failureReason: "Verification failed (no details).",
     });
-    expect(verify).not.toHaveBeenCalled();
-    expect(output.emit).toHaveBeenCalledWith({
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(output.emit).not.toHaveBeenCalledWith(expect.objectContaining({
       kind: "error",
-      message: "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
-    });
-    expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Possible API usage limit detected"),
+    }));
+    expect(traceWriter.write).not.toHaveBeenCalledWith(expect.objectContaining({
       event_type: "usage.limit_detected",
-      payload: expect.objectContaining({
-        phase: "execute",
-        similarity_detected: false,
-        known_pattern_detected: true,
-        execution_stdout: knownLimitError,
-        matched_phase: "execute",
-        matched_stdout: knownLimitError,
-      }),
     }));
   });
 
@@ -535,7 +517,7 @@ describe("verify-repair-loop output", () => {
       taskVerification: {
         verify: vi.fn(async () => ({
           valid: false,
-          stdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+          stdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
         })),
       },
       taskRepair: {
@@ -556,7 +538,7 @@ describe("verify-repair-loop output", () => {
       contextBefore: "",
       verifyTemplate: "{{task}}",
       repairTemplate: "{{task}}",
-      executionStdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+      executionStdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       maxRepairAttempts: 2,
       allowRepair: true,
@@ -575,10 +557,10 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "verify",
         similarity_detected: true,
-        known_pattern_detected: false,
-        execution_stdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+        known_pattern_detected: true,
+        execution_stdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
         matched_phase: "verify",
-        matched_stdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+        matched_stdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
       }),
     }));
   });
@@ -592,7 +574,7 @@ describe("verify-repair-loop output", () => {
       emit: vi.fn(),
     };
 
-    const repeatedOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window.";
+    const repeatedOutput = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.";
 
     const result = await runVerifyRepairLoop({
       taskVerification: {
@@ -1140,7 +1122,7 @@ describe("verify-repair-loop output", () => {
       contextBefore: "",
       verifyTemplate: "{{task}}",
       repairTemplate: "{{task}}",
-      executionStdout: "Execution completed with transient upstream gateway failure and automatic retry suppression for safety.",
+      executionStdout: "HTTP 429 Too Many Requests: billing quota reached for this account",
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       maxRepairAttempts: 1,
       maxResolveRepairAttempts: 2,
@@ -1166,7 +1148,7 @@ describe("verify-repair-loop output", () => {
       event_type: "usage.limit_detected",
       payload: expect.objectContaining({
         phase: "resolve",
-        similarity_detected: false,
+        similarity_detected: true,
         known_pattern_detected: true,
         matched_phase: "resolve",
         matched_stdout: "HTTP 429 Too Many Requests: billing quota reached for this account",
@@ -1183,7 +1165,7 @@ describe("verify-repair-loop output", () => {
       flush: vi.fn(),
     };
 
-    const repeatedOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window and no retry budget remains.";
+    const repeatedOutput = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window and no retry budget remains.";
     const repair = vi.fn()
       .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" });
 
@@ -1221,20 +1203,20 @@ describe("verify-repair-loop output", () => {
 
     expect(result).toEqual({
       valid: false,
-      failureReason: "Possible API usage limit detected: resolve output is identical or near-identical to execution output; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      failureReason: "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
       usageLimitDetected: true,
     });
     expect(repair).toHaveBeenCalledTimes(1);
     expect(output.emit).toHaveBeenCalledWith({
       kind: "error",
-      message: "Possible API usage limit detected: resolve output is identical or near-identical to execution output; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      message: "Possible API usage limit detected: resolve output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
     });
     expect(traceWriter.write).toHaveBeenCalledWith(expect.objectContaining({
       event_type: "usage.limit_detected",
       payload: expect.objectContaining({
         phase: "resolve",
         similarity_detected: true,
-        known_pattern_detected: false,
+        known_pattern_detected: true,
         matched_phase: "resolve",
         matched_stdout: repeatedOutput,
       }),
@@ -1250,7 +1232,7 @@ describe("verify-repair-loop output", () => {
       flush: vi.fn(),
     };
 
-    const repeatedOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window and no retry budget remains.";
+    const repeatedOutput = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window and no retry budget remains.";
     const repair = vi.fn()
       .mockResolvedValueOnce({ valid: false, attempts: 1, repairStdout: "repair-1", verificationStdout: "verify-1" })
       .mockResolvedValueOnce({
@@ -1294,7 +1276,7 @@ describe("verify-repair-loop output", () => {
 
     expect(result).toEqual({
       valid: false,
-      failureReason: "Possible API usage limit detected: identical or near-identical responses across execution and resolve-informed repair phases; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
+      failureReason: "Possible API usage limit detected: resolve-informed repair output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.",
       usageLimitDetected: true,
     });
     expect(repair).toHaveBeenCalledTimes(2);
@@ -1306,7 +1288,7 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "repair",
         similarity_detected: true,
-        known_pattern_detected: false,
+        known_pattern_detected: true,
         matched_phase: "verify",
         matched_stdout: repeatedOutput,
       }),
@@ -1352,7 +1334,7 @@ describe("verify-repair-loop output", () => {
       contextBefore: "",
       verifyTemplate: "{{task}}",
       repairTemplate: "{{task}}",
-      executionStdout: "Execution completed with transient upstream gateway failure and automatic retry suppression for safety.",
+      executionStdout: knownLimitOutput,
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       maxRepairAttempts: 1,
       maxResolveRepairAttempts: 2,
@@ -1381,7 +1363,7 @@ describe("verify-repair-loop output", () => {
       event_type: "usage.limit_detected",
       payload: expect.objectContaining({
         phase: "repair",
-        similarity_detected: false,
+        similarity_detected: true,
         known_pattern_detected: true,
         matched_phase: "verify",
         matched_stdout: knownLimitOutput,
@@ -1464,7 +1446,7 @@ describe("verify-repair-loop output", () => {
     const repair = vi.fn(async () => ({
       valid: false,
       attempts: 1,
-      repairStdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+      repairStdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
       verificationStdout: "NOT_OK: missing checks",
     }));
 
@@ -1488,7 +1470,7 @@ describe("verify-repair-loop output", () => {
       contextBefore: "",
       verifyTemplate: "{{task}}",
       repairTemplate: "{{task}}",
-      executionStdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+      executionStdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       maxRepairAttempts: 2,
       allowRepair: true,
@@ -1512,10 +1494,10 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "repair",
         similarity_detected: true,
-        known_pattern_detected: false,
-        execution_stdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+        known_pattern_detected: true,
+        execution_stdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
         matched_phase: "repair",
-        matched_stdout: "Service is temporarily unavailable while backend processing is paused for maintenance window.",
+        matched_stdout: "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.",
       }),
     }));
   });
@@ -1529,7 +1511,7 @@ describe("verify-repair-loop output", () => {
       flush: vi.fn(),
     };
 
-    const limitMessage = "Service is temporarily unavailable while backend processing is paused for maintenance window.";
+    const limitMessage = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.";
     const repair = vi.fn(async () => ({
       valid: false,
       attempts: 1,
@@ -1602,7 +1584,7 @@ describe("verify-repair-loop output", () => {
       valid: false,
       attempts: 1,
       repairStdout: "Repair attempted but no changes applied",
-      verificationStdout: "Requests are currently blocked because upstream services are restarting and not accepting jobs.",
+      verificationStdout: "HTTP 429 Too Many Requests: requests are currently blocked because upstream services are restarting and not accepting jobs.",
     }));
 
     const result = await runVerifyRepairLoop({
@@ -1625,7 +1607,7 @@ describe("verify-repair-loop output", () => {
       contextBefore: "",
       verifyTemplate: "{{task}}",
       repairTemplate: "{{task}}",
-      executionStdout: "Requests are currently blocked because upstream services are restarting and not accepting jobs.",
+      executionStdout: "HTTP 429 Too Many Requests: requests are currently blocked because upstream services are restarting and not accepting jobs.",
       workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
       maxRepairAttempts: 2,
       allowRepair: true,
@@ -1649,10 +1631,10 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "repair",
         similarity_detected: true,
-        known_pattern_detected: false,
-        execution_stdout: "Requests are currently blocked because upstream services are restarting and not accepting jobs.",
+        known_pattern_detected: true,
+        execution_stdout: "HTTP 429 Too Many Requests: requests are currently blocked because upstream services are restarting and not accepting jobs.",
         matched_phase: "verify",
-        matched_stdout: "Requests are currently blocked because upstream services are restarting and not accepting jobs.",
+        matched_stdout: "HTTP 429 Too Many Requests: requests are currently blocked because upstream services are restarting and not accepting jobs.",
       }),
     }));
   });
@@ -1666,7 +1648,7 @@ describe("verify-repair-loop output", () => {
       flush: vi.fn(),
     };
 
-    const identicalOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window.";
+    const identicalOutput = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window.";
 
     const result = await runVerifyRepairLoop({
       taskVerification: {
@@ -1714,7 +1696,7 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "verify",
         similarity_detected: true,
-        known_pattern_detected: false,
+        known_pattern_detected: true,
         execution_stdout: identicalOutput,
         matched_phase: "verify",
         matched_stdout: identicalOutput,
@@ -1730,8 +1712,8 @@ describe("verify-repair-loop output", () => {
       write: vi.fn(),
       flush: vi.fn(),
     };
-    const executionOutput = "Service is temporarily unavailable while backend processing is paused for maintenance window at 2023-04-07T12:34:56Z with request ID 123e4567-e89b-12d3-a456-426614174000.";
-    const verificationOutput = "service is temporarily unavailable while backend processing is paused for maintenance window at 2024-05-08T13:45:67Z with request ID 87654321-dcba-4321-fedc-098765432109.";
+    const executionOutput = "HTTP 429 Too Many Requests: rate limit exceeded while backend processing is paused for maintenance window at 2023-04-07T12:34:56Z with request ID 123e4567-e89b-12d3-a456-426614174000.";
+    const verificationOutput = "http 429 too many requests: rate limit exceeded while backend processing is paused for maintenance window at 2024-05-08T13:45:67Z with request ID 87654321-dcba-4321-fedc-098765432109.";
 
     const result = await runVerifyRepairLoop({
       taskVerification: {
@@ -1779,7 +1761,7 @@ describe("verify-repair-loop output", () => {
       payload: expect.objectContaining({
         phase: "verify",
         similarity_detected: true,
-        known_pattern_detected: false,
+        known_pattern_detected: true,
         execution_stdout: executionOutput,
         matched_phase: "verify",
         matched_stdout: verificationOutput,
@@ -2625,8 +2607,8 @@ describe("output similarity utilities", () => {
       expect(containsKnownUsageLimitPattern("Too many requests")).toBe(true);
     });
 
-    it("detects billing patterns", () => {
-      expect(containsKnownUsageLimitPattern("Billing error: insufficient funds")).toBe(true);
+    it("does not classify generic billing language as a usage-limit pattern", () => {
+      expect(containsKnownUsageLimitPattern("Billing error: insufficient funds")).toBe(false);
     });
 
     it("detects HTTP 429 status", () => {

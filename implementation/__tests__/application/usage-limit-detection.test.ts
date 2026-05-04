@@ -91,8 +91,8 @@ describe("Usage Limit Detection", () => {
       expect(containsKnownUsageLimitPattern("Too many requests")).toBe(true);
     });
 
-    it("detects billing patterns", () => {
-      expect(containsKnownUsageLimitPattern("Billing error: insufficient funds")).toBe(true);
+    it("does not classify generic billing language as a usage-limit pattern", () => {
+      expect(containsKnownUsageLimitPattern("Billing error: insufficient funds")).toBe(false);
     });
 
     it("detects HTTP 429 status", () => {

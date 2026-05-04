@@ -11,9 +11,13 @@ describe("classifyWorkerFailure", () => {
   it("classifies usage-limit failures from explicit signals", () => {
     expect(classifyWorkerFailure({ usageLimitDetected: true })).toBe(WORKER_FAILURE_CLASS_USAGE_LIMIT);
     expect(classifyWorkerFailure({ runReason: RUN_REASON_USAGE_LIMIT_DETECTED })).toBe(WORKER_FAILURE_CLASS_USAGE_LIMIT);
+  });
+
+  it("does not classify raw output text alone as usage_limit without an explicit signal", () => {
     expect(classifyWorkerFailure({
+      exitCode: 1,
       message: "HTTP 429 Too Many Requests",
-    })).toBe(WORKER_FAILURE_CLASS_USAGE_LIMIT);
+    })).toBe(WORKER_FAILURE_CLASS_EXECUTION_FAILURE_OTHER);
   });
 
   it("classifies transport-unavailable failures from interrupted execution and transport patterns", () => {

@@ -10,6 +10,7 @@ import type {
   VerificationStore,
 } from "../domain/ports/index.js";
 import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
+import { msg, type LocaleMessages } from "../domain/locale.js";
 import {
   createRepairAttemptEvent,
   createRepairOutcomeEvent,
@@ -23,10 +24,7 @@ import {
   areOutputsSuspiciouslySimilar,
   containsKnownUsageLimitPattern,
 } from "../domain/services/output-similarity.js";
-import { msg, type LocaleMessages } from "../domain/locale.js";
-
 type ArtifactContext = any;
-
 /**
  * Dependency ports required to verify a task and optionally run repair attempts.
  */
@@ -313,11 +311,15 @@ export async function runVerifyRepairLoop(
         continue;
       }
 
+      if (!areOutputsSuspiciouslySimilar(input.executionStdout, output.stdout)) {
+        continue;
+      }
+
       if (containsKnownUsageLimitPattern(output.stdout)) {
         emitUsageLimitDetected({
           phase,
           reason: patternFailureReason,
-          similarityDetected: false,
+          similarityDetected: true,
           knownPatternDetected: true,
           executionStdout: input.executionStdout,
           matchedPhase: output.matchedPhase,
@@ -330,27 +332,6 @@ export async function runVerifyRepairLoop(
         return {
           valid: false,
           failureReason: patternFailureReason,
-          usageLimitDetected: true,
-        };
-      }
-
-      if (areOutputsSuspiciouslySimilar(input.executionStdout, output.stdout)) {
-        emitUsageLimitDetected({
-          phase,
-          reason: similarityFailureReason,
-          similarityDetected: true,
-          knownPatternDetected: false,
-          executionStdout: input.executionStdout,
-          matchedPhase: output.matchedPhase,
-          matchedStdout: output.stdout,
-        });
-        cumulativeFailureReasons.push(similarityFailureReason);
-        emitRepairOutcome(false, totalRepairAttempts);
-        emitVerificationEfficiency();
-        emit({ kind: "error", message: similarityFailureReason });
-        return {
-          valid: false,
-          failureReason: similarityFailureReason,
           usageLimitDetected: true,
         };
       }
@@ -400,33 +381,6 @@ export async function runVerifyRepairLoop(
     }));
   };
 
-  if (
-    shouldRunUsageLimitDetection
-    &&
-    typeof input.executionStdout === "string"
-    && containsKnownUsageLimitPattern(input.executionStdout)
-  ) {
-    const usageLimitFailureReason = "Possible API usage limit detected: execution output matches a known usage-limit or quota error pattern; aborting verify/repair to avoid wasting quota. Please check your API quota and rate-limit status.";
-    emitUsageLimitDetected({
-      phase: "execute",
-      reason: usageLimitFailureReason,
-      similarityDetected: false,
-      knownPatternDetected: true,
-      executionStdout: input.executionStdout,
-      matchedPhase: "execute",
-      matchedStdout: input.executionStdout,
-    });
-    cumulativeFailureReasons.push(usageLimitFailureReason);
-    emitRepairOutcome(false, 0);
-    emitVerificationEfficiency();
-    emit({ kind: "error", message: usageLimitFailureReason });
-    return {
-      valid: false,
-      failureReason: usageLimitFailureReason,
-      usageLimitDetected: true,
-    };
-  }
-
   // Always run one initial verification before considering repairs.
   emit({ kind: "progress", progress: { label: "verify", detail: "initial", current: 1, unit: "attempt" } });
   if (input.verbose) {
@@ -467,17 +421,17 @@ export async function runVerifyRepairLoop(
   if (
     shouldRunUsageLimitDetection
     && !valid
-    &&
-    typeof input.executionStdout === "string"
+    && typeof input.executionStdout === "string"
     && typeof verificationStdout === "string"
     && areOutputsSuspiciouslySimilar(input.executionStdout, verificationStdout)
+    && containsKnownUsageLimitPattern(verificationStdout)
   ) {
     const usageLimitFailureReason = msg("verify.usage-limit", {}, localeMessages);
     emitUsageLimitDetected({
       phase: "verify",
       reason: usageLimitFailureReason,
       similarityDetected: true,
-      knownPatternDetected: false,
+      knownPatternDetected: true,
       executionStdout: input.executionStdout,
       matchedPhase: "verify",
       matchedStdout: verificationStdout,
@@ -619,9 +573,11 @@ export async function runVerifyRepairLoop(
       && typeof input.executionStdout === "string"
     ) {
       const repairOutputMatched = typeof result.repairStdout === "string"
-        && areOutputsSuspiciouslySimilar(input.executionStdout, result.repairStdout);
+        && areOutputsSuspiciouslySimilar(input.executionStdout, result.repairStdout)
+        && containsKnownUsageLimitPattern(result.repairStdout);
       const reVerificationOutputMatched = typeof result.verificationStdout === "string"
-        && areOutputsSuspiciouslySimilar(input.executionStdout, result.verificationStdout);
+        && areOutputsSuspiciouslySimilar(input.executionStdout, result.verificationStdout)
+        && containsKnownUsageLimitPattern(result.verificationStdout);
 
       if (repairOutputMatched || reVerificationOutputMatched) {
         const usageLimitFailureReason = msg("verify.usage-limit-repair", {}, localeMessages);
@@ -630,7 +586,7 @@ export async function runVerifyRepairLoop(
           phase: "repair",
           reason: usageLimitFailureReason,
           similarityDetected: true,
-          knownPatternDetected: false,
+          knownPatternDetected: true,
           executionStdout: input.executionStdout,
           matchedPhase: repairOutputMatched ? "repair" : "verify",
           matchedStdout: repairOutputMatched

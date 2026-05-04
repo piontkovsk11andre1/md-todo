@@ -5,7 +5,6 @@ import {
   type WorkerFailureClass,
 } from "../domain/worker-health.js";
 import { RUN_REASON_USAGE_LIMIT_DETECTED } from "../domain/run-reasons.js";
-import { containsKnownUsageLimitPattern } from "../domain/services/output-similarity.js";
 
 const TRANSPORT_UNAVAILABLE_PATTERNS: RegExp[] = [
   /\btimeout\b/i,
@@ -36,7 +35,6 @@ export function classifyWorkerFailure(input: {
   if (
     input.usageLimitDetected === true
     || input.runReason === RUN_REASON_USAGE_LIMIT_DETECTED
-    || containsKnownUsageLimitPattern(combinedOutput)
   ) {
     return WORKER_FAILURE_CLASS_USAGE_LIMIT;
   }

@@ -189,7 +189,7 @@ describe("run-task orchestration", () => {
     );
   });
 
-  it("persists usage-limit run reason in finalized run metadata", async () => {
+  it("does not persist usage-limit run reason from execution output alone", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
     const usageLimitOutput = "Error: rate limit exceeded for this workspace";
@@ -212,14 +212,12 @@ describe("run-task orchestration", () => {
       }),
     );
 
-    expect(code).toBe(2);
-    expect(dependencies.artifactStore.finalize).toHaveBeenCalledWith(
+    expect(code).toBe(0);
+    expect(dependencies.artifactStore.finalize).not.toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
-        status: "verification-failed",
         extra: expect.objectContaining({
           runReason: RUN_REASON_USAGE_LIMIT_DETECTED,
-          failureExitCode: 2,
         }),
       }),
     );

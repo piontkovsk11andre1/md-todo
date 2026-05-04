@@ -98,6 +98,91 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(3, "second-loop-change")))).toBe(true);
   });
 
+  it("keeps sibling thread history isolated and numbering independent in CLI migrate runs", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(99, "root-only-seed")),
+      "# 99. Root Only Seed\n\n- [x] root lane history should be ignored in thread mode\n",
+      "utf-8",
+    );
+
+    const billingThreadDir = path.join(workspace, "migrations", "threads", "billing");
+    const opsThreadDir = path.join(workspace, "migrations", "threads", "ops");
+    fs.mkdirSync(billingThreadDir, { recursive: true });
+    fs.mkdirSync(opsThreadDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(billingThreadDir, formatMigrationFilename(4, "billing-seed")),
+      "# 4. Billing Seed\n\n- [x] billing history\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(opsThreadDir, formatMigrationFilename(1, "ops-seed")),
+      "# 1. Ops Seed\n\n- [x] ops history\n",
+      "utf-8",
+    );
+
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n\nFocus on billing concerns.\n", "utf-8");
+    fs.writeFileSync(path.join(threadsDir, "ops.md"), "# Ops\n\nFocus on ops concerns.\n", "utf-8");
+
+    const workerScript = buildThreadIsolationAndNumberingWorkerScript();
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        commands: {
+          research: ["node", "-e", workerScript],
+          plan: ["node", "-e", workerScript],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      workerScript,
+    ], workspace);
+
+    const debugOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(result.code, debugOutput).toBe(0);
+
+    expect(fs.existsSync(path.join(billingThreadDir, formatMigrationFilename(5, "billing-followup")))).toBe(true);
+    expect(fs.existsSync(path.join(opsThreadDir, formatMigrationFilename(2, "ops-followup")))).toBe(true);
+
+    const rev1Meta = readRevisionMeta(workspace, "docs", 1);
+    const migrations = rev1Meta.migrations ?? [];
+    const normalizedMigrations = migrations.map((entry) => normalizePathForAssertion(entry));
+    expect(normalizedMigrations).toContain("migrations/threads/billing/5. Billing Followup.md");
+    expect(normalizedMigrations).toContain("migrations/threads/ops/2. Ops Followup.md");
+
+    const billingPrompt = fs.readFileSync(path.join(workspace, ".captured-thread-prompt.billing.txt"), "utf-8");
+    const opsPrompt = fs.readFileSync(path.join(workspace, ".captured-thread-prompt.ops.txt"), "utf-8");
+    expect(billingPrompt).toContain("Current migration number: 4");
+    expect(opsPrompt).toContain("Current migration number: 1");
+    expect(billingPrompt).toContain("- 4. Billing Seed.md");
+    expect(billingPrompt).not.toContain("- 1. Ops Seed.md");
+    expect(opsPrompt).toContain("- 1. Ops Seed.md");
+    expect(opsPrompt).not.toContain("- 4. Billing Seed.md");
+    expect(billingPrompt).toContain("translated billing brief");
+    expect(billingPrompt).not.toContain("translated ops brief");
+    expect(opsPrompt).toContain("translated ops brief");
+    expect(opsPrompt).not.toContain("translated billing brief");
+    expect(billingPrompt).not.toContain("- 99. Root Only Seed.md");
+    expect(opsPrompt).not.toContain("- 99. Root Only Seed.md");
+  });
+
   it("does not modify real migrations when staged drafts fail verification", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
@@ -1377,6 +1462,79 @@ function buildMigrateExecutionWorkerScript(): string {
     "  process.exit(0);",
     "}",
     "console.log('1. from-migrate-execution-worker');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildThreadIsolationAndNumberingWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const fullDocMatch=prompt.match(/## Full document\\n\\n([\\s\\S]*?)\\n\\n## Design context/);",
+    "const parseThreadSlug=(text)=>{",
+    "  const direct=text.match(/Thread slug:\\s*(.+)/i);",
+    "  if(direct&&direct[1]) return direct[1].trim();",
+    "  const staging=text.match(/staging directory:\\s*(.+)/i);",
+    "  if(staging&&staging[1]) return path.basename(staging[1].trim());",
+    "  if(text.includes('# Billing')) return 'billing';",
+    "  if(text.includes('# Ops')) return 'ops';",
+    "  return 'unknown';",
+    "};",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+    "  const sourceDoc=fullDocMatch&&fullDocMatch[1]?fullDocMatch[1]:'';",
+    "  console.log(sourceDoc.length>0?sourceDoc:'\\n');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Verify whether the research output is acceptable.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Diagnose why research verification keeps failing.')){",
+    "  console.log('UNRESOLVED: no additional diagnosis needed in test worker');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('updating migration context incrementally')){",
+    "  console.log('# Context');",
+    "  console.log('');",
+    "  console.log('from-thread-isolation-worker');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('## Source document (<what>)')&&prompt.includes('## Know-how reference (<how>)')&&prompt.includes('Rewrite the full <what> document')){",
+      "  const threadSlug=parseThreadSlug(prompt);",
+      "  console.log('# translated '+threadSlug+' brief');",
+      "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+    "  const threadSlug=parseThreadSlug(prompt);",
+    "  const promptCapturePath=path.join(process.cwd(),'.captured-thread-prompt.'+threadSlug+'.txt');",
+    "  fs.writeFileSync(promptCapturePath,prompt,'utf-8');",
+    "  const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "  const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "  const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "  const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "  const migrationNumber=currentPosition+1;",
+    "  const title=threadSlug==='billing'?'Billing Followup':'Ops Followup';",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const body=[",
+    "    '# '+migrationNumber+'. '+title,",
+    "    '',",
+    "    '- [ ] Cover thread-specific migration follow-up work.',",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,migrationNumber+'. '+title+'.md'),body+'\\n','utf-8');",
+    "  console.log('drafted migration files');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('grounded in the prediction tree')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
     "process.exit(0);",
   ].join("\n");
 }
