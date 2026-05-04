@@ -1084,6 +1084,21 @@ Do not invert this order unless the source document provides a hard dependency t
 
 For iterative/unknown work that needs repeated passes, you MUST author a \`loop:\` task (not a flat sequence) and decompose it with child \`get:\`, child \`for:\`, child \`memory:\`, optional child \`fast:\` (typically under \`for:\` for per-item mechanical actions), and a terminal child \`end:\` stop condition.
 
+## Ordering and completion guidance
+
+When planning implementation work, front-load discovery when facts are uncertain.
+
+- Prefer early \`get:\` tasks for concrete inventory and constraints that downstream TODOs depend on.
+- Prefer early \`memory:\` tasks for reusable context capture that should persist across execution steps.
+- For iterative unknowns, use \`loop:\` with explicit \`end:\` stop conditions.
+
+When planning implementation work, close with confidence-building completion tasks.
+
+- Use \`fast:\` for small mechanical edits where per-item verification is unnecessary.
+- Use \`verify:\` tasks near the end for stack-appropriate validation of changed behavior.
+- When \`get:\` or \`loop:\` work uncovers reusable constraints, finish with a \`memory:\` capture task before final \`fast:\`/\`verify:\` closure.
+- End multi-step changes with a clear integration or handoff check before task completion.
+
 ${DEFAULT_PLAN_FEATURE_REFERENCE_SECTION}
 
 Rules:
@@ -1114,6 +1129,9 @@ ${DEFAULT_TEMPLATE_VARS_SECTION}
 Edit the source Markdown file directly to add loop-oriented TODO coverage.
 
 Plan for bounded iterative workflows. Favor patterns that discover values, iterate deterministically, and stop explicitly.
+
+When loop planning requires uncertain discovery, front-load \`get:\` and \`memory:\` work before per-item edits.
+When loop planning closes out implementation effort, bias final children toward confidence checks (\`verify:\`) and explicit completion signals.
 
 ## Loop composition requirements
 
@@ -1227,6 +1245,21 @@ When authoring those implementation/edit child tasks, explicitly classify low-ri
 Do not invert this order unless the parent task or source document provides a hard dependency that requires a different sequence.
 
 For iterative/unknown child work that needs repeated passes, you MUST author a \`loop:\` child task (not a flat sequence) and decompose it with child \`get:\`, child \`for:\`, child \`memory:\`, optional child \`fast:\` (typically under \`for:\` for per-item mechanical actions), and a terminal child \`end:\` stop condition.
+
+## Child ordering and completion guidance
+
+When planning child implementation work, front-load discovery when parent-task facts are uncertain.
+
+- Prefer early child \`get:\` tasks for concrete inventory and constraints that later children depend on.
+- Prefer early child \`memory:\` tasks for reusable context capture that should persist across child execution steps.
+- For iterative child unknowns, use child \`loop:\` with explicit child \`end:\` stop conditions.
+
+When planning child implementation work, close with confidence-building completion tasks.
+
+- Use child \`fast:\` for small mechanical edits where per-item verification is unnecessary.
+- Use child \`verify:\` tasks near the end for stack-appropriate validation of changed behavior.
+- When child \`get:\` or child \`loop:\` work uncovers reusable constraints, finish with a child \`memory:\` capture task before final child \`fast:\`/\`verify:\` closure.
+- End multi-step child changes with a clear integration or handoff check before parent-task completion.
 
 ${DEFAULT_DEEP_PLAN_FEATURE_REFERENCE_SECTION}
 

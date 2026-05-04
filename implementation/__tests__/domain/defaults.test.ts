@@ -347,6 +347,8 @@ describe("default prompt templates", () => {
 
   it("keeps loop planning guidance bounded, iterable, and deterministic", () => {
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("## Loop composition requirements");
+    expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("front-load `get:` and `memory:` work before per-item edits");
+    expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("bias final children toward confidence checks (`verify:`) and explicit completion signals");
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("`get:` discovers an iterable set of items/values");
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("`memory:` captures durable findings/trends from each pass so the next pass can reuse context");
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("`for:` iterates discovered values and runs per-item implementation/review child tasks");
@@ -357,6 +359,18 @@ describe("default prompt templates", () => {
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("`    - [ ] verify: <risky/state-sensitive per-item check when additional assurance is needed>`");
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("For loop-oriented tasks, require explicit `get:` + `for:` + `end:` composition");
     expect(DEFAULT_PLAN_LOOP_TEMPLATE).toContain("Any `loop:` task must include an explicit terminal `end:` stop condition");
+  });
+
+  it("keeps top-level and deep-plan ordering/completion guidance inline", () => {
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("## Ordering and completion guidance");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("front-load discovery when facts are uncertain");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("close with confidence-building completion tasks");
+    expect(DEFAULT_PLAN_TEMPLATE).toContain("finish with a `memory:` capture task before final `fast:`/`verify:` closure");
+
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("## Child ordering and completion guidance");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("front-load discovery when parent-task facts are uncertain");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("close with confidence-building completion tasks");
+    expect(DEFAULT_DEEP_PLAN_TEMPLATE).toContain("finish with a child `memory:` capture task before final child `fast:`/`verify:` closure");
   });
 
   it("maps sample prompts to rundown workflows and preserves migration + fallback guidance in help template", () => {
