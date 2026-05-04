@@ -11729,6 +11729,86 @@ describe.sequential("CLI integration", () => {
     expect(compressedArchiveFiles).toEqual([]);
   });
 
+  it("compact preserves discuss --run finished-run prompt behavior", async () => {
+    const workspace = makeTempWorkspace();
+    setupCompactFixture(workspace);
+
+    const runId = "run-20260504T120000000Z-discuss-scope";
+    const runDir = path.join(workspace, ".rundown", "runs", runId);
+    const executeDir = path.join(runDir, "01-execute");
+    fs.mkdirSync(executeDir, { recursive: true });
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Validate compact scope\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, ".rundown", "discuss-finished.md"), [
+      "run={{runId}}",
+      "exec={{executionPhaseDir}}",
+      "phase={{phaseSummary}}",
+    ].join("\n") + "\n", "utf-8");
+    fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify({
+      runId,
+      commandName: "run",
+      workerCommand: ["opencode", "run"],
+      mode: "wait",
+      source: "roadmap.md",
+      task: {
+        text: "Validate compact scope",
+        file: "roadmap.md",
+        line: 1,
+        index: 0,
+        source: "- [x] Validate compact scope\n",
+      },
+      keepArtifacts: true,
+      startedAt: "2026-05-04T12:00:00.000Z",
+      completedAt: "2026-05-04T12:01:00.000Z",
+      status: "completed",
+    }, null, 2), "utf-8");
+    fs.writeFileSync(path.join(executeDir, "metadata.json"), JSON.stringify({
+      sequence: 1,
+      phase: "execute",
+      promptFile: null,
+      stdoutFile: null,
+      stderrFile: null,
+      exitCode: 0,
+    }, null, 2), "utf-8");
+
+    const beforeCompact = await runCli([
+      "discuss",
+      "--run",
+      runId,
+      "--print-prompt",
+    ], workspace);
+
+    expect(beforeCompact.code).toBe(0);
+    const beforeOutput = [...beforeCompact.logs, ...beforeCompact.errors, ...beforeCompact.stdoutWrites, ...beforeCompact.stderrWrites].join("\n");
+    expect(beforeOutput).toContain(`run=${runId}`);
+    expect(beforeOutput).toContain(`exec=${executeDir}`);
+    expect(beforeOutput).toContain("phase=- [01] execute (01-execute): exit=0");
+
+    const compactResult = await runCli([
+      "compact",
+      "--target",
+      "all",
+      "--keep",
+      "0",
+    ], workspace);
+
+    expect(compactResult.code).toBe(0);
+    expect(fs.existsSync(path.join(runDir, "run.json"))).toBe(true);
+    expect(fs.existsSync(path.join(executeDir, "metadata.json"))).toBe(true);
+
+    const afterCompact = await runCli([
+      "discuss",
+      "--run",
+      runId,
+      "--print-prompt",
+    ], workspace);
+
+    expect(afterCompact.code).toBe(0);
+    const afterOutput = [...afterCompact.logs, ...afterCompact.errors, ...afterCompact.stdoutWrites, ...afterCompact.stderrWrites].join("\n");
+    expect(afterOutput).toContain(`run=${runId}`);
+    expect(afterOutput).toContain(`exec=${executeDir}`);
+    expect(afterOutput).toContain("phase=- [01] execute (01-execute): exit=0");
+  });
+
   it("compact rejects invalid target and retention scope combinations", async () => {
     const workspace = makeTempWorkspace();
 
