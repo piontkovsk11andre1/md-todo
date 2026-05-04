@@ -2370,7 +2370,7 @@ describe("createMigrateCommandAction", () => {
     expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
       dir: "migrations",
       workspace: "../workspace-source",
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       workerPattern: {
         command: ["opencode", "run", "--model", "gpt-5.3-codex"],
         usesBootstrap: false,
@@ -2410,7 +2410,7 @@ describe("createMigrateCommandAction", () => {
       usesFile: false,
       appendFile: true,
     });
-    expect(request?.compactBeforeExit).toBe(false);
+    expect(request?.autoCompact).toEqual({ beforeExit: false });
     expect(request?.slugWorkerPattern).toBeUndefined();
   });
 
@@ -2429,7 +2429,7 @@ describe("createMigrateCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(migrateTask).toHaveBeenCalledTimes(1);
     expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
-      compactBeforeExit: true,
+      autoCompact: { beforeExit: true },
     }));
   });
 
@@ -2561,7 +2561,7 @@ describe("createDesignReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       label: "Initial baseline",
     });
   });
@@ -2579,7 +2579,7 @@ describe("createDesignReleaseCommandAction", () => {
     expect(designTask).toHaveBeenCalledTimes(1);
     expect(designTask).toHaveBeenCalledWith(expect.objectContaining({
       action: "release",
-      compactBeforeExit: true,
+      autoCompact: { beforeExit: true },
     }));
   });
 
@@ -2602,7 +2602,7 @@ describe("createDesignReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       label: "Initial baseline",
     });
   });
@@ -2634,7 +2634,7 @@ describe("createDocsReleaseCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       label: "Initial baseline",
     });
   });
@@ -2666,7 +2666,7 @@ describe("createDocsPublishCommandAction", () => {
       action: "release",
       dir: "migrations",
       workspace: "../workspace-source",
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       label: "Initial baseline",
     });
   });

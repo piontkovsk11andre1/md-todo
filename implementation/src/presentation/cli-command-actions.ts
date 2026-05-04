@@ -409,7 +409,7 @@ type TestAction = "new";
 interface MigrateCommandOptions {
   dir?: string;
   workspace?: string;
-  compactBeforeExit: boolean;
+  autoCompact: AutoCompactCliOptions;
   confirm: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
@@ -421,10 +421,14 @@ interface DesignCommandOptions {
   action?: "release" | "diff";
   dir?: string;
   workspace?: string;
-  compactBeforeExit: boolean;
+  autoCompact: AutoCompactCliOptions;
   label?: string;
   target?: string;
   from?: string;
+}
+
+interface AutoCompactCliOptions {
+  beforeExit: boolean;
 }
 
 type DesignCommandHandler = (options: DesignCommandOptions) => CliActionResult;
@@ -447,6 +451,12 @@ type WithCommandHandler = (options: { harness: string }) => Promise<WithTaskResu
 type ConfigMutationScope = "local" | "global";
 type ConfigReadScope = "effective" | "local" | "global";
 type ConfigValueType = "auto" | "string" | "number" | "boolean" | "json";
+
+function resolveAutoCompactCliOptions(opts: CliOpts): AutoCompactCliOptions {
+  return {
+    beforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
+  };
+}
 
 function resolveWorkerPattern(
   worker: string | string[] | boolean | undefined,
@@ -1472,7 +1482,7 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(app)({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      compactBeforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
+      autoCompact: resolveAutoCompactCliOptions(opts),
       confirm: Boolean(opts.confirm as boolean | undefined),
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
@@ -1580,7 +1590,7 @@ export function createDesignReleaseCommandAction({
       action: "release",
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      compactBeforeExit: Boolean(opts.compactBeforeExit as boolean | undefined),
+      autoCompact: resolveAutoCompactCliOptions(opts),
       label: normalizeOptionalString(opts.label),
     });
   };
@@ -1642,7 +1652,7 @@ export function createDesignDiffCommandAction({
     return resolveDesignDiffCommandHandler(getApp())({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      compactBeforeExit: false,
+      autoCompact: { beforeExit: false },
       target: normalizeOptionalString(target),
       from: normalizeOptionalString(opts.from),
     });
@@ -2868,7 +2878,7 @@ function resolveDesignDiffCommandHandler(appInstance: CliApp): (options: {
     action: "diff",
     dir: options.dir,
     workspace: options.workspace,
-    compactBeforeExit: false,
+    autoCompact: { beforeExit: false },
     target: options.target,
   });
 }
