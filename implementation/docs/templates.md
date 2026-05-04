@@ -76,6 +76,37 @@ Store templates in `.rundown/`:
 | `.rundown/query-stream-execute.md` | Instructions for streamed query execution in `rundown query --stream` |
 | `.rundown/query-aggregate.md` | Instructions for final aggregation and synthesis in `rundown query` |
 
+## Extending built-in templates with `{{defaultTemplate}}`
+
+By default, project template overrides are full replacements: if `.rundown/<name>.md`
+exists and has non-whitespace content, rundown uses that file as-is.
+
+To extend a built-in template without copying it, include the special loader-time
+placeholder `{{defaultTemplate}}` in the same file:
+
+- If present, every `{{defaultTemplate}}` occurrence expands to the bundled default for that same template file.
+- If absent, behavior stays full-override.
+- If the file is missing, unreadable, or effectively empty after trim, fallback stays the bundled default.
+
+Example (`.rundown/execute.md`):
+
+```md
+You are working in a regulated repo. Follow these extra constraints first.
+
+{{defaultTemplate}}
+
+Before finishing, summarize any compliance-impacting changes.
+```
+
+Scope and boundaries:
+
+- This is self-default embedding only (for example, `execute.md` can embed the built-in `execute` template).
+- This is not a general include system and does not support cross-template inheritance (for example, embedding `help.md` inside `execute.md`).
+- Loader expansion is single-pass and local to project template loading.
+- Runtime placeholder rendering is unchanged: placeholders like `{{task}}` remain unresolved until normal render time.
+- `.rundown/tools/*.md` tool templates do not support `{{defaultTemplate}}`.
+- Root no-arg help still follows its separate composition rule: warmup from `agent.md` then guidance from `help.md`.
+
 ## Planner guidance files (optional)
 
 Planner customization can include two optional guidance files:
