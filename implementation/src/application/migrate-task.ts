@@ -43,6 +43,7 @@ import {
 } from "./design-context.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import {
+  resolveArchiveWorkspacePaths,
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
   resolveWorkspacePath,
@@ -136,6 +137,7 @@ export interface DiscoveredMigrationThread {
 export interface LoadedMigrationThreadState {
   thread: DiscoveredMigrationThread;
   migrationsDir: string;
+  archivedMigrationsDir?: string;
   state: ReturnType<typeof readMigrationState>;
 }
 
@@ -366,10 +368,16 @@ async function runMigrateLoop(input: {
     "translate.md",
     DEFAULT_TRANSLATE_TEMPLATE,
   );
+  const archivePaths = resolveArchiveWorkspacePaths({
+    fileSystem: dependencies.fileSystem,
+    workspaceRoot,
+    invocationRoot,
+  });
   const discoveredThreads = discoverMigrationThreads(dependencies.fileSystem, projectRoot);
   const loadedThreadStates = loadMigrationThreadStates({
     fileSystem: dependencies.fileSystem,
     migrationsDir,
+    archivedThreadsDir: archivePaths.migrationThreads,
     threads: discoveredThreads,
   });
   if (discoveredThreads.length > 0) {
@@ -451,13 +459,18 @@ async function runMigrateLoop(input: {
       })));
       artifactRunExtra.threadTranslations = threadTranslationHistory;
     }
-    const rootState = readMigrationState(dependencies.fileSystem, migrationsDir);
+    const rootState = readMigrationStateFromDirectoryOrEmpty(
+      dependencies.fileSystem,
+      migrationsDir,
+      archivePaths.migrationRootLane,
+    );
     const laneStates = discoveredThreads.length > 0
       ? loadedThreadStates.map((lane) => ({
         kind: "thread" as const,
         thread: lane.thread,
         migrationsDir: lane.migrationsDir,
         state: lane.state,
+        archivedMigrationsDir: lane.archivedMigrationsDir,
         migrationDraftDir: prepareStagedDraftMigrationDir(
           dependencies.fileSystem,
           artifactContext.rootDir,
@@ -469,6 +482,7 @@ async function runMigrateLoop(input: {
         kind: "root" as const,
         migrationsDir,
         state: rootState,
+        archivedMigrationsDir: archivePaths.migrationRootLane,
         migrationDraftDir: prepareStagedDraftMigrationDir(
           dependencies.fileSystem,
           artifactContext.rootDir,
@@ -515,6 +529,7 @@ async function runMigrateLoop(input: {
         targetRevisionName: targetRevision.name,
         revisionDiff,
         migrationsDir: lane.migrationsDir,
+        archivedMigrationsDir: lane.archivedMigrationsDir,
         state: lane.state,
         migrationDraftDir: lane.migrationDraftDir,
         thread: lane.kind === "thread" ? lane.thread : undefined,
@@ -599,6 +614,7 @@ async function runMigrationLaneDrafting(input: {
   targetRevisionName: string;
   revisionDiff: DesignRevisionDiffContext;
   migrationsDir: string;
+  archivedMigrationsDir?: string;
   state: ReturnType<typeof readMigrationState>;
   migrationDraftDir: string;
   thread?: DiscoveredMigrationThread;
@@ -625,6 +641,7 @@ async function runMigrationLaneDrafting(input: {
     targetRevisionName,
     revisionDiff,
     migrationsDir,
+    archivedMigrationsDir,
     state,
     migrationDraftDir,
     thread,
@@ -880,9 +897,11 @@ async function runMigrationLaneDrafting(input: {
   const promotedMigrationMetadataPaths: string[] = [];
   const promotedMigrationsDir = migrationsDir;
   dependencies.fileSystem.mkdir(promotedMigrationsDir, { recursive: true });
-  const stateBeforeCreate = thread
-    ? readMigrationStateFromDirectoryOrEmpty(dependencies.fileSystem, promotedMigrationsDir)
-    : state;
+  const stateBeforeCreate = readMigrationStateFromDirectoryOrEmpty(
+    dependencies.fileSystem,
+    promotedMigrationsDir,
+    archivedMigrationsDir,
+  );
   const stagedValidationErrorBeforePromotion = validateStagedDraftMigrations(
     stagedDrafts,
     stateBeforeCreate.currentPosition,
@@ -1674,11 +1693,47 @@ function buildTemplateVars(input: {
   };
 }
 
-function readMigrationState(fileSystem: FileSystem, migrationsDir: string) {
-  const files = fileSystem.readdir(migrationsDir)
-    .filter((entry) => entry.isFile)
-    .map((entry) => path.join(migrationsDir, entry.name));
+function readMigrationState(
+  fileSystem: FileSystem,
+  migrationsDir: string,
+  archivedMigrationsDir?: string,
+) {
+  const files = listMigrationLaneFiles({
+    fileSystem,
+    migrationsDir,
+    archivedMigrationsDir,
+  });
   return parseMigrationDirectory(files, migrationsDir);
+}
+
+function listMigrationLaneFiles(input: {
+  fileSystem: FileSystem;
+  migrationsDir: string;
+  archivedMigrationsDir?: string;
+}): string[] {
+  const { fileSystem, migrationsDir, archivedMigrationsDir } = input;
+  const archivedFiles = listMigrationFilesInDirectory(fileSystem, archivedMigrationsDir);
+  const hotFiles = listMigrationFilesInDirectory(fileSystem, migrationsDir);
+  return [...archivedFiles, ...hotFiles];
+}
+
+function listMigrationFilesInDirectory(fileSystem: FileSystem, migrationsDir?: string): string[] {
+  if (!migrationsDir) {
+    return [];
+  }
+  if (!fileSystem.exists(migrationsDir)) {
+    return [];
+  }
+
+  const stat = fileSystem.stat(migrationsDir);
+  if (!stat?.isDirectory) {
+    return [];
+  }
+
+  return fileSystem.readdir(migrationsDir)
+    .filter((entry) => entry.isFile)
+    .map((entry) => path.join(migrationsDir, entry.name))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function migrationThreadMigrationsDir(migrationsDir: string, threadSlug: string): string {
@@ -1769,31 +1824,62 @@ export async function materializeMigrationThreadBriefs(input: {
 export function loadMigrationThreadStates(input: {
   fileSystem: FileSystem;
   migrationsDir: string;
+  archivedThreadsDir?: string;
   threads: readonly DiscoveredMigrationThread[];
 }): LoadedMigrationThreadState[] {
-  const { fileSystem, migrationsDir, threads } = input;
+  const { fileSystem, migrationsDir, archivedThreadsDir, threads } = input;
   return threads.map((thread) => {
     const threadMigrationsDir = migrationThreadMigrationsDir(migrationsDir, thread.threadSlug);
-    const state = readMigrationStateFromDirectoryOrEmpty(fileSystem, threadMigrationsDir);
+    const archivedThreadMigrationsDir = archivedThreadsDir
+      ? path.join(archivedThreadsDir, thread.threadSlug)
+      : undefined;
+    const state = readMigrationStateFromDirectoryOrEmpty(
+      fileSystem,
+      threadMigrationsDir,
+      archivedThreadMigrationsDir,
+    );
     return {
       thread,
       migrationsDir: threadMigrationsDir,
+      archivedMigrationsDir: archivedThreadMigrationsDir,
       state,
     };
   });
 }
 
-function readMigrationStateFromDirectoryOrEmpty(fileSystem: FileSystem, migrationsDir: string) {
-  if (!fileSystem.exists(migrationsDir)) {
+function readMigrationStateFromDirectoryOrEmpty(
+  fileSystem: FileSystem,
+  migrationsDir: string,
+  archivedMigrationsDir?: string,
+) {
+  if (!fileSystem.exists(migrationsDir) && !archivedMigrationsDir) {
     return parseMigrationDirectory([], migrationsDir);
   }
 
-  const stat = fileSystem.stat(migrationsDir);
-  if (!stat?.isDirectory) {
+  if (fileSystem.exists(migrationsDir)) {
+    const stat = fileSystem.stat(migrationsDir);
+    if (!stat?.isDirectory) {
+      return parseMigrationDirectory([], migrationsDir);
+    }
+  }
+
+  if (archivedMigrationsDir && fileSystem.exists(archivedMigrationsDir)) {
+    const archiveStat = fileSystem.stat(archivedMigrationsDir);
+    if (!archiveStat?.isDirectory) {
+      return parseMigrationDirectory([], migrationsDir);
+    }
+  }
+
+  const files = listMigrationLaneFiles({
+    fileSystem,
+    migrationsDir,
+    archivedMigrationsDir,
+  });
+  if (files.length === 0) {
     return parseMigrationDirectory([], migrationsDir);
   }
 
-  return readMigrationState(fileSystem, migrationsDir);
+  return parseMigrationDirectory(files, migrationsDir);
 }
 
 export async function confirmBeforeWrite(

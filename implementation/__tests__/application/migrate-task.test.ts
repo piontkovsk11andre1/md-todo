@@ -893,6 +893,41 @@ describe("migrate-task", () => {
     ]);
   });
 
+  it("merges archived thread migrations with hot thread migrations", () => {
+    const workspace = makeTempWorkspace();
+    const fileSystem = createNodeFileSystem();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    const migrationsDir = path.join(workspace, "migrations");
+    const archivedThreadsDir = path.join(migrationsDir, "archive", "threads");
+    const billingHotDir = path.join(migrationsDir, "threads", "billing");
+    const billingArchiveDir = path.join(archivedThreadsDir, "billing");
+
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n", "utf-8");
+    fs.mkdirSync(billingHotDir, { recursive: true });
+    fs.mkdirSync(billingArchiveDir, { recursive: true });
+    fs.writeFileSync(path.join(billingArchiveDir, formatMigrationFilename(1, "billing-archived-seed")), "# 1. Billing Archived Seed\n", "utf-8");
+    fs.writeFileSync(path.join(billingArchiveDir, formatMigrationFilename(2, "billing-archived-followup")), "# 2. Billing Archived Followup\n", "utf-8");
+    fs.writeFileSync(path.join(billingHotDir, formatMigrationFilename(3, "billing-hot-current")), "# 3. Billing Hot Current\n", "utf-8");
+
+    const discoveredThreads = discoverMigrationThreads(fileSystem, workspace);
+    const loadedStates = loadMigrationThreadStates({
+      fileSystem,
+      migrationsDir,
+      archivedThreadsDir,
+      threads: discoveredThreads,
+    });
+
+    expect(loadedStates).toHaveLength(1);
+    expect(loadedStates[0]?.thread.threadSlug).toBe("billing");
+    expect(loadedStates[0]?.state.currentPosition).toBe(3);
+    expect(loadedStates[0]?.state.migrations.map((migration) => path.basename(migration.filePath))).toEqual([
+      formatMigrationFilename(1, "billing-archived-seed"),
+      formatMigrationFilename(2, "billing-archived-followup"),
+      formatMigrationFilename(3, "billing-hot-current"),
+    ]);
+  });
+
   it("loads empty state for a thread when its migrations directory does not exist", () => {
     const workspace = makeTempWorkspace();
     const fileSystem = createNodeFileSystem();
@@ -915,6 +950,106 @@ describe("migrate-task", () => {
     expect(loadedStates[0]?.migrationsDir).toBe(path.join(migrationsDir, "threads", "ops"));
     expect(loadedStates[0]?.state.currentPosition).toBe(0);
     expect(loadedStates[0]?.state.migrations).toEqual([]);
+  });
+
+  it("includes archived root migrations in planning state", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "design");
+    const migrationsDir = path.join(workspace, "migrations");
+    const archiveRootDir = path.join(migrationsDir, "archive", "root");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.mkdirSync(archiveRootDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(archiveRootDir, formatMigrationFilename(1, "archived-seed")),
+      "# 1. Archived Seed\n\n- [x] archived root history\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(migrationsDir, formatMigrationFilename(2, "hot-seed")),
+      "# 2. Hot Seed\n\n- [x] hot root history\n",
+      "utf-8",
+    );
+
+    const prompts: string[] = [];
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ prompt }) => {
+        prompts.push(prompt);
+        if (prompt.includes("Inventory design changes not yet reflected in the current prediction tree.")) {
+          const draftDirMatch = prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "0", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "new-from-merged-state")),
+            "# " + String(position + 1) + ". New From Merged State\n\n- [ ] Cover Target.md updates.\n",
+            "utf-8",
+          );
+          return { exitCode: 0, stdout: "planned", stderr: "" };
+        }
+
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore: {
+        createContext: vi.fn(() => ({
+          runId: "run-test",
+          rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+          cwd: workspace,
+          keepArtifacts: false,
+          commandName: "migrate",
+        })),
+        beginPhase: vi.fn(() => { throw new Error("not used"); }),
+        completePhase: vi.fn(),
+        finalize: vi.fn(),
+        displayPath: vi.fn(() => ""),
+        rootDir: vi.fn(() => ""),
+        listSaved: vi.fn(() => []),
+        listFailed: vi.fn(() => []),
+        latest: vi.fn(() => null),
+        find: vi.fn(() => null),
+        removeSaved: vi.fn(() => 0),
+        removeFailed: vi.fn(() => 0),
+        isFailedStatus: vi.fn(() => false),
+      },
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      const planningPrompt = prompts.find((prompt) =>
+        prompt.includes("Inventory design changes not yet reflected in the current prediction tree."),
+      ) ?? "";
+      expect(planningPrompt).toContain("Current migration number: 2");
+      expect(planningPrompt).toContain("- 1. Archived Seed.md");
+      expect(planningPrompt).toContain("- 2. Hot Seed.md");
+      expect(fs.existsSync(path.join(migrationsDir, formatMigrationFilename(3, "new-from-merged-state")))).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+    }
   });
 
   it("materializes translated briefs per thread into run artifacts", async () => {
