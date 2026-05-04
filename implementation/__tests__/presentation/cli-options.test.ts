@@ -734,7 +734,7 @@ describe("CLI run option normalization", () => {
 
     const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("migrate [options]");
-    expect(compactHelpOutput).toContain("Generate revision-aware migration files.");
+    expect(compactHelpOutput).toContain("Sync design revisions and generate migration files.");
   });
 
   it("keeps start help text focused on design revision snapshots", async () => {

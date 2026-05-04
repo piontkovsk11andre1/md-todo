@@ -437,51 +437,55 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(extractPromptDiffSection(hotPrompt)).toBe(extractPromptDiffSection(archivedPrompt));
   });
 
-  it("design diff output stays equivalent when the previous revision payload is archived", async () => {
-    const hotWorkspace = makeTempWorkspace();
-    const archivedWorkspace = makeTempWorkspace();
-    scaffoldArchiveTransparencyDesignDiffProject(hotWorkspace);
-    scaffoldArchiveTransparencyDesignDiffProject(archivedWorkspace);
-    archivePreviousDesignRevisionPayloadForDiffFixture(archivedWorkspace);
+  it("migrate preflight writes new snapshots to canonical design/revisions/rev.N", async () => {
+    const workspace = makeTempWorkspace();
+    configureMigrateWorkers(workspace);
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "design", "current"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "revisions", "rev.0"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "design", "revisions", "rev.1"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design", "revisions", "rev.0", "Target.md"), "baseline\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "revisions", "rev.1", "Target.md"), "latest released\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "changed draft\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "revisions", "rev.0.meta.json"), JSON.stringify({
+      revision: "rev.0",
+      index: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      plannedAt: "2026-01-01T00:00:00.000Z",
+      migrations: [],
+    }, null, 2) + "\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "design", "revisions", "rev.1.meta.json"), JSON.stringify({
+      revision: "rev.1",
+      index: 1,
+      createdAt: "2026-01-02T00:00:00.000Z",
+      plannedAt: "2026-01-02T00:00:00.000Z",
+      migrations: ["migrations/1. Initialize.md"],
+    }, null, 2) + "\n", "utf-8");
 
-    const hotResult = await runCli([
-      "design",
-      "diff",
-      "rev.1",
+    const result = await runCli([
+      "migrate",
       "--dir",
       "migrations",
-    ], hotWorkspace);
-    const archivedResult = await runCli([
-      "design",
-      "diff",
-      "rev.1",
-      "--dir",
-      "migrations",
-    ], archivedWorkspace);
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["canonical-preflight-plan"]),
+    ], workspace);
 
-    expect(hotResult.code).toBe(0);
-    expect(archivedResult.code).toBe(0);
-
-    const hotOutput = stripAnsi([
-      ...hotResult.logs,
-      ...hotResult.errors,
-      ...hotResult.stdoutWrites,
-      ...hotResult.stderrWrites,
-    ].join("\n"));
-    const archivedOutput = stripAnsi([
-      ...archivedResult.logs,
-      ...archivedResult.errors,
-      ...archivedResult.stdoutWrites,
-      ...archivedResult.stderrWrites,
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
     ].join("\n"));
 
-    expect(hotOutput).toContain("rev.0 → rev.1");
-    expect(archivedOutput).toContain("rev.0 → rev.1");
-    expect(hotOutput).toContain("-legacy baseline line");
-    expect(archivedOutput).toContain("-legacy baseline line");
-    expect(hotOutput).toContain("+updated release line");
-    expect(archivedOutput).toContain("+updated release line");
-    expect(hotOutput).toBe(archivedOutput);
+    expect(result.code, combinedOutput).toBe(0);
+    expect(combinedOutput).toContain("Released design revision rev.2 from current design before migration planning.");
+    expect(combinedOutput).toContain("Planning migrations for rev.1 → rev.2");
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.2", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.2.meta.json"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "rev.2", "Target.md"))).toBe(false);
   });
 
   it("migrate exits success with caught-up message when all released revisions are planned", async () => {
@@ -577,6 +581,160 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(fs.existsSync(path.join(workspace, "docs", "rev.3.meta.json"))).toBe(false);
     const rev2Meta = readRevisionMeta(workspace, "docs", 2);
     expect(rev2Meta.plannedAt).toBeTypeOf("string");
+  });
+
+  it("migrate preflight does not create a new revision when current matches latest release", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    configureMigrateWorkers(workspace);
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, "docs", "rev.0", "Design.md"), "# Design\n\nReleased rev.1 design.\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+
+    expect(result.code, combinedOutput).toBe(0);
+    expect(combinedOutput).not.toContain("Released design revision");
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2.meta.json"))).toBe(false);
+    expect(readRevisionMeta(workspace, "docs", 1).plannedAt).toBeTypeOf("string");
+  });
+
+  it("migrate resolves linked workspace roots and writes only in the source workspace", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspace = path.join(sandbox, "source-workspace");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspace, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldReleasedDesignRevisions(sourceWorkspace, "docs");
+    configureMigrateWorkers(sourceWorkspace);
+    fs.mkdirSync(path.join(sourceWorkspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+
+    const linkedConfigDir = path.join(linkedInvocationDir, ".rundown");
+    fs.mkdirSync(linkedConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedConfigDir, "workspace.link"),
+      path.relative(linkedInvocationDir, sourceWorkspace).replace(/\\/g, "/"),
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["linked-workspace-plan"]),
+    ], linkedInvocationDir);
+
+    expect(result.code, debugOutput(result)).toBe(0);
+    expect(readRevisionMeta(sourceWorkspace, "docs", 1).plannedAt).toBeTypeOf("string");
+    expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.1.meta.json"))).toBe(false);
+    expect(fs.existsSync(path.join(linkedInvocationDir, "docs", "rev.2.meta.json"))).toBe(false);
+  });
+
+  it("migrate requires --workspace for ambiguous linked workspaces", async () => {
+    const sandbox = makeTempWorkspace();
+    const sourceWorkspaceA = path.join(sandbox, "source-workspace-a");
+    const sourceWorkspaceB = path.join(sandbox, "source-workspace-b");
+    const linkedInvocationDir = path.join(sandbox, "linked-invocation");
+
+    fs.mkdirSync(sourceWorkspaceA, { recursive: true });
+    fs.mkdirSync(sourceWorkspaceB, { recursive: true });
+    fs.mkdirSync(linkedInvocationDir, { recursive: true });
+    scaffoldReleasedDesignRevisions(sourceWorkspaceA, "docs");
+    scaffoldReleasedDesignRevisions(sourceWorkspaceB, "docs");
+    configureMigrateWorkers(sourceWorkspaceA);
+    configureMigrateWorkers(sourceWorkspaceB);
+    fs.mkdirSync(path.join(sourceWorkspaceA, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(sourceWorkspaceB, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(sourceWorkspaceA, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.writeFileSync(path.join(sourceWorkspaceB, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+
+    fs.mkdirSync(path.join(linkedInvocationDir, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(linkedInvocationDir, ".rundown", "workspace.link"),
+      JSON.stringify({
+        schemaVersion: 1,
+        records: [
+          { id: "alpha", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceA).replace(/\\/g, "/") },
+          { id: "beta", workspacePath: path.relative(linkedInvocationDir, sourceWorkspaceB).replace(/\\/g, "/") },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const ambiguousResult = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+    ], linkedInvocationDir);
+
+    expect(ambiguousResult.code, debugOutput(ambiguousResult)).toBe(1);
+    const ambiguousOutput = stripAnsi([
+      ...ambiguousResult.logs,
+      ...ambiguousResult.errors,
+      ...ambiguousResult.stdoutWrites,
+      ...ambiguousResult.stderrWrites,
+    ].join("\n"));
+    expect(ambiguousOutput).toContain("Workspace selection is ambiguous");
+    expect(ambiguousOutput).toContain("Re-run the command with --workspace <dir>");
+
+    expect(readRevisionMeta(sourceWorkspaceA, "docs", 1).plannedAt).toBeNull();
+    expect(readRevisionMeta(sourceWorkspaceB, "docs", 1).plannedAt).toBeNull();
+  });
+
+  it("migrate bootstrap honors configured design directory when no revisions exist", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design-docs",
+          },
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+    fs.mkdirSync(path.join(workspace, "design-docs", "current"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "design-docs", "current", "Target.md"), "# Target\n\nConfigured design root\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript(["DONE"]),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "design-docs", "revisions", "rev.0", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design-docs", "revisions", "rev.0.meta.json"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.0", "Target.md"))).toBe(false);
   });
 
   it("migrate preflight keeps target selection anchored to lowest unplanned revision metadata", async () => {
@@ -1387,17 +1545,7 @@ function scaffoldPredictionProjectForReconciliation(workspace: string): void {
 
 function scaffoldLoopMigrateProject(workspace: string): void {
   fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
-  fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-  fs.writeFileSync(
-    path.join(workspace, ".rundown", "config.json"),
-    JSON.stringify({
-      commands: {
-        research: ["node", "-e", buildMigrateExecutionWorkerScript()],
-        plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
-      },
-    }, null, 2) + "\n",
-    "utf-8",
-  );
+  configureMigrateWorkers(workspace);
   scaffoldReleasedDesignRevisions(workspace, "docs");
   fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
   fs.writeFileSync(path.join(workspace, "migrations", "Notes.md"), "# Notes\n\n- seed-item\n", "utf-8");
@@ -1468,17 +1616,7 @@ function scaffoldRevisionPlanningStampProject(workspace: string): void {
   const rev2CreatedAt = "2026-01-03T00:00:00.000Z";
 
   fs.mkdirSync(migrationsDir, { recursive: true });
-  fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
-  fs.writeFileSync(
-    path.join(workspace, ".rundown", "config.json"),
-    JSON.stringify({
-      commands: {
-        research: ["node", "-e", buildMigrateExecutionWorkerScript()],
-        plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
-      },
-    }, null, 2) + "\n",
-    "utf-8",
-  );
+  configureMigrateWorkers(workspace);
   fs.mkdirSync(path.join(designRoot, "current"), { recursive: true });
   fs.mkdirSync(path.join(designRoot, "rev.0"), { recursive: true });
   fs.mkdirSync(path.join(designRoot, "rev.1"), { recursive: true });
@@ -1533,6 +1671,34 @@ function scaffoldRevisionPlanningStampProjectThroughRev3(workspace: string): voi
     plannedAt: null,
     migrations: [],
   }, null, 2) + "\n", "utf-8");
+}
+
+function configureMigrateWorkers(workspace: string): void {
+  fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, ".rundown", "config.json"),
+    JSON.stringify({
+      commands: {
+        research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+      },
+    }, null, 2) + "\n",
+    "utf-8",
+  );
+}
+
+function debugOutput(result: {
+  logs: string[];
+  errors: string[];
+  stdoutWrites: string[];
+  stderrWrites: string[];
+}): string {
+  return stripAnsi([
+    ...result.logs,
+    ...result.errors,
+    ...result.stdoutWrites,
+    ...result.stderrWrites,
+  ].join("\n"));
 }
 
 function scaffoldArchiveTransparencyMigrateProject(workspace: string): void {

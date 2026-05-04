@@ -11580,15 +11580,18 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
   });
 
-  it("design release --help exposes compact-before-exit flag", async () => {
+  it("design --help falls back to root help because design command is removed", async () => {
     const workspace = makeTempWorkspace();
 
-    const result = await runCli(["design", "release", "--help"], workspace);
+    const result = await runCli(["design", "--help"], workspace);
 
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("--compact-before-exit Run compaction as a post-success follow-up before exit");
+    expect(compactHelpOutput).toContain("Usage: rundown [options] [command]");
+    expect(compactHelpOutput).not.toContain("design [options]");
+    expect(compactHelpOutput).not.toContain("design release");
+    expect(compactHelpOutput).not.toContain("design diff");
   });
 
   it("compact --help lists archive controls and retention options", async () => {
@@ -11843,16 +11846,21 @@ describe.sequential("CLI integration", () => {
     ))).toBe(true);
   });
 
-  it("design diff --help includes --workspace examples", async () => {
+  it("design diff --help returns unknown command because design surface is removed", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli(["design", "diff", "--help"], workspace);
 
     expect(result.code).toBe(0);
-    const helpOutput = result.stdoutWrites.join("\n");
-    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("--workspace <dir> Workspace directory to use for linked/multi-workspace resolution");
-    expect(compactHelpOutput).toContain("rd design diff --workspace ../source-workspace");
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Usage: rundown [options] [command]");
+    expect(combinedOutput).not.toContain("design [options]");
+    expect(combinedOutput).not.toContain("design diff");
   });
 
   it("docs --help falls back to root help because docs command is removed", async () => {
