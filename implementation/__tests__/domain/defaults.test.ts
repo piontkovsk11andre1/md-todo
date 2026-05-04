@@ -40,14 +40,21 @@ describe("default prompt templates", () => {
       workspaceLinkPath: "/repo/invoke/.rundown/workspace.link",
       isLinkedWorkspace: "true",
       workspaceDesignDir: "design",
+      workspaceImplementationDir: "implementation",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspacePredictionDir: "prediction",
       workspaceDesignPlacement: "sourcedir",
+      workspaceImplementationPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: "/repo/workspace/design",
+      workspaceImplementationPath: "/repo/workspace/implementation",
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
+      workspacePredictionPath: "/repo/workspace/prediction",
+      workspaceMountSummary: "{\"mounts\":[{\"logicalPath\":\"design\",\"absoluteTargetPath\":\"/repo/workspace/design\"}]}",
       userVariables: "branch=main\nticket=ENG-42",
     });
 
@@ -56,15 +63,25 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Workspace directory: `/repo/workspace`");
     expect(result).toContain("- Workspace link path: `/repo/invoke/.rundown/workspace.link`");
     expect(result).toContain("- Linked workspace: `true`");
-    expect(result).toContain("- Prediction design directory: `design`");
-    expect(result).toContain("- Prediction specs directory: `specs`");
-    expect(result).toContain("- Prediction migrations directory: `migrations`");
-    expect(result).toContain("- Prediction design placement: `sourcedir`");
-    expect(result).toContain("- Prediction specs placement: `sourcedir`");
-    expect(result).toContain("- Prediction migrations placement: `sourcedir`");
-    expect(result).toContain("- Prediction design path: `/repo/workspace/design`");
-    expect(result).toContain("- Prediction specs path: `/repo/workspace/specs`");
-    expect(result).toContain("- Prediction migrations path: `/repo/workspace/migrations`");
+    expect(result).toContain("Resolved workspace paths below are authoritative absolute targets.");
+    expect(result).toContain("Do not reconstruct workspace layout from `workspaceDir` + directory names.");
+    expect(result).toContain("If the mount summary is present, treat it as the canonical routing map.");
+    expect(result).toContain("- Design directory: `design`");
+    expect(result).toContain("- Implementation directory: `implementation`");
+    expect(result).toContain("- Specs directory: `specs`");
+    expect(result).toContain("- Migrations directory: `migrations`");
+    expect(result).toContain("- Prediction directory: `prediction`");
+    expect(result).toContain("- Design path: `/repo/workspace/design`");
+    expect(result).toContain("- Implementation path: `/repo/workspace/implementation`");
+    expect(result).toContain("- Specs path: `/repo/workspace/specs`");
+    expect(result).toContain("- Migrations path: `/repo/workspace/migrations`");
+    expect(result).toContain("- Prediction path: `/repo/workspace/prediction`");
+    expect(result).toContain("{\"mounts\":[{\"logicalPath\":\"design\",\"absoluteTargetPath\":\"/repo/workspace/design\"}]}");
+    expect(result).toContain("- Design placement (legacy): `sourcedir`");
+    expect(result).toContain("- Implementation placement (legacy): `sourcedir`");
+    expect(result).toContain("- Specs placement (legacy): `sourcedir`");
+    expect(result).toContain("- Migrations placement (legacy): `sourcedir`");
+    expect(result).toContain("- Prediction placement (legacy): `sourcedir`");
     expect(result).toContain("## Variables\n\nbranch=main\nticket=ENG-42");
   });
 
@@ -81,14 +98,21 @@ describe("default prompt templates", () => {
       workspaceLinkPath: "",
       isLinkedWorkspace: "false",
       workspaceDesignDir: "design",
+      workspaceImplementationDir: "implementation",
       workspaceSpecsDir: "specs",
       workspaceMigrationsDir: "migrations",
+      workspacePredictionDir: "prediction",
       workspaceDesignPlacement: "sourcedir",
+      workspaceImplementationPlacement: "sourcedir",
       workspaceSpecsPlacement: "sourcedir",
       workspaceMigrationsPlacement: "sourcedir",
+      workspacePredictionPlacement: "sourcedir",
       workspaceDesignPath: "/repo/workspace/design",
+      workspaceImplementationPath: "/repo/workspace/implementation",
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
+      workspacePredictionPath: "/repo/workspace/prediction",
+      workspaceMountSummary: "{\"mounts\":[]}",
       userVariables: "(none)",
     });
 
@@ -96,15 +120,21 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Workspace directory: `/repo/workspace`");
     expect(result).toContain("- Workspace link path: ``");
     expect(result).toContain("- Linked workspace: `false`");
-    expect(result).toContain("- Prediction design directory: `design`");
-    expect(result).toContain("- Prediction specs directory: `specs`");
-    expect(result).toContain("- Prediction migrations directory: `migrations`");
-    expect(result).toContain("- Prediction design placement: `sourcedir`");
-    expect(result).toContain("- Prediction specs placement: `sourcedir`");
-    expect(result).toContain("- Prediction migrations placement: `sourcedir`");
-    expect(result).toContain("- Prediction design path: `/repo/workspace/design`");
-    expect(result).toContain("- Prediction specs path: `/repo/workspace/specs`");
-    expect(result).toContain("- Prediction migrations path: `/repo/workspace/migrations`");
+    expect(result).toContain("- Design directory: `design`");
+    expect(result).toContain("- Implementation directory: `implementation`");
+    expect(result).toContain("- Specs directory: `specs`");
+    expect(result).toContain("- Migrations directory: `migrations`");
+    expect(result).toContain("- Prediction directory: `prediction`");
+    expect(result).toContain("- Design path: `/repo/workspace/design`");
+    expect(result).toContain("- Implementation path: `/repo/workspace/implementation`");
+    expect(result).toContain("- Specs path: `/repo/workspace/specs`");
+    expect(result).toContain("- Migrations path: `/repo/workspace/migrations`");
+    expect(result).toContain("- Prediction path: `/repo/workspace/prediction`");
+    expect(result).toContain("- Design placement (legacy): `sourcedir`");
+    expect(result).toContain("- Implementation placement (legacy): `sourcedir`");
+    expect(result).toContain("- Specs placement (legacy): `sourcedir`");
+    expect(result).toContain("- Migrations placement (legacy): `sourcedir`");
+    expect(result).toContain("- Prediction placement (legacy): `sourcedir`");
     expect(result).toContain("## Variables\n\n(none)");
   });
 

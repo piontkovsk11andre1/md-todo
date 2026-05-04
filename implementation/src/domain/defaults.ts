@@ -53,15 +53,40 @@ export const DEFAULT_TEMPLATE_VARS_SECTION = `\
 - Workspace directory: \`{{workspaceDir}}\`
 - Workspace link path: \`{{workspaceLinkPath}}\`
 - Linked workspace: \`{{isLinkedWorkspace}}\`
-- Prediction design directory: \`{{workspaceDesignDir}}\`
-- Prediction specs directory: \`{{workspaceSpecsDir}}\`
-- Prediction migrations directory: \`{{workspaceMigrationsDir}}\`
-- Prediction design placement: \`{{workspaceDesignPlacement}}\`
-- Prediction specs placement: \`{{workspaceSpecsPlacement}}\`
-- Prediction migrations placement: \`{{workspaceMigrationsPlacement}}\`
-- Prediction design path: \`{{workspaceDesignPath}}\`
-- Prediction specs path: \`{{workspaceSpecsPath}}\`
-- Prediction migrations path: \`{{workspaceMigrationsPath}}\`
+
+Resolved workspace paths below are authoritative absolute targets.
+Do not reconstruct workspace layout from \`workspaceDir\` + directory names.
+If the mount summary is present, treat it as the canonical routing map.
+
+### Logical roots
+
+- Design directory: \`{{workspaceDesignDir}}\`
+- Implementation directory: \`{{workspaceImplementationDir}}\`
+- Specs directory: \`{{workspaceSpecsDir}}\`
+- Migrations directory: \`{{workspaceMigrationsDir}}\`
+- Prediction directory: \`{{workspacePredictionDir}}\`
+
+### Resolved absolute targets
+
+- Design path: \`{{workspaceDesignPath}}\`
+- Implementation path: \`{{workspaceImplementationPath}}\`
+- Specs path: \`{{workspaceSpecsPath}}\`
+- Migrations path: \`{{workspaceMigrationsPath}}\`
+- Prediction path: \`{{workspacePredictionPath}}\`
+
+### Workspace mount summary
+
+\`\`\`json
+{{workspaceMountSummary}}
+\`\`\`
+
+### Legacy placement compatibility
+
+- Design placement (legacy): \`{{workspaceDesignPlacement}}\`
+- Implementation placement (legacy): \`{{workspaceImplementationPlacement}}\`
+- Specs placement (legacy): \`{{workspaceSpecsPlacement}}\`
+- Migrations placement (legacy): \`{{workspaceMigrationsPlacement}}\`
+- Prediction placement (legacy): \`{{workspacePredictionPlacement}}\`
 
 ## Variables
 
