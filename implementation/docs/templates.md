@@ -247,6 +247,14 @@ Authoritative routing contract:
 | `{{workspaceMigrationsPlacement}}` | Legacy compatibility placement for migrations (`sourcedir`/`workdir`) when placement config is in use. |
 | `{{workspacePredictionPlacement}}` | Legacy compatibility placement for prediction (`sourcedir`/`workdir`) when placement config is in use. |
 
+Legacy placement compatibility guidance:
+
+- Treat `workspace*Placement` values as migration-era compatibility metadata, not authoritative routing data.
+- Use resolved absolute `workspace*Path` values for path selection.
+- If present, `workspaceMountSummary` is the canonical routing map, including nested logical-prefix overrides.
+- Placement variables may be empty when no legacy placement config is active (for example, mount-only workspace routing).
+- Legacy placement variables are maintained to support older templates/configs during migration and should be de-emphasized in new templates.
+
 Fallback semantics are deterministic:
 
 - Non-linked mode: `invocationDir === workspaceDir`, `workspaceLinkPath` is empty,

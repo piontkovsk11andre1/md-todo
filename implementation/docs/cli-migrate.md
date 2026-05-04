@@ -88,6 +88,13 @@ Legacy placement compatibility example:
 
 The placement map above remains supported for transition-era compatibility; runtime prompt routing is still based on resolved absolute workspace targets.
 
+Compatibility guidance for runtime `workspace*Placement` variables:
+
+- Treat placement variables as migration-era compatibility metadata only.
+- Use resolved absolute `workspace*Path` variables as authoritative routing targets.
+- If present, `workspaceMountSummary` is canonical for logical-path routing (including nested overrides).
+- Placement variables may be empty when workspace routing is mount-only and no legacy placement map is configured.
+
 Linked workspace example (resolved roots):
 
 - invocation (`workdir`): `/Users/alex/client-a`

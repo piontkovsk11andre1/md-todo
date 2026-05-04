@@ -82,6 +82,11 @@ If the mount summary is present, treat it as the canonical routing map.
 
 ### Legacy placement compatibility
 
+These \`workspace*Placement\` values are transition-era compatibility metadata only.
+Use resolved \`workspace*Path\` values (and \`workspaceMountSummary\` when present) for routing decisions.
+Placement values may be empty when no legacy placement config is active.
+Nested mounts can override placement-derived expectations.
+
 - Design placement (legacy): \`{{workspaceDesignPlacement}}\`
 - Implementation placement (legacy): \`{{workspaceImplementationPlacement}}\`
 - Specs placement (legacy): \`{{workspaceSpecsPlacement}}\`

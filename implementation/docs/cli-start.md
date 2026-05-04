@@ -39,6 +39,13 @@ Legacy placement compatibility (`--design-placement`, `--specs-placement`, `--mi
 
 Implementation and prediction buckets also expose legacy placement compatibility values in runtime workspace context; when not otherwise configured, both default to `sourcedir`.
 
+Runtime compatibility semantics for `workspace*Placement` template variables:
+
+- They are transition-era compatibility metadata, not authoritative routing data.
+- Use resolved `workspace*Path` values (and `workspaceMountSummary` when present) for canonical routing.
+- Values can be empty when no legacy placement config is active (for example, mount-only routing).
+- Nested mounts can override placement expectations; do not recompute logical targets from placement + directory names.
+
 Placement defaults persist to `.rundown/config.json` under `workspace.placement` for compatibility with transition-era behavior.
 
 Legacy placement terminology:
