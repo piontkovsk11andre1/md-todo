@@ -417,17 +417,29 @@ export function resolveWorkspacePaths(input: {
     placement: input.placement,
   });
 
+  const resolvedDesignPath = resolveWorkspaceMountPath({ mounts, logicalPath: "design" });
+  const resolvedImplementationPath = resolveWorkspaceMountPath({ mounts, logicalPath: "implementation" });
+  const resolvedSpecsPath = resolveWorkspaceMountPath({ mounts, logicalPath: "specs" });
+  const resolvedMigrationsPath = resolveWorkspaceMountPath({ mounts, logicalPath: "migrations" });
+  const resolvedPredictionPath = resolveWorkspaceMountPath({ mounts, logicalPath: "prediction" });
+
   const resolvedPaths = {
-    design: resolveWorkspaceMountPath({ mounts, logicalPath: "design" }).absolutePath,
-    implementation: resolveWorkspaceMountPath({ mounts, logicalPath: "implementation" }).absolutePath,
-    specs: resolveWorkspaceMountPath({ mounts, logicalPath: "specs" }).absolutePath,
-    migrations: resolveWorkspaceMountPath({ mounts, logicalPath: "migrations" }).absolutePath,
-    prediction: resolveWorkspaceMountPath({ mounts, logicalPath: "prediction" }).absolutePath,
+    design: resolvedDesignPath.absolutePath,
+    implementation: resolvedImplementationPath.absolutePath,
+    specs: resolvedSpecsPath.absolutePath,
+    migrations: resolvedMigrationsPath.absolutePath,
+    prediction: resolvedPredictionPath.absolutePath,
   } satisfies WorkspacePaths;
 
   validateResolvedBucketConflicts({
     configPath: path.join(workspaceRoot, ".rundown", "config.json"),
-    paths: resolvedPaths,
+    resolvedBuckets: {
+      design: resolvedDesignPath,
+      implementation: resolvedImplementationPath,
+      specs: resolvedSpecsPath,
+      migrations: resolvedMigrationsPath,
+      prediction: resolvedPredictionPath,
+    },
   });
 
   return resolvedPaths;
@@ -805,9 +817,12 @@ function isAncestorOrDescendantPath(left: string, right: string): boolean {
   return left.startsWith(right + "/") || right.startsWith(left + "/");
 }
 
-function validateResolvedBucketConflicts(input: { configPath: string; paths: WorkspacePaths }): void {
-  const { configPath, paths } = input;
-  const entries = Object.entries(paths) as Array<[WorkspaceBucket, string]>;
+function validateResolvedBucketConflicts(input: {
+  configPath: string;
+  resolvedBuckets: Record<WorkspaceBucket, ResolvedWorkspaceMountPath>;
+}): void {
+  const { configPath, resolvedBuckets } = input;
+  const entries = Object.entries(resolvedBuckets) as Array<[WorkspaceBucket, ResolvedWorkspaceMountPath]>;
 
   for (let index = 0; index < entries.length; index += 1) {
     const current = entries[index];
@@ -821,17 +836,19 @@ function validateResolvedBucketConflicts(input: { configPath: string; paths: Wor
         continue;
       }
 
-      const currentPath = normalizeForPathComparison(current[1]);
-      const otherPath = normalizeForPathComparison(other[1]);
+      const currentPath = normalizeForPathComparison(current[1].absolutePath);
+      const otherPath = normalizeForPathComparison(other[1].absolutePath);
       if (currentPath === otherPath) {
         throw new Error(
-          `Invalid project config at ${configPath}: workspace directories "${current[0]}" and "${other[0]}" both resolve to "${current[1]}".`,
+          `Invalid project config at ${configPath}: workspace directories "${current[0]}" and "${other[0]}" both resolve to "${current[1].absolutePath}".`,
         );
       }
 
-      if (isAncestorOrDescendantPath(currentPath, otherPath)) {
+      const currentMountIsLegacy = current[1].mount.source === "legacy";
+      const otherMountIsLegacy = other[1].mount.source === "legacy";
+      if (currentMountIsLegacy && otherMountIsLegacy && isAncestorOrDescendantPath(currentPath, otherPath)) {
         throw new Error(
-          `Invalid project config at ${configPath}: workspace directories "${current[0]}" ("${current[1]}") and "${other[0]}" ("${other[1]}") overlap.`,
+          `Invalid project config at ${configPath}: workspace directories "${current[0]}" ("${current[1].absolutePath}") and "${other[0]}" ("${other[1].absolutePath}") overlap.`,
         );
       }
     }

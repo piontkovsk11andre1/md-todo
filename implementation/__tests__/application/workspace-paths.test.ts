@@ -183,6 +183,32 @@ describe("prediction workspace config", () => {
     });
   });
 
+  it("supports bare workspace layouts with all buckets mounted externally", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "rundown-only");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            design: "../docs/design",
+            implementation: "../app/src",
+            specs: "../app/specs",
+            migrations: "../ops/migrations",
+            prediction: "../ops/prediction",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      design: path.resolve(workspaceRoot, "../docs/design"),
+      implementation: path.resolve(workspaceRoot, "../app/src"),
+      specs: path.resolve(workspaceRoot, "../app/specs"),
+      migrations: path.resolve(workspaceRoot, "../ops/migrations"),
+      prediction: path.resolve(workspaceRoot, "../ops/prediction"),
+    });
+  });
+
   it("normalizes logical paths for mount lookups", () => {
     expect(normalizeWorkspaceLogicalPath(" implementation\\generated\\schema.ts ")).toBe(
       "implementation/generated/schema.ts",
@@ -227,6 +253,99 @@ describe("prediction workspace config", () => {
     });
   });
 
+  it("allows nested mount overrides for design/current under design", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            design: "../design-root",
+            "design/current": "../drafts/current-design",
+          },
+        },
+      }),
+    });
+
+    const mounts = resolveWorkspaceMounts({ fileSystem, workspaceRoot });
+    expect(resolveWorkspaceMountPath({ mounts, logicalPath: "design/current/Target.md" }).absolutePath).toBe(
+      path.resolve(workspaceRoot, "../drafts/current-design", "Target.md"),
+    );
+    expect(resolveWorkspaceMountPath({ mounts, logicalPath: "design/rev.3/Target.md" }).absolutePath).toBe(
+      path.resolve(workspaceRoot, "../design-root", "rev.3", "Target.md"),
+    );
+  });
+
+  it("supports attaching invocation directory as implementation mount target", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const invocationRoot = path.join(path.sep, "repo", "invocation");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            implementation: invocationRoot,
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+      design: path.join(workspaceRoot, "design"),
+      implementation: invocationRoot,
+      specs: path.join(workspaceRoot, "specs"),
+      migrations: path.join(workspaceRoot, "migrations"),
+      prediction: path.join(workspaceRoot, "prediction"),
+    });
+  });
+
+  it("supports attaching invocation directory as specs mount target", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const invocationRoot = path.join(path.sep, "repo", "invocation");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            specs: invocationRoot,
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+      design: path.join(workspaceRoot, "design"),
+      implementation: path.join(workspaceRoot, "implementation"),
+      specs: invocationRoot,
+      migrations: path.join(workspaceRoot, "migrations"),
+      prediction: path.join(workspaceRoot, "prediction"),
+    });
+  });
+
+  it("supports invocation-root implementation mounts with selective external subpath overrides", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const invocationRoot = path.join(path.sep, "repo", "invocation");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            implementation: invocationRoot,
+            "implementation/migrations": "../shared/migrations",
+          },
+        },
+      }),
+    });
+
+    const mounts = resolveWorkspaceMounts({ fileSystem, workspaceRoot, invocationRoot });
+    expect(resolveWorkspaceMountPath({ mounts, logicalPath: "implementation/src/main.ts" }).absolutePath).toBe(
+      path.resolve(invocationRoot, "src", "main.ts"),
+    );
+    expect(
+      resolveWorkspaceMountPath({ mounts, logicalPath: "implementation/migrations/2026.05.04.md" }).absolutePath,
+    ).toBe(path.resolve(workspaceRoot, "../shared/migrations", "2026.05.04.md"));
+  });
+
   it("fails when no mount matches a logical path", () => {
     expect(() => resolveWorkspaceMountPath({ mounts: {}, logicalPath: "implementation/foo.ts" })).toThrow(
       'No workspace mount found for logical path "implementation/foo.ts".',
@@ -253,6 +372,63 @@ describe("prediction workspace config", () => {
       logicalPath: "implementation",
       absoluteTargetPath: path.resolve(workspaceRoot, "../external-app"),
       source: "explicit",
+    });
+  });
+
+  it("allows intentional overlap for explicit mount targets", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            design: "../shared/workspace",
+            specs: "../shared/workspace/specs",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      design: path.resolve(workspaceRoot, "../shared/workspace"),
+      implementation: path.join(workspaceRoot, "implementation"),
+      specs: path.resolve(workspaceRoot, "../shared/workspace/specs"),
+      migrations: path.join(workspaceRoot, "migrations"),
+      prediction: path.join(workspaceRoot, "prediction"),
+    });
+  });
+
+  it("keeps legacy directory and placement behavior when explicit mounts are absent", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "source-workspace");
+    const invocationRoot = path.join(path.sep, "repo", "linked-invocation");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          directories: {
+            design: "design",
+            implementation: "implementation",
+            specs: "quality/specs",
+            migrations: "changesets",
+            prediction: "predicted",
+          },
+          placement: {
+            design: "sourcedir",
+            implementation: "sourcedir",
+            specs: "workdir",
+            migrations: "workdir",
+            prediction: "workdir",
+          },
+        },
+      }),
+    });
+
+    expect(resolveWorkspacePaths({ fileSystem, workspaceRoot, invocationRoot })).toEqual({
+      design: path.join(workspaceRoot, "design"),
+      implementation: path.join(workspaceRoot, "implementation"),
+      specs: path.join(invocationRoot, "quality", "specs"),
+      migrations: path.join(invocationRoot, "changesets"),
+      prediction: path.join(invocationRoot, "predicted"),
     });
   });
 
