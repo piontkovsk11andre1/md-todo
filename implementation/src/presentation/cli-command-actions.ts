@@ -1490,6 +1490,7 @@ export function createCompactCommandAction({
 }: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
   return (opts: CliOpts) => {
     const target = parseCompactTarget(opts.target);
+    validateCompactScopeCombination(target ?? "all", opts);
     return getApp().compactTask({
       workspace: normalizeOptionalString(opts.workspace),
       target,
@@ -1500,6 +1501,33 @@ export function createCompactCommandAction({
       keepMigrationsThreads: parseCompactKeepCount(opts.keepMigrationsThreads, "keep-migrations-threads"),
     });
   };
+}
+
+function validateCompactScopeCombination(
+  target: "revisions" | "migrations" | "all",
+  opts: CliOpts,
+): void {
+  const hasKeepRevisions = normalizeOptionalString(opts.keepRevisions) !== undefined;
+  const hasKeepMigrationsRoot = normalizeOptionalString(opts.keepMigrationsRoot) !== undefined;
+  const hasKeepMigrationsThreads = normalizeOptionalString(opts.keepMigrationsThreads) !== undefined;
+
+  if (target === "revisions") {
+    const migrationFlags = [
+      hasKeepMigrationsRoot ? "--keep-migrations-root" : undefined,
+      hasKeepMigrationsThreads ? "--keep-migrations-threads" : undefined,
+    ].filter((value): value is string => value !== undefined);
+    if (migrationFlags.length > 0) {
+      throw new Error(
+        `Invalid compact option combination: --target revisions cannot include migration retention flags (${migrationFlags.join(", ")}).`,
+      );
+    }
+  }
+
+  if (target === "migrations" && hasKeepRevisions) {
+    throw new Error(
+      "Invalid compact option combination: --target migrations cannot include --keep-revisions.",
+    );
+  }
 }
 
 function parseCompactKeepCount(value: string | string[] | boolean | undefined, optionName: string): number | undefined {

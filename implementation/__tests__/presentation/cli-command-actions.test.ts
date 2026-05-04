@@ -2439,7 +2439,7 @@ describe("createCompactCommandAction", () => {
 
     const exitCode = await action({
       workspace: "../workspace-source",
-      target: "migrations",
+      target: "all",
       dryRun: true,
       keep: "7",
       keepRevisions: "3",
@@ -2451,7 +2451,7 @@ describe("createCompactCommandAction", () => {
     expect(compactTask).toHaveBeenCalledTimes(1);
     expect(compactTask).toHaveBeenCalledWith({
       workspace: "../workspace-source",
-      target: "migrations",
+      target: "all",
       dryRun: true,
       keepCount: 7,
       keepRevisions: 3,
@@ -2482,6 +2482,38 @@ describe("createCompactCommandAction", () => {
 
     expect(() => action({ keep: "abc" })).toThrow(
       "Invalid --keep value: abc. Must be a non-negative integer.",
+    );
+    expect(compactTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects revisions target with migration retention flags", () => {
+    const compactTask = vi.fn(async () => 0);
+    const app = { compactTask } as unknown as CliApp;
+    const action = createCompactCommandAction({
+      getApp: () => app,
+    });
+
+    expect(() => action({
+      target: "revisions",
+      keepMigrationsRoot: "2",
+    })).toThrow(
+      "Invalid compact option combination: --target revisions cannot include migration retention flags (--keep-migrations-root).",
+    );
+    expect(compactTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects migrations target with revision retention flag", () => {
+    const compactTask = vi.fn(async () => 0);
+    const app = { compactTask } as unknown as CliApp;
+    const action = createCompactCommandAction({
+      getApp: () => app,
+    });
+
+    expect(() => action({
+      target: "migrations",
+      keepRevisions: "2",
+    })).toThrow(
+      "Invalid compact option combination: --target migrations cannot include --keep-revisions.",
     );
     expect(compactTask).not.toHaveBeenCalled();
   });

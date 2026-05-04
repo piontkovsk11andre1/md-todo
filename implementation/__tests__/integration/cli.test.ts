@@ -11592,6 +11592,129 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--keep-migrations-threads <n> Keep newest N migration payloads hot per thread lane");
   });
 
+  it("compact --dry-run reports planned archive moves without changing files", async () => {
+    const workspace = makeTempWorkspace();
+    setupCompactFixture(workspace);
+
+    const result = await runCli([
+      "compact",
+      "--target",
+      "all",
+      "--dry-run",
+      "--keep",
+      "1",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = [...result.logs, ...result.errors, ...result.stdoutWrites, ...result.stderrWrites].join("\n");
+    expect(combinedOutput).toContain("Compacting history (target=all, dryRun=true, keep=1).");
+    expect(combinedOutput).toContain("would move: design/revisions/rev.1 -> design/archive/revisions/rev.1");
+    expect(combinedOutput).toContain("would move: migrations/1. Baseline.md -> migrations/archive/root/1. Baseline.md");
+    expect(combinedOutput).toContain("would move: migrations/1.3 Review.md -> migrations/archive/root/1.3 Review.md");
+    expect(combinedOutput).toContain("would move: migrations/threads/auth/1. Auth baseline.md -> migrations/archive/threads/auth/1. Auth baseline.md");
+    expect(combinedOutput).toContain("Dry-run complete: 4 payload(s) eligible for archive relocation.");
+
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.1", "notes.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "1. Baseline.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "threads", "auth", "1. Auth baseline.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".rundown", "archive-index.json"))).toBe(false);
+  });
+
+  it("compact execute mode relocates payloads and writes archive summary", async () => {
+    const workspace = makeTempWorkspace();
+    setupCompactFixture(workspace);
+
+    const result = await runCli([
+      "compact",
+      "--target",
+      "all",
+      "--keep",
+      "1",
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = [...result.logs, ...result.errors, ...result.stdoutWrites, ...result.stderrWrites].join("\n");
+    expect(combinedOutput).toContain("Compacting history (target=all, dryRun=false, keep=1).");
+    expect(combinedOutput).toContain("moved: design/revisions/rev.1 -> design/archive/revisions/rev.1");
+    expect(combinedOutput).toContain("moved: migrations/1. Baseline.md -> migrations/archive/root/1. Baseline.md");
+    expect(combinedOutput).toContain("moved: migrations/1.3 Review.md -> migrations/archive/root/1.3 Review.md");
+    expect(combinedOutput).toContain("moved: migrations/threads/auth/1. Auth baseline.md -> migrations/archive/threads/auth/1. Auth baseline.md");
+    expect(combinedOutput).toContain("Compaction complete: 4 payload(s) moved to archive roots and indexed.");
+
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.1", "notes.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "design", "archive", "revisions", "rev.1", "notes.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design", "revisions", "rev.2", "notes.md"))).toBe(true);
+
+    expect(fs.existsSync(path.join(workspace, "migrations", "1. Baseline.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", "1.3 Review.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", "archive", "root", "1. Baseline.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "archive", "root", "1.3 Review.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "2. Current.md"))).toBe(true);
+
+    expect(fs.existsSync(path.join(workspace, "migrations", "threads", "auth", "1. Auth baseline.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "migrations", "threads", "auth", "2. Auth current.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "archive", "threads", "auth", "1. Auth baseline.md"))).toBe(true);
+
+    const manifestPath = path.join(workspace, ".rundown", "archive-index.json");
+    expect(fs.existsSync(manifestPath)).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
+      entries?: Array<{ kind: string; originalLogicalPath: string; archiveLogicalPath: string }>;
+    };
+    expect(Array.isArray(manifest.entries)).toBe(true);
+    expect(manifest.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "revision-payload",
+        originalLogicalPath: "design/revisions/rev.1",
+        archiveLogicalPath: "design/archive/revisions/rev.1",
+      }),
+      expect.objectContaining({
+        kind: "migration-primary",
+        originalLogicalPath: "migrations/1. Baseline.md",
+        archiveLogicalPath: "migrations/archive/root/1. Baseline.md",
+      }),
+      expect.objectContaining({
+        kind: "migration-review",
+        originalLogicalPath: "migrations/1.3 Review.md",
+        archiveLogicalPath: "migrations/archive/root/1.3 Review.md",
+      }),
+      expect.objectContaining({
+        kind: "migration-thread-primary",
+        originalLogicalPath: "migrations/threads/auth/1. Auth baseline.md",
+        archiveLogicalPath: "migrations/archive/threads/auth/1. Auth baseline.md",
+      }),
+    ]));
+  });
+
+  it("compact rejects invalid target and retention scope combinations", async () => {
+    const workspace = makeTempWorkspace();
+
+    const revisionsResult = await runCli([
+      "compact",
+      "--target",
+      "revisions",
+      "--keep-migrations-root",
+      "1",
+    ], workspace);
+
+    expect(revisionsResult.code).toBe(1);
+    expect(revisionsResult.errors.some((line) => line.includes(
+      "Invalid compact option combination: --target revisions cannot include migration retention flags",
+    ))).toBe(true);
+
+    const migrationsResult = await runCli([
+      "compact",
+      "--target",
+      "migrations",
+      "--keep-revisions",
+      "1",
+    ], workspace);
+
+    expect(migrationsResult.code).toBe(1);
+    expect(migrationsResult.errors.some((line) => line.includes(
+      "Invalid compact option combination: --target migrations cannot include --keep-revisions.",
+    ))).toBe(true);
+  });
+
   it("design diff --help includes --workspace examples", async () => {
     const workspace = makeTempWorkspace();
 
@@ -14543,6 +14666,41 @@ function writeSavedRun(
     status: options.status,
     extra: options.extra,
   }, null, 2), "utf-8");
+}
+
+function setupCompactFixture(workspace: string): void {
+  const currentDir = path.join(workspace, "design", "current");
+  const revisionsDir = path.join(workspace, "design", "revisions");
+  fs.mkdirSync(currentDir, { recursive: true });
+  fs.writeFileSync(path.join(currentDir, "draft.md"), "# Draft\n", "utf-8");
+
+  fs.mkdirSync(path.join(revisionsDir, "rev.1"), { recursive: true });
+  fs.writeFileSync(path.join(revisionsDir, "rev.1", "notes.md"), "rev1\n", "utf-8");
+  fs.writeFileSync(path.join(revisionsDir, "rev.1.meta.json"), JSON.stringify({
+    revision: "rev.1",
+    index: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    plannedAt: "2026-01-02T00:00:00.000Z",
+    migrations: ["1. Baseline.md"],
+  }, null, 2) + "\n", "utf-8");
+
+  fs.mkdirSync(path.join(revisionsDir, "rev.2"), { recursive: true });
+  fs.writeFileSync(path.join(revisionsDir, "rev.2", "notes.md"), "rev2\n", "utf-8");
+  fs.writeFileSync(path.join(revisionsDir, "rev.2.meta.json"), JSON.stringify({
+    revision: "rev.2",
+    index: 2,
+    createdAt: "2026-02-01T00:00:00.000Z",
+    plannedAt: "2026-02-02T00:00:00.000Z",
+    migrations: ["2. Current.md"],
+  }, null, 2) + "\n", "utf-8");
+
+  const migrationsDir = path.join(workspace, "migrations");
+  fs.mkdirSync(path.join(migrationsDir, "threads", "auth"), { recursive: true });
+  fs.writeFileSync(path.join(migrationsDir, "1. Baseline.md"), "# baseline\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "1.3 Review.md"), "# review\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "2. Current.md"), "# current\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "threads", "auth", "1. Auth baseline.md"), "# auth baseline\n", "utf-8");
+  fs.writeFileSync(path.join(migrationsDir, "threads", "auth", "2. Auth current.md"), "# auth current\n", "utf-8");
 }
 
 function normalizeOutputEvents(events: string[]): string[] {
