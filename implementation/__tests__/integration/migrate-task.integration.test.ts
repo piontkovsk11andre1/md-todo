@@ -578,6 +578,62 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(rev2Meta.plannedAt).toBeTypeOf("string");
   });
 
+  it("migrate preflight keeps target selection anchored to lowest unplanned revision metadata", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        commands: {
+          research: ["node", "-e", buildMigrateExecutionWorkerScript()],
+          plan: ["node", "-e", buildMigrateExecutionWorkerScript()],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")), "# 1. Initialize\n\n- [x] bootstrap\n", "utf-8");
+
+    fs.writeFileSync(path.join(workspace, "docs", "current", "Design.md"), "# Design\n\nDraft changed after rev.1.\n", "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildConvergentMigrateWorkerScript([
+        "first-lowest-unplanned",
+        "second-preflight-revision",
+      ]),
+    ], workspace);
+
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+
+    expect(result.code, combinedOutput).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(true);
+
+    const planningLines = combinedOutput
+      .split(/\r?\n/)
+      .filter((line) => line.includes("Planning migrations for "));
+    expect(planningLines.length).toBeGreaterThan(0);
+    expect(planningLines[0]).toContain("Planning migrations for rev.0 → rev.1");
+
+    const rev1Meta = readRevisionMeta(workspace, "docs", 1);
+    const rev2Meta = readRevisionMeta(workspace, "docs", 2);
+    expect(rev1Meta.plannedAt).toBeTypeOf("string");
+    expect(rev2Meta.plannedAt).toBeTypeOf("string");
+    expect(rev1Meta.migrations ?? []).toContain("migrations/2. First Lowest Unplanned.md");
+    expect(rev2Meta.migrations ?? []).toContain("migrations/3. Second Preflight Revision.md");
+  });
+
   it("migrate bootstraps rev.0 from design/current when no released revisions exist", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
