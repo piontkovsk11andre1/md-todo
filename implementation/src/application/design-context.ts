@@ -1,9 +1,9 @@
 import path from "node:path";
 import type { FileSystem } from "../domain/ports/index.js";
 import {
-  resolveDesignCurrentPathOverride,
+  resolveWorkspaceMountPath,
+  resolveWorkspaceMounts,
   resolveWorkspaceDirectories,
-  resolveWorkspacePlacement,
 } from "./workspace-paths.js";
 
 export interface DesignContextResolution {
@@ -1602,24 +1602,24 @@ function resolveConfiguredDesignWorkspace(
   currentPathIsExternal: boolean;
 } {
   const workspaceDir = getConfiguredDesignWorkspaceDir(fileSystem, workspaceRoot);
-  const placement = resolveWorkspacePlacement({
+  const mounts = resolveWorkspaceMounts({
     fileSystem,
     workspaceRoot,
+    invocationRoot,
   });
-  const workspacePath = path.join(
-    placement.design === "workdir" ? (invocationRoot ?? workspaceRoot) : workspaceRoot,
-    workspaceDir,
-  );
-  const externalCurrentPath = resolveDesignCurrentPathOverride({
-    fileSystem,
-    workspaceRoot,
+  const designRootPath = resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: "design",
   });
-  const currentPath = externalCurrentPath ?? path.join(workspacePath, "current");
+  const designCurrentPath = resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: "design/current",
+  });
 
   return {
     workspaceDir,
-    workspacePath,
-    currentPath,
-    currentPathIsExternal: externalCurrentPath !== undefined,
+    workspacePath: designRootPath.absolutePath,
+    currentPath: designCurrentPath.absolutePath,
+    currentPathIsExternal: designCurrentPath.mount.logicalPath !== "design",
   };
 }
