@@ -21,6 +21,16 @@ import {
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
 import {
+  buildWorkspaceContextTemplateVars,
+  mergeTemplateVarsWithWorkspaceContext,
+  resolveRuntimeWorkspaceContext,
+} from "./runtime-workspace-context.js";
+import {
+  resolveWorkspaceDirectories,
+  resolveWorkspaceMounts,
+  resolveWorkspacePaths,
+} from "./workspace-paths.js";
+import {
   TemplateCliBlockExecutionError,
   withTemplateCliFailureAbort,
 } from "./cli-block-handlers.js";
@@ -218,6 +228,34 @@ export function createDiscussTask(
       dependencies.configDir?.configDir,
     );
     const cwd = dependencies.workingDirectory.cwd();
+    const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd: cwd,
+      },
+      dependencies.pathOperations,
+    );
+    const workspaceDirectories = resolveWorkspaceDirectories({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+    });
+    const workspacePaths = resolveWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
+    const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
+      runtimeWorkspaceContext,
+      {
+        directories: workspaceDirectories,
+        paths: workspacePaths,
+        mounts: workspaceMounts,
+      },
+    );
     const fileTemplateVars = varsFilePath
       ? dependencies.templateVarsLoader.load(
         varsFilePath,
@@ -226,10 +264,11 @@ export function createDiscussTask(
       )
       : {};
     const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs);
-    const extraTemplateVars: ExtraTemplateVars = {
-      ...fileTemplateVars,
-      ...cliTemplateVars,
-    };
+    const extraTemplateVars: ExtraTemplateVars = mergeTemplateVarsWithWorkspaceContext(
+      fileTemplateVars,
+      cliTemplateVars,
+      workspaceContextTemplateVars,
+    );
     const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
     const templateVarsWithUserVariables: ExtraTemplateVars = {
       ...extraTemplateVars,

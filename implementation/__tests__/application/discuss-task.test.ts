@@ -2445,6 +2445,66 @@ describe("discuss-task", () => {
     expect(events).toContainEqual({ kind: "text", text: "Release channel: beta" });
   });
 
+  it("keeps workspace context template variables authoritative over user vars", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return [
+          "invocationDir={{invocationDir}}",
+          "workspaceDir={{workspaceDir}}",
+          "workspaceLinkPath={{workspaceLinkPath}}",
+          "isLinkedWorkspace={{isLinkedWorkspace}}",
+          "workspaceDesignPath={{workspaceDesignPath}}",
+        ].join("\n");
+      }
+      return null;
+    });
+    vi.mocked(dependencies.templateVarsLoader.load).mockReturnValue({
+      invocationDir: "/fake/file/invocation",
+      workspaceDir: "/fake/file/workspace",
+      workspaceLinkPath: "/fake/file/workspace.link",
+      isLinkedWorkspace: "true",
+      workspaceDesignPath: "/fake/file/design",
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+      varsFileOption: "custom-vars.json",
+      cliTemplateVarArgs: [
+        "invocationDir=/fake/cli/invocation",
+        "workspaceDir=/fake/cli/workspace",
+        "workspaceLinkPath=/fake/cli/workspace.link",
+        "isLinkedWorkspace=true",
+        "workspaceDesignPath=/fake/cli/design",
+      ],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`invocationDir=${path.resolve(cwd)}`);
+    expect(prompt).toContain(`workspaceDir=${path.resolve(cwd)}`);
+    expect(prompt).toContain("workspaceLinkPath=");
+    expect(prompt).toContain("isLinkedWorkspace=false");
+    expect(prompt).toContain(`workspaceDesignPath=${path.resolve(cwd, "design")}`);
+    expect(prompt).not.toContain(path.resolve("/fake/file/invocation"));
+    expect(prompt).not.toContain(path.resolve("/fake/cli/invocation"));
+  });
+
   it("loads --vars-file values into rendered discuss prompt", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

@@ -2261,9 +2261,81 @@ describe("reverify-task", () => {
       verifyTemplate: "<command>echo verify-Build release</command>\n<output>\nexpanded:echo verify-Build release\n</output>",
       repairTemplate: "<command>echo repair-Build release</command>\n<output>\nexpanded:echo repair-Build release\n</output>",
       templateVars: expect.objectContaining({
-        userVariables: "(none)",
+        invocationDir: path.resolve(cwd),
+        workspaceDir: path.resolve(cwd),
+        workspaceDesignPath: path.resolve(cwd, "design"),
       }),
     }));
+  });
+
+  it("keeps workspace context template variables authoritative over user vars", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "roadmap.md");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "# Roadmap\n- [x] Build release\n",
+    });
+
+    const completedRun = createRunMetadata({
+      runId: "run-completed",
+      status: "completed",
+      task: {
+        text: "Build release",
+        file: taskFile,
+        line: 2,
+        index: 0,
+        source: "roadmap.md",
+      },
+    });
+
+    const { dependencies, events } = createDependencies({
+      cwd,
+      fileSystem,
+      runs: [completedRun],
+    });
+    vi.mocked(dependencies.templateVarsLoader.load).mockReturnValue({
+      invocationDir: "/fake/file/invocation",
+      workspaceDir: "/fake/file/workspace",
+      workspaceLinkPath: "/fake/file/workspace.link",
+      isLinkedWorkspace: "true",
+      workspaceDesignPath: "/fake/file/design",
+    });
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "verify.md"))) {
+        return [
+          "invocationDir={{invocationDir}}",
+          "workspaceDir={{workspaceDir}}",
+          "workspaceLinkPath={{workspaceLinkPath}}",
+          "isLinkedWorkspace={{isLinkedWorkspace}}",
+          "workspaceDesignPath={{workspaceDesignPath}}",
+        ].join("\n");
+      }
+
+      return null;
+    });
+
+    const reverifyTask = createReverifyTask(dependencies);
+    const code = await reverifyTask(createOptions({
+      runId: "latest",
+      printPrompt: true,
+      varsFileOption: "custom-vars.json",
+      cliTemplateVarArgs: [
+        "invocationDir=/fake/cli/invocation",
+        "workspaceDir=/fake/cli/workspace",
+        "workspaceLinkPath=/fake/cli/workspace.link",
+        "isLinkedWorkspace=true",
+        "workspaceDesignPath=/fake/cli/design",
+      ],
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain(`invocationDir=${path.resolve(cwd)}`);
+    expect(prompt).toContain(`workspaceDir=${path.resolve(cwd)}`);
+    expect(prompt).toContain("workspaceLinkPath=");
+    expect(prompt).toContain("isLinkedWorkspace=false");
+    expect(prompt).toContain(`workspaceDesignPath=${path.resolve(cwd, "design")}`);
+    expect(prompt).not.toContain(path.resolve("/fake/file/invocation"));
+    expect(prompt).not.toContain(path.resolve("/fake/cli/invocation"));
   });
 
   it("skips cli block expansion when ignoreCliBlock is enabled", async () => {

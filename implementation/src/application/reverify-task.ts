@@ -8,6 +8,16 @@ import {
   resolveTemplateVarsFilePath,
   type ExtraTemplateVars,
 } from "../domain/template-vars.js";
+import {
+  buildWorkspaceContextTemplateVars,
+  mergeTemplateVarsWithWorkspaceContext,
+  resolveRuntimeWorkspaceContext,
+} from "./runtime-workspace-context.js";
+import {
+  resolveWorkspaceDirectories,
+  resolveWorkspaceMounts,
+  resolveWorkspacePaths,
+} from "./workspace-paths.js";
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import { resolveRunBehavior } from "../domain/run-options.js";
 import {
@@ -171,10 +181,40 @@ export function createReverifyTask(
       )
       : {};
     const cliTemplateVars = parseCliTemplateVars(cliTemplateVarArgs ?? []);
-    const extraTemplateVars: ExtraTemplateVars = {
-      ...fileTemplateVars,
-      ...cliTemplateVars,
-    };
+    const cwd = dependencies.workingDirectory.cwd();
+    const runtimeWorkspaceContext = resolveRuntimeWorkspaceContext(
+      {
+        executionCwd: cwd,
+      },
+      dependencies.pathOperations,
+    );
+    const workspaceDirectories = resolveWorkspaceDirectories({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+    });
+    const workspacePaths = resolveWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
+    const workspaceMounts = resolveWorkspaceMounts({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
+    const workspaceContextTemplateVars = buildWorkspaceContextTemplateVars(
+      runtimeWorkspaceContext,
+      {
+        directories: workspaceDirectories,
+        paths: workspacePaths,
+        mounts: workspaceMounts,
+      },
+    );
+    const extraTemplateVars: ExtraTemplateVars = mergeTemplateVarsWithWorkspaceContext(
+      fileTemplateVars,
+      cliTemplateVars,
+      workspaceContextTemplateVars,
+    );
     const rundownVarEnv = buildRundownVarEnv(extraTemplateVars);
     const templateVarsWithUserVariables: ExtraTemplateVars = {
       ...extraTemplateVars,
@@ -212,7 +252,6 @@ export function createReverifyTask(
       return 1;
     }
 
-    const cwd = dependencies.workingDirectory.cwd();
     const artifactBaseDir = dependencies.configDir?.configDir;
     const loadedWorkerConfig = dependencies.configDir?.configDir
       ? dependencies.workerConfigPort.load(dependencies.configDir.configDir)
