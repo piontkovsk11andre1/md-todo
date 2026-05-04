@@ -928,6 +928,37 @@ describe("migrate-task", () => {
     ]);
   });
 
+  it("prefers hot thread migration payloads when archived and hot filenames overlap", () => {
+    const workspace = makeTempWorkspace();
+    const fileSystem = createNodeFileSystem();
+    const threadsDir = path.join(workspace, ".rundown", "threads");
+    const migrationsDir = path.join(workspace, "migrations");
+    const archivedThreadsDir = path.join(migrationsDir, "archive", "threads");
+    const billingHotDir = path.join(migrationsDir, "threads", "billing");
+    const billingArchiveDir = path.join(archivedThreadsDir, "billing");
+    const duplicateFileName = formatMigrationFilename(1, "billing-seed");
+
+    fs.mkdirSync(threadsDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsDir, "billing.md"), "# Billing\n", "utf-8");
+    fs.mkdirSync(billingHotDir, { recursive: true });
+    fs.mkdirSync(billingArchiveDir, { recursive: true });
+    fs.writeFileSync(path.join(billingArchiveDir, duplicateFileName), "# 1. Billing Seed\n\n- [x] archive\n", "utf-8");
+    fs.writeFileSync(path.join(billingHotDir, duplicateFileName), "# 1. Billing Seed\n\n- [x] hot\n", "utf-8");
+
+    const discoveredThreads = discoverMigrationThreads(fileSystem, workspace);
+    const loadedStates = loadMigrationThreadStates({
+      fileSystem,
+      migrationsDir,
+      archivedThreadsDir,
+      threads: discoveredThreads,
+    });
+
+    expect(loadedStates).toHaveLength(1);
+    expect(loadedStates[0]?.state.currentPosition).toBe(1);
+    expect(loadedStates[0]?.state.migrations).toHaveLength(1);
+    expect(loadedStates[0]?.state.migrations[0]?.filePath).toBe(path.join(billingHotDir, duplicateFileName));
+  });
+
   it("loads empty state for a thread when its migrations directory does not exist", () => {
     const workspace = makeTempWorkspace();
     const fileSystem = createNodeFileSystem();

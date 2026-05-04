@@ -1714,7 +1714,14 @@ function listMigrationLaneFiles(input: {
   const { fileSystem, migrationsDir, archivedMigrationsDir } = input;
   const archivedFiles = listMigrationFilesInDirectory(fileSystem, archivedMigrationsDir);
   const hotFiles = listMigrationFilesInDirectory(fileSystem, migrationsDir);
-  return [...archivedFiles, ...hotFiles];
+
+  // Preserve archived-then-hot enumeration for parser precedence while
+  // dropping archived entries that have the same filename as hot entries.
+  const hotFileKeys = new Set(hotFiles.map(migrationLaneFileKey));
+  const archivedWithoutHotOverlaps = archivedFiles
+    .filter((filePath) => !hotFileKeys.has(migrationLaneFileKey(filePath)));
+
+  return [...archivedWithoutHotOverlaps, ...hotFiles];
 }
 
 function listMigrationFilesInDirectory(fileSystem: FileSystem, migrationsDir?: string): string[] {
@@ -1734,6 +1741,10 @@ function listMigrationFilesInDirectory(fileSystem: FileSystem, migrationsDir?: s
     .filter((entry) => entry.isFile)
     .map((entry) => path.join(migrationsDir, entry.name))
     .sort((left, right) => left.localeCompare(right));
+}
+
+function migrationLaneFileKey(filePath: string): string {
+  return path.basename(filePath).toLowerCase();
 }
 
 function migrationThreadMigrationsDir(migrationsDir: string, threadSlug: string): string {
