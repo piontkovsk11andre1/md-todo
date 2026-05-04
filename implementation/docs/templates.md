@@ -24,8 +24,6 @@ Store templates in `.rundown/`:
   plan.md
   plan-loop.md
   deep-plan.md
-  plan-prepend.md
-  plan-append.md
   discuss.md
   discuss-finished.md
   trace.md
@@ -60,8 +58,6 @@ Store templates in `.rundown/`:
 | `.rundown/plan.md` | Instructions for breaking a task into nested subtasks |
 | `.rundown/plan-loop.md` | Instructions for loop-mode planning (`rundown plan --loop`) using `memory:`, `fast:`, `get:`, and `loop:` conventions |
 | `.rundown/deep-plan.md` | Instructions for recursively expanding generated subtasks during deep planning |
-| `.rundown/plan-prepend.md` | Optional advisory guidance for what should appear near the beginning of generated plan tasks |
-| `.rundown/plan-append.md` | Optional advisory guidance for what should appear near the end of generated plan tasks |
 | `.rundown/discuss.md` | Instructions for interactive task refinement before execution |
 | `.rundown/discuss-finished.md` | Instructions shown when a discuss session exits with no in-file edits applied |
 | `.rundown/test-materialized.md` | Instructions for `rundown test` materialized mode (present-state validation) |
@@ -107,47 +103,54 @@ Scope and boundaries:
 - `.rundown/tools/*.md` tool templates do not support `{{defaultTemplate}}`.
 - Root no-arg help still follows its separate composition rule: warmup from `agent.md` then guidance from `help.md`.
 
-## Planner guidance files (optional)
+## Planner guidance is template-driven
 
-Planner customization can include two optional guidance files:
+Planner ordering and coverage guidance now lives directly in the planner templates
+that drive each mode:
+
+- `.rundown/plan.md` for top-level planning behavior,
+- `.rundown/plan-loop.md` for loop-mode planning behavior,
+- `.rundown/deep-plan.md` for deep child-task expansion behavior.
+
+Use these templates to describe intent such as:
+
+- when to add early discovery or setup checks,
+- when to add final validation or handoff tasks,
+- when those patterns should be skipped.
+
+Planner sidecar guidance files are no longer consulted:
 
 - `.rundown/plan-prepend.md`
 - `.rundown/plan-append.md`
 
-These files are not macro snippets and are not copied literally into TODO output.
-They are semantic guidance that influences planner judgment when `rundown plan`
-or plan phases in other commands generate missing tasks.
-
-Use them to express intent such as:
-
-- what discovery/setup checks should usually appear early,
-- what validation/handoff steps should usually appear late,
-- when those patterns should be skipped.
-
-Fallback behavior is safe by default:
-
-- if either file is missing, unreadable, or empty, it is treated as empty guidance,
-- planning continues normally with built-in guardrails,
-- add-only and convergence rules remain unchanged.
+If those files still exist in a repository, planning continues normally but their
+contents have no effect. Move any retained guidance text into the appropriate
+planner template manually.
 
 ### Good guidance style
 
 Prefer intent-oriented phrasing instead of literal TODO text requirements.
 
-Example `.rundown/plan-prepend.md`:
+Example inline guidance in `.rundown/plan.md`:
 
 ```md
 When changes affect unfamiliar modules, add an early discovery task to inspect current behavior and constraints before implementation.
 
-Skip this when the selected section is purely editorial documentation work.
-```
-
-Example `.rundown/plan-append.md`:
-
-```md
 If planned tasks modify executable source files, include a final verification task appropriate for the stack (tests, lint, or build).
 
-Do not add release or packaging tasks for local prototypes.
+Skip these additions for purely editorial documentation updates.
+```
+
+Example mode-specific guidance in `.rundown/plan-loop.md`:
+
+```md
+For loop planning, prefer explicit `get:` discovery first, then `for:` item work, and include a clear `end:` stop condition.
+```
+
+Example deep-expansion guidance in `.rundown/deep-plan.md`:
+
+```md
+When expanding leaf tasks, add only concrete child implementation steps and avoid repeating parent-level validation tasks unless they are still missing at the child level.
 ```
 
 ### Live help placeholders
