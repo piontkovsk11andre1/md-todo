@@ -232,6 +232,81 @@ describe("discuss-task", () => {
     expect(events).toContainEqual({ kind: "text", text: "Discuss prompt for: Refine rollout scope" });
   });
 
+  it("renders file discussion prompt even when no unchecked tasks remain", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Completed setup");
+    task.checked = true;
+    const source = "- [x] Completed setup\n";
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: source,
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source,
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "task={{task}}\nsource={{source}}";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("task=Completed setup");
+    expect(prompt).toContain("source=- [x] Completed setup");
+    expect(events.some((event) => event.kind === "info" && event.message === "No unchecked tasks found.")).toBe(false);
+  });
+
+  it("uses fallback anchor task when discussing a file with no task checkboxes", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "notes.md");
+    const task = createTask(taskFile, "placeholder");
+    const source = "# Notes\n\nNo checkbox tasks yet.\n";
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: source,
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source,
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.taskSelector.selectNextTask).mockReturnValue(null);
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "task={{task}}\nfile={{file}}\nsource={{source}}";
+      }
+      return null;
+    });
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "notes.md",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("task=Discuss file context and related artifacts");
+    expect(prompt).toContain(`file=${taskFile}`);
+    expect(prompt).toContain("source=# Notes");
+  });
+
   it("includes related run history in source-mode discuss prompt when matching runs exist", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

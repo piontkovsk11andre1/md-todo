@@ -1,5 +1,6 @@
 import type { SortMode } from "../domain/sorting.js";
 import type { Task } from "../domain/parser.js";
+import { parseTasks } from "../domain/parser.js";
 import { expandCliBlocks, extractCliBlocks } from "../domain/cli-block.js";
 import {
   buildMemoryTemplateVars,
@@ -453,13 +454,11 @@ export function createDiscussTask(
         // Select a single unchecked task according to configured sort behavior.
         const selectedBatch = dependencies.taskSelector.selectNextTask(files, sortMode);
         if (!selectedBatch || selectedBatch.length === 0) {
-          emit({ kind: "info", message: msg("discuss.no-unchecked-tasks", {}, localeMessages) });
-          return EXIT_CODE_NO_WORK;
+          taskContext = resolveFileDiscussContext(files[0]!, dependencies.fileSystem);
+        } else {
+          const selectedTask = selectedBatch[0]!;
+          taskContext = resolveTaskContext(selectedTask);
         }
-
-        const selectedTask = selectedBatch[0]!;
-
-        taskContext = resolveTaskContext(selectedTask);
 
         const selectedTaskFile = dependencies.pathOperations.isAbsolute(taskContext.task.file)
           ? dependencies.pathOperations.resolve(taskContext.task.file)
@@ -862,6 +861,36 @@ function resolveTaskContext(selection: TaskSelectionResult): ResolvedTaskContext
     task: selection.task,
     source: selection.source,
     contextBefore: selection.contextBefore,
+  };
+}
+
+function resolveFileDiscussContext(filePath: string, fileSystem: FileSystem): ResolvedTaskContext {
+  const source = fileSystem.readText(filePath);
+  const parsedTasks = parseTasks(source, filePath);
+  const anchorTask = parsedTasks[0] ?? createFallbackDiscussAnchorTask(filePath, source);
+  const contextBefore = source.split("\n").slice(0, Math.max(0, anchorTask.line - 1)).join("\n");
+
+  return {
+    task: anchorTask,
+    source,
+    contextBefore,
+  };
+}
+
+function createFallbackDiscussAnchorTask(filePath: string, source: string): Task {
+  return {
+    text: "Discuss file context and related artifacts",
+    checked: false,
+    index: 0,
+    line: 1,
+    column: 1,
+    offsetStart: 0,
+    offsetEnd: source.length,
+    file: filePath,
+    isInlineCli: false,
+    depth: 0,
+    children: [],
+    subItems: [],
   };
 }
 
