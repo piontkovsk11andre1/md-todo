@@ -79,15 +79,10 @@ function formatProgressLine(progress: ProgressPayload): string {
 }
 
 /**
- * Returns the active group line prefix for nested task output.
+ * Group state still tracks task boundaries, but CLI lines always render flush-left.
  */
 function groupLinePrefix(): string {
-  if (groupDepth <= 0) {
-    return "";
-  }
-
-  const segment = "  ";
-  return segment.repeat(groupDepth);
+  return "";
 }
 
 /**

@@ -71,6 +71,13 @@ export interface MigrateTaskOptions {
 
 export type MigrateSourceMode = "design" | "implementation" | "prediction";
 
+interface FileInputPlanningContext {
+  sourcePath: string;
+  sourcePathFromWorkspace: string;
+  revisionName: string;
+  revisionDiff: DesignRevisionDiffContext;
+}
+
 export interface MigrateTaskDependencies {
   workerExecutor: WorkerExecutorPort;
   fileSystem: FileSystem;
@@ -289,6 +296,7 @@ export function createMigrateTask(
         workerPattern: resolvedWorker.workerPattern,
         slugWorkerPattern,
         sourceMode,
+        fromFile: options.fromFile,
         workerTimeoutMs,
         artifactContext,
         keepArtifacts: Boolean(options.keepArtifacts),
@@ -363,6 +371,7 @@ async function runMigrateLoop(input: {
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern: ParsedWorkerPattern;
   sourceMode: MigrateSourceMode;
+  fromFile?: string;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   workerTimeoutMs?: number;
   keepArtifacts: boolean;
@@ -387,6 +396,7 @@ async function runMigrateLoop(input: {
     workerPattern,
     slugWorkerPattern,
     sourceMode,
+    fromFile,
     artifactContext,
     workerTimeoutMs,
     keepArtifacts,
@@ -431,6 +441,63 @@ async function runMigrateLoop(input: {
   }
   let processedAnyRevision = false;
   let completedRevisionCount = 0;
+
+  if (fromFile) {
+    if (sourceMode !== "design") {
+      emit({
+        kind: "error",
+        message: "Invalid migrate options: --from-file cannot be combined with --from.",
+      });
+      artifactRunExtra.outcome = "invalid-source-mode-combination";
+      return EXIT_CODE_FAILURE;
+    }
+
+    const fileInputPlanningContext = resolveFileInputPlanningContext({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      invocationRoot,
+      fromFile,
+    });
+    if (!fileInputPlanningContext.ok) {
+      emit({ kind: "error", message: fileInputPlanningContext.message });
+      artifactRunExtra.outcome = "file-input-resolution-failed";
+      return EXIT_CODE_FAILURE;
+    }
+
+    artifactRunExtra.sourceMode = "file-input";
+    artifactRunExtra.fileInput = {
+      sourcePathFromWorkspace: fileInputPlanningContext.context.sourcePathFromWorkspace,
+    };
+    artifactRunExtra.sourceReconciliation = {
+      mode: "file-input",
+      changed: null,
+      sourceRoot: null,
+      outputPath: fileInputPlanningContext.context.sourcePath,
+    };
+
+    return runMigrateFileInputPlanning({
+      dependencies,
+      planningTemplate,
+      translateTemplate,
+      workspaceRoot,
+      projectRoot,
+      invocationRoot,
+      workspaceDirectories,
+      workspacePaths,
+      slugWorkerPattern,
+      artifactContext,
+      workerTimeoutMs,
+      showAgentOutput,
+      confirm,
+      emit,
+      migrationsDir,
+      archivePaths,
+      discoveredThreads,
+      loadedThreadStates,
+      artifactRunExtra,
+      fileInput: fileInputPlanningContext.context,
+    });
+  }
 
   const sourceReconciliation = runMigrateSourceReconciliationPreflight({
     fileSystem: dependencies.fileSystem,
@@ -705,6 +772,277 @@ async function runMigrateLoop(input: {
   }
 }
 
+function resolveFileInputPlanningContext(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  fromFile: string;
+}):
+  | { ok: true; context: FileInputPlanningContext }
+  | { ok: false; message: string } {
+  const { fileSystem, workspaceRoot, invocationRoot, fromFile } = input;
+  const sourcePath = path.isAbsolute(fromFile)
+    ? fromFile
+    : path.resolve(invocationRoot, fromFile);
+
+  if (!fileSystem.exists(sourcePath)) {
+    return {
+      ok: false,
+      message: "Cannot run migrate --from-file: source file does not exist at " + sourcePath,
+    };
+  }
+
+  const stat = fileSystem.stat(sourcePath);
+  if (!stat?.isFile) {
+    return {
+      ok: false,
+      message: "Cannot run migrate --from-file: source path is not a file at " + sourcePath,
+    };
+  }
+
+  const sourcePathFromWorkspace = toWorkspaceRelativeMigrationPath(workspaceRoot, sourcePath);
+  const relativePath = "Target.md";
+  const revisionName = "file-input";
+
+  return {
+    ok: true,
+    context: {
+      sourcePath,
+      sourcePathFromWorkspace,
+      revisionName,
+      revisionDiff: {
+        fromRevision: null,
+        toTarget: {
+          kind: "current",
+          name: revisionName,
+          absolutePath: sourcePath,
+          metadata: {
+            createdAt: "",
+            label: "",
+            plannedAt: null,
+            migrations: [],
+          },
+          metadataPath: "",
+        },
+        hasComparison: false,
+        summary: "File-input planning source: " + sourcePathFromWorkspace,
+        addedCount: 0,
+        removedCount: 0,
+        modifiedCount: 0,
+        changes: [
+          {
+            relativePath,
+            kind: "modified",
+            fromPath: sourcePath,
+            toPath: sourcePath,
+          },
+        ],
+        sourceReferences: [sourcePath],
+      },
+    },
+  };
+}
+
+async function runMigrateFileInputPlanning(input: {
+  dependencies: MigrateTaskDependencies;
+  planningTemplate: string;
+  translateTemplate: string;
+  workspaceRoot: string;
+  projectRoot: string;
+  invocationRoot: string;
+  workspaceDirectories: ReturnType<typeof resolveWorkspaceDirectories>;
+  workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
+  slugWorkerPattern: ParsedWorkerPattern;
+  artifactContext: ReturnType<ArtifactStore["createContext"]>;
+  workerTimeoutMs?: number;
+  showAgentOutput: boolean;
+  confirm: boolean;
+  emit: ApplicationOutputPort["emit"];
+  migrationsDir: string;
+  archivePaths: ReturnType<typeof resolveArchiveWorkspacePaths>;
+  discoveredThreads: DiscoveredMigrationThread[];
+  loadedThreadStates: LoadedMigrationThreadState[];
+  artifactRunExtra: Record<string, unknown>;
+  fileInput: FileInputPlanningContext;
+}): Promise<number> {
+  const {
+    dependencies,
+    planningTemplate,
+    translateTemplate,
+    workspaceRoot,
+    projectRoot,
+    invocationRoot,
+    workspaceDirectories,
+    workspacePaths,
+    slugWorkerPattern,
+    artifactContext,
+    workerTimeoutMs,
+    showAgentOutput,
+    confirm,
+    emit,
+    migrationsDir,
+    archivePaths,
+    discoveredThreads,
+    loadedThreadStates,
+    artifactRunExtra,
+    fileInput,
+  } = input;
+
+  emit({
+    kind: "info",
+    message: "Planning migrations from explicit source file " + fileInput.sourcePathFromWorkspace + ".",
+  });
+
+  const materializedThreadBriefs = await materializeMigrationThreadBriefs({
+    fileSystem: dependencies.fileSystem,
+    workerExecutor: dependencies.workerExecutor,
+    output: dependencies.output,
+    workerPattern: slugWorkerPattern,
+    workspaceRoot,
+    artifactContext,
+    revisionName: fileInput.revisionName,
+    revisionDiff: fileInput.revisionDiff,
+    threads: discoveredThreads,
+    translateTemplate,
+    workerTimeoutMs,
+    showAgentOutput,
+  });
+  if (materializedThreadBriefs.length > 0) {
+    const threadTranslationHistory = Array.isArray(artifactRunExtra.threadTranslations)
+      ? artifactRunExtra.threadTranslations as Array<{
+        revision: string;
+        threadSlug: string;
+        sourcePathFromWorkspace: string;
+        outputPathFromWorkspace: string;
+      }>
+      : [];
+    threadTranslationHistory.push(...materializedThreadBriefs.map((brief) => ({
+      revision: fileInput.revisionName,
+      threadSlug: brief.thread.threadSlug,
+      sourcePathFromWorkspace: brief.thread.sourcePathFromWorkspace,
+      outputPathFromWorkspace: brief.outputPathFromWorkspace,
+    })));
+    artifactRunExtra.threadTranslations = threadTranslationHistory;
+  }
+
+  const rootState = readMigrationStateFromDirectoryOrEmpty(
+    dependencies.fileSystem,
+    migrationsDir,
+    archivePaths.migrationRootLane,
+  );
+  const laneStates = discoveredThreads.length > 0
+    ? loadedThreadStates.map((lane) => ({
+      kind: "thread" as const,
+      thread: lane.thread,
+      migrationsDir: lane.migrationsDir,
+      state: lane.state,
+      archivedMigrationsDir: lane.archivedMigrationsDir,
+      migrationDraftDir: prepareStagedDraftMigrationDir(
+        dependencies.fileSystem,
+        artifactContext.rootDir,
+        fileInput.revisionName,
+        lane.thread.threadSlug,
+      ),
+    }))
+    : [{
+      kind: "root" as const,
+      migrationsDir,
+      state: rootState,
+      archivedMigrationsDir: archivePaths.migrationRootLane,
+      migrationDraftDir: prepareStagedDraftMigrationDir(
+        dependencies.fileSystem,
+        artifactContext.rootDir,
+        fileInput.revisionName,
+      ),
+    }];
+
+  artifactRunExtra.stagedDraftMigrationDirPrepared = true;
+  artifactRunExtra.stagedDraftMigrationDir = laneStates[0]?.migrationDraftDir;
+  artifactRunExtra.stagedDraftMigrationDirs = laneStates.map((lane) => ({
+    kind: lane.kind,
+    migrationDraftDir: lane.migrationDraftDir,
+    ...(lane.kind === "thread"
+      ? { threadSlug: lane.thread.threadSlug, threadName: lane.thread.threadName }
+      : {}),
+  }));
+  artifactRunExtra.stagedDraftRevision = fileInput.revisionName;
+
+  const laneResults: Array<{
+    migrationsDir: string;
+    promotedMigrationMetadataPaths: string[];
+    promotedMigrationPaths: string[];
+    state: ReturnType<typeof readMigrationState>;
+    migrationDraftDir: string;
+    thread?: DiscoveredMigrationThread;
+    errorMessage?: string;
+  }> = [];
+  const laneFailures: Array<{ thread?: DiscoveredMigrationThread; errorMessage: string }> = [];
+
+  for (const lane of laneStates) {
+    const result = await runMigrationLaneDrafting({
+      dependencies,
+      planningTemplate,
+      workspaceRoot,
+      projectRoot,
+      invocationRoot,
+      workspaceDirectories,
+      workspacePaths,
+      slugWorkerPattern,
+      artifactContext,
+      workerTimeoutMs,
+      showAgentOutput,
+      confirm,
+      emit,
+      targetRevisionName: fileInput.revisionName,
+      revisionDiff: fileInput.revisionDiff,
+      migrationsDir: lane.migrationsDir,
+      archivedMigrationsDir: lane.archivedMigrationsDir,
+      state: lane.state,
+      migrationDraftDir: lane.migrationDraftDir,
+      thread: lane.kind === "thread" ? lane.thread : undefined,
+    });
+    laneResults.push({
+      migrationsDir: lane.migrationsDir,
+      promotedMigrationMetadataPaths: result.promotedMigrationMetadataPaths,
+      promotedMigrationPaths: result.promotedMigrationPaths,
+      state: lane.state,
+      migrationDraftDir: lane.migrationDraftDir,
+      thread: lane.kind === "thread" ? lane.thread : undefined,
+      errorMessage: result.ok ? undefined : result.errorMessage,
+    });
+
+    if (!result.ok) {
+      laneFailures.push({
+        thread: lane.kind === "thread" ? lane.thread : undefined,
+        errorMessage: result.errorMessage,
+      });
+    }
+  }
+
+  for (const lane of laneResults) {
+    if (lane.errorMessage) {
+      continue;
+    }
+    for (const migrationPath of lane.promotedMigrationPaths) {
+      await runExploreForMigration({
+        runExplore: dependencies.runExplore,
+        migrationPath,
+        projectRoot,
+      });
+    }
+  }
+
+  if (laneFailures.length > 0) {
+    const failureSummary = laneFailures.map((failure) => {
+      const laneLabel = failure.thread ? "thread " + failure.thread.threadSlug : "root lane";
+      return laneLabel + ": " + failure.errorMessage;
+    }).join("; ");
+    throw new Error("One or more migration lanes failed: " + failureSummary);
+  }
+
+  artifactRunExtra.outcome = "file-input-planned";
+  return EXIT_CODE_SUCCESS;
+}
 function runMigrateSourceReconciliationPreflight(input: {
   fileSystem: FileSystem;
   sourceMode: MigrateSourceMode;
@@ -1909,11 +2247,15 @@ function buildTemplateVars(input: {
       invocationRoot,
       target: designRevisionTarget,
     });
+  const design = isDirectory(fileSystem, revisionDiff.toTarget.absolutePath)
+    ? formatRevisionDesignContext(fileSystem, revisionDiff.toTarget.absolutePath)
+    : (fileSystem.exists(revisionDiff.toTarget.absolutePath)
+      ? fileSystem.readText(revisionDiff.toTarget.absolutePath)
+      : "");
   const designContextSources = {
     sourceReferences: [revisionDiff.toTarget.absolutePath],
     hasManagedDocs: isDirectory(fileSystem, revisionDiff.toTarget.absolutePath),
   };
-  const design = formatRevisionDesignContext(fileSystem, revisionDiff.toTarget.absolutePath);
   const previousRevisionId = revisionDiff.fromRevision?.name ?? (revisionDiff.hasComparison ? "nothing" : "");
   const currentRevisionId = revisionDiff.toTarget.name;
   const currentRevisionCreatedAt = revisionDiff.toTarget.metadata.createdAt;

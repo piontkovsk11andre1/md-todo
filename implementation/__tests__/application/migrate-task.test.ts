@@ -2684,6 +2684,236 @@ describe("migrate-task", () => {
     }
   });
 
+  it("plans migrations from --from-file without requiring design workspace directories", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] bootstrap\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "Plan.md"),
+      "# File input plan\n\nAdd a new billing reconciliation step.\n",
+      "utf-8",
+    );
+
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+    let sawFileInputDesignContext = false;
+    const events: ApplicationOutputEvent[] = [];
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ artifactPhaseLabel, prompt }) => {
+        if (artifactPhaseLabel === "migrate-plan") {
+          if (prompt.includes("# File input plan") && prompt.includes("Add a new billing reconciliation step.")) {
+            sawFileInputDesignContext = true;
+          }
+          const draftDirMatch = prompt.match(/this staging directory:\s*(.+)/i)
+            ?? prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "1", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "file-input-change")),
+            "# 2. File Input Change\n\n- [ ] Implement billing reconciliation migration.\n",
+            "utf-8",
+          );
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        fromFile: "Plan.md",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(fs.existsSync(path.join(workspace, "design"))).toBe(false);
+      expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(2, "file-input-change")))).toBe(true);
+      expect(runExplore).toHaveBeenCalledWith(
+        path.join(workspace, "migrations", formatMigrationFilename(2, "file-input-change")),
+        workspace,
+      );
+      expect(sawFileInputDesignContext).toBe(true);
+      expect(events.filter((event) => event.kind === "error")).toEqual([]);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it("keeps thread-aware lane drafting when planning from --from-file", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations", "threads", "billing"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "threads", "billing", formatMigrationFilename(3, "billing seed")),
+      "# 3. Billing Seed\n\n- [x] Seed lane\n",
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, ".rundown", "threads"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, ".rundown", "threads", "billing.md"), "# Billing\n\nFocus on billing.\n", "utf-8");
+    fs.writeFileSync(
+      path.join(workspace, "Plan.md"),
+      "# Shared file source\n\nDesign input that should be specialized by thread briefs.\n",
+      "utf-8",
+    );
+
+    const runExplore = vi.fn<(source: string, cwd: string) => Promise<ExitCode>>(async () => EXIT_CODE_SUCCESS);
+    let sawThreadBriefInPlanningPrompt = false;
+    const events: ApplicationOutputEvent[] = [];
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async ({ artifactPhaseLabel, prompt }) => {
+        if (artifactPhaseLabel === "migrate-thread-translate") {
+          return { exitCode: 0, stdout: "# translated billing brief\n", stderr: "" };
+        }
+
+        if (artifactPhaseLabel === "migrate-plan-thread") {
+          if (
+            prompt.includes("# Shared file source")
+            && prompt.includes("Design input that should be specialized")
+            && prompt.includes("translated billing brief")
+          ) {
+            sawThreadBriefInPlanningPrompt = true;
+          }
+          const draftDirMatch = prompt.match(/this staging directory:\s*(.+)/i)
+            ?? prompt.match(/staging directory:\s*(.+)/i);
+          const positionMatch = prompt.match(/Current migration number:\s*(\d+)/i);
+          const draftDir = draftDirMatch?.[1]?.trim() ?? "";
+          const position = Number.parseInt(positionMatch?.[1] ?? "3", 10);
+          fs.mkdirSync(draftDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(draftDir, formatMigrationFilename(position + 1, "billing from file")),
+            "# 4. Billing From File\n\n- [ ] Apply billing-specialized file-input migration steps.\n",
+            "utf-8",
+          );
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+
+        return { exitCode: 0, stdout: "", stderr: "" };
+      }),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        dir: "migrations",
+        fromFile: "Plan.md",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(
+        fs.existsSync(
+          path.join(workspace, "migrations", "threads", "billing", formatMigrationFilename(4, "billing from file")),
+        ),
+      ).toBe(true);
+      expect(fs.existsSync(path.join(workspace, "migrations", formatMigrationFilename(1, "billing from file")))).toBe(false);
+      expect(sawThreadBriefInPlanningPrompt).toBe(true);
+      expect(runExplore).toHaveBeenCalledWith(
+        path.join(workspace, "migrations", "threads", "billing", formatMigrationFilename(4, "billing from file")),
+        workspace,
+      );
+      expect(events.filter((event) => event.kind === "error")).toEqual([]);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("creates exactly one canonical file for `migrate new <title>` without planning", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
