@@ -59,6 +59,7 @@ export interface MigrateTaskOptions {
   dir?: string;
   workspace?: string;
   sourceMode?: MigrateSourceMode;
+  fromFile?: string;
   autoCompact?: AutoCompactCommandOptions;
   confirm?: boolean;
   workerPattern: ParsedWorkerPattern;

@@ -423,7 +423,8 @@ type MigrateSourceMode = "design" | "implementation" | "prediction";
 interface MigrateCommandOptions {
   dir?: string;
   workspace?: string;
-  sourceMode: MigrateSourceMode;
+  sourceMode?: MigrateSourceMode;
+  fromFile?: string;
   autoCompact: AutoCompactCliOptions;
   confirm: boolean;
   workerPattern: ParsedWorkerPattern;
@@ -1532,6 +1533,9 @@ export function createMigrateCommandAction({
     }
 
     const opts = maybeOpts ?? (countOrOpts ?? actionOrOpts ?? {}) as CliOpts;
+    const fromValue = normalizeOptionalString(opts.from);
+    const fromFile = normalizeOptionalString(opts.fromFile);
+    validateMigrateInputModeExclusivity(fromValue, fromFile);
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const slugWorkerPattern = typeof opts.slugWorker === "string"
       ? resolveWorkerPattern(opts.slugWorker, getWorkerFromSeparator)
@@ -1540,7 +1544,8 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(app)({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
-      sourceMode: parseMigrateSourceMode(normalizeOptionalString(opts.from)),
+      sourceMode: parseMigrateSourceMode(fromValue),
+      ...(fromFile !== undefined ? { fromFile } : {}),
       autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       confirm: Boolean(opts.confirm as boolean | undefined),
       workerPattern,
@@ -1549,6 +1554,15 @@ export function createMigrateCommandAction({
       showAgentOutput: resolveShowAgentOutputOption(opts),
     });
   };
+}
+
+function validateMigrateInputModeExclusivity(
+  fromValue: string | undefined,
+  fromFile: string | undefined,
+): void {
+  if (fromValue !== undefined && fromFile !== undefined) {
+    throw new Error("Invalid migrate options: --from-file cannot be combined with --from.");
+  }
 }
 
 /**

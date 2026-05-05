@@ -2526,6 +2526,42 @@ describe("createMigrateCommandAction", () => {
     }));
   });
 
+  it("forwards --from-file as explicit planning input", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action(undefined, undefined, {
+      fromFile: "docs/Plan.md",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
+      fromFile: "docs/Plan.md",
+    }));
+  });
+
+  it("rejects --from-file when combined with --from", () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action(undefined, undefined, {
+      from: "implementation",
+      fromFile: "docs/Plan.md",
+      worker: "opencode run --model gpt-5.3-codex",
+    })).toThrow("Invalid migrate options: --from-file cannot be combined with --from.");
+    expect(migrateTask).not.toHaveBeenCalled();
+  });
+
   it("fails fast for invalid --from values with allowed-values guidance", () => {
     const migrateTask = vi.fn(async () => 0);
     const app = { migrateTask } as unknown as CliApp;

@@ -11573,11 +11573,13 @@ describe.sequential("CLI integration", () => {
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("--workspace <dir> Workspace directory to use for linked/multi-workspace resolution");
+    expect(compactHelpOutput).toContain("--from-file <path> Use a single design file as migrate planning input (mutually exclusive with --from)");
     expect(compactHelpOutput).toContain("--compact-before-exit Run compaction as a post-success follow-up before exit");
     expect(compactHelpOutput).toContain("Runs a preflight revision sync before planning");
     expect(compactHelpOutput).toContain("snapshots the next immutable design/revisions/rev.N/ automatically");
     expect(compactHelpOutput).toContain("Linked workspace selection:");
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
+    expect(compactHelpOutput).toContain("--from-file <path> uses one explicit planning source file (mutually exclusive with --from)");
   });
 
   it("predict --help documents dedicated prediction execution options", async () => {

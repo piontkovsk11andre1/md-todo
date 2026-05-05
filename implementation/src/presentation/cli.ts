@@ -444,6 +444,7 @@ const migrateCommand = program
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--from <source>", "Source reconciliation mode: implementation|prediction (omit for default design-diff mode)")
+  .option("--from-file <path>", "Use a single design file as migrate planning input (mutually exclusive with --from)")
   .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
   .option("--confirm", "Show generated content and confirm before writing files", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -509,6 +510,7 @@ migrateCommand.addHelpText(
     "  - Omit --from to use the default design-diff workflow",
     "  - --from implementation reconciles current design from implementation changes before drafting migrations",
     "  - --from prediction reconciles current design from prediction changes before drafting migrations",
+    "  - --from-file <path> uses one explicit planning source file (mutually exclusive with --from)",
   ].join("\n"),
 );
 
