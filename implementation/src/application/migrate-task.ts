@@ -46,6 +46,7 @@ import {
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import {
   resolveArchiveWorkspacePaths,
+  resolveMigrationThreadArchivePath,
   validateWorkspaceBucketRootDirectory,
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
@@ -217,6 +218,13 @@ export function createMigrateTask(
       const creation = createNewMigrationShortcut({
         fileSystem: dependencies.fileSystem,
         migrationsDir,
+        archivedMigrationsDir: resolveMigrationArchiveScopeForShortcut({
+          fileSystem: dependencies.fileSystem,
+          workspaceRoot,
+          invocationRoot: executionContext.invocationDir,
+          workspaceMigrationsDir: workspacePaths.migrations,
+          migrationScopeDir: migrationsDir,
+        }),
         title,
       });
       if (!creation.ok) {
@@ -2371,12 +2379,13 @@ function readMigrationState(
 function createNewMigrationShortcut(input: {
   fileSystem: FileSystem;
   migrationsDir: string;
+  archivedMigrationsDir?: string;
   title: string;
 }):
   | { ok: true; fileName: string }
   | { ok: false; message: string } {
-  const { fileSystem, migrationsDir, title } = input;
-  const state = readMigrationStateFromDirectoryOrEmpty(fileSystem, migrationsDir);
+  const { fileSystem, migrationsDir, archivedMigrationsDir, title } = input;
+  const state = readMigrationStateFromDirectoryOrEmpty(fileSystem, migrationsDir, archivedMigrationsDir);
   const nextNumber = state.currentPosition + 1;
   const fileName = formatMigrationFilename(nextNumber, title);
   const targetPath = path.join(migrationsDir, fileName);
@@ -2393,6 +2402,73 @@ function createNewMigrationShortcut(input: {
     ok: true,
     fileName,
   };
+}
+
+function resolveMigrationArchiveScopeForShortcut(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  workspaceMigrationsDir: string;
+  migrationScopeDir: string;
+}): string | undefined {
+  const {
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    workspaceMigrationsDir,
+    migrationScopeDir,
+  } = input;
+  if (arePathsEqual(workspaceMigrationsDir, migrationScopeDir)) {
+    return resolveArchiveWorkspacePaths({
+      fileSystem,
+      workspaceRoot,
+      invocationRoot,
+    }).migrationRootLane;
+  }
+
+  const threadSlug = resolveThreadLaneSlugFromScopeDirectory(workspaceMigrationsDir, migrationScopeDir);
+  if (!threadSlug) {
+    return undefined;
+  }
+
+  return resolveMigrationThreadArchivePath({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    threadSlug,
+  });
+}
+
+function resolveThreadLaneSlugFromScopeDirectory(
+  workspaceMigrationsDir: string,
+  migrationScopeDir: string,
+): string | undefined {
+  const threadsRoot = path.join(workspaceMigrationsDir, "threads");
+  const relativeScopePath = path.relative(threadsRoot, migrationScopeDir);
+  if (relativeScopePath.length === 0 || relativeScopePath === ".") {
+    return undefined;
+  }
+
+  if (relativeScopePath.startsWith("..") || path.isAbsolute(relativeScopePath)) {
+    return undefined;
+  }
+
+  const segments = relativeScopePath.replace(/\\/g, "/").split("/").filter((segment) => segment.length > 0);
+  if (segments.length !== 1) {
+    return undefined;
+  }
+
+  return segments[0];
+}
+
+function arePathsEqual(leftPath: string, rightPath: string): boolean {
+  const normalizedLeft = path.resolve(leftPath).replace(/\\/g, "/");
+  const normalizedRight = path.resolve(rightPath).replace(/\\/g, "/");
+  if (process.platform === "win32") {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+
+  return normalizedLeft === normalizedRight;
 }
 
 function listMigrationLaneFiles(input: {

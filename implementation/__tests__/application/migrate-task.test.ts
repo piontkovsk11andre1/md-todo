@@ -3120,6 +3120,164 @@ describe("migrate-task", () => {
     }
   });
 
+  it("uses archive-aware numbering for `migrate new <title>` in the root lane", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "migrations", "archive", "root"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(9, "latest hot")),
+      "# 9. Latest Hot\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "archive", "root", formatMigrationFilename(11, "latest archived")),
+      "# 11. Latest Archived\n",
+      "utf-8",
+    );
+
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        action: "new",
+        title: "From archive root",
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(fs.existsSync(path.join(workspace, "migrations", "12. From Archive Root.md"))).toBe(true);
+      expect(workerExecutor.runWorker).not.toHaveBeenCalled();
+      expect(artifactStore.createContext).not.toHaveBeenCalled();
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it("uses thread-lane archive numbering for `migrate new <title>`", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations", "threads", "billing"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "migrations", "archive", "threads", "billing"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "threads", "billing", formatMigrationFilename(2, "latest hot thread")),
+      "# 2. Latest Hot Thread\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "archive", "threads", "billing", formatMigrationFilename(4, "latest archived thread")),
+      "# 4. Latest Archived Thread\n",
+      "utf-8",
+    );
+
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: { emit: () => {} },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        action: "new",
+        title: "Billing thread followup",
+        dir: path.join("migrations", "threads", "billing"),
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(fs.existsSync(path.join(workspace, "migrations", "threads", "billing", "5. Billing Thread Followup.md"))).toBe(true);
+      expect(workerExecutor.runWorker).not.toHaveBeenCalled();
+      expect(artifactStore.createContext).not.toHaveBeenCalled();
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("fails for `migrate new` when title is missing", async () => {
     const workspace = makeTempWorkspace();
     fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
