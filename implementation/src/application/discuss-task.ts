@@ -10,8 +10,6 @@ import {
 } from "../domain/template.js";
 import {
   createDiscussionCompletedEvent,
-  createDiscussionFinishedCompletedEvent,
-  createDiscussionFinishedStartedEvent,
   createDiscussionStartedEvent,
 } from "../domain/trace.js";
 import {
@@ -44,15 +42,9 @@ import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import {
-  formatNoItemsFound,
   formatSuccessFailureSummary,
   formatTaskLabel,
 } from "./run-task-utils.js";
-import {
-  resolveTaskContextFromRuntimeMetadata,
-  validateRuntimeTaskMetadata,
-  type RuntimeTaskMetadata,
-} from "./task-context-resolution.js";
 import { FileLockError } from "../domain/ports/file-lock.js";
 import type { FileLock } from "../domain/ports/file-lock.js";
 import type {
@@ -117,12 +109,6 @@ interface FinishedRunPhaseScan {
   verify: FinishedRunScannedPhase[];
   repair: FinishedRunScannedPhase[];
   all: FinishedRunScannedPhase[];
-}
-
-interface FinishedRunPromptContext {
-  run: ArtifactRunMetadata;
-  taskMetadata: RuntimeTaskMetadata;
-  phases: FinishedRunPhaseScan;
 }
 
 interface RelatedRunCandidate {
@@ -213,7 +199,6 @@ export function createDiscussTask(
   return async function discussTask(options: DiscussTaskOptions): Promise<number> {
     const {
       source,
-      runId,
       sortMode,
       dryRun,
       printPrompt,
@@ -280,8 +265,6 @@ export function createDiscussTask(
       : { timeoutMs: cliBlockTimeoutMs, env: rundownVarEnv };
 
     const artifactBaseDir = dependencies.configDir?.configDir;
-    let selectedRun: ArtifactRunMetadata | null = null;
-    let selectedRuntimeTaskMetadata: RuntimeTaskMetadata | null = null;
     let files: string[] = [];
     let lockTargets: string[] = [];
     let discussionTurnStarted = false;
@@ -302,77 +285,18 @@ export function createDiscussTask(
       discussionSummaryEmitted = true;
     };
 
-    if (runId) {
-      selectedRun = runId === "latest"
-        ? dependencies.artifactStore.latest(artifactBaseDir)
-        : dependencies.artifactStore.find(runId, artifactBaseDir);
-
-      if (!selectedRun) {
-        const target = runId === "latest" ? "latest" : runId;
-        emit({
-          kind: "error",
-          message: msg("discuss.no-run-found", { target }, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      if (selectedRun.status === "metadata-missing") {
-        emit({
-          kind: "error",
-          message: msg("discuss.missing-run-meta", {}, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      if (!isTerminalRunStatus(selectedRun.status)) {
-        emit({
-          kind: "error",
-          message: msg("discuss.run-not-terminal", {
-            status: selectedRun.status ?? "unknown",
-          }, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      if (!selectedRun.task) {
-        emit({
-          kind: "error",
-          message: msg("discuss.no-task-meta", {}, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      const metadataError = validateRuntimeTaskMetadata(selectedRun.task);
-      if (metadataError) {
-        emit({
-          kind: "error",
-          message: msg("discuss.invalid-task-meta", { error: metadataError }, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      selectedRuntimeTaskMetadata = selectedRun.task;
-      const resolvedTaskFilePath = dependencies.pathOperations.isAbsolute(selectedRun.task.file)
-        ? selectedRun.task.file
-        : dependencies.pathOperations.resolve(cwd, selectedRun.task.file);
-
-      if (dependencies.fileSystem.exists(resolvedTaskFilePath)) {
-        lockTargets = [resolvedTaskFilePath];
-      }
-    } else {
-      // Resolve markdown sources up front so locking and selection operate on the same set.
-      files = await dependencies.sourceResolver.resolveSources(source);
-      if (files.length === 0) {
-        emit({
-          kind: "warn",
-          message: msg("discuss.no-markdown-found", { source }, localeMessages),
-        });
-        return EXIT_CODE_NO_WORK;
-      }
-
-      // Deduplicate lock targets in case globbing or resolver behavior returns repeated paths.
-      lockTargets = Array.from(new Set(files));
+    // Resolve markdown sources up front so locking and selection operate on the same set.
+    files = await dependencies.sourceResolver.resolveSources(source);
+    if (files.length === 0) {
+      emit({
+        kind: "warn",
+        message: msg("discuss.no-markdown-found", { source }, localeMessages),
+      });
+      return EXIT_CODE_NO_WORK;
     }
+
+    // Deduplicate lock targets in case globbing or resolver behavior returns repeated paths.
+    lockTargets = Array.from(new Set(files));
     // Optionally clear stale lock files before acquiring fresh locks for this run.
     if (options.forceUnlock) {
       for (const filePath of lockTargets) {
@@ -414,84 +338,41 @@ export function createDiscussTask(
     try {
 
       let taskContext: ResolvedTaskContext;
-      let finishedRunPromptContext: FinishedRunPromptContext | null = null;
       let relatedRunsSummary = "No saved run artifacts found for this file.";
 
-      if (selectedRun && selectedRuntimeTaskMetadata) {
-        const runRootExists = dependencies.fileSystem.exists(selectedRun.rootDir);
-        const runRootStat = dependencies.fileSystem.stat(selectedRun.rootDir);
-        if (!runRootExists || runRootStat?.isDirectory !== true) {
-          emit({
-            kind: "error",
-            message: msg("discuss.no-artifact-dir", { rootDir: selectedRun.rootDir }, localeMessages),
-          });
-          return EXIT_CODE_NO_WORK;
-        }
-
-        const runtimeTaskContext = resolveTaskContextFromRuntimeMetadata(
-          selectedRuntimeTaskMetadata,
-          cwd,
-          dependencies.fileSystem,
-          dependencies.pathOperations,
-        );
-        if (runtimeTaskContext) {
-          taskContext = runtimeTaskContext;
-        } else {
-          emit({
-            kind: "info",
-            message: msg("discuss.task-resolved-fallback", {}, localeMessages),
-          });
-          taskContext = createFallbackTaskContext(selectedRuntimeTaskMetadata, cwd, dependencies.pathOperations);
-        }
-
-        const phases = scanRunPhases(selectedRun.rootDir, dependencies.fileSystem, dependencies.pathOperations);
-        finishedRunPromptContext = {
-          run: selectedRun,
-          taskMetadata: selectedRuntimeTaskMetadata,
-          phases,
-        };
+      // Select a single unchecked task according to configured sort behavior.
+      const selectedBatch = dependencies.taskSelector.selectNextTask(files, sortMode);
+      if (!selectedBatch || selectedBatch.length === 0) {
+        taskContext = resolveFileDiscussContext(files[0]!, dependencies.fileSystem);
       } else {
-        // Select a single unchecked task according to configured sort behavior.
-        const selectedBatch = dependencies.taskSelector.selectNextTask(files, sortMode);
-        if (!selectedBatch || selectedBatch.length === 0) {
-          taskContext = resolveFileDiscussContext(files[0]!, dependencies.fileSystem);
-        } else {
-          const selectedTask = selectedBatch[0]!;
-          taskContext = resolveTaskContext(selectedTask);
-        }
-
-        const selectedTaskFile = dependencies.pathOperations.isAbsolute(taskContext.task.file)
-          ? dependencies.pathOperations.resolve(taskContext.task.file)
-          : dependencies.pathOperations.resolve(cwd, taskContext.task.file);
-        const selectedTaskFileBasename = extractBaseName(selectedTaskFile);
-        const savedRuns = dependencies.artifactStore.listSaved(artifactBaseDir);
-        const failedRuns = dependencies.artifactStore.listFailed(artifactBaseDir);
-        const relatedRuns = savedRuns
-          .concat(failedRuns)
-          .filter((run) => {
-            if (run.commandName !== "run") {
-              return false;
-            }
-
-            return matchesDiscussFileRun(
-              run,
-              selectedTaskFile,
-              selectedTaskFileBasename,
-              cwd,
-              dependencies.pathOperations,
-            );
-          })
-          .filter((run, index, runs) => runs.findIndex((candidate) => candidate.runId === run.runId) === index)
-          .sort((left, right) => compareStartedAtDesc(left.startedAt, right.startedAt))
-          .slice(0, 5)
-          .map((run) => ({ run }));
-
-        relatedRunsSummary = buildRelatedRunsSummary(
-          relatedRuns,
-          dependencies.fileSystem,
-          dependencies.pathOperations,
-        );
+        const selectedTask = selectedBatch[0]!;
+        taskContext = resolveTaskContext(selectedTask);
       }
+
+      const selectedTaskFile = dependencies.pathOperations.isAbsolute(taskContext.task.file)
+        ? dependencies.pathOperations.resolve(taskContext.task.file)
+        : dependencies.pathOperations.resolve(cwd, taskContext.task.file);
+      const selectedTaskFileBasename = extractBaseName(selectedTaskFile);
+      const savedRuns = dependencies.artifactStore.listSaved(artifactBaseDir);
+      const failedRuns = dependencies.artifactStore.listFailed(artifactBaseDir);
+      const relatedRuns = savedRuns
+        .concat(failedRuns)
+        .filter((run) => matchesDiscussFileRun(
+          run,
+          selectedTaskFile,
+          selectedTaskFileBasename,
+          cwd,
+          dependencies.pathOperations,
+        ))
+        .filter((run, index, runs) => runs.findIndex((candidate) => candidate.runId === run.runId) === index)
+        .sort((left, right) => compareStartedAtDesc(left.startedAt, right.startedAt))
+        .map((run) => ({ run }));
+
+      relatedRunsSummary = buildRelatedRunsSummary(
+        relatedRuns,
+        dependencies.fileSystem,
+        dependencies.pathOperations,
+      );
 
       // Resolve worker command and prompt template for the selected task.
       const loadedWorkerConfig = dependencies.configDir?.configDir
@@ -520,29 +401,17 @@ export function createDiscussTask(
           memoryMetadata: dependencies.memoryResolver?.resolve(taskContext.task.file) ?? null,
         }),
       };
-      const renderedPrompt = finishedRunPromptContext
-        ? renderDiscussFinishedPrompt(
-          templates.discussFinished,
-          taskContext,
-          finishedRunPromptContext,
-          {
-            ...templateVarsWithUserVariables,
-            ...templateVarsWithMemory,
-          },
-        )
-        : renderDiscussPrompt(templates.discuss, taskContext, {
-          ...templateVarsWithUserVariables,
-          ...templateVarsWithMemory,
-        }, relatedRunsSummary);
+      const renderedPrompt = renderDiscussPrompt(templates.discuss, taskContext, {
+        ...templateVarsWithUserVariables,
+        ...templateVarsWithMemory,
+      }, relatedRunsSummary);
       const promptCliBlockCount = extractCliBlocks(renderedPrompt).length;
       const dryRunSuppressesCliExpansion = dryRun && !printPrompt;
       let prompt = renderedPrompt;
 
       // Expand `cli` fenced blocks unless expansion is suppressed for this run mode.
       if (!options.ignoreCliBlock && !dryRunSuppressesCliExpansion) {
-        const templateLabel = finishedRunPromptContext
-          ? "discuss-finished template"
-          : "discuss template";
+        const templateLabel = "discuss template";
         try {
           prompt = await expandCliBlocks(
             renderedPrompt,
@@ -568,20 +437,10 @@ export function createDiscussTask(
       }
 
       if (verbose) {
-        if (finishedRunPromptContext) {
-          emit({
-            kind: "info",
-            message: msg("discuss.finished-verbose", {
-              label: formatTaskLabel(taskContext.task),
-              runId: finishedRunPromptContext.run.runId,
-            }, localeMessages),
-          });
-        } else {
-          emit({
-            kind: "info",
-            message: msg("discuss.next-verbose", { label: formatTaskLabel(taskContext.task) }, localeMessages),
-          });
-        }
+        emit({
+          kind: "info",
+          message: msg("discuss.next-verbose", { label: formatTaskLabel(taskContext.task) }, localeMessages),
+        });
       }
 
       if (printPrompt) {
@@ -629,7 +488,7 @@ export function createDiscussTask(
       const artifactContext = dependencies.artifactStore.createContext({
         cwd,
         configDir: dependencies.configDir?.configDir,
-        commandName: finishedRunPromptContext ? "discuss-finished" : "discuss",
+        commandName: "discuss",
         workerCommand: resolvedWorkerCommand,
         mode: "tui",
         source,
@@ -656,20 +515,6 @@ export function createDiscussTask(
           task_line: taskContext.task.line,
         },
       }));
-
-      if (finishedRunPromptContext) {
-        traceWriter.write(createDiscussionFinishedStartedEvent({
-          timestamp: discussionStartedAt,
-          run_id: artifactContext.runId,
-          payload: {
-            task_text: taskContext.task.text,
-            task_file: taskContext.task.file,
-            task_line: taskContext.task.line,
-            target_run_id: finishedRunPromptContext.run.runId,
-            target_run_status: finishedRunPromptContext.run.status ?? "metadata-missing",
-          },
-        }));
-      }
 
       const discussionTurnLabel = msg("discuss.group-label", {
         label: formatTaskLabel(taskContext.task),
@@ -737,26 +582,10 @@ export function createDiscussTask(
           },
         }));
 
-        if (finishedRunPromptContext) {
-          traceWriter.write(createDiscussionFinishedCompletedEvent({
-            timestamp: new Date().toISOString(),
-            run_id: artifactContext.runId,
-            payload: {
-              task_text: taskContext.task.text,
-              task_file: taskContext.task.file,
-              task_line: taskContext.task.line,
-              target_run_id: finishedRunPromptContext.run.runId,
-              target_run_status: finishedRunPromptContext.run.status ?? "metadata-missing",
-              duration_ms: Math.max(0, Date.now() - discussionStartedAtMs),
-              exit_code: result.exitCode,
-            },
-          }));
-        }
-
         // Mark artifact status as cancelled when worker fails or checkbox state mutates.
         const status = result.exitCode === 0 && checkboxMutations.length === 0
-          ? (finishedRunPromptContext ? "discuss-finished-completed" : "discuss-completed")
-          : (finishedRunPromptContext ? "discuss-finished-cancelled" : "discuss-cancelled");
+          ? "discuss-completed"
+          : "discuss-cancelled";
         dependencies.artifactStore.finalize(artifactContext, {
           status,
           preserve: options.keepArtifacts,
@@ -894,91 +723,6 @@ function createFallbackDiscussAnchorTask(filePath: string, source: string): Task
   };
 }
 
-function renderDiscussFinishedPrompt(
-  template: string,
-  taskContext: ResolvedTaskContext,
-  finishedRunContext: FinishedRunPromptContext,
-  extraTemplateVars: ExtraTemplateVars,
-): string {
-  return renderTemplate(
-    template,
-    buildDiscussFinishedTemplateVars(taskContext, finishedRunContext, extraTemplateVars),
-  );
-}
-
-function buildDiscussFinishedTemplateVars(
-  taskContext: ResolvedTaskContext,
-  finishedRunContext: FinishedRunPromptContext,
-  extraTemplateVars: ExtraTemplateVars,
-): TemplateVars {
-  const executionPhaseDir = finishedRunContext.phases.execute[0]?.dir ?? "(missing)";
-  const taskLineFromRun = finishedRunContext.taskMetadata.line;
-
-  return {
-    ...extraTemplateVars,
-    task: taskContext.task.text,
-    file: taskContext.task.file,
-    context: taskContext.contextBefore,
-    taskIndex: taskContext.task.index,
-    taskLine: taskLineFromRun,
-    source: taskContext.source,
-    runId: finishedRunContext.run.runId,
-    runStatus: finishedRunContext.run.status ?? "unknown",
-    runDir: finishedRunContext.run.rootDir,
-    taskText: finishedRunContext.taskMetadata.text,
-    taskFile: finishedRunContext.taskMetadata.file,
-    taskLineFromRun,
-    selectedTaskLine: taskContext.task.line,
-    commitSha: extractCommitSha(finishedRunContext.run.extra),
-    phaseSummary: formatPhaseSummary(finishedRunContext.phases.all),
-    missingLogsSummary: formatMissingLogsSummary(finishedRunContext.phases.all),
-    executionPhaseDir,
-    verifyPhaseDirs: formatPhaseDirList(finishedRunContext.phases.verify),
-    repairPhaseDirs: formatPhaseDirList(finishedRunContext.phases.repair),
-    ...buildTaskHierarchyTemplateVars(taskContext.task),
-  };
-}
-
-function createFallbackTaskContext(
-  metadata: RuntimeTaskMetadata,
-  cwd: string,
-  pathOperations: PathOperationsPort,
-): ResolvedTaskContext {
-  const taskFilePath = pathOperations.isAbsolute(metadata.file)
-    ? metadata.file
-    : pathOperations.resolve(cwd, metadata.file);
-  const source = metadata.source;
-  const lines = source.split("\n");
-  const contextBefore = lines.slice(0, Math.max(0, metadata.line - 1)).join("\n");
-
-  return {
-    task: {
-      text: metadata.text,
-      checked: true,
-      index: metadata.index,
-      line: metadata.line,
-      column: 1,
-      offsetStart: 0,
-      offsetEnd: metadata.text.length,
-      file: taskFilePath,
-      isInlineCli: false,
-      depth: 0,
-      children: [],
-      subItems: [],
-    },
-    source,
-    contextBefore,
-  };
-}
-
-function isTerminalRunStatus(status: ArtifactRunMetadata["status"]): boolean {
-  return status === "completed"
-    || status === "failed"
-    || status === "execution-failed"
-    || status === "discuss-finished-completed"
-    || status === "discuss-finished-cancelled";
-}
-
 function scanRunPhases(
   runDir: string,
   fileSystem: FileSystem,
@@ -1075,112 +819,6 @@ function resolveOptionalArtifactPath(
   return fileSystem.exists(artifactPath) ? artifactPath : null;
 }
 
-function formatPhaseSummary(phases: FinishedRunScannedPhase[]): string {
-  if (phases.length === 0) {
-    return formatNoItemsFound("execute/verify/repair phases");
-  }
-
-  return phases.map((phase) => {
-    const exitCodeLabel = phase.exitCode === null ? "null" : String(phase.exitCode);
-    const verificationLabel = phase.verificationResult || "(n/a)";
-    return "- [" + String(phase.sequence).padStart(2, "0")
-      + "] "
-      + phase.phase
-      + " ("
-      + phase.name
-      + "): exit="
-      + exitCodeLabel
-      + ", verification="
-      + verificationLabel
-      + ", prompt="
-      + (phase.promptFile ? "present" : "missing")
-      + ", stdout="
-      + (phase.stdoutFile ? "present" : "missing")
-      + ", stderr="
-      + (phase.stderrFile ? "present" : "missing");
-  }).join("\n");
-}
-
-function formatPhaseDirList(phases: FinishedRunScannedPhase[]): string {
-  if (phases.length === 0) {
-    return "- (none)";
-  }
-
-  return phases
-    .map((phase) => "- " + phase.dir)
-    .join("\n");
-}
-
-function formatMissingLogsSummary(phases: FinishedRunScannedPhase[]): string {
-  if (phases.length === 0) {
-    return formatNoItemsFound("phase artifacts");
-  }
-
-  const lines: string[] = [];
-  for (const phase of phases) {
-    const missingStreams: string[] = [];
-    if (!phase.stdoutFile) {
-      missingStreams.push("stdout.log");
-    }
-    if (!phase.stderrFile) {
-      missingStreams.push("stderr.log");
-    }
-
-    if (missingStreams.length === 0) {
-      continue;
-    }
-
-    lines.push(
-      "- ["
-        + String(phase.sequence).padStart(2, "0")
-        + "] "
-        + phase.phase
-        + " ("
-        + phase.name
-        + "): missing "
-        + missingStreams.join(" and ")
-        + ". Output may not have been captured (for example, a TUI run without --keep-artifacts) or the files were removed.",
-    );
-  }
-
-  if (lines.length === 0) {
-    return "All discovered phases include stdout/stderr log files.";
-  }
-
-  return lines.join("\n");
-}
-
-function extractCommitSha(extra: Record<string, unknown> | undefined): string {
-  const commitSha = extra?.commitSha;
-  return typeof commitSha === "string" && commitSha.trim() !== ""
-    ? commitSha
-    : "(none)";
-}
-
-function matchesTaskIdentity(task: Task, runTask: RuntimeTaskMetadata): boolean {
-  const hasText = typeof runTask.text === "string" && runTask.text.trim() !== "";
-  const hasLine = Number.isInteger(runTask.line) && runTask.line > 0;
-  const hasIndex = Number.isInteger(runTask.index) && runTask.index >= 0;
-
-  if (hasText && hasLine) {
-    return runTask.text === task.text && runTask.line === task.line;
-  }
-
-  if (hasText && hasIndex) {
-    return runTask.text === task.text && runTask.index === task.index;
-  }
-
-  if (hasText) {
-    return runTask.text === task.text;
-  }
-
-  if (hasLine) {
-    return runTask.line === task.line;
-  }
-
-  return true;
-}
-
 function compareStartedAtDesc(left: string, right: string): number {
   const leftMs = Date.parse(left);
   const rightMs = Date.parse(right);
@@ -1238,8 +876,8 @@ function buildRelatedRunsSummary(
     return "No saved run artifacts found for this file.";
   }
 
-  const header = "| Run ID | Status | Started | Run dir | Outcome |";
-  const divider = "| --- | --- | --- | --- | --- |";
+  const header = "| Run ID | Command | Status | Started | Completed | Run dir | Note |";
+  const divider = "| --- | --- | --- | --- | --- | --- | --- |";
   const rows = candidates.map((candidate) => {
     const run = candidate.run;
     const runDirStat = fileSystem.stat(run.rootDir);
@@ -1258,9 +896,13 @@ function buildRelatedRunsSummary(
     return "| "
       + run.runId
       + " | "
+      + run.commandName
+      + " | "
       + (run.status ?? "unknown")
       + " | "
       + run.startedAt
+      + " | "
+      + (run.completedAt ?? "(n/a)")
       + " | "
       + run.rootDir
       + " | "

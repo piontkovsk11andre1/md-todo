@@ -269,7 +269,6 @@ program
   .command("discuss")
   .description("Start an interactive discussion session for a Markdown file.")
   .argument("<source>", "Markdown file to discuss")
-  .option("--run <id|prefix|latest>", "Deprecated: run-targeted discuss is no longer supported. Use `rundown discuss <file.md>`." )
   .option("--mode <mode>", "Discuss execution mode: wait, tui", "tui")
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be executed without running it", false)

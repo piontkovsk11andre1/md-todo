@@ -25,7 +25,6 @@ Store templates in `.rundown/`:
   plan-loop.md
   deep-plan.md
   discuss.md
-  discuss-finished.md
   trace.md
   undo.md
   test-materialized.md
@@ -58,8 +57,7 @@ Store templates in `.rundown/`:
 | `.rundown/plan.md` | Instructions for breaking a task into nested subtasks |
 | `.rundown/plan-loop.md` | Instructions for loop-mode planning (`rundown plan --loop`) using `memory:`, `fast:`, `get:`, and `loop:` conventions |
 | `.rundown/deep-plan.md` | Instructions for recursively expanding generated subtasks during deep planning |
-| `.rundown/discuss.md` | Instructions for interactive task refinement before execution |
-| `.rundown/discuss-finished.md` | Instructions shown when a discuss session exits with no in-file edits applied |
+| `.rundown/discuss.md` | Instructions for interactive file-focused discussion and refinement before execution |
 | `.rundown/test-materialized.md` | Instructions for `rundown test` materialized mode (present-state validation) |
 | `.rundown/test-future.md` | Instructions for `rundown test --future` prediction mode (future-state validation) |
 | `.rundown/test-verify.md` | Shared verification instructions used by both `rundown test` modes |
@@ -442,7 +440,7 @@ Goal:
 - Help the user refine this task before execution.
 - Identify ambiguity, missing constraints, and hidden assumptions.
 
-You may modify the source Markdown file to improve task quality by:
+Only modify the source Markdown file when the user explicitly asks. When they do, keep edits focused on task quality by:
 - rewriting the selected task for clarity,
 - splitting it into smaller unchecked sub-items,
 - adding scoped acceptance criteria,

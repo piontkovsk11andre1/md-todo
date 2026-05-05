@@ -396,7 +396,6 @@ describe("default prompt templates", () => {
     expect(DEFAULT_HELP_TEMPLATE).toContain("`agent.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`plan-loop.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`deep-plan.md`");
-    expect(DEFAULT_HELP_TEMPLATE).toContain("`discuss-finished.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-verify.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-repair.md`");
     expect(DEFAULT_HELP_TEMPLATE).toContain("`research-resolve.md`");

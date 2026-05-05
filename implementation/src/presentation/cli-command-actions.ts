@@ -992,7 +992,6 @@ export function createDiscussCommandAction({
     const dryRun = opts.dryRun as boolean;
     const printPrompt = opts.printPrompt as boolean;
     const keepArtifacts = opts.keepArtifacts as boolean;
-    const runId = normalizeOptionalString(opts.run);
     const varsFileOption = opts.varsFile as string | boolean | undefined;
     const cliTemplateVarArgs = (opts.var as string[] | undefined) ?? [];
     const showAgentOutput = resolveShowAgentOutputOption(opts);
@@ -1003,10 +1002,6 @@ export function createDiscussCommandAction({
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const verbose = resolveVerboseOption(opts);
     const normalizedSource = resolveDiscussMarkdownFile([source]);
-
-    if (runId !== undefined) {
-      emitCliInfo(getApp(), "Ignoring deprecated --run for discuss. Use file-focused discuss context from <file.md>.");
-    }
 
     // Delegate to the discuss application flow with normalized arguments.
     return getApp().discussTask({

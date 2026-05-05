@@ -384,7 +384,7 @@ Rules:
 `;
 
 /**
- * Default discuss-finished template used to analyze a completed run in TUI.
+ * Compatibility discuss-finished template.
  */
 export const DEFAULT_DISCUSS_FINISHED_TEMPLATE = `\
 ${DEFAULT_TEMPLATE_SHARED_PREFIX}
@@ -554,7 +554,7 @@ Use \`--deep <n>\` for nested child TODO generation after top-level scans conver
 **do** — \`make\` followed by executing all tasks. Full end-to-end from idea to completion.
 \`rundown do "<seed>" "<file.md>" -- <worker>\`
 
-**discuss** — Interactive file discussion session anchored to the next unchecked task. Agent can refine task text on request, surfaces file-related run artifacts, and does not execute or complete tasks.
+**discuss** — Interactive file discussion session for a Markdown file. Agent uses file context plus related file artifacts, can refine task text on request, and does not execute or complete tasks.
 \`rundown discuss <source> [--mode tui] -- <worker>\`
 
 **reverify** — Re-run verification from saved artifacts for a previously completed task.
@@ -640,7 +640,7 @@ Layered worker resolution (lowest to highest priority):
 
 ### Templates (\`.rundown/*.md\`)
 
-Customizable templates: \`agent.md\`, \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`plan-loop.md\`, \`deep-plan.md\`, \`discuss.md\`, \`discuss-finished.md\`, \`research.md\`, \`research-verify.md\`, \`research-repair.md\`, \`research-resolve.md\`, \`research-output-contract.md\`, \`trace.md\`, \`undo.md\`, \`test-verify.md\`, \`test-future.md\`, \`test-materialized.md\`, \`help.md\`, \`migrate*.md\`, \`query-*.md\`. Built-in defaults are used when files are absent.
+Customizable templates: \`agent.md\`, \`execute.md\`, \`verify.md\`, \`repair.md\`, \`resolve.md\`, \`plan.md\`, \`plan-loop.md\`, \`deep-plan.md\`, \`discuss.md\`, \`research.md\`, \`research-verify.md\`, \`research-repair.md\`, \`research-resolve.md\`, \`research-output-contract.md\`, \`trace.md\`, \`undo.md\`, \`test-verify.md\`, \`test-future.md\`, \`test-materialized.md\`, \`help.md\`, \`migrate*.md\`, \`query-*.md\`. Built-in defaults are used when files are absent.
 
 ### Fallback mode for non-rundown questions
 

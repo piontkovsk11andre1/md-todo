@@ -6967,25 +6967,6 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--force-unlock Break stale source lockfiles before acquiring discuss locks");
   });
 
-  it("discuss requires <source> even when --run is provided", async () => {
-    const workspace = makeTempWorkspace();
-
-    const result = await runCli([
-      "discuss",
-      "--run",
-      "latest",
-    ], workspace);
-
-    expect(result.code).toBe(1);
-    const combinedOutput = [
-      ...result.errors,
-      ...result.logs,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n").toLowerCase();
-    expect(combinedOutput.includes("missing required argument 'source'")).toBe(true);
-  });
-
   it("discuss rejects unknown options", async () => {
     const workspace = makeTempWorkspace();
 
