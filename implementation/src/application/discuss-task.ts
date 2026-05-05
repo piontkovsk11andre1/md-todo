@@ -414,7 +414,7 @@ export function createDiscussTask(
 
       let taskContext: ResolvedTaskContext;
       let finishedRunPromptContext: FinishedRunPromptContext | null = null;
-      let relatedRunsSummary = "No previous run attempts found for this task.";
+      let relatedRunsSummary = "No saved run artifacts found for this file.";
 
       if (selectedRun && selectedRuntimeTaskMetadata) {
         const runRootExists = dependencies.fileSystem.exists(selectedRun.rootDir);
@@ -474,27 +474,13 @@ export function createDiscussTask(
               return false;
             }
 
-            if (!run.task) {
-              return false;
-            }
-
-            const runTaskFile = run.task.file;
-            const hasTaskFile = typeof runTaskFile === "string" && runTaskFile.trim() !== "";
-            if (hasTaskFile) {
-              const normalizedRunTaskFile = dependencies.pathOperations.isAbsolute(runTaskFile)
-                ? dependencies.pathOperations.resolve(runTaskFile)
-                : dependencies.pathOperations.resolve(cwd, runTaskFile);
-              if (normalizedRunTaskFile !== selectedTaskFile) {
-                return false;
-              }
-
-              return matchesTaskIdentity(taskContext.task, run.task);
-            }
-
-            const sourceBasename = extractBaseName(
-              run.source ?? run.task.source,
+            return matchesDiscussFileRun(
+              run,
+              selectedTaskFile,
+              selectedTaskFileBasename,
+              cwd,
+              dependencies.pathOperations,
             );
-            return sourceBasename !== "" && sourceBasename === selectedTaskFileBasename;
           })
           .filter((run, index, runs) => runs.findIndex((candidate) => candidate.runId === run.runId) === index)
           .sort((left, right) => compareStartedAtDesc(left.startedAt, right.startedAt))
@@ -1191,13 +1177,36 @@ function extractBaseName(filePath: string): string {
   return segments[segments.length - 1] ?? "";
 }
 
+function matchesDiscussFileRun(
+  run: ArtifactRunMetadata,
+  selectedTaskFile: string,
+  selectedTaskFileBasename: string,
+  cwd: string,
+  pathOperations: PathOperationsPort,
+): boolean {
+  const runTaskFile = run.task?.file;
+  const hasTaskFile = typeof runTaskFile === "string" && runTaskFile.trim() !== "";
+  if (hasTaskFile) {
+    const normalizedRunTaskFile = pathOperations.isAbsolute(runTaskFile)
+      ? pathOperations.resolve(runTaskFile)
+      : pathOperations.resolve(cwd, runTaskFile);
+    return normalizedRunTaskFile === selectedTaskFile;
+  }
+
+  const sourceCandidate = typeof run.source === "string" && run.source.trim() !== ""
+    ? run.source
+    : run.task?.source ?? "";
+  const sourceBasename = extractBaseName(sourceCandidate);
+  return sourceBasename !== "" && sourceBasename === selectedTaskFileBasename;
+}
+
 function buildRelatedRunsSummary(
   candidates: RelatedRunCandidate[],
   fileSystem: FileSystem,
   pathOperations: PathOperationsPort,
 ): string {
   if (candidates.length === 0) {
-    return "No previous run attempts found for this task.";
+    return "No saved run artifacts found for this file.";
   }
 
   const header = "| Run ID | Status | Started | Run dir | Outcome |";

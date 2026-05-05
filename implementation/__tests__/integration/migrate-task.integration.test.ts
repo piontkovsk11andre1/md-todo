@@ -189,6 +189,88 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(opsPrompt).not.toContain("- 99. Root Only Seed.md");
   });
 
+  it("plans from --from-file without requiring design workspace directories", async () => {
+    const workspace = makeTempWorkspace();
+    configureMigrateWorkers(workspace);
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(1, "initialize")),
+      "# 1. Initialize\n\n- [x] done\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "Plan.md"),
+      "# File-input design source\n\nCapture this plan content in migrate context.\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--from-file",
+      "Plan.md",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildFromFileRootWorkerScript(),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "migrations", "2. File Input Integration.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "design"))).toBe(false);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".captured-from-file-prompt.txt"), "utf-8");
+    expect(capturedPrompt).toContain("# File-input design source");
+    expect(capturedPrompt).toContain("Capture this plan content in migrate context.");
+  });
+
+  it("keeps thread-aware drafting when planning from --from-file with thread briefs", async () => {
+    const workspace = makeTempWorkspace();
+    configureMigrateWorkers(workspace);
+    fs.mkdirSync(path.join(workspace, "migrations", "threads", "billing"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "threads", "billing", formatMigrationFilename(3, "billing seed")),
+      "# 3. Billing Seed\n\n- [x] done\n",
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(workspace, ".rundown", "threads"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "threads", "billing.md"),
+      "# Billing\n\nFocus on billing-specific migration work.\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "Plan.md"),
+      "# Shared file source\n\nThis source should be specialized into billing lane drafts.\n",
+      "utf-8",
+    );
+
+    const result = await runCli([
+      "migrate",
+      "--from-file",
+      "Plan.md",
+      "--dir",
+      "migrations",
+      "--",
+      "node",
+      "-e",
+      buildFromFileThreadWorkerScript(),
+    ], workspace);
+
+    const debug = debugOutput(result);
+    expect(result.code, debug).toBe(0);
+    expect(fs.existsSync(path.join(workspace, "migrations", "threads", "billing", "4. Billing From File.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "migrations", "4. Billing From File.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "design"))).toBe(false);
+
+    const capturedPrompt = fs.readFileSync(path.join(workspace, ".captured-from-file-thread-prompt.billing.txt"), "utf-8");
+    expect(capturedPrompt).toContain("# Shared file source");
+    expect(capturedPrompt).toContain("specialized into billing lane drafts");
+    expect(capturedPrompt).toContain("translated billing brief");
+    expect(capturedPrompt).toContain("Current migration number: 3");
+  });
+
   it("does not modify real migrations when staged drafts fail verification", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);
@@ -1999,6 +2081,96 @@ function buildMigrateExecutionWorkerScript(): string {
     "  process.exit(0);",
     "}",
     "console.log('1. from-migrate-execution-worker');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildFromFileRootWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const capturePath=path.join(process.cwd(),'.captured-from-file-prompt.txt');",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+    "  if(!fs.existsSync(capturePath)){",
+    "    fs.writeFileSync(capturePath,prompt,'utf-8');",
+    "  }",
+    "  const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "  const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "  const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "  const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "  const migrationNumber=currentPosition+1;",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const body=[",
+    "    '# '+migrationNumber+'. File Input Integration',",
+    "    '',",
+    "    '- [ ] Apply file-input migration planning changes.',",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,migrationNumber+'. File Input Integration.md'),body+'\\n','utf-8');",
+    "  console.log('drafted migration files');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('grounded in the prediction tree')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
+    "process.exit(0);",
+  ].join("\n");
+}
+
+function buildFromFileThreadWorkerScript(): string {
+  return [
+    "const fs=require('node:fs');",
+    "const path=require('node:path');",
+    "const promptPath=process.argv[process.argv.length-1];",
+    "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+    "const parseThreadSlug=(text)=>{",
+    "  const direct=text.match(/Thread slug:\\s*(.+)/i);",
+    "  if(direct&&direct[1]) return direct[1].trim();",
+    "  const staging=text.match(/staging directory:\\s*(.+)/i);",
+    "  if(staging&&staging[1]) return path.basename(staging[1].trim());",
+    "  if(text.includes('# Billing')) return 'billing';",
+    "  return 'unknown';",
+    "};",
+    "if(prompt.includes('Verify whether the selected task is complete.')){",
+    "  console.log('OK');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('## Source document (<what>)')&&prompt.includes('## Know-how reference (<how>)')&&prompt.includes('Rewrite the full <what> document')){",
+    "  const threadSlug=parseThreadSlug(prompt);",
+    "  console.log('# translated '+threadSlug+' brief');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+    "  const threadSlug=parseThreadSlug(prompt);",
+    "  const capturePath=path.join(process.cwd(),'.captured-from-file-thread-prompt.'+threadSlug+'.txt');",
+    "  fs.writeFileSync(capturePath,prompt,'utf-8');",
+    "  const draftDirMatch=prompt.match(/staging directory:\\s*(.+)/i);",
+    "  const positionMatch=prompt.match(/Current migration number:\\s*(\\d+)/i);",
+    "  const draftDir=draftDirMatch&&draftDirMatch[1]?draftDirMatch[1].trim():'';",
+    "  const currentPosition=positionMatch&&positionMatch[1]?Number.parseInt(positionMatch[1],10):0;",
+    "  const migrationNumber=currentPosition+1;",
+    "  fs.mkdirSync(draftDir,{recursive:true});",
+    "  const body=[",
+    "    '# '+migrationNumber+'. Billing From File',",
+    "    '',",
+    "    '- [ ] Apply billing-specialized file-input migration updates.',",
+    "  ].join('\\n');",
+    "  fs.writeFileSync(path.join(draftDir,migrationNumber+'. Billing From File.md'),body+'\\n','utf-8');",
+    "  console.log('drafted migration files');",
+    "  process.exit(0);",
+    "}",
+    "if(prompt.includes('grounded in the prediction tree')){",
+    "  console.log('# Snapshot');",
+    "  process.exit(0);",
+    "}",
+    "console.log('applied');",
     "process.exit(0);",
   ].join("\n");
 }

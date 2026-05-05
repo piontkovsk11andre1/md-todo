@@ -237,12 +237,18 @@ describe("discuss-task", () => {
     const taskFile = path.join(cwd, "tasks.md");
     const task = createTask(taskFile, "Refine rollout scope");
     const fileSystem = createInMemoryFileSystem({
-      [taskFile]: "- [ ] Refine rollout scope\n",
+      [taskFile]: [
+        "- [ ] Refine rollout scope",
+        "- [ ] Document rollback plan",
+      ].join("\n") + "\n",
     });
     const { dependencies, events } = createDependencies({
       cwd,
       task,
-      source: "- [ ] Refine rollout scope\n",
+      source: [
+        "- [ ] Refine rollout scope",
+        "- [ ] Document rollback plan",
+      ].join("\n") + "\n",
       contextBefore: "",
       fileSystem,
     });
@@ -289,6 +295,26 @@ describe("discuss-task", () => {
           source: "- [ ] Refine rollout scope\n",
         },
       },
+      {
+        runId: "run-peer-task",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-peer-task"),
+        relativePath: ".rundown/runs/run-peer-task",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-21T12:00:00.000Z",
+        status: "completed",
+        source: "tasks.md",
+        task: {
+          text: "Document rollback plan",
+          file: taskFile,
+          line: 2,
+          index: 1,
+          source: [
+            "- [ ] Refine rollout scope",
+            "- [ ] Document rollback plan",
+          ].join("\n") + "\n",
+        },
+      },
     ]);
     vi.mocked(dependencies.artifactStore.listFailed).mockReturnValue([
       {
@@ -322,6 +348,7 @@ describe("discuss-task", () => {
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
     expect(prompt).toContain("run-newer");
     expect(prompt).toContain("run-older");
+    expect(prompt).toContain("run-peer-task");
     expect(prompt).toContain("artifacts unavailable");
     expect(prompt).not.toContain("run-ignored-command");
   });
@@ -376,7 +403,7 @@ describe("discuss-task", () => {
 
     expect(code).toBe(0);
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
-    expect(prompt).toContain("No previous run attempts found for this task.");
+    expect(prompt).toContain("No saved run artifacts found for this file.");
   });
 
 
@@ -2794,10 +2821,11 @@ describe("discuss-task", () => {
     expect(code).toBe(0);
     const workerCall = vi.mocked(dependencies.workerExecutor.runWorker).mock.calls[0]?.[0];
     expect(workerCall).toBeDefined();
-    expect(workerCall?.prompt).toContain("Discuss and refine the selected task before execution.");
+    expect(workerCall?.prompt).toContain("Discuss and refine the selected file before execution.");
+    expect(workerCall?.prompt).toContain("routing anchor for the conversation");
     expect(workerCall?.prompt).toContain("Refine rollout scope");
     expect(workerCall?.prompt).toContain("`" + taskFile + "` (line 42)");
-    expect(DEFAULT_DISCUSS_TEMPLATE).toContain("Discuss and refine the selected task before execution.");
+    expect(DEFAULT_DISCUSS_TEMPLATE).toContain("Discuss and refine the selected file before execution.");
   });
 
   it("removes old permissive edit wording from discuss template", () => {
