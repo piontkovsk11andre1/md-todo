@@ -45,15 +45,15 @@ Examples:
 ```bash
 # Interactive terminal: opens the root TUI
 rundown
-rndn
 
 # Previous no-args interactive agent-help flow
 rundown agent
 
 # Deterministic static help output
 rundown --help
-rndn --help
 ```
+
+`rndn` is alias-equivalent for each invocation above.
 
 ### `rundown agent`
 

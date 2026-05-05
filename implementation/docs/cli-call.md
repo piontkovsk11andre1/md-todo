@@ -23,8 +23,9 @@ Synopsis:
 ```bash
 rundown call <source> [options] -- <command>
 rundown call <source> [options] --worker <pattern>
-rndn call <source> [options]
 ```
+
+`rndn call <source> [options]` is alias-equivalent.
 
 Arguments:
 

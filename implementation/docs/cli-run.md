@@ -21,8 +21,9 @@ Synopsis:
 ```bash
 rundown run <source> [options] -- <command>
 rundown run <source> [options] --worker <pattern>
-rndn run <source> [options]
 ```
+
+`rndn run <source> [options]` is alias-equivalent.
 
 Arguments:
 

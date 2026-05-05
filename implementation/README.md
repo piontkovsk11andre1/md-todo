@@ -209,8 +209,7 @@ rundown with pi
 
 # Next time in the same dir:
 rundown
-# or the supported executable alias:
-rndn
+# `rndn` is alias-equivalent.
 
 # Previous no-args interactive agent-help flow:
 rundown agent

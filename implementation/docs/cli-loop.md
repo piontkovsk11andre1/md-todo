@@ -17,8 +17,9 @@ Synopsis:
 ```bash
 rundown loop <source> [options] -- <command>
 rundown loop <source> [options] --worker <pattern>
-rndn loop <source> [options]
 ```
+
+`rndn loop <source> [options]` is alias-equivalent.
 
 Arguments:
 

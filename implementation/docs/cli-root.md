@@ -16,8 +16,9 @@ Synopsis:
 
 ```bash
 rundown
-rndn
 ```
+
+`rndn` is alias-equivalent.
 
 Arguments:
 
@@ -36,12 +37,11 @@ Examples:
 # Interactive terminal: opens the root TUI
 rundown
 
-# Alias-equivalent form
-rndn
-
 # Previous no-args interactive agent-help flow
 rundown agent
 
 # Deterministic static help output (non-interactive)
 rundown --help
 ```
+
+`rndn` is alias-equivalent for each invocation above.
