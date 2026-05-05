@@ -1,6 +1,6 @@
 # CLI: `migrate`
 
-Generate and manage prediction migrations.
+Create migrations from design revisions, implementation changes, or prediction changes.
 
 `rundown migrate` is the canonical revision-aware planning command.
 Before migration planning, it performs a design-revision preflight sync:
@@ -11,14 +11,14 @@ Before migration planning, it performs a design-revision preflight sync:
 
 Planning then proceeds against released revision metadata boundaries (`plannedAt`, `migrations`) as usual.
 
-Without an action, `migrate` runs a convergence loop:
+`migrate` always runs as a single workspace-level orchestration command (no positional actions). It executes a convergence loop:
 
 1. Ask the planner worker for uncovered migration names.
 2. If worker output is `DONE`, stop.
 3. Create migration files for newly proposed names.
 4. Run enrichment for each created migration.
 5. Optionally pause at `--confirm`.
-6. Run `migrate up` for the batch, then loop again.
+6. Apply the drafted migration batch, then loop again.
 
 Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/revisions/rev.*/**`) as context sources, and falls back to legacy `design/rev.*/**`, `docs/current/**`, `docs/rev.*/**`, and root `Design.md` only as compatibility-only paths for older projects.
 
@@ -33,19 +33,9 @@ Design context resolution is revision-aware: it prefers `design/current/**`, inc
 Synopsis:
 
 ```bash
-rundown migrate [action] [options] -- <command>
-rundown migrate [action] [options] --worker <pattern>
+rundown migrate [options] -- <command>
+rundown migrate [options] --worker <pattern>
 ```
-
-Arguments:
-
-- `[action]`: Optional migration action (`up` or `down [n]`).
-
-Actions:
-
-- omitted: run the planning/execution loop until the planner returns `DONE`
-- `up`: execute pending migration task files in order and write a new `N.1 Snapshot.md` checkpoint at batch end
-- `down [n]`: remove the last `n` migration files (default `1`), prune snapshots beyond the new endpoint, optionally append removed migration content into `migrations/Backlog.md`, then regenerate the current snapshot via `migrate up`
 
 Options:
 
@@ -53,10 +43,13 @@ Options:
 |---|---|---|
 | `--dir <path>` | Migration directory to operate on. | `./migrations` |
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. Required when link metadata is ambiguous. | unset |
+| `--from <source>` | Source reconciliation mode. Allowed values: `implementation`, `prediction`. Omit to use default design-diff mode. | default design-diff |
 | `--compact-before-exit` | Run post-success compaction as a follow-up step before command exit. | off |
-| `--confirm` | During loop mode, pause after migration files are created so you can edit them before continuing to `migrate up`. | off |
-| `--no-backlog` | For `migrate down`, do not append removed migration content to `migrations/Backlog.md`. | off |
+| `--confirm` | During loop mode, pause after migration files are created so you can edit them before applying the batch. | off |
+| `--keep-artifacts` | Preserve runtime prompts, logs, and metadata under `<config-dir>/runs`. | off |
+| `--show-agent-output` | Show worker stdout/stderr during execution. | off |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
+| `--slug-worker <pattern>` | Worker override used only for migration slug naming/reconciliation. | unset |
 
 Auto-compact defaults:
 
@@ -135,17 +128,14 @@ Bare control workspace example (major content mounted elsewhere):
 Examples:
 
 ```bash
-# Run the loop until planner convergence (DONE)
+# Default mode: derive migrations from design diffs
 rundown migrate
 
-# Execute pending migrations and write a snapshot checkpoint
-rundown migrate up
+# Reconcile current design from implementation changes, then draft/promote migrations
+rundown migrate --from implementation
 
-# Remove last two migrations, append removed content to Backlog.md, regenerate snapshot
-rundown migrate down 2
-
-# Same as above, but do not touch Backlog.md
-rundown migrate down 2 --no-backlog
+# Reconcile current design from prediction changes, then draft/promote migrations
+rundown migrate --from prediction
 ```
 
 ## Backlog and snapshots
@@ -153,4 +143,4 @@ rundown migrate down 2 --no-backlog
 - Backlog is a singleton file: `migrations/Backlog.md`.
 - Snapshot checkpoints are numbered satellites: `N.1 Snapshot.md`.
 - New snapshots are additive historical checkpoints; older `N.1 Snapshot.md` files stay.
-- `migrate down` deletes snapshot files above the new migration endpoint before regenerating the current snapshot.
+- Snapshot regeneration and revision planning continue to run through the migrate pipeline in every source mode.

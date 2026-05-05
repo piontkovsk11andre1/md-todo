@@ -36,7 +36,15 @@ import { createLocalizeProject, type LocalizeProjectOptions } from "./applicatio
 import { createReverifyTask, type ReverifyTaskOptions } from "./application/reverify-task.js";
 import { createRevertTask, type RevertTaskOptions } from "./application/revert-task.js";
 import { createUndoTask, type UndoTaskOptions } from "./application/undo-task.js";
-import { createMigrateTask, type MigrateTaskOptions } from "./application/migrate-task.js";
+import {
+  createMigrateTask,
+  type MigrateSourceMode,
+  type MigrateTaskOptions,
+} from "./application/migrate-task.js";
+import {
+  createPredictTask,
+  type PredictTaskOptions,
+} from "./application/predict-task.js";
 import {
   createExploreTask,
   type ExploreTaskOptions,
@@ -73,6 +81,7 @@ import {
   type WithTaskOptions,
   type WithTaskResult,
 } from "./application/with-task.js";
+import { resolveWorkerPatternForInvocation } from "./application/resolve-worker.js";
 import { inferWorkerPatternFromCommand } from "./domain/worker-pattern.js";
 import {
   createWorkspaceRemoveTask,
@@ -80,6 +89,7 @@ import {
   type WorkspaceRemoveOptions,
   type WorkspaceUnlinkOptions,
 } from "./application/workspace-lifecycle.js";
+import { EXIT_CODE_SUCCESS } from "./domain/exit-codes.js";
 import type { ApplicationOutputPort } from "./domain/ports/output-port.js";
 import type {
   ArtifactStore,
@@ -155,6 +165,12 @@ type ReverifyTaskCommandOptions = Omit<ReverifyTaskOptions, "varsFileOption" | "
   cliTemplateVarArgs?: string[];
 };
 
+export type MigrateTaskCommandOptions = Omit<MigrateTaskOptions, "sourceMode"> & {
+  sourceMode: MigrateSourceMode;
+};
+
+export type PredictTaskCommandOptions = PredictTaskOptions;
+
 export type App = {
   helpTask: (options: HelpTaskOptions) => Promise<number>;
   runTask: (options: RunTaskOptions) => Promise<number>;
@@ -167,7 +183,8 @@ export type App = {
   reverifyTask: (options: ReverifyTaskCommandOptions) => Promise<number>;
   revertTask: (options: RevertTaskOptions) => Promise<number>;
   undoTask: (options: UndoTaskOptions) => Promise<number>;
-  migrateTask: (options: MigrateTaskOptions) => Promise<number>;
+  migrateTask: (options: MigrateTaskCommandOptions) => Promise<number>;
+  predictTask: (options: PredictTaskCommandOptions) => Promise<number>;
   testSpecs: (options: TestSpecsOptions) => Promise<number>;
   planTask: (options: PlanTaskCommandOptions) => Promise<number>;
   researchTask: (options: ResearchTaskCommandOptions) => Promise<number>;
@@ -700,6 +717,11 @@ function createDefaultUseCaseFactories(): AppUseCaseFactories {
       }),
       runExplore: (source, cwd) => runInternalExploreForCreatedFile(ports, source, cwd),
     }),
+    predictTask: (ports) => createPredictTask({
+      fileSystem: ports.fileSystem,
+      output: ports.output,
+      runTask: runTaskUseCase(ports),
+    }),
     testSpecs: (ports) => testSpecsUseCase(ports),
     planTask: (ports) => {
       const runPlanTask = planTaskUseCase(ports);
@@ -930,6 +952,7 @@ function createAppFromFactories(
   const revertTask = factories.revertTask(ports);
   const undoTask = factories.undoTask(ports);
   const migrateTask = factories.migrateTask(ports);
+  const predictTask = factories.predictTask(ports);
   const testSpecs = factories.testSpecs(ports);
   const planTask = factories.planTask(ports);
   const researchTask = factories.researchTask(ports);
@@ -942,7 +965,7 @@ function createAppFromFactories(
   const logRuns = factories.logRuns(ports);
   const initProject = factories.initProject(ports);
   const localizeProject = factories.localizeProject(ports);
-  const startProject = factories.startProject(ports);
+  const startProjectUseCase = factories.startProject(ports);
   const manageArtifacts = factories.manageArtifacts(ports);
   const compactTask = factories.compactTask(ports);
   const configGet = factories.configGet(ports);
@@ -997,6 +1020,15 @@ function createAppFromFactories(
     return taskRun;
   };
 
+  const executeMigrateTask = async (options: MigrateTaskCommandOptions): Promise<number> => {
+    const primaryExitCode = await migrateTask(options);
+    return runPostSuccessAutoCompact({
+      primaryExitCode,
+      autoCompact: options.autoCompact,
+      workspace: options.workspace,
+    });
+  };
+
   return {
     helpTask,
     runTask: (options) => trackInFlightRun((async () => {
@@ -1020,14 +1052,8 @@ function createAppFromFactories(
     reverifyTask,
     revertTask,
     undoTask,
-    migrateTask: async (options) => {
-      const primaryExitCode = await migrateTask(options);
-      return runPostSuccessAutoCompact({
-        primaryExitCode,
-        autoCompact: options.autoCompact,
-        workspace: options.workspace,
-      });
-    },
+    migrateTask: executeMigrateTask,
+    predictTask,
     testSpecs,
     planTask,
     researchTask,
@@ -1040,7 +1066,43 @@ function createAppFromFactories(
     logRuns,
     initProject,
     localizeProject,
-    startProject,
+    startProject: async (options) => {
+      const bootstrapExitCode = await startProjectUseCase(options);
+      if (bootstrapExitCode !== 0) {
+        return bootstrapExitCode;
+      }
+
+      const startWorkspaceRoot = options?.dir
+        ? ports.pathOperations.resolve(options.dir)
+        : ports.workingDirectory.cwd();
+      const startWorkspaceConfigDir = ports.pathOperations.join(startWorkspaceRoot, CONFIG_DIR_NAME);
+      const startWorkspaceWorkerConfig = ports.fileSystem.exists(startWorkspaceConfigDir)
+        ? ports.workerConfigPort.load(startWorkspaceConfigDir)
+        : undefined;
+      const migrateWorkerSelection = resolveWorkerPatternForInvocation({
+        commandName: "migrate",
+        workerConfig: startWorkspaceWorkerConfig,
+        cliWorkerPattern: options?.migrateWorkerPattern,
+        mode: "wait",
+      });
+
+      if (migrateWorkerSelection.workerCommand.length === 0) {
+        ports.output.emit({
+          kind: "info",
+          message: "Start bootstrap complete; skipping automatic migrate because no worker is configured.",
+        });
+        return EXIT_CODE_SUCCESS;
+      }
+
+      return executeMigrateTask({
+        sourceMode: options?.migrateSourceMode ?? "design",
+        workerPattern: migrateWorkerSelection.workerPattern,
+        keepArtifacts: options?.migrateKeepArtifacts ?? false,
+        showAgentOutput: options?.migrateShowAgentOutput ?? false,
+        confirm: options?.migrateConfirm ?? false,
+        autoCompact: options?.migrateAutoCompact,
+      });
+    },
     manageArtifacts,
     compactTask,
     configGet,

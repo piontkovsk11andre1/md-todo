@@ -766,6 +766,91 @@ describeIfStartAvailable("start-project integration", () => {
     expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
   });
 
+  it("adopts current directory into positional control workspace and hands off into migrate", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDir = path.join(workspace, "existing-app");
+    const controlDir = path.join(workspace, "control");
+
+    fs.mkdirSync(invocationDir, { recursive: true });
+    fs.writeFileSync(path.join(invocationDir, "README.md"), "# Existing app\n", "utf-8");
+    fs.writeFileSync(path.join(invocationDir, "Target.md"), "# Adopted design\n\nDraft content.\n", "utf-8");
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const migrateWorkerScript = [
+      "const fs=require('node:fs');",
+      "const promptPath=process.argv[process.argv.length-1];",
+      "const prompt=fs.existsSync(promptPath)?fs.readFileSync(promptPath,'utf-8'):'';",
+      "const fullDocMatch=prompt.match(/## Full document\\n\\n([\\s\\S]*?)\\n\\n## Design context/);",
+      "if(prompt.includes('Research and enrich the source document with implementation context.')){",
+      "  const sourceDoc=fullDocMatch&&fullDocMatch[1]?fullDocMatch[1]:'';",
+      "  console.log(sourceDoc.length>0?sourceDoc:'\\n');",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Verify whether the research output is acceptable.')){",
+      "  console.log('OK');",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Diagnose why research verification keeps failing.')){",
+      "  console.log('UNRESOLVED: test worker does not need diagnosis');",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Inventory design changes not yet reflected in the current prediction tree.')){",
+      "  console.log('DONE');",
+      "  process.exit(0);",
+      "}",
+      "if(prompt.includes('Verify whether the selected task is complete.')){",
+      "  console.log('OK');",
+      "  process.exit(0);",
+      "}",
+      "console.log('applied');",
+      "process.exit(0);",
+    ].join("\n");
+
+    const result = await runCli([
+      "start",
+      ".",
+      "../control",
+      "--",
+      "node",
+      "-e",
+      migrateWorkerScript,
+    ], invocationDir);
+
+    const combinedOutput = [
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n");
+
+    expect(result.code, combinedOutput).toBe(0);
+    expect(fs.existsSync(path.join(controlDir, ".rundown", "config.json"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "implementation"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "specs"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "migrations"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "prediction"))).toBe(true);
+
+    expect(fs.existsSync(path.join(controlDir, "design", "current", "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, "design", "revisions", "rev.0", "Target.md"))).toBe(true);
+    expect(fs.existsSync(path.join(controlDir, "design", "revisions", "rev.0.meta.json"))).toBe(true);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as {
+      workspace?: {
+        design?: {
+          currentPath?: string;
+        };
+      };
+    };
+    expect(path.normalize(config.workspace?.design?.currentPath ?? "")).toBe(path.normalize(invocationDir));
+    expect(combinedOutput).toContain("Released design revision rev.0 from current design before migration planning.");
+    expect(combinedOutput).toContain("Migrations are caught up to rev.0");
+  });
+
   it("fails when --mount declaration is malformed", async () => {
     const workspace = makeTempWorkspace();
 
@@ -780,6 +865,24 @@ describeIfStartAvailable("start-project integration", () => {
     const stderr = [...result.errors, ...result.stderrWrites].join("\n");
     expect(stderr).toContain("Invalid --mount value");
     expect(stderr).toContain("logical-path=target-path");
+  });
+
+  it("fails when positional design path resolves to an existing file", async () => {
+    const workspace = makeTempWorkspace();
+    const designFileName = "README.md";
+    const designFilePath = path.join(workspace, designFileName);
+    fs.writeFileSync(designFilePath, "# Not a directory\n", "utf-8");
+
+    const result = await runCli([
+      "start",
+      designFileName,
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const stderr = [...result.errors, ...result.stderrWrites].join("\n");
+    expect(stderr).toContain("Invalid --from-design value");
+    expect(stderr).toContain("expected a directory path");
+    expect(stderr).toContain(path.normalize(designFilePath));
   });
 
   it("fails when --mount reuses the same logical path", async () => {

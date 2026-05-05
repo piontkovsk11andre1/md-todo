@@ -1,10 +1,17 @@
 # CLI: `test`
 
-Verify assertion specs in either materialized or prediction mode.
+Verify assertion specs against explicit target states and create new assertions.
 
-By default, `test` validates assertions against the materialized workspace and explicitly excludes prediction inputs (`design/`, `implementation/`, `specs/`, `migrations/`, `prediction/`) from test context.
+Canonical action forms:
 
-When `--future` is set, `test` switches to prediction mode and validates assertions using design + migration context only.
+- `rundown test now` validates current implementation/materialized state.
+- `rundown test future` validates prediction state.
+- `rundown test new <assertion>` creates a new assertion spec.
+
+Compatibility:
+
+- Omitting action (`rundown test`) keeps compatibility behavior and runs in `now` mode.
+- Unknown actions are rejected with guidance to `now`, `future`, and `new`.
 
 ## Global option: `--config-dir <path>`
 
@@ -23,11 +30,13 @@ rundown test [action] [options] --worker <pattern>
 
 Arguments:
 
-- `[action]`: Optional action (`new <assertion>` or omitted to verify all specs).
+- `[action]`: Optional action (`now`, `future`, `new <assertion>`).
 
 Actions:
 
-- omitted: verify all specs in the specs directory
+- omitted: verify all specs in `now` mode
+- `now`: verify all specs against current implementation/materialized state
+- `future`: verify all specs against prediction state
 - `new <assertion>`: create a new assertion spec file
 
 Options:
@@ -35,20 +44,17 @@ Options:
 | Option | Description | Default |
 |---|---|---|
 | `--dir <path>` | Specs directory. | `./specs` |
-| `--future [n]` | Prediction mode. Without `n`, uses latest prediction (`latest snapshot + migrations`). With `n`, uses targeted prediction (`previous snapshot + migrations up to n`). | off |
 | `--run` | For `test new`, create then immediately verify the new spec. | off |
-| `--mode <tui|wait>` | For `test new`, choose interactive or non-interactive assertion authoring mode. | `wait` |
 | `--worker <pattern>` | Worker pattern override (alternative to `-- <command>`). | unset |
 
 Template resolution:
 
-- Materialized mode (`test` without `--future`): `.rundown/test-materialized.md` -> `.rundown/test-verify.md` -> built-in default
-- Prediction mode (`test --future`): `.rundown/test-future.md` -> `.rundown/test-verify.md` -> built-in default
+- `now` mode (`test` / `test now`): `.rundown/test-materialized.md` -> `.rundown/test-verify.md` -> built-in default
+- `future` mode (`test future`): `.rundown/test-future.md` -> `.rundown/test-verify.md` -> built-in default
 
 Harness/environment hints:
 
 - `RUNDOWN_TEST_MODE` = `materialized` or `future`
-- `RUNDOWN_TEST_FUTURE_TARGET` = migration target when `--future` is used
 - `RUNDOWN_TEST_INCLUDED_DIRECTORIES` = JSON array of included directories
 - `RUNDOWN_TEST_EXCLUDED_DIRECTORIES` = JSON array of excluded directories
 
@@ -56,14 +62,14 @@ Examples:
 
 ```bash
 # Verify all specs in materialized mode
-rundown test
+rundown test now
 
 # Verify prediction at latest target
-rundown test --future
-
-# Verify prediction up to migration 7
-rundown test --future 7
+rundown test future
 
 # Create a new assertion spec and run it immediately
 rundown test new "API returns 200 for health endpoint" --run
+
+# Compatibility (same as `test now`)
+rundown test
 ```

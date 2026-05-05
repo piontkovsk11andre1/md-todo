@@ -233,8 +233,7 @@ function buildHelpRows(workspaceRoot) {
   return rows;
 }
 
-export function createHelpSceneState() {
-  const workspaceRoot = process.cwd();
+export function createHelpSceneState(workspaceRoot = process.cwd()) {
   return {
     workspaceRoot,
     selectedIndex: 0,

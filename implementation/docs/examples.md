@@ -456,39 +456,41 @@ Terminal-stop examples:
 - `return: ...` stops only when the condition evaluates true.
 - `optional: ...` keeps sibling-skip behavior only; it does not stop full run/loop.
 
-## 21. Single-step design edit -> migrate planning
+## 21. Source-aware migrate modes
 
 Use `rundown migrate` as the canonical revision-aware workflow.
 
 ```bash
-# Edit design/current/**, then run migrate.
+# Default mode: design-diff migration authoring.
 rundown migrate --dir ./migrations -- opencode run
+
+# Reconcile current design from implementation changes, then create migrations.
+rundown migrate --from implementation --dir ./migrations -- opencode run
+
+# Reconcile current design from prediction changes, then create migrations.
+rundown migrate --from prediction --dir ./migrations -- opencode run
 
 # When workspace.link has multiple records, select explicitly.
 rundown migrate --dir ./migrations --workspace ../source-workspace -- opencode run
-
-# Generate satellites for the latest migration position.
-rundown migrate context --dir ./migrations -- opencode run
-rundown migrate snapshot --dir ./migrations -- opencode run
-rundown migrate backlog --dir ./migrations -- opencode run
-
-# Execute or roll back migration tasks.
-rundown migrate up --dir ./migrations -- opencode run
-rundown migrate down 1 --dir ./migrations -- opencode run
 ```
 
 What happens:
 
-1. `migrate` runs design revision preflight first.
-2. If `design/current/` differs from the latest release (or no release exists), preflight creates exactly one new immutable `design/revisions/rev.N/` snapshot.
-3. If there is no byte-level change, no new revision is created.
-4. Planning still targets released revision metadata boundaries (`plannedAt`, `migrations`).
-5. Legacy flat `design/rev.*/`, `docs/current/Design.md`, and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
-6. `migrate context` can be used to inspect revision-aware context after preflight when you want to review what planning sees.
+1. `rundown migrate` remains a single canonical command (no positional migrate actions).
+2. With no `--from`, migrate runs the default design-diff flow.
+3. `--from implementation` and `--from prediction` run source-specific reconciliation first, then hand off to the same revision-aware planner/drafter pipeline.
+4. If reconciliation or preflight yields no effective design boundary change, migrate exits with a caught-up/no-op result.
+5. Planning still targets released revision metadata boundaries (`plannedAt`, `migrations`).
+6. Legacy flat `design/rev.*/`, `docs/current/Design.md`, and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
 
 If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), path-sensitive commands such as `migrate` fail with candidate guidance and require `--workspace <dir>`.
 
 ## 22. Mounted routing examples (local, linked, bare control)
+
+Path-first onboarding safety reminder:
+
+- Use `rundown start` for greenfield empty directories.
+- If the local design directory is non-empty, provide an explicit outer workdir (for example, `rundown start . ../control`).
 
 Local default workspace (no link, single root):
 
@@ -518,7 +520,7 @@ workspacePredictionPath=/work/platform-core/prediction
 Bare control workspace with mounted content:
 
 ```bash
-rundown start "Adopt existing app" --dir ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run
+rundown start . ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run
 ```
 
 Resulting routing shape:
@@ -535,7 +537,7 @@ workspacePredictionPath=/work/control/prediction
 Nested mount override example:
 
 ```bash
-rundown start "Adopt generated output" --dir ../control --mount implementation=. --mount implementation/generated=./generated -- opencode run
+rundown start . ../control --mount implementation=. --mount implementation/generated=./generated -- opencode run
 ```
 
 Runtime prompt contract for these scenarios:
@@ -543,3 +545,32 @@ Runtime prompt contract for these scenarios:
 1. `workspace*Path` values are already resolved absolute targets and are authoritative.
 2. Do not recompute paths from `workspaceDir` and logical directory names.
 3. When present, `workspaceMountSummary` is the canonical logical-path routing map.
+
+## 23. Predict then test target states explicitly
+
+Use this command family to keep planning, future-state projection, and implementation application separate:
+
+```bash
+# 1) Create or update migrations from design changes.
+rundown migrate --dir ./migrations -- opencode run
+
+# 2) Apply migration files into prediction/.
+rundown predict --dir ./migrations -- opencode run
+
+# 3) Validate the future state in prediction/.
+rundown test future
+
+# 4) Apply resulting state to implementation/.
+rundown materialize --dir ./migrations -- opencode run
+
+# 5) Validate the current implementation state.
+rundown test now
+```
+
+What this demonstrates:
+
+1. `migrate` is the producer of migration files.
+2. `predict` is the migration-file consumer that advances only `prediction/`.
+3. `materialize` remains a separate implementation-application step.
+4. `test future` and `test now` make the verification target explicit.
+5. `test` without an action is still accepted for compatibility and maps to `test now`.

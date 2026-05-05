@@ -40,11 +40,13 @@ import {
   markRevisionPlanned,
   prepareDesignRevisionDiffContext,
   saveDesignRevisionSnapshot,
+  materializeDesignReconciliationFromSource,
   type DesignRevisionDiffContext,
 } from "./design-context.js";
 import { runVerifyRepairLoop } from "./verify-repair-loop.js";
 import {
   resolveArchiveWorkspacePaths,
+  validateWorkspaceBucketRootDirectory,
   resolveWorkspaceDirectories,
   resolveWorkspacePaths,
   resolveWorkspacePath,
@@ -56,6 +58,7 @@ export interface MigrateTaskOptions {
   action?: string;
   dir?: string;
   workspace?: string;
+  sourceMode?: MigrateSourceMode;
   autoCompact?: AutoCompactCommandOptions;
   confirm?: boolean;
   workerPattern: ParsedWorkerPattern;
@@ -63,6 +66,8 @@ export interface MigrateTaskOptions {
   keepArtifacts?: boolean;
   showAgentOutput?: boolean;
 }
+
+export type MigrateSourceMode = "design" | "implementation" | "prediction";
 
 export interface MigrateTaskDependencies {
   workerExecutor: WorkerExecutorPort;
@@ -242,6 +247,8 @@ export function createMigrateTask(
     });
 
     const artifactRunExtra: Record<string, unknown> = {};
+    const sourceMode = options.sourceMode ?? "design";
+    artifactRunExtra.sourceMode = sourceMode;
 
     try {
       const exitCode = await runMigrateLoop({
@@ -254,6 +261,7 @@ export function createMigrateTask(
         workspacePaths,
         workerPattern: resolvedWorker.workerPattern,
         slugWorkerPattern,
+        sourceMode,
         workerTimeoutMs,
         artifactContext,
         keepArtifacts: Boolean(options.keepArtifacts),
@@ -327,6 +335,7 @@ async function runMigrateLoop(input: {
   workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern: ParsedWorkerPattern;
+  sourceMode: MigrateSourceMode;
   artifactContext: ReturnType<ArtifactStore["createContext"]>;
   workerTimeoutMs?: number;
   keepArtifacts: boolean;
@@ -350,6 +359,7 @@ async function runMigrateLoop(input: {
     workspacePaths,
     workerPattern,
     slugWorkerPattern,
+    sourceMode,
     artifactContext,
     workerTimeoutMs,
     keepArtifacts,
@@ -395,6 +405,20 @@ async function runMigrateLoop(input: {
   let processedAnyRevision = false;
   let completedRevisionCount = 0;
 
+  const sourceReconciliation = runMigrateSourceReconciliationPreflight({
+    fileSystem: dependencies.fileSystem,
+    sourceMode,
+    workspaceRoot,
+    invocationRoot,
+    workspacePaths,
+    emit,
+  });
+  if (!sourceReconciliation.ok) {
+    artifactRunExtra.outcome = "source-reconciliation-failed";
+    return sourceReconciliation.exitCode;
+  }
+  artifactRunExtra.sourceReconciliation = sourceReconciliation.metadata;
+
   const preflightExitCode = runDesignRevisionReleasePreflight({
     fileSystem: dependencies.fileSystem,
     workspaceRoot,
@@ -419,20 +443,51 @@ async function runMigrateLoop(input: {
           { invocationRoot },
         );
         const highestReleasedRevision = releasedRevisions[releasedRevisions.length - 1];
+        const sourceModeLabel = sourceMode === "design" ? "default design-diff" : "--from " + sourceMode;
+        if (sourceReconciliation.metadata.changed === false) {
+          artifactRunExtra.outcome = "reconciliation-no-op-caught-up";
+          if (highestReleasedRevision) {
+            emit({
+              kind: "info",
+              message: "Migrate "
+                + sourceModeLabel
+                + " produced no effective design boundary change; migrations are already caught up to "
+                + highestReleasedRevision.name
+                + ".",
+            });
+          } else {
+            emit({
+              kind: "info",
+              message: "Migrate "
+                + sourceModeLabel
+                + " produced no effective design boundary change and there are no released design revisions yet.",
+            });
+          }
+          return EXIT_CODE_SUCCESS;
+        }
         if (highestReleasedRevision) {
+          artifactRunExtra.outcome = "caught-up";
           emit({
             kind: "info",
             message:
               "Migrations are caught up to "
               + highestReleasedRevision.name
-              + " (highest released revision). Edit design/current/ and run rundown migrate to release and plan the next revision.",
+              + " (highest released revision, source mode "
+              + sourceModeLabel
+              + "). Edit design/current/ and run rundown migrate to release and plan the next revision.",
           });
         } else {
+          artifactRunExtra.outcome = "no-released-revisions";
           emit({
             kind: "info",
-            message: "No released design revisions yet. Add design/current/ and run rundown migrate to bootstrap rev.0.",
+            message: "No released design revisions yet (source mode "
+              + sourceModeLabel
+              + "). Add design/current/ and run rundown migrate to bootstrap rev.0.",
           });
         }
+      }
+      if (processedAnyRevision && typeof artifactRunExtra.outcome !== "string") {
+        artifactRunExtra.outcome = "revisions-planned";
       }
       return EXIT_CODE_SUCCESS;
     }
@@ -603,6 +658,7 @@ async function runMigrateLoop(input: {
       );
       completedRevisionCount += 1;
       if (discoveredThreads.length > 0) {
+        artifactRunExtra.outcome = "revisions-planned";
         return EXIT_CODE_SUCCESS;
       }
       continue;
@@ -616,9 +672,190 @@ async function runMigrateLoop(input: {
     );
     completedRevisionCount += 1;
     if (discoveredThreads.length > 0) {
+      artifactRunExtra.outcome = "revisions-planned";
       return EXIT_CODE_SUCCESS;
     }
   }
+}
+
+function runMigrateSourceReconciliationPreflight(input: {
+  fileSystem: FileSystem;
+  sourceMode: MigrateSourceMode;
+  workspaceRoot: string;
+  invocationRoot: string;
+  workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
+  emit: ApplicationOutputPort["emit"];
+}):
+  | {
+    ok: true;
+    metadata: {
+      mode: MigrateSourceMode;
+      changed: boolean | null;
+      sourceRoot: string | null;
+      outputPath: string | null;
+    };
+  }
+  | {
+    ok: false;
+    exitCode: number;
+  } {
+  const { fileSystem, sourceMode, workspaceRoot, invocationRoot, workspacePaths, emit } = input;
+
+  if (sourceMode === "design") {
+    return {
+      ok: true,
+      metadata: {
+        mode: sourceMode,
+        changed: null,
+        sourceRoot: null,
+        outputPath: null,
+      },
+    };
+  }
+
+  const sourceBucket = sourceMode === "implementation" ? "implementation" : "prediction";
+  const sourceRootValidation = validateWorkspaceBucketRootDirectory({
+    fileSystem,
+    workspacePaths,
+    bucket: sourceBucket,
+  });
+  if (!sourceRootValidation.ok) {
+    emit({
+      kind: "error",
+      message: "Cannot run migrate --from "
+        + sourceMode
+        + ": "
+        + sourceRootValidation.message,
+    });
+    return {
+      ok: false,
+      exitCode: EXIT_CODE_FAILURE,
+    };
+  }
+  const sourceRoot = sourceRootValidation.absolutePath;
+
+  emit({
+    kind: "info",
+    message: sourceMode === "implementation"
+      ? "Reconciling design boundary from implementation changes before migration planning."
+      : "Reconciling design boundary from prediction changes before migration planning.",
+  });
+
+  if (sourceMode === "implementation") {
+    try {
+      const reconcileResult = reconcileDesignFromImplementation({
+        fileSystem,
+        workspaceRoot,
+        invocationRoot,
+        workspacePaths,
+      });
+      emit({
+        kind: "info",
+        message: reconcileResult.changed
+          ? "Implementation reconciliation updated design/current artifact at " + reconcileResult.outputPath + "."
+          : "Implementation reconciliation detected no effective changes in " + reconcileResult.outputPath + ".",
+      });
+      return {
+        ok: true,
+        metadata: {
+          mode: sourceMode,
+          changed: reconcileResult.changed,
+          sourceRoot,
+          outputPath: reconcileResult.outputPath,
+        },
+      };
+    } catch (error) {
+      emit({
+        kind: "error",
+        message: "Implementation reconciliation failed: " + (error instanceof Error ? error.message : String(error)),
+      });
+      return {
+        ok: false,
+        exitCode: EXIT_CODE_FAILURE,
+      };
+    }
+  }
+
+  if (sourceMode === "prediction") {
+    try {
+      const reconcileResult = reconcileDesignFromPrediction({
+        fileSystem,
+        workspaceRoot,
+        invocationRoot,
+        workspacePaths,
+      });
+      emit({
+        kind: "info",
+        message: reconcileResult.changed
+          ? "Prediction reconciliation updated design/current artifact at " + reconcileResult.outputPath + "."
+          : "Prediction reconciliation detected no effective changes in " + reconcileResult.outputPath + ".",
+      });
+      return {
+        ok: true,
+        metadata: {
+          mode: sourceMode,
+          changed: reconcileResult.changed,
+          sourceRoot,
+          outputPath: reconcileResult.outputPath,
+        },
+      };
+    } catch (error) {
+      emit({
+        kind: "error",
+        message: "Prediction reconciliation failed: " + (error instanceof Error ? error.message : String(error)),
+      });
+      return {
+        ok: false,
+        exitCode: EXIT_CODE_FAILURE,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    metadata: {
+      mode: sourceMode,
+      changed: null,
+      sourceRoot,
+      outputPath: null,
+    },
+  };
+}
+
+function reconcileDesignFromImplementation(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
+}): { changed: boolean; outputPath: string } {
+  const { fileSystem, workspaceRoot, invocationRoot, workspacePaths } = input;
+  const result = materializeDesignReconciliationFromSource(fileSystem, workspaceRoot, {
+    sourceMode: "implementation",
+    sourceRoot: workspacePaths.implementation,
+    invocationRoot,
+  });
+  return {
+    changed: result.changed,
+    outputPath: result.outputPath,
+  };
+}
+
+function reconcileDesignFromPrediction(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+  workspacePaths: ReturnType<typeof resolveWorkspacePaths>;
+}): { changed: boolean; outputPath: string } {
+  const { fileSystem, workspaceRoot, invocationRoot, workspacePaths } = input;
+  const result = materializeDesignReconciliationFromSource(fileSystem, workspaceRoot, {
+    sourceMode: "prediction",
+    sourceRoot: workspacePaths.prediction,
+    invocationRoot,
+  });
+  return {
+    changed: result.changed,
+    outputPath: result.outputPath,
+  };
 }
 
 function runDesignRevisionReleasePreflight(input: {

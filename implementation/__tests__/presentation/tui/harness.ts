@@ -171,6 +171,9 @@ function createWorkspace(options: HarnessOptions): string {
     fs.mkdirSync(path.join(rootDir, "specs"), { recursive: true });
     fs.mkdirSync(path.join(rootDir, "migrations"), { recursive: true });
     writeWorkspaceFile(rootDir, ".rundown/config.json", `${JSON.stringify({ workspace: {} }, null, 2)}\n`);
+    writeWorkspaceFile(rootDir, "README.md", "# Test Workspace\n");
+    writeWorkspaceFile(rootDir, "roadmap.md", "- [ ] test task\n");
+    writeWorkspaceFile(rootDir, "docs/getting-started.md", "# Getting Started\n");
   }
 
   const files = options.workspaceFiles ?? {};

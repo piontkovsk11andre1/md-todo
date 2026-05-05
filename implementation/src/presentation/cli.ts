@@ -45,6 +45,7 @@ import {
   createLogCommandAction,
   createMakeCommandAction,
   createMigrateCommandAction,
+  createPredictCommandAction,
   createMemoryViewCommandAction,
   createMemoryCleanCommandAction,
   createMemoryValidateCommandAction,
@@ -359,9 +360,10 @@ program
 
 program
   .command("start")
-  .description("Scaffold a new workspace and optionally mount logical paths.")
-  .argument("<description>", "Project description")
-  .option("--dir <path>", "Target project directory (default: current working directory)")
+  .description("Bootstrap or adopt a workspace from directory paths.")
+  .argument("[design-dir]", "Design directory to adopt (default: current working directory)")
+  .argument("[workdir]", "Outer/control rundown workspace directory")
+  .option("--dir <path>", "Control workspace directory (overrides positional [workdir])")
   .option(
     "--mount <logical-path=target-path>",
     "Mount logical workspace path to a target directory (repeatable). Relative targets resolve from invocation directory.",
@@ -374,7 +376,7 @@ program
   .option("--specs-placement <mode>", "Specs placement root: sourcedir or workdir (default: sourcedir)")
   .option("--migrations-dir <path>", "Migrations workspace directory (default: migrations)")
   .option("--migrations-placement <mode>", "Migrations placement root: sourcedir or workdir (default: sourcedir)")
-  .option("--from-design <path>", "Use an existing directory as design/current. Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/revisions/rev.N.")
+  .option("--from-design <path>", "Compatibility override for adopted design directory (preferred: positional [design-dir]). Persisted as workspace.design.currentPath in .rundown/config.json. The directory itself acts as design/current; revisions still live under <design>/revisions/rev.N.")
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
   .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
   .option("--trace", "Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl", false)
@@ -389,9 +391,17 @@ program
     String(DEFAULT_CLI_BLOCK_EXEC_TIMEOUT_MS),
   )
   .allowUnknownOption(false)
-  .action(withCliAction(createStartCommandAction({
-    getApp,
-  })))
+  .action(withCliAction((
+    designDir: string | undefined,
+    workdir: string | undefined,
+    opts: Record<string, string | string[] | boolean>,
+  ) => {
+    const startAction = createStartCommandAction({
+      getApp,
+      getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
+    });
+    return startAction(designDir, workdir, opts);
+  }))
   .addHelpText(
     "after",
     [
@@ -417,15 +427,14 @@ program
       "  - New target workspace receives a single legacy-compatible link to the source workspace",
       "",
       "Examples:",
-      "  - rundown start \"Adopt existing app\" --dir ../control --mount implementation=. -- opencode run",
-      "  - rundown start \"Adopt existing app\" --dir ../control --mount specs=. -- opencode run",
-      "  - rundown start \"Adopt existing app\" --dir ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run",
-      "  - rundown start \"Adopt existing app\" --dir ../control --mount implementation/generated=./generated -- opencode run",
-      "  - rundown start \"Adopt existing app\" --dir ../control --mount implementation=. --mount specs=./specs --mount migrations=../control/migrations -- opencode run",
-      "  - rundown start \"Ship auth flow\" --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=./implementation -- opencode run",
-      "  - rundown start \"Ship auth flow\" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir --mount implementation=./implementation -- opencode run",
-      "  - rundown start \"Ship auth flow\" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=../app -- opencode run",
-      "  - rundown start \"Audit existing notes\" --dir ./audit --from-design ../my-notes -- opencode run",
+      "  - rundown start",
+      "  - rundown start ./design-input",
+      "  - rundown start . ../control -- opencode run",
+      "  - rundown start ../my-notes ./audit -- opencode run",
+      "  - rundown start ./design-input --dir ../control --mount implementation=. -- opencode run",
+      "  - rundown start ./design-input --mount implementation=./implementation --mount specs=./specs --mount migrations=./migrations -- opencode run",
+      "  - rundown start ./design-input --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir --mount implementation=./implementation -- opencode run",
+      "  - rundown start --from-design ../my-notes --dir ./audit -- opencode run",
     ].join("\n"),
   );
 
@@ -434,6 +443,7 @@ const migrateCommand = program
   .description("Sync design revisions and generate migration files.")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--from <source>", "Source reconciliation mode: implementation|prediction (omit for default design-diff mode)")
   .option(COMPACT_BEFORE_EXIT_FLAG, COMPACT_BEFORE_EXIT_OPTION_HELP, false)
   .option("--confirm", "Show generated content and confirm before writing files", false)
   .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
@@ -445,6 +455,20 @@ const migrateCommand = program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
     getInvocationArgv: () => runtimeState.invocationArgv ?? process.argv.slice(2),
+  })));
+
+program
+  .command("predict")
+  .description("Apply migrations into prediction/.")
+  .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .option("--keep-artifacts", "Preserve runtime prompts, logs, and metadata under <config-dir>/runs", false)
+  .option("--show-agent-output", "Show worker stdout/stderr during execution (hidden by default).", false)
+  .option("--worker <pattern>", "Optional worker pattern override (alternative to -- <command>)")
+  .allowUnknownOption(false)
+  .action(withCliAction(createPredictCommandAction({
+    getApp,
+    getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
   })));
 
 program
@@ -480,13 +504,18 @@ migrateCommand.addHelpText(
     "  - Runtime workspace paths are resolved absolute targets and should be treated as authoritative",
     "  - Do not reconstruct layout from workspaceDir + logical directory names",
     "  - workspaceMountSummary (when present) is the canonical logical-path routing map",
+    "",
+    "Source reconciliation modes:",
+    "  - Omit --from to use the default design-diff workflow",
+    "  - --from implementation reconciles current design from implementation changes before drafting migrations",
+    "  - --from prediction reconciles current design from prediction changes before drafting migrations",
   ].join("\n"),
 );
 
 program
   .command("test")
-  .description("Verify predicted-state specs and create new spec assertions.")
-  .argument("[action]", "Test action: new")
+  .description("Verify specs against now/future state and create new assertions.")
+  .argument("[action]", "Test action: now | future | new")
   .argument("[prompt]", "Assertion text for `test new`")
   .option("--dir <path>", "Specs directory (default: configured workspace, fallback: ./specs)")
   .option("--run", "Immediately verify the created spec after `test new`", false)

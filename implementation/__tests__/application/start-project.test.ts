@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createStartProject } from "../../src/application/start-project.js";
 import {
+  EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
   type ExitCode,
 } from "../../src/domain/exit-codes.js";
@@ -229,6 +230,22 @@ describe("start-project", () => {
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "design", "current", "Target.md"))).toBe(false);
+  });
+
+  it("fails when --dir resolves to an existing file", async () => {
+    const workspace = makeTempWorkspace();
+    const filePath = path.join(workspace, "existing-file.txt");
+    fs.writeFileSync(filePath, "not a directory\n", "utf-8");
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({ dir: filePath });
+
+    expect(code).toBe(EXIT_CODE_FAILURE);
+    expect(harness.events.some((event) => (
+      event.kind === "error"
+      && event.message.includes("expected a directory path")
+      && event.message.includes(filePath)
+    ))).toBe(true);
   });
 });
 

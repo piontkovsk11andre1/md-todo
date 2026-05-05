@@ -11580,6 +11580,36 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("Required when .rundown/workspace.link has multiple records with no default");
   });
 
+  it("predict --help documents dedicated prediction execution options", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["predict", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("predict [options]");
+    expect(compactHelpOutput).toContain("Apply migrations into prediction/.");
+    expect(compactHelpOutput).toContain("--dir <path> Migrations directory (default: configured workspace, fallback: ./migrations)");
+    expect(compactHelpOutput).toContain("--workspace <dir> Workspace directory to use for linked/multi-workspace resolution");
+    expect(compactHelpOutput).toContain("--worker <pattern> Optional worker pattern override (alternative to -- <command>)");
+  });
+
+  it("test --help documents explicit now|future|new action surface", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["test", "--help"], workspace);
+
+    expect(result.code).toBe(0);
+    const helpOutput = result.stdoutWrites.join("\n");
+    const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("test [options] [action] [prompt]");
+    expect(compactHelpOutput).toContain("Verify specs against now/future state and create new assertions.");
+    expect(compactHelpOutput).toContain("Test action: now | future | new");
+    expect(compactHelpOutput).toContain("Assertion text for `test new`");
+    expect(compactHelpOutput).toContain("--run Immediately verify the created spec after `test new`");
+  });
+
   it("design --help falls back to root help because design command is removed", async () => {
     const workspace = makeTempWorkspace();
 

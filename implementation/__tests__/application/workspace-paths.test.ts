@@ -12,6 +12,7 @@ import {
   resolveWorkspacePath,
   resolveWorkspacePaths,
   resolveWorkspacePlacement,
+  validateWorkspaceBucketRootDirectory,
 } from "../../src/application/workspace-paths.js";
 import type { FileSystem } from "../../src/domain/ports/index.js";
 
@@ -866,6 +867,28 @@ describe("prediction workspace config", () => {
       invocationRoot,
       bucket: "specs",
     })).toBe(path.join(invocationRoot, "specs"));
+  });
+
+  it("returns actionable guidance when a resolved bucket root is missing", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const fileSystem = new InMemoryFileSystem({});
+    const workspacePaths = resolveWorkspacePaths({ fileSystem, workspaceRoot });
+
+    const result = validateWorkspaceBucketRootDirectory({
+      fileSystem,
+      workspacePaths,
+      bucket: "implementation",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.absolutePath).toBe(path.join(workspaceRoot, "implementation"));
+    expect(result.message).toContain("resolved workspace path does not exist at");
+    expect(result.message).toContain("workspace.mounts.implementation");
+    expect(result.message).toContain("workspace.directories.implementation");
+    expect(result.message).toContain("workspace.placement.implementation");
   });
 
   it("rejects bucket directories that escape selected workdir placement root", () => {

@@ -25,6 +25,8 @@ import type {
   PathOperationsPort,
   WorkingDirectoryPort,
 } from "../domain/ports/index.js";
+import type { ParsedWorkerPattern } from "../domain/worker-pattern.js";
+import type { AutoCompactCommandOptions } from "./post-command-auto-compact.js";
 
 export interface StartProjectOptions {
   description?: string;
@@ -37,6 +39,12 @@ export interface StartProjectOptions {
   specsPlacement?: string;
   migrationsPlacement?: string;
   fromDesign?: string;
+  migrateSourceMode?: "design" | "implementation" | "prediction";
+  migrateWorkerPattern?: ParsedWorkerPattern;
+  migrateKeepArtifacts?: boolean;
+  migrateShowAgentOutput?: boolean;
+  migrateConfirm?: boolean;
+  migrateAutoCompact?: AutoCompactCommandOptions;
 }
 
 interface ValidatedWorkspaceDirectories {
@@ -102,9 +110,18 @@ export function createStartProject(
   return async function startProject(options: StartProjectOptions = {}): Promise<number> {
     const invocationDirectory = dependencies.workingDirectory.cwd();
     const dirOption = options.dir?.trim();
+    const hasExplicitWorkspaceDir = typeof dirOption === "string" && dirOption.length > 0;
     const targetDirectory = dirOption
       ? dependencies.pathOperations.resolve(dirOption)
       : invocationDirectory;
+    const targetDirectoryStat = dependencies.fileSystem.stat(targetDirectory);
+    if (targetDirectoryStat && targetDirectoryStat.isDirectory !== true) {
+      emit({
+        kind: "error",
+        message: `Invalid start directory: expected a directory path, but found a file: ${targetDirectory}.`,
+      });
+      return EXIT_CODE_FAILURE;
+    }
     if (!dependencies.fileSystem.exists(targetDirectory)) {
       dependencies.fileSystem.mkdir(targetDirectory, { recursive: true });
       emit({ kind: "success", message: "Created project directory: " + targetDirectory });
@@ -152,6 +169,18 @@ export function createStartProject(
       emit({
         kind: "error",
         message: error instanceof Error ? error.message : String(error),
+      });
+      return EXIT_CODE_FAILURE;
+    }
+
+    if (!hasExplicitWorkspaceDir && isDirectoryNonEmpty(dependencies.fileSystem, targetDirectory)) {
+      emit({
+        kind: "error",
+        message: [
+          `Cannot bootstrap rundown in-place inside non-empty directory: ${targetDirectory}.`,
+          "Use an explicit outer workdir to keep existing files in place.",
+          "Example: rundown start . ..\\myproject-rundown",
+        ].join(" "),
       });
       return EXIT_CODE_FAILURE;
     }
@@ -299,13 +328,13 @@ export function createStartProject(
     } catch (error) {
       if (isNoOpCommitError(error)) {
         emit({ kind: "info", message: "No scaffold changes detected; skipping commit." });
-        return EXIT_CODE_SUCCESS;
+      } else {
+        emit({
+          kind: "error",
+          message: "Failed to create scaffold commit: " + String(error),
+        });
+        return EXIT_CODE_FAILURE;
       }
-      emit({
-        kind: "error",
-        message: "Failed to create scaffold commit: " + String(error),
-      });
-      return EXIT_CODE_FAILURE;
     }
 
     return EXIT_CODE_SUCCESS;
@@ -505,6 +534,19 @@ function isNoOpCommitError(error: unknown): boolean {
   return message.includes("nothing to commit") || message.includes("nothing added to commit");
 }
 
+function isDirectoryNonEmpty(fileSystem: FileSystem, directoryPath: string): boolean {
+  if (!fileSystem.exists(directoryPath)) {
+    return false;
+  }
+
+  const stat = fileSystem.stat(directoryPath);
+  if (stat?.isDirectory !== true) {
+    return false;
+  }
+
+  return fileSystem.readdir(directoryPath).length > 0;
+}
+
 function resolveAndValidateWorkspaceDirectories(input: {
   targetDirectory: string;
   designDirOption: string | undefined;
@@ -667,9 +709,10 @@ function resolveAndValidateFromDesign(input: {
       `Invalid --from-design value: directory does not exist: ${resolved}.`,
     );
   }
-  if (fileSystem.stat(resolved)?.isDirectory !== true) {
+  const resolvedStat = fileSystem.stat(resolved);
+  if (resolvedStat?.isDirectory !== true) {
     throw new Error(
-      `Invalid --from-design value: ${resolved} is not a directory.`,
+      `Invalid --from-design value: expected a directory path, but found a file: ${resolved}.`,
     );
   }
   return resolved;

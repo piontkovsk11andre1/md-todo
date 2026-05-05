@@ -1,5 +1,8 @@
 import path from "node:path";
-import { DEFAULT_TEST_MATERIALIZED_TEMPLATE } from "../domain/defaults.js";
+import {
+  DEFAULT_TEST_FUTURE_TEMPLATE,
+  DEFAULT_TEST_MATERIALIZED_TEMPLATE,
+} from "../domain/defaults.js";
 import {
   EXIT_CODE_FAILURE,
   EXIT_CODE_SUCCESS,
@@ -25,7 +28,9 @@ interface TestRunResult {
 }
 
 interface TestContext {
-  mode: "materialized";
+  action: "now" | "future";
+  mode: "materialized" | "future";
+  targetState: "implementation" | "prediction";
   includedDirectories: string;
   includedDirectoriesJson: string;
   excludedDirectories: string;
@@ -42,7 +47,7 @@ export interface TestSpecsDependencies {
 }
 
 export interface TestSpecsOptions {
-  action?: "new";
+  action?: "now" | "future" | "new";
   prompt?: string;
   run?: boolean;
   dir?: string;
@@ -68,6 +73,9 @@ export function createTestSpecs(
       bucket: "specs",
       overrideDir: options.dir,
     });
+    const testAction = options.action === "future" ? "future" : "now";
+    const testMode = testAction === "future" ? "future" : "materialized";
+
     if (options.action === "new") {
       const assertion = (options.prompt ?? "").trim();
       if (assertion.length === 0) {
@@ -93,6 +101,7 @@ export function createTestSpecs(
         cwd: workspaceRoot,
         invocationRoot: invocationDir,
         fileSystem: dependencies.fileSystem,
+        testMode,
         workerPattern: options.workerPattern,
         workerTimeoutMs,
         showAgentOutput: options.showAgentOutput,
@@ -122,6 +131,7 @@ export function createTestSpecs(
       cwd: workspaceRoot,
       invocationRoot: invocationDir,
       fileSystem: dependencies.fileSystem,
+      testMode,
       workerPattern: options.workerPattern,
       workerTimeoutMs,
       showAgentOutput: options.showAgentOutput,
@@ -134,6 +144,7 @@ export function createTestSpecs(
       cwd: string;
       invocationRoot: string;
       fileSystem: FileSystem;
+      testMode: "materialized" | "future";
       workerPattern: ParsedWorkerPattern;
       workerTimeoutMs?: number;
       showAgentOutput?: boolean;
@@ -143,16 +154,18 @@ export function createTestSpecs(
       cwd,
       invocationRoot,
       fileSystem,
+      testMode,
       workerPattern,
       workerTimeoutMs,
       showAgentOutput,
     } = options;
 
-    const verifyTemplate = loadTestVerifyTemplate(dependencies.templateLoader, cwd);
+    const verifyTemplate = loadTestVerifyTemplate(dependencies.templateLoader, cwd, testMode);
     const testContext = buildTestContext(
       fileSystem,
       cwd,
       invocationRoot,
+      testMode,
     );
     const executionCwd = invocationRoot;
 
@@ -169,7 +182,9 @@ export function createTestSpecs(
         taskLine: 1,
         source: assertion,
         assertion,
+        testAction: testContext.action,
         testMode: testContext.mode,
+        testTargetState: testContext.targetState,
         includedDirectories: testContext.includedDirectories,
         includedDirectoriesJson: testContext.includedDirectoriesJson,
         excludedDirectories: testContext.excludedDirectories,
@@ -184,7 +199,9 @@ export function createTestSpecs(
         cwd: executionCwd,
         timeoutMs: workerTimeoutMs,
         env: {
+          RUNDOWN_TEST_ACTION: testContext.action,
           RUNDOWN_TEST_MODE: testContext.mode,
+          RUNDOWN_TEST_TARGET_STATE: testContext.targetState,
           RUNDOWN_TEST_INCLUDED_DIRECTORIES: testContext.includedDirectoriesJson,
           RUNDOWN_TEST_EXCLUDED_DIRECTORIES: testContext.excludedDirectoriesJson,
         },
@@ -293,15 +310,19 @@ function buildTestContext(
   fileSystem: FileSystem,
   projectRoot: string,
   invocationRoot: string,
+  mode: "materialized" | "future",
 ): TestContext {
   const includeExclude = buildIncludedAndExcludedDirectories(
     fileSystem,
     projectRoot,
     invocationRoot,
+    mode,
   );
 
   return {
-    mode: "materialized",
+    action: mode === "future" ? "future" : "now",
+    mode,
+    targetState: mode === "future" ? "prediction" : "implementation",
     includedDirectories: includeExclude.included,
     includedDirectoriesJson: JSON.stringify(includeExclude.includedList),
     excludedDirectories: includeExclude.excluded,
@@ -312,8 +333,15 @@ function buildTestContext(
 function loadTestVerifyTemplate(
   templateLoader: TemplateLoader,
   projectRoot: string,
+  mode: "materialized" | "future",
 ): string {
   const configDir = path.join(projectRoot, ".rundown");
+  if (mode === "future") {
+    return templateLoader.load(path.join(configDir, "test-future.md"))
+      ?? templateLoader.load(path.join(configDir, "test-verify.md"))
+      ?? DEFAULT_TEST_FUTURE_TEMPLATE;
+  }
+
   return templateLoader.load(path.join(configDir, "test-materialized.md"))
     ?? templateLoader.load(path.join(configDir, "test-verify.md"))
     ?? DEFAULT_TEST_MATERIALIZED_TEMPLATE;
@@ -323,12 +351,56 @@ function buildIncludedAndExcludedDirectories(
   fileSystem: FileSystem,
   workspaceRoot: string,
   invocationRoot: string,
+  mode: "materialized" | "future",
 ): {
   included: string;
   includedList: string[];
   excluded: string;
   excludedList: string[];
 } {
+  const implementationPath = resolveWorkspacePath({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    bucket: "implementation",
+  });
+  const predictionPath = resolveWorkspacePath({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    bucket: "prediction",
+  });
+  if (mode === "future") {
+    const excludedList = [
+      resolveWorkspacePath({
+        fileSystem,
+        workspaceRoot,
+        invocationRoot,
+        bucket: "design",
+      }),
+      resolveWorkspacePath({
+        fileSystem,
+        workspaceRoot,
+        invocationRoot,
+        bucket: "specs",
+      }),
+      resolveWorkspacePath({
+        fileSystem,
+        workspaceRoot,
+        invocationRoot,
+        bucket: "migrations",
+      }),
+      implementationPath,
+    ];
+
+    return {
+      included: predictionPath,
+      includedList: [predictionPath],
+      excluded: excludedList.join("\n"),
+      excludedList,
+    };
+  }
+
   const excludedList = [
     resolveWorkspacePath({
       fileSystem,
@@ -348,11 +420,12 @@ function buildIncludedAndExcludedDirectories(
       invocationRoot,
       bucket: "migrations",
     }),
+    predictionPath,
   ];
 
   return {
-    included: invocationRoot,
-    includedList: [invocationRoot],
+    included: implementationPath,
+    includedList: [implementationPath],
     excluded: excludedList.join("\n"),
     excludedList,
   };

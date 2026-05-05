@@ -92,8 +92,6 @@ type ContinueState = ReturnType<typeof createContinueSceneState>;
 type ContinueUiState = "previewing" | "running" | "done";
 type SceneStack = SceneId[];
 
-const TUI_START_DESCRIPTION = "Initialize workspace";
-
 type SceneRouterState = {
   sceneId: SceneId;
   sceneStack: SceneStack;
@@ -156,7 +154,6 @@ export async function runMainMenuStartAction({
 
   try {
     const exitCode = await app.startProject({
-      description: TUI_START_DESCRIPTION,
       designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
       specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
       migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
@@ -173,7 +170,7 @@ export async function runMainMenuStartAction({
       state.sceneId = "mainMenu";
       state.mainMenuHint = workspaceState.isEmptyBootstrap
         ? "Start completed, but workspace is still not initialized."
-        : "Project initialized.";
+        : "Workspace initialized.";
       if (typeof refreshStatuses === "function") {
         await refreshStatuses();
       } else {
@@ -225,7 +222,7 @@ export function createSceneRouterState({ currentWorkingDirectory = process.cwd()
     toolsBuiltInsVisibilitySession: createBuiltInsVisibilitySession(),
     profilesSceneState: createProfilesSceneState(),
     settingsSceneState: createSettingsSceneState(),
-    helpSceneState: createHelpSceneState(),
+    helpSceneState: createHelpSceneState(currentWorkingDirectory),
     newWorkSceneState: createNewWorkSceneState(),
     agentSessionPending: false,
     workersActionPending: false,

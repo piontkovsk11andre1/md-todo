@@ -25,41 +25,20 @@ const hasTestSpecsUseCase = fs.existsSync(TEST_SPECS_FILE_PATH);
 const describeIfTestSpecsAvailable = hasTestCommand && hasTestSpecsUseCase ? describe : describe.skip;
 
 describeIfTestSpecsAvailable("test-specs integration", () => {
-  it("rundown test --future fails as unknown option", async () => {
+  it("rundown test future verifies specs in prediction mode with deterministic hints", async () => {
     const workspace = makeTempWorkspace();
-
-    const result = await runCli(["test", "--future"], workspace);
-
-    expect(result.code).not.toBe(0);
-    const combinedOutput = stripAnsi([
-      ...result.logs,
-      ...result.errors,
-      ...result.stdoutWrites,
-      ...result.stderrWrites,
-    ].join("\n"));
-    expect(combinedOutput).toMatch(/unknown option.*--future/i);
-  });
-
-  it("rundown test specs/ evaluates assertions against live workspace", async () => {
-    const workspace = makeTempWorkspace();
-    fs.writeFileSync(path.join(workspace, "Design.md"), "# Design\n\nSHOULD_NOT_APPEAR_DESIGN\n", "utf-8");
     fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
-    fs.writeFileSync(path.join(workspace, "specs", "live-workspace.md"), "assert live workspace", "utf-8");
+    fs.writeFileSync(path.join(workspace, "specs", "future-mode.md"), "assert future mode", "utf-8");
 
     const result = await runCli([
       "test",
-      "specs/",
+      "future",
       "--",
       "node",
       "-e",
       [
-        "const fs=require('node:fs');",
-        "const p=process.argv[process.argv.length-1];",
-        "const prompt=fs.readFileSync(p,'utf-8');",
-        "const hasPredictedSection=prompt.includes('## Predicted context');",
-        "const hasDesignToken=prompt.includes('SHOULD_NOT_APPEAR_DESIGN');",
-        "if(!hasPredictedSection&&!hasDesignToken){console.log('OK');process.exit(0);}",
-        "console.log('NOT_OK: expected test specs/ to verify only against live workspace');process.exit(0);",
+        "if(process.env.RUNDOWN_TEST_ACTION==='future'&&process.env.RUNDOWN_TEST_MODE==='future'&&process.env.RUNDOWN_TEST_TARGET_STATE==='prediction'){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected future action/mode/target-state hints');process.exit(0);",
       ].join(""),
     ], workspace);
 
@@ -70,7 +49,97 @@ describeIfTestSpecsAvailable("test-specs integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("PASS live-workspace.md");
+    expect(combinedOutput).toContain("PASS future-mode.md");
+  });
+
+  it("rundown test now verifies specs in materialized mode with deterministic hints", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "specs", "now-mode.md"), "assert now mode", "utf-8");
+
+    const result = await runCli([
+      "test",
+      "now",
+      "--",
+      "node",
+      "-e",
+      [
+        "if(process.env.RUNDOWN_TEST_ACTION==='now'&&process.env.RUNDOWN_TEST_MODE==='materialized'&&process.env.RUNDOWN_TEST_TARGET_STATE==='implementation'){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected now action/materialized mode/implementation target-state hints');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(result.code).toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("PASS now-mode.md");
+  });
+
+  it("rundown test now and future use deterministic template resolution chains", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.mkdirSync(path.join(workspace, "specs"), { recursive: true });
+    fs.writeFileSync(path.join(workspace, "specs", "template-now.md"), "assert now template", "utf-8");
+    fs.writeFileSync(path.join(workspace, "specs", "template-future.md"), "assert future template", "utf-8");
+
+    fs.writeFileSync(path.join(workspace, ".rundown", "test-materialized.md"), "NOW_TEMPLATE\n{{assertion}}", "utf-8");
+    fs.writeFileSync(path.join(workspace, ".rundown", "test-future.md"), "FUTURE_TEMPLATE\n{{assertion}}", "utf-8");
+    fs.writeFileSync(path.join(workspace, ".rundown", "test-verify.md"), "VERIFY_FALLBACK\n{{assertion}}", "utf-8");
+
+    const nowResult = await runCli([
+      "test",
+      "now",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "if(prompt.includes('NOW_TEMPLATE')&&!prompt.includes('VERIFY_FALLBACK')){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected now template chain to prefer test-materialized.md');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(nowResult.code).toBe(0);
+
+    fs.rmSync(path.join(workspace, ".rundown", "test-future.md"));
+
+    const futureResult = await runCli([
+      "test",
+      "future",
+      "--",
+      "node",
+      "-e",
+      [
+        "const fs=require('node:fs');",
+        "const p=process.argv[process.argv.length-1];",
+        "const prompt=fs.readFileSync(p,'utf-8');",
+        "if(prompt.includes('VERIFY_FALLBACK')&&!prompt.includes('FUTURE_TEMPLATE')){console.log('OK');process.exit(0);}",
+        "console.log('NOT_OK: expected future template chain to fallback to test-verify.md');process.exit(0);",
+      ].join(""),
+    ], workspace);
+
+    expect(futureResult.code).toBe(0);
+  });
+
+  it("rundown test rejects unknown action values with guidance", async () => {
+    const workspace = makeTempWorkspace();
+
+    const result = await runCli(["test", "specs/"], workspace);
+
+    expect(result.code).not.toBe(0);
+    const combinedOutput = stripAnsi([
+      ...result.logs,
+      ...result.errors,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n"));
+    expect(combinedOutput).toContain("Invalid test action: specs/. Allowed actions: now, future, new.");
   });
 
   it("rundown test resolves linked workspace and configured specs directory", async () => {

@@ -1,6 +1,29 @@
 # CLI: `start`
 
-Scaffold a prediction-oriented project workspace with logical-path mount routing.
+Bootstrap or adopt a prediction-oriented workspace from directory paths, then hand off to the normal `migrate` flow.
+
+`start` is path-oriented and directory-only:
+
+- `rundown start`
+- `rundown start <design-dir>`
+- `rundown start <design-dir> <workdir>`
+
+Interpretation:
+
+- No positional args: bootstrap in the current directory when safe.
+- One positional directory: adopt that directory as design input.
+- Two positional directories: adopt the first as design input and place controlling rundown state in the second.
+
+Safety rule:
+
+- Empty local design directories may be initialized in place.
+- Non-empty local design directories require an explicit outer workdir.
+- Safe explicit form: `rundown start . ..\myproject-rundown`.
+
+Path-type guard:
+
+- Positional paths are directories, not freeform text.
+- If a positional path resolves to an existing file, `start` fails with a directory-required error.
 
 `--mount <logical-path=target-path>` is the authoritative bootstrap surface for mounted workspace adoption and may be repeated.
 
@@ -82,19 +105,26 @@ Compatibility note: legacy `docs/current/Design.md` and root `Design.md` are sti
 Synopsis:
 
 ```bash
-rundown start "<description>" [--dir <path>] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] -- <command>
-rundown start "<description>" [--dir <path>] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
+rundown start [design-dir] [workdir] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] -- <command>
+rundown start [design-dir] [workdir] [--mount <logical-path=target-path> ...] [--design-dir <path>] [--specs-dir <path>] [--migrations-dir <path>] --worker <pattern>
 ```
 
 Arguments:
 
-- `<description>`: Initial project intent used to seed starter artifacts.
+- `design-dir` (optional): Directory to use/adopt as design input.
+- `workdir` (optional): Outer control workspace directory where `.rundown` and work buckets are placed.
+
+Argument semantics:
+
+- `rundown start` uses current directory as design target.
+- `rundown start <design-dir>` uses that directory directly.
+- `rundown start <design-dir> <workdir>` separates design input from control workspace.
 
 Options:
 
 | Option | Description | Default |
 |---|---|---|
-| `--dir <path>` | Target directory for scaffold output. | current working directory |
+| `--dir <path>` | Compatibility override for control workspace directory. Positional `workdir` is preferred. | current working directory |
 | `--mount <logical-path=target-path>` | Repeatable logical-path mount declaration for mounted workspace adoption. Relative targets resolve from invocation directory. | unset |
 | `--design-dir <path>` | Design workspace directory name/path for start scaffold. | `design` |
 | `--mount implementation=<target-path>` | Common adoption mapping to route logical `implementation` to an existing codebase directory. | unset |
@@ -108,13 +138,21 @@ Options:
 Examples:
 
 ```bash
-rundown start "Adopt existing app" --dir ../control --mount implementation=. -- opencode run
-rundown start "Adopt existing app" --dir ../control --mount specs=. -- opencode run
-rundown start "Adopt existing app" --dir ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run
-rundown start "Adopt existing app" --dir ../control --mount implementation/generated=./generated -- opencode run
-rundown start "Adopt existing app" --dir ../control --mount implementation=. --mount specs=./specs --mount migrations=../control/migrations -- opencode run
-rundown start "Ship auth flow" -- opencode run
-rundown start "Ship auth flow" --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=./implementation -- opencode run
-rundown start "Ship auth flow" --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir --mount implementation=./implementation -- opencode run
-rundown start "Ship auth flow" --dir ./predict-auth --design-dir design --specs-dir specs --migrations-dir migrations --mount implementation=../app -- opencode run
+# Greenfield local bootstrap (safe when current directory is empty)
+rundown start -- opencode run
+
+# Adopt local non-empty project safely with explicit outer workdir
+rundown start . ../control --mount implementation=. -- opencode run
+
+# Adopt explicit design directory in place (safe when that directory is empty)
+rundown start ./design-input -- opencode run
+
+# Full mounted adoption with separate control workspace
+rundown start . ../control --mount design=../docs/design --mount implementation=. --mount specs=../qa/specs --mount migrations=../control/migrations --mount prediction=../control/prediction -- opencode run
+
+# Nested mount override
+rundown start . ../control --mount implementation=. --mount implementation/generated=./generated -- opencode run
+
+# Legacy compatibility flags are still accepted
+rundown start ./design-input --design-placement sourcedir --specs-placement workdir --migrations-placement sourcedir --mount implementation=./implementation -- opencode run
 ```

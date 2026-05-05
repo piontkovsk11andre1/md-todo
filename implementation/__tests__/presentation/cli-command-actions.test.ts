@@ -20,12 +20,14 @@ import {
   createMaterializeCommandAction,
   createMakeCommandAction,
   createPlanCommandAction,
+  createPredictCommandAction,
   createQueryCommandAction,
   createRootTuiAction,
   createTranslateCommandAction,
   createReverifyCommandAction,
   createRunCommandAction,
   createStartCommandAction,
+  createTestCommandAction,
   createWorkspaceRemoveCommandAction,
   createWorkspaceUnlinkCommandAction,
   createWorkerHealthCommandAction,
@@ -1675,6 +1677,27 @@ describe("run/do auto-compact options", () => {
 });
 
 describe("createMaterializeCommandAction", () => {
+  it("keeps materialize on the runTask path and separate from migrate/predict", async () => {
+    const runTask = vi.fn(async () => 0);
+    const migrateTask = vi.fn(async () => 0);
+    const predictTask = vi.fn(async () => 0);
+    const app = { runTask, migrateTask, predictTask } as unknown as CliApp;
+    const action = createMaterializeCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+      runnerModes: ["wait", "tui", "detached"],
+    });
+
+    const exitCode = await action("tasks.md", {
+      worker: "opencode run",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(runTask).toHaveBeenCalledTimes(1);
+    expect(migrateTask).not.toHaveBeenCalled();
+    expect(predictTask).not.toHaveBeenCalled();
+  });
+
   it("matches run --all --revertable core action fields", async () => {
     const runViaRunTask = vi.fn(async (_request: Record<string, unknown>) => 0);
     const runViaMaterializeTask = vi.fn(async (_request: Record<string, unknown>) => 0);
@@ -2435,6 +2458,89 @@ describe("workspace command actions", () => {
 });
 
 describe("createMigrateCommandAction", () => {
+  it("does not implicitly execute prediction while planning migrations", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const predictTask = vi.fn(async () => 0);
+    const runTask = vi.fn(async () => 0);
+    const app = { migrateTask, predictTask, runTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action(undefined, undefined, {
+      dir: "migrations",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(predictTask).not.toHaveBeenCalled();
+    expect(runTask).not.toHaveBeenCalled();
+  });
+
+  it("defaults migrate source mode to design when --from is omitted", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action(undefined, undefined, {
+      dir: "migrations",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
+      sourceMode: "design",
+    }));
+  });
+
+  it("parses --from implementation|prediction and forwards normalized source mode", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const implementationExitCode = await action(undefined, undefined, {
+      from: "implementation",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+    const predictionExitCode = await action(undefined, undefined, {
+      from: " Prediction ",
+      worker: "opencode run --model gpt-5.3-codex",
+    });
+
+    expect(implementationExitCode).toBe(0);
+    expect(predictionExitCode).toBe(0);
+    expect(migrateTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      sourceMode: "implementation",
+    }));
+    expect(migrateTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      sourceMode: "prediction",
+    }));
+  });
+
+  it("fails fast for invalid --from values with allowed-values guidance", () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action(undefined, undefined, {
+      from: "future",
+      worker: "opencode run --model gpt-5.3-codex",
+    })).toThrow("Invalid --from value: future. Allowed: implementation, prediction. Omit --from for default design-diff mode.");
+    expect(migrateTask).not.toHaveBeenCalled();
+  });
+
   it("forwards explicit --slug-worker override separately from --worker", async () => {
     const migrateTask = vi.fn(async () => 0);
     const app = { migrateTask } as unknown as CliApp;
@@ -2571,6 +2677,144 @@ describe("createMigrateCommandAction", () => {
 
 });
 
+describe("createTestCommandAction", () => {
+  it("routes now/future/new actions to testSpecs", async () => {
+    const testSpecs = vi.fn(async () => 0);
+    const app = { testSpecs } as unknown as CliApp;
+    const action = createTestCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    await action("now", undefined, {});
+    await action("future", undefined, {});
+    await action("new", "User can sign in", {});
+
+    expect(testSpecs).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      action: "now",
+      prompt: undefined,
+    }));
+    expect(testSpecs).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      action: "future",
+      prompt: undefined,
+    }));
+    expect(testSpecs).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      action: "new",
+      prompt: "User can sign in",
+    }));
+  });
+
+  it("preserves compatibility behavior when action is omitted", async () => {
+    const testSpecs = vi.fn(async () => 0);
+    const app = { testSpecs } as unknown as CliApp;
+    const action = createTestCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action(undefined, undefined, {});
+
+    expect(exitCode).toBe(0);
+    expect(testSpecs).toHaveBeenCalledTimes(1);
+    expect(testSpecs).toHaveBeenCalledWith(expect.objectContaining({
+      action: "now",
+      prompt: undefined,
+    }));
+  });
+
+  it("rejects unknown test actions with guidance", () => {
+    const testSpecs = vi.fn(async () => 0);
+    const app = { testSpecs } as unknown as CliApp;
+    const action = createTestCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action("specs/", undefined, {})).toThrow(
+      "Invalid test action: specs/. Allowed actions: now, future, new. Use --dir <path> to target a non-default specs directory.",
+    );
+    expect(testSpecs).not.toHaveBeenCalled();
+  });
+
+  it("rejects prompt positional argument unless action is new", () => {
+    const testSpecs = vi.fn(async () => 0);
+    const app = { testSpecs } as unknown as CliApp;
+    const action = createTestCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action("now", "extra", {})).toThrow(
+      "The optional [prompt] argument is only supported for `test new <prompt>`.",
+    );
+    expect(testSpecs).not.toHaveBeenCalled();
+  });
+
+  it("forwards run, dir, showAgentOutput, and worker pattern options", async () => {
+    const testSpecs = vi.fn(async () => 0);
+    const app = { testSpecs } as unknown as CliApp;
+    const action = createTestCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["opencode", "run", "--profile", "fast"],
+    });
+
+    const exitCode = await action("new", "User can reset password", {
+      run: true,
+      dir: "./specs-auth",
+      showAgentOutput: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(testSpecs).toHaveBeenCalledTimes(1);
+    expect(testSpecs).toHaveBeenCalledWith(expect.objectContaining({
+      action: "new",
+      prompt: "User can reset password",
+      run: true,
+      dir: "./specs-auth",
+      showAgentOutput: true,
+      workerPattern: {
+        command: ["opencode", "run", "--profile", "fast"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+    }));
+  });
+});
+
+describe("createPredictCommandAction", () => {
+  it("routes predict command options to predictTask", async () => {
+    const predictTask = vi.fn(async () => 0);
+    const app = { predictTask } as unknown as CliApp;
+    const action = createPredictCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => ["opencode", "run", "--profile", "fast"],
+    });
+
+    const exitCode = await action({
+      dir: "./migrations-pending",
+      workspace: "./workspace-link",
+      keepArtifacts: true,
+      showAgentOutput: true,
+    });
+
+    expect(exitCode).toBe(0);
+    expect(predictTask).toHaveBeenCalledTimes(1);
+    expect(predictTask).toHaveBeenCalledWith({
+      dir: "./migrations-pending",
+      workspace: "./workspace-link",
+      keepArtifacts: true,
+      showAgentOutput: true,
+      workerPattern: {
+        command: ["opencode", "run", "--profile", "fast"],
+        usesBootstrap: false,
+        usesFile: false,
+        appendFile: true,
+      },
+    });
+  });
+});
+
 describe("createCompactCommandAction", () => {
   it("forwards compact options to compactTask", async () => {
     const compactTask = vi.fn(async () => 0);
@@ -2662,15 +2906,15 @@ describe("createCompactCommandAction", () => {
 });
 
 describe("createStartCommandAction", () => {
-  it("forwards directory override options to startProject", async () => {
+  it("maps positional design/workdir into startProject adoption options", async () => {
     const startProject = vi.fn(async () => 0);
     const app = { startProject } as unknown as CliApp;
     const action = createStartCommandAction({
       getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
     });
 
-    const exitCode = await action("Ship auth flow", {
-      dir: "./predict-auth",
+    const exitCode = await action("./design-input", "./predict-auth", {
       mount: ["implementation=.", "specs=./specs"],
       designDir: "design-docs",
       designPlacement: "workdir",
@@ -2683,7 +2927,6 @@ describe("createStartCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(startProject).toHaveBeenCalledTimes(1);
     expect(startProject).toHaveBeenCalledWith({
-      description: "Ship auth flow",
       dir: "./predict-auth",
       mounts: ["implementation=.", "specs=./specs"],
       designDir: "design-docs",
@@ -2692,6 +2935,41 @@ describe("createStartCommandAction", () => {
       specsPlacement: "sourcedir",
       migrationsDir: "changes",
       migrationsPlacement: "workdir",
+      fromDesign: "./design-input",
+      migrateWorkerPattern: { command: [], usesBootstrap: false, usesFile: false, appendFile: true },
+      migrateKeepArtifacts: false,
+      migrateShowAgentOutput: false,
+    });
+  });
+
+  it("prefers explicit flags over positional start arguments", async () => {
+    const startProject = vi.fn(async () => 0);
+    const app = { startProject } as unknown as CliApp;
+    const action = createStartCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action("./design-input", "./predict-auth", {
+      dir: "./explicit-workspace",
+      fromDesign: "./explicit-design",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(startProject).toHaveBeenCalledTimes(1);
+    expect(startProject).toHaveBeenCalledWith({
+      dir: "./explicit-workspace",
+      mounts: [],
+      designDir: undefined,
+      designPlacement: undefined,
+      specsDir: undefined,
+      specsPlacement: undefined,
+      migrationsDir: undefined,
+      migrationsPlacement: undefined,
+      fromDesign: "./explicit-design",
+      migrateWorkerPattern: { command: [], usesBootstrap: false, usesFile: false, appendFile: true },
+      migrateKeepArtifacts: false,
+      migrateShowAgentOutput: false,
     });
   });
 });

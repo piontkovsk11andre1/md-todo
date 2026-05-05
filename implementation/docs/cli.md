@@ -82,9 +82,16 @@ Commands that expose `--compact-before-exit` run compaction only after the prima
 - If the primary command succeeds and auto-compaction succeeds (or reports no-work), the command exits `0`.
 - If the primary command succeeds but requested auto-compaction fails, rundown reports the compaction failure as a follow-up error and exits `1`.
 
-### `rundown start <description>`
+### `rundown start [design-dir] [workdir]`
 
 See the command-focused reference: [cli-start.md](cli-start.md).
+
+Quick semantics:
+
+- `rundown start`: local bootstrap in current directory when safe.
+- `rundown start <design-dir>`: adopt/bootstrap that directory as design input.
+- `rundown start <design-dir> <workdir>`: keep design input in first path and place controlling rundown state in second path.
+- Safety gate: non-empty local design directories require an explicit outer workdir (for example, `rundown start . ..\myproject-rundown`).
 
 ### `rundown migrate [action]`
 

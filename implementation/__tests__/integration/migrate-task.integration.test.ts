@@ -524,7 +524,7 @@ describeIfMigrateAvailable("migrate-task integration", () => {
       ...result.stdoutWrites,
       ...result.stderrWrites,
     ].join("\n"));
-    expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision). Edit design/current/ and run rundown migrate to release and plan the next revision.");
+    expect(combinedOutput).toContain("Migrations are caught up to rev.1 (highest released revision, source mode default design-diff). Edit design/current/ and run rundown migrate to release and plan the next revision.");
     expect(fs.existsSync(path.join(workspace, "docs", "rev.2", "Design.md"))).toBe(false);
     expect(fs.existsSync(path.join(workspace, "docs", "rev.2.meta.json"))).toBe(false);
   });

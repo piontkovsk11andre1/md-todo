@@ -412,6 +412,87 @@ describe("createApp", () => {
     expect(runTaskUseCase).toHaveBeenCalledTimes(1);
     expect(compactTaskUseCase).toHaveBeenCalledTimes(1);
   });
+
+  it("forwards migrate source mode and runs post-success auto-compaction", async () => {
+    const migrateTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+    const compactTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+
+    const app = createApp({
+      useCaseFactories: {
+        migrateTask: () => migrateTaskUseCase,
+        compactTask: () => compactTaskUseCase,
+      },
+    });
+
+    const code = await app.migrateTask({
+      sourceMode: "prediction",
+      workerPattern: { command: ["opencode", "run"], usesBootstrap: false, usesFile: false, appendFile: true },
+      confirm: false,
+      keepArtifacts: false,
+      showAgentOutput: false,
+      autoCompact: { beforeExit: true },
+    });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(migrateTaskUseCase).toHaveBeenCalledTimes(1);
+    expect(migrateTaskUseCase).toHaveBeenCalledWith(expect.objectContaining({
+      sourceMode: "prediction",
+    }));
+    expect(compactTaskUseCase).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands off startProject success into migrate flow when worker is provided", async () => {
+    const startProjectUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+    const migrateTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+
+    const app = createApp({
+      useCaseFactories: {
+        startProject: () => startProjectUseCase,
+        migrateTask: () => migrateTaskUseCase,
+      },
+    });
+
+    const code = await app.startProject({
+      dir: "./workspace-control",
+      migrateSourceMode: "prediction",
+      migrateWorkerPattern: { command: ["node", "worker"], usesBootstrap: false, usesFile: false, appendFile: true },
+      migrateKeepArtifacts: true,
+      migrateShowAgentOutput: true,
+      migrateConfirm: true,
+    });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(startProjectUseCase).toHaveBeenCalledTimes(1);
+    expect(migrateTaskUseCase).toHaveBeenCalledTimes(1);
+    expect(migrateTaskUseCase).toHaveBeenCalledWith(expect.objectContaining({
+      sourceMode: "prediction",
+      workerPattern: { command: ["node", "worker"], usesBootstrap: false, usesFile: false, appendFile: true },
+      keepArtifacts: true,
+      showAgentOutput: true,
+      confirm: true,
+    }));
+  });
+
+  it("skips migrate handoff after startProject when no worker can be resolved", async () => {
+    const startProjectUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+    const migrateTaskUseCase = vi.fn(async () => EXIT_CODE_SUCCESS);
+
+    const app = createApp({
+      ports: {
+        fileSystem: createInMemoryFileSystem(),
+      },
+      useCaseFactories: {
+        startProject: () => startProjectUseCase,
+        migrateTask: () => migrateTaskUseCase,
+      },
+    });
+
+    const code = await app.startProject({});
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(startProjectUseCase).toHaveBeenCalledTimes(1);
+    expect(migrateTaskUseCase).not.toHaveBeenCalled();
+  });
 });
 
 function createInMemoryFileSystem(initialFiles: Record<string, string> = {}): FileSystem {

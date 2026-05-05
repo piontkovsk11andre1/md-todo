@@ -31,6 +31,19 @@ export interface WorkspacePaths {
   prediction: string;
 }
 
+export type WorkspaceBucketRootValidationResult =
+  | {
+    ok: true;
+    bucket: WorkspaceBucket;
+    absolutePath: string;
+  }
+  | {
+    ok: false;
+    bucket: WorkspaceBucket;
+    absolutePath: string;
+    message: string;
+  };
+
 export interface ArchiveWorkspacePaths {
   designRevisionPayloads: string;
   migrationRootLane: string;
@@ -449,6 +462,58 @@ export function resolveWorkspacePaths(input: {
   });
 
   return resolvedPaths;
+}
+
+export function validateWorkspaceBucketRootDirectory(input: {
+  fileSystem: FileSystem;
+  workspacePaths: WorkspacePaths;
+  bucket: WorkspaceBucket;
+}): WorkspaceBucketRootValidationResult {
+  const { fileSystem, workspacePaths, bucket } = input;
+  const absolutePath = workspacePaths[bucket];
+
+  if (!fileSystem.exists(absolutePath)) {
+    return {
+      ok: false,
+      bucket,
+      absolutePath,
+      message: "resolved workspace path does not exist at "
+        + absolutePath
+        + ". Create this directory or update .rundown/config.json"
+        + " (workspace.mounts."
+        + bucket
+        + " or workspace.directories."
+        + bucket
+        + " / workspace.placement."
+        + bucket
+        + ").",
+    };
+  }
+
+  const stat = fileSystem.stat(absolutePath);
+  if (!stat?.isDirectory) {
+    return {
+      ok: false,
+      bucket,
+      absolutePath,
+      message: "resolved workspace path is not a directory at "
+        + absolutePath
+        + ". Point workspace routing to a directory via .rundown/config.json"
+        + " (workspace.mounts."
+        + bucket
+        + " or workspace.directories."
+        + bucket
+        + " / workspace.placement."
+        + bucket
+        + ").",
+    };
+  }
+
+  return {
+    ok: true,
+    bucket,
+    absolutePath,
+  };
 }
 
 export function resolveArchiveWorkspacePaths(input: {

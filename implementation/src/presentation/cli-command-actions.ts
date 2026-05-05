@@ -416,15 +416,26 @@ interface QueryActionDependencies extends WorkerActionDependencies {
   queryModes: readonly ProcessRunMode[];
 }
 
-type TestAction = "new";
+type TestAction = "now" | "future" | "new";
+
+type MigrateSourceMode = "design" | "implementation" | "prediction";
 
 interface MigrateCommandOptions {
   dir?: string;
   workspace?: string;
+  sourceMode: MigrateSourceMode;
   autoCompact: AutoCompactCliOptions;
   confirm: boolean;
   workerPattern: ParsedWorkerPattern;
   slugWorkerPattern?: ParsedWorkerPattern;
+  keepArtifacts: boolean;
+  showAgentOutput: boolean;
+}
+
+interface PredictCommandOptions {
+  dir?: string;
+  workspace?: string;
+  workerPattern: ParsedWorkerPattern;
   keepArtifacts: boolean;
   showAgentOutput: boolean;
 }
@@ -434,6 +445,7 @@ interface AutoCompactCliOptions {
 }
 
 type MigrateCommandHandler = (options: MigrateCommandOptions) => CliActionResult;
+type PredictCommandHandler = (options: PredictCommandOptions) => CliActionResult;
 
 interface TestCommandOptions {
   action?: TestAction;
@@ -1434,22 +1446,45 @@ export function createUndoCommandAction({
 /**
  * Creates the `start` command action handler.
  *
- * The returned action initializes a scaffold project directory from a description.
+ * The returned action maps positional design/workspace directories into
+ * start-project adoption inputs.
  */
 export function createStartCommandAction({
   getApp,
-}: Pick<WorkerActionDependencies, "getApp">): (description: string, opts: CliOpts) => CliActionResult {
-  return (description: string, opts: CliOpts) => {
+  getWorkerFromSeparator,
+}: Pick<WorkerActionDependencies, "getApp" | "getWorkerFromSeparator">): (
+  designDirOrLegacyDescription: string | undefined,
+  workdirOrOpts: string | CliOpts | undefined,
+  maybeOpts?: CliOpts,
+) => CliActionResult {
+  return (
+    designDirOrLegacyDescription: string | undefined,
+    workdirOrOpts: string | CliOpts | undefined,
+    maybeOpts?: CliOpts,
+  ) => {
+    const opts: CliOpts = (typeof workdirOrOpts === "object" && workdirOrOpts !== null)
+      ? workdirOrOpts
+      : maybeOpts ?? {};
+    const positionalDesignDir = designDirOrLegacyDescription;
+    const positionalWorkdir = typeof workdirOrOpts === "string"
+      ? workdirOrOpts
+      : undefined;
     const mountOption = opts.mount;
     const mounts = Array.isArray(mountOption)
       ? mountOption
       : typeof mountOption === "string"
         ? [mountOption]
         : [];
+    const resolvedFromDesign = normalizeOptionalString(opts.fromDesign)
+      ?? normalizeOptionalString(positionalDesignDir);
+    const resolvedWorkspaceDir = normalizeOptionalString(opts.dir)
+      ?? normalizeOptionalString(positionalWorkdir);
+    const migrateWorkerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
+    const keepArtifacts = Boolean(opts.keepArtifacts as boolean | undefined);
+    const showAgentOutput = resolveShowAgentOutputOption(opts);
 
     return getApp().startProject({
-      description,
-      dir: normalizeOptionalString(opts.dir),
+      dir: resolvedWorkspaceDir,
       mounts,
       designDir: normalizeOptionalString(opts.designDir),
       designPlacement: normalizeOptionalString(opts.designPlacement),
@@ -1457,7 +1492,10 @@ export function createStartCommandAction({
       specsPlacement: normalizeOptionalString(opts.specsPlacement),
       migrationsDir: normalizeOptionalString(opts.migrationsDir),
       migrationsPlacement: normalizeOptionalString(opts.migrationsPlacement),
-      fromDesign: normalizeOptionalString(opts.fromDesign),
+      fromDesign: resolvedFromDesign,
+      migrateWorkerPattern,
+      migrateKeepArtifacts: keepArtifacts,
+      migrateShowAgentOutput: showAgentOutput,
     });
   };
 }
@@ -1497,10 +1535,32 @@ export function createMigrateCommandAction({
     return resolveMigrateCommandHandler(app)({
       dir: normalizeOptionalString(opts.dir),
       workspace: normalizeOptionalString(opts.workspace),
+      sourceMode: parseMigrateSourceMode(normalizeOptionalString(opts.from)),
       autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
       confirm: Boolean(opts.confirm as boolean | undefined),
       workerPattern,
       ...(slugWorkerPattern ? { slugWorkerPattern } : {}),
+      keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
+      showAgentOutput: resolveShowAgentOutputOption(opts),
+    });
+  };
+}
+
+/**
+ * Creates the `predict` command action handler.
+ *
+ * The returned action delegates prediction execution to a dedicated
+ * application `predictTask` use case.
+ */
+export function createPredictCommandAction({
+  getApp,
+  getWorkerFromSeparator,
+}: WorkerActionDependencies): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    return resolvePredictCommandHandler(getApp())({
+      dir: normalizeOptionalString(opts.dir),
+      workspace: normalizeOptionalString(opts.workspace),
+      workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
       keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
       showAgentOutput: resolveShowAgentOutputOption(opts),
     });
@@ -1607,28 +1667,36 @@ export function createTestCommandAction({
 ) => CliActionResult {
   return (action: string | undefined, prompt: string | undefined, opts: CliOpts) => {
     const normalizedAction = normalizeOptionalString(action);
-    const isNewAction = normalizedAction === "new";
-    const sourceDirFromPositional = normalizedAction !== undefined && !isNewAction
-      ? normalizedAction
-      : undefined;
+    const resolvedAction = parseTestAction(normalizedAction);
 
-    if (sourceDirFromPositional?.startsWith("-")) {
-      throw new Error("error: unknown option '" + sourceDirFromPositional + "'");
-    }
-
-    if (prompt !== undefined && !isNewAction) {
+    if (prompt !== undefined && resolvedAction !== "new") {
       throw new Error("The optional [prompt] argument is only supported for `test new <prompt>`.");
     }
 
     return resolveTestCommandHandler(getApp())({
-      action: isNewAction ? "new" : undefined,
+      action: resolvedAction,
       prompt: normalizeOptionalString(prompt),
       run: Boolean(opts.run as boolean | undefined),
-      dir: normalizeOptionalString(opts.dir) ?? sourceDirFromPositional,
+      dir: normalizeOptionalString(opts.dir),
       workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
       showAgentOutput: resolveShowAgentOutputOption(opts),
     });
   };
+}
+
+function parseTestAction(value: string | undefined): TestAction {
+  if (value === undefined) {
+    return "now";
+  }
+
+  const resolved = value.trim().toLowerCase();
+  if (resolved === "now" || resolved === "future" || resolved === "new") {
+    return resolved;
+  }
+
+  throw new Error(
+    `Invalid test action: ${value}. Allowed actions: now, future, new. Use --dir <path> to target a non-default specs directory.`,
+  );
 }
 
 /**
@@ -2752,6 +2820,21 @@ function resolveMigrateCommandHandler(appInstance: CliApp): MigrateCommandHandle
 }
 
 /**
+ * Resolves the active predict command implementation for the current app build.
+ */
+function resolvePredictCommandHandler(appInstance: CliApp): PredictCommandHandler {
+  const maybePredictHandler = appInstance as CliApp & {
+    predictTask?: PredictCommandHandler;
+  };
+
+  if (typeof maybePredictHandler.predictTask === "function") {
+    return maybePredictHandler.predictTask;
+  }
+
+  throw new Error("The `predict` command is not available in this build.");
+}
+
+/**
  * Resolves the active test command implementation for the current app build.
  */
 function resolveTestCommandHandler(appInstance: CliApp): TestCommandHandler {
@@ -2833,4 +2916,19 @@ function parseConfigValueType(value: string | undefined): ConfigValueType {
   }
 
   throw new Error(`Invalid --type value: ${value}. Allowed: auto, string, number, boolean, json.`);
+}
+
+function parseMigrateSourceMode(value: string | undefined): MigrateSourceMode {
+  if (value === undefined) {
+    return "design";
+  }
+
+  const resolved = value.trim().toLowerCase();
+  if (resolved === "implementation" || resolved === "prediction") {
+    return resolved;
+  }
+
+  throw new Error(
+    `Invalid --from value: ${value}. Allowed: implementation, prediction. Omit --from for default design-diff mode.`,
+  );
 }

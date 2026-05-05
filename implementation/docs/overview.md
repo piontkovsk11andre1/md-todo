@@ -20,14 +20,17 @@ This makes the checkbox a consequence of successful work, not a guess.
 
 In addition to execute/verify task running, rundown supports a prediction-oriented migration workflow:
 
-- `start` bootstraps a design-first project workspace.
+- `start` is path-first onboarding: `rundown start`, `rundown start <design-dir>`, or `rundown start <design-dir> <workdir>` (directory-only; non-empty local design dirs require explicit outer workdir, for example `rundown start . ..\\myproject-rundown`).
 - `design/current/` remains the mutable draft workspace.
-- `migrate` performs a preflight revision sync: when `design/current/` differs from the latest released snapshot (or no release exists yet), it writes the next immutable `design/revisions/rev.N/` revision before planning.
+- `migrate` is the canonical migration-authoring command and supports explicit source reconciliation modes: default design-diff (`rundown migrate`), implementation (`rundown migrate --from implementation`), and prediction (`rundown migrate --from prediction`).
+- In default mode, `migrate` performs a preflight revision sync: when `design/current/` differs from the latest released snapshot (or no release exists yet), it writes the next immutable `design/revisions/rev.N/` revision before planning.
 - Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
 - Compatibility fallback remains additive for older projects: legacy `design/rev.*/`, `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
-- `migrate` advances a numbered migration track using a convergence loop and writes snapshot checkpoints.
+- `migrate` always routes through the same revision-aware/thread-aware migration drafting pipeline and writes migration history in `migrations/`.
+- `predict` applies migration files into `prediction/` incrementally.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
-- `test` verifies assertion specs against predicted migration state.
+- `test now` verifies assertion specs against current implementation/materialized state.
+- `test future` verifies assertion specs against prediction state.
 
 Prediction migration naming convention:
 
@@ -37,20 +40,25 @@ Prediction migration naming convention:
 Snapshot checkpoints use dotted numeric suffix `N.1` on the same migration number.
 Backlog is a singleton file: `migrations/Backlog.md`.
 
-Prediction migration loop model:
+Migration authoring loop model:
 
 1. Edit `design/current/**`.
-2. Run `rundown migrate` (it auto-releases the next immutable revision when the draft changed, then continues the planner loop until `DONE`).
-3. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
-4. Optionally revise `design/current/**` and run `rundown migrate` again.
-5. Run `rundown materialize` to turn prediction state into implementation execution.
+2. Run one of:
+   - `rundown migrate` (design-diff default),
+   - `rundown migrate --from implementation`,
+   - `rundown migrate --from prediction`.
+3. The selected mode reconciles/release-updates design as needed, then runs the same migrate planner loop until `DONE`.
+4. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
+5. Optionally revise source-of-truth content and run `rundown migrate ...` again.
+6. Run `rundown predict` to apply migration files into `prediction/`.
+7. Run `rundown materialize` to apply resulting state into `implementation/`.
 
-Predicted-state test semantics:
+Explicit test target semantics:
 
-- `rundown test` defaults to materialized-mode assertions against the workspace state.
-- `rundown test --future` evaluates assertions in predicted state using design + migrations.
-- `rundown test --future <n>` targets prediction at migration `n` using previous snapshot + migrations up to `n`.
-- This keeps test signals aligned with either implementation verification (materialized mode) or planning intent validation (future mode).
+- `rundown test now` validates implementation/materialized state.
+- `rundown test future` validates prediction state.
+- `rundown test new <assertion>` creates a new assertion spec.
+- `rundown test` remains a compatibility alias for `rundown test now`.
 
 ## Output boundary
 

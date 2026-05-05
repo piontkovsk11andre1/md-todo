@@ -711,7 +711,7 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("Run all tasks with revertable defaults (equivalent to `run --all --revertable`).");
   });
 
-  it("registers start in root help with workspace-track description", async () => {
+  it("registers start in root help with path-first onboarding", async () => {
     const runTask = vi.fn(async () => 0);
     const result = await invokeRunAndCaptureHelpOutput([
       "--help",
@@ -720,8 +720,8 @@ describe("CLI run option normalization", () => {
     expect(runTask).not.toHaveBeenCalled();
 
     const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("start [options] <description>");
-    expect(compactHelpOutput).toContain("Scaffold a new workspace and optionally mount logical paths.");
+    expect(compactHelpOutput).toContain("start [options] [design-dir] [workdir]");
+    expect(compactHelpOutput).toContain("Bootstrap or adopt a workspace from directory paths.");
   });
 
   it("registers migrate in root help with prediction-tree description", async () => {
