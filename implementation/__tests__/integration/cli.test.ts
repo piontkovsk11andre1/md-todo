@@ -6966,6 +6966,31 @@ describe.sequential("CLI integration", () => {
     expect(compactHelpOutput).toContain("--force-unlock Break stale source lockfiles before acquiring discuss locks");
   });
 
+  it("discuss rejects legacy --run targeting", async () => {
+    const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Discuss me\n", "utf-8");
+
+    const result = await runCli([
+      "discuss",
+      "roadmap.md",
+      "--run",
+      "latest",
+      "--",
+      "node",
+      "-e",
+      "process.exit(0)",
+    ], workspace);
+
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("unknown option '--run'")).toBe(true);
+  });
+
   it("discuss rejects unknown options", async () => {
     const workspace = makeTempWorkspace();
 
@@ -7051,7 +7076,7 @@ describe.sequential("CLI integration", () => {
     }));
   });
 
-  it("discuss <file> -- <worker> selects next unchecked task and invokes worker in tui mode", async () => {
+  it("discuss <file> -- <worker> uses file context and invokes worker in tui mode", async () => {
     const workspace = makeTempWorkspace();
     const sourceName = "roadmap.md";
     const sourcePath = path.join(workspace, sourceName);
@@ -7109,7 +7134,10 @@ describe.sequential("CLI integration", () => {
     expect(fs.existsSync(promptFilePath!)).toBe(true);
 
     const renderedPrompt = fs.readFileSync(promptFilePath!, "utf-8");
-    expect(renderedPrompt).toContain("## Selected task\n\nFirst pending task");
+    expect(renderedPrompt).toContain("## Source file");
+    expect(renderedPrompt).toContain("roadmap.md");
+    expect(renderedPrompt).toContain("## Related file artifact history");
+    expect(renderedPrompt).toContain("## Source snapshot");
     expect(renderedPrompt).toContain("- [ ] Second pending task");
     expect(result.logs.some((line) => line.includes("Next task:") && line.includes("First pending task"))).toBe(true);
     expect(result.logs.some((line) => line.includes("Discussion completed."))).toBe(true);

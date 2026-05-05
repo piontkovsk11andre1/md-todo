@@ -484,6 +484,96 @@ describe("discuss-task", () => {
     expect(prompt).toContain("No saved run artifacts found for this file.");
   });
 
+  it("matches related artifacts by source metadata when task file metadata differs", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "related={{relatedRunsSummary}}";
+      }
+      return null;
+    });
+
+    vi.mocked(dependencies.artifactStore.listSaved).mockReturnValue([
+      {
+        runId: "run-by-source",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-by-source"),
+        relativePath: ".rundown/runs/run-by-source",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-24T12:00:00.000Z",
+        status: "completed",
+        source: "tasks.md",
+        task: {
+          text: "Different file metadata",
+          file: "other.md",
+          line: 1,
+          index: 0,
+          source: "- [ ] Different file metadata\n",
+        },
+      },
+      {
+        runId: "run-by-task-file",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-by-task-file"),
+        relativePath: ".rundown/runs/run-by-task-file",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-23T12:00:00.000Z",
+        status: "completed",
+        source: "irrelevant.md",
+        task: {
+          text: "Refine rollout scope",
+          file: "tasks.md",
+          line: 1,
+          index: 0,
+          source: "- [ ] Refine rollout scope\n",
+        },
+      },
+      {
+        runId: "run-ignored-glob-source",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-ignored-glob-source"),
+        relativePath: ".rundown/runs/run-ignored-glob-source",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-22T12:00:00.000Z",
+        status: "completed",
+        source: "**/*.md",
+        task: {
+          text: "Glob run",
+          file: "another.md",
+          line: 1,
+          index: 0,
+          source: "- [ ] Glob run\n",
+        },
+      },
+    ]);
+    vi.mocked(dependencies.artifactStore.listFailed).mockReturnValue([]);
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("run-by-source");
+    expect(prompt).toContain("run-by-task-file");
+    expect(prompt).not.toContain("run-ignored-glob-source");
+  });
+
   it("renders related artifacts as a compact file-based list with optional short labels", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");
