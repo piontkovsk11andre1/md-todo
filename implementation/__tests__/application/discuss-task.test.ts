@@ -421,11 +421,14 @@ describe("discuss-task", () => {
     expect(vi.mocked(dependencies.artifactStore.listSaved)).toHaveBeenCalledWith(path.join(cwd, ".rundown"));
     expect(vi.mocked(dependencies.artifactStore.listFailed)).toHaveBeenCalledWith(path.join(cwd, ".rundown"));
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("Related saved artifacts:");
+    expect(prompt).toContain("format: run id | command | status | started | completed | artifact dir | label");
     expect(prompt).toContain("run-newer");
     expect(prompt).toContain("run-older");
     expect(prompt).toContain("run-peer-task");
     expect(prompt).toContain("run-ignored-command");
-    expect(prompt).toContain("artifacts unavailable");
+    expect(prompt).toContain("Refine rollout scope");
+    expect(prompt).toContain("Document rollback plan");
   });
 
   it("includes no-previous-runs message in source-mode prompt when no matching runs exist", async () => {
@@ -479,6 +482,105 @@ describe("discuss-task", () => {
     expect(code).toBe(0);
     const prompt = events.find((event) => event.kind === "text")?.text ?? "";
     expect(prompt).toContain("No saved run artifacts found for this file.");
+  });
+
+  it("renders related artifacts as a compact file-based list with optional short labels", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const task = createTask(taskFile, "Refine rollout scope");
+    const fileSystem = createInMemoryFileSystem({
+      [taskFile]: "- [ ] Refine rollout scope\n",
+    });
+    const { dependencies, events } = createDependencies({
+      cwd,
+      task,
+      source: "- [ ] Refine rollout scope\n",
+      contextBefore: "",
+      fileSystem,
+    });
+
+    vi.mocked(dependencies.templateLoader.load).mockImplementation((templatePath: string) => {
+      if (templatePath.endsWith(path.join(".rundown", "discuss.md"))) {
+        return "related={{relatedRunsSummary}}";
+      }
+      return null;
+    });
+
+    vi.mocked(dependencies.artifactStore.listSaved).mockReturnValue([
+      {
+        runId: "run-with-extra-label",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-with-extra-label"),
+        relativePath: ".rundown/runs/run-with-extra-label",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-23T12:00:00.000Z",
+        completedAt: "2026-04-23T12:02:00.000Z",
+        status: "completed",
+        source: "tasks.md",
+        task: {
+          text: "Refine rollout scope",
+          file: taskFile,
+          line: 1,
+          index: 0,
+          source: "- [ ] Refine rollout scope\n",
+        },
+        extra: {
+          label: "manual note",
+        },
+      },
+      {
+        runId: "run-with-long-task-label",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-with-long-task-label"),
+        relativePath: ".rundown/runs/run-with-long-task-label",
+        commandName: "run",
+        keepArtifacts: true,
+        startedAt: "2026-04-22T10:00:00.000Z",
+        status: "completed",
+        source: "tasks.md",
+        task: {
+          text: "This is an intentionally long task title that should be truncated in the related list label output for readability",
+          file: taskFile,
+          line: 2,
+          index: 1,
+          source: "- [ ] This is long\n",
+        },
+      },
+      {
+        runId: "run-with-empty-fields",
+        rootDir: path.join(cwd, ".rundown", "runs", "run-with-empty-fields"),
+        relativePath: ".rundown/runs/run-with-empty-fields",
+        commandName: "discuss",
+        keepArtifacts: true,
+        startedAt: "",
+        completedAt: "",
+        status: "discuss-completed",
+        source: "tasks.md",
+        task: {
+          text: "",
+          file: taskFile,
+          line: 3,
+          index: 2,
+          source: "",
+        },
+      },
+    ]);
+    vi.mocked(dependencies.artifactStore.listFailed).mockReturnValue([]);
+
+    const discussTask = createDiscussTask(dependencies);
+    const code = await discussTask(createOptions({
+      source: "tasks.md",
+      printPrompt: true,
+    }));
+
+    expect(code).toBe(0);
+    const prompt = events.find((event) => event.kind === "text")?.text ?? "";
+    expect(prompt).toContain("Related saved artifacts:");
+    expect(prompt).toContain("format: run id | command | status | started | completed | artifact dir | label");
+    expect(prompt).toContain("- run-with-extra-label | run | completed | 2026-04-23T12:00:00.000Z | 2026-04-23T12:02:00.000Z | ");
+    expect(prompt).toContain(" | manual note");
+    expect(prompt).toContain("- run-with-long-task-label | run | completed | 2026-04-22T10:00:00.000Z | (n/a) | ");
+    expect(prompt).toContain("This is an intentionally long task title that should be truncated in ...");
+    expect(prompt).toContain("- run-with-empty-fields | discuss | discuss-completed | (n/a) | (n/a) | ");
   });
 
   it("expands cli blocks in rendered discuss prompt before printing", async () => {

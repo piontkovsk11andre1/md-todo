@@ -91,26 +91,6 @@ interface ResolvedTaskContext {
   contextBefore: string;
 }
 
-interface FinishedRunScannedPhase {
-  sequence: number;
-  name: string;
-  phase: "execute" | "verify" | "repair";
-  dir: string;
-  metadataFile: string;
-  promptFile: string | null;
-  stdoutFile: string | null;
-  stderrFile: string | null;
-  exitCode: number | null;
-  verificationResult: string;
-}
-
-interface FinishedRunPhaseScan {
-  execute: FinishedRunScannedPhase[];
-  verify: FinishedRunScannedPhase[];
-  repair: FinishedRunScannedPhase[];
-  all: FinishedRunScannedPhase[];
-}
-
 interface RelatedRunCandidate {
   run: ArtifactRunMetadata;
 }
@@ -368,8 +348,6 @@ export function createDiscussTask(
 
       relatedRunsSummary = buildRelatedRunsSummary(
         relatedRuns,
-        dependencies.fileSystem,
-        dependencies.pathOperations,
       );
 
       // Resolve worker command and prompt template for the selected task.
@@ -721,102 +699,6 @@ function createFallbackDiscussAnchorTask(filePath: string, source: string): Task
   };
 }
 
-function scanRunPhases(
-  runDir: string,
-  fileSystem: FileSystem,
-  pathOperations: PathOperationsPort,
-): FinishedRunPhaseScan {
-  const scanned: FinishedRunScannedPhase[] = [];
-  const entries = fileSystem.readdir(runDir)
-    .filter((entry) => entry.isDirectory && /^\d+-/.test(entry.name))
-    .map((entry) => ({
-      name: entry.name,
-      sequence: Number.parseInt(entry.name.split("-", 1)[0] ?? "", 10),
-    }))
-    .filter((entry) => Number.isFinite(entry.sequence))
-    .sort((left, right) => left.sequence - right.sequence);
-
-  for (const entry of entries) {
-    const phaseDir = pathOperations.join(runDir, entry.name);
-    const metadataFile = pathOperations.join(phaseDir, "metadata.json");
-    if (!fileSystem.exists(metadataFile)) {
-      continue;
-    }
-
-    let metadata: {
-      sequence?: number;
-      phase?: unknown;
-      promptFile?: unknown;
-      stdoutFile?: unknown;
-      stderrFile?: unknown;
-      exitCode?: unknown;
-      verificationResult?: unknown;
-    };
-    try {
-      metadata = JSON.parse(fileSystem.readText(metadataFile)) as {
-        sequence?: number;
-        phase?: unknown;
-        promptFile?: unknown;
-        stdoutFile?: unknown;
-        stderrFile?: unknown;
-        exitCode?: unknown;
-        verificationResult?: unknown;
-      };
-    } catch {
-      continue;
-    }
-
-    const phase = metadata.phase;
-    if (phase !== "execute" && phase !== "verify" && phase !== "repair") {
-      continue;
-    }
-
-    const promptFile = resolveOptionalArtifactPath(phaseDir, metadata.promptFile, fileSystem, pathOperations);
-    const stdoutFile = resolveOptionalArtifactPath(phaseDir, metadata.stdoutFile, fileSystem, pathOperations);
-    const stderrFile = resolveOptionalArtifactPath(phaseDir, metadata.stderrFile, fileSystem, pathOperations);
-
-    scanned.push({
-      sequence: typeof metadata.sequence === "number" && Number.isInteger(metadata.sequence)
-        ? metadata.sequence
-        : entry.sequence,
-      name: entry.name,
-      phase,
-      dir: phaseDir,
-      metadataFile,
-      promptFile,
-      stdoutFile,
-      stderrFile,
-      exitCode: typeof metadata.exitCode === "number" || metadata.exitCode === null
-        ? metadata.exitCode
-        : null,
-      verificationResult: typeof metadata.verificationResult === "string"
-        ? metadata.verificationResult
-        : "",
-    });
-  }
-
-  return {
-    execute: scanned.filter((phase) => phase.phase === "execute"),
-    verify: scanned.filter((phase) => phase.phase === "verify"),
-    repair: scanned.filter((phase) => phase.phase === "repair"),
-    all: scanned,
-  };
-}
-
-function resolveOptionalArtifactPath(
-  phaseDir: string,
-  artifactName: unknown,
-  fileSystem: FileSystem,
-  pathOperations: PathOperationsPort,
-): string | null {
-  if (typeof artifactName !== "string" || artifactName.trim() === "") {
-    return null;
-  }
-
-  const artifactPath = pathOperations.join(phaseDir, artifactName);
-  return fileSystem.exists(artifactPath) ? artifactPath : null;
-}
-
 function compareStartedAtDesc(left: string, right: string): number {
   const leftMs = Date.parse(left);
   const rightMs = Date.parse(right);
@@ -899,71 +781,54 @@ function resolveRunSourcePath(
 
 function buildRelatedRunsSummary(
   candidates: RelatedRunCandidate[],
-  fileSystem: FileSystem,
-  pathOperations: PathOperationsPort,
 ): string {
   if (candidates.length === 0) {
     return "No saved run artifacts found for this file.";
   }
 
-  const header = "| Run ID | Command | Status | Started | Completed | Run dir | Note |";
-  const divider = "| --- | --- | --- | --- | --- | --- | --- |";
+  const header = [
+    "Related saved artifacts:",
+    "- format: run id | command | status | started | completed | artifact dir | label",
+  ];
   const rows = candidates.map((candidate) => {
     const run = candidate.run;
-    const runDirStat = fileSystem.stat(run.rootDir);
-    const runDirAvailable = fileSystem.exists(run.rootDir) && runDirStat?.isDirectory === true;
-    let outcome = "artifacts unavailable";
-
-    if (runDirAvailable) {
-      try {
-        const phases = scanRunPhases(run.rootDir, fileSystem, pathOperations);
-        outcome = formatRelatedRunOutcome(phases);
-      } catch {
-        outcome = "artifacts unavailable";
-      }
-    }
-
-    return "| "
+    const shortLabel = resolveRelatedRunLabel(run);
+    return "- "
       + run.runId
       + " | "
       + run.commandName
       + " | "
       + (run.status ?? "unknown")
       + " | "
-      + run.startedAt
+      + (run.startedAt.trim() === "" ? "(n/a)" : run.startedAt)
       + " | "
-      + (run.completedAt ?? "(n/a)")
+      + (typeof run.completedAt === "string" && run.completedAt.trim() !== "" ? run.completedAt : "(n/a)")
       + " | "
       + run.rootDir
       + " | "
-      + outcome
-      + " |";
+      + (shortLabel ?? "");
   });
 
-  return [header, divider, ...rows].join("\n");
+  return [...header, ...rows].join("\n");
 }
 
-function formatRelatedRunOutcome(phases: FinishedRunPhaseScan): string {
-  if (phases.all.length === 0) {
-    return "no phase metadata";
+function resolveRelatedRunLabel(run: ArtifactRunMetadata): string | null {
+  const extraLabel = run.extra?.label;
+  if (typeof extraLabel === "string" && extraLabel.trim() !== "") {
+    return extraLabel.trim();
   }
 
-  const latestVerify = phases.verify.at(-1);
-  if (latestVerify) {
-    const verifyVerdict = latestVerify.verificationResult || "(n/a)";
-    const verifyExit = latestVerify.exitCode === null ? "null" : String(latestVerify.exitCode);
-    return "verify=" + verifyVerdict
-      + " (exit="
-      + verifyExit
-      + "), repair="
-      + String(phases.repair.length);
+  const taskText = run.task?.text;
+  if (typeof taskText !== "string") {
+    return null;
   }
 
-  const latestPhase = phases.all.at(-1);
-  if (!latestPhase) {
-    return "no phase metadata";
+  const normalizedTaskText = taskText.trim();
+  if (normalizedTaskText === "") {
+    return null;
   }
 
-  const exitCodeLabel = latestPhase.exitCode === null ? "null" : String(latestPhase.exitCode);
-  return latestPhase.phase + " exit=" + exitCodeLabel;
+  return normalizedTaskText.length <= 72
+    ? normalizedTaskText
+    : normalizedTaskText.slice(0, 69) + "...";
 }
