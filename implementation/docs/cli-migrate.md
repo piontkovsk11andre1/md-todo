@@ -11,7 +11,12 @@ Before migration planning, it performs a design-revision preflight sync:
 
 Planning then proceeds against released revision metadata boundaries (`plannedAt`, `migrations`) as usual.
 
-`migrate` always runs as a single workspace-level orchestration command (no positional actions). It executes a convergence loop:
+`migrate` supports two execution shapes:
+
+- default planning flow: `rundown migrate [options]`
+- shortcut file creation: `rundown migrate new <title> [options]`
+
+Default planning executes a convergence loop:
 
 1. Ask the planner worker for uncovered migration names.
 2. If worker output is `DONE`, stop.
@@ -21,6 +26,19 @@ Planning then proceeds against released revision metadata boundaries (`plannedAt
 6. Apply the drafted migration batch, then loop again.
 
 Design context resolution is revision-aware: it prefers `design/current/**`, includes revision/archive directories (`design/revisions/rev.*/**`) as context sources, and falls back to legacy `design/rev.*/**`, `docs/current/**`, `docs/rev.*/**`, and root `Design.md` only as compatibility-only paths for older projects.
+
+`migrate --from-file <path>` is a design-less planning mode:
+
+- reads one explicit file as the planning source,
+- bypasses managed design revision preflight requirements,
+- does not require `design/current/` or `design/revisions/`,
+- remains thread-aware when `.rundown/threads/*.md` briefs exist.
+
+`migrate new <title>` is a create-only shortcut:
+
+- creates exactly one next-numbered migration file in the selected scope,
+- uses canonical migration filename formatting (`N. Title.md`),
+- does not run planning, prediction/materialization, or revision release.
 
 ## Global option: `--config-dir <path>`
 
@@ -35,6 +53,8 @@ Synopsis:
 ```bash
 rundown migrate [options] -- <command>
 rundown migrate [options] --worker <pattern>
+rundown migrate --from-file <file> [options] -- <command>
+rundown migrate new <title> [options]
 ```
 
 Options:
@@ -44,6 +64,7 @@ Options:
 | `--dir <path>` | Migration directory to operate on. | `./migrations` |
 | `--workspace <dir>` | Explicit workspace root for linked/multi-workspace resolution. Required when link metadata is ambiguous. | unset |
 | `--from <source>` | Source reconciliation mode. Allowed values: `implementation`, `prediction`. Omit to use default design-diff mode. | default design-diff |
+| `--from-file <path>` | Use one explicit planning source file and bypass managed design revision preflight. Mutually exclusive with `--from`. | unset |
 | `--compact-before-exit` | Run post-success compaction as a follow-up step before command exit. | off |
 | `--confirm` | During loop mode, pause after migration files are created so you can edit them before applying the batch. | off |
 | `--keep-artifacts` | Preserve runtime prompts, logs, and metadata under `<config-dir>/runs`. | off |
@@ -136,6 +157,12 @@ rundown migrate --from implementation
 
 # Reconcile current design from prediction changes, then draft/promote migrations
 rundown migrate --from prediction
+
+# Plan directly from one explicit source file (no managed design workspace required)
+rundown migrate --from-file ./Plan.md
+
+# Create one next-numbered migration file without running planner/predict/release
+rundown migrate new "File name basically"
 ```
 
 ## Backlog and snapshots
@@ -144,3 +171,12 @@ rundown migrate --from prediction
 - Snapshot checkpoints are numbered satellites: `N.1 Snapshot.md`.
 - New snapshots are additive historical checkpoints; older `N.1 Snapshot.md` files stay.
 - Snapshot regeneration and revision planning continue to run through the migrate pipeline in every source mode.
+
+## Action shortcut: `migrate new <title>`
+
+`migrate new <title>` is a fast authoring helper.
+
+- It determines the next migration number for the current target directory (`--dir` scope).
+- It creates a single canonical migration filename (`N. Title.md`) and exits.
+- It can be used for root lane or thread-lane directories by pointing `--dir` at that lane.
+- It does not invoke the worker and does not trigger planning/revision side effects.

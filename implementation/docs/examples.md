@@ -470,6 +470,9 @@ rundown migrate --from implementation --dir ./migrations -- opencode run
 # Reconcile current design from prediction changes, then create migrations.
 rundown migrate --from prediction --dir ./migrations -- opencode run
 
+# Design-less file-input mode: plan directly from one source file.
+rundown migrate --from-file ./design/Plan.md --dir ./migrations -- opencode run
+
 # When workspace.link has multiple records, select explicitly.
 rundown migrate --dir ./migrations --workspace ../source-workspace -- opencode run
 ```
@@ -482,10 +485,29 @@ What happens:
 4. If reconciliation or preflight yields no effective design boundary change, migrate exits with a caught-up/no-op result.
 5. Planning still targets released revision metadata boundaries (`plannedAt`, `migrations`).
 6. Legacy flat `design/rev.*/`, `docs/current/Design.md`, and `docs/rev.*/` layouts remain readable only as compatibility-only fallback sources.
+7. `--from-file` uses the explicit file as planning source and does not require `design/current/` or released revisions.
+8. If thread briefs exist under `.rundown/threads/*.md`, `--from-file` still runs thread-aware drafting/promotion.
 
 If linked workspace resolution is ambiguous (for example `.rundown/workspace.link` has multiple records and no default), path-sensitive commands such as `migrate` fail with candidate guidance and require `--workspace <dir>`.
 
-## 22. Mounted routing examples (local, linked, bare control)
+`--from-file` and `--from` are mutually exclusive; pass only one planning source mode.
+
+## 22. Quick migration file creation with `migrate new`
+
+```bash
+# Create exactly one next-numbered canonical migration in the selected scope.
+rundown migrate new "File name basically" --dir ./migrations
+```
+
+What happens:
+
+1. Rundown computes the next number for the target migration scope (`--dir`).
+2. It creates a single canonical filename like `132. File name basically.md`.
+3. It exits immediately without planning/revision/prediction/materialization side effects.
+
+This shortcut is useful when you want to author a migration manually, then continue with `predict`/`materialize` later.
+
+## 23. Mounted routing examples (local, linked, bare control)
 
 Path-first onboarding safety reminder:
 
@@ -546,7 +568,7 @@ Runtime prompt contract for these scenarios:
 2. Do not recompute paths from `workspaceDir` and logical directory names.
 3. When present, `workspaceMountSummary` is the canonical logical-path routing map.
 
-## 23. Predict then test target states explicitly
+## 24. Predict then test target states explicitly
 
 Use this command family to keep planning, future-state projection, and implementation application separate:
 
