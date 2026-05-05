@@ -119,7 +119,7 @@ See the command-focused reference: [cli-materialize.md](cli-materialize.md).
 
 See the command-focused reference: [cli-loop.md](cli-loop.md).
 
-### `rundown discuss <source>`
+### `rundown discuss <file.md>`
 
 See the command-focused reference: [cli-discuss.md](cli-discuss.md).
 

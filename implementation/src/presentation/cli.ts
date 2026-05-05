@@ -268,7 +268,7 @@ configureRunLikeCommandOptions(loopCommand)
 program
   .command("discuss")
   .description("Start an interactive discussion session for a Markdown file.")
-  .argument("<source>", "Markdown file to discuss")
+  .argument("<file.md>", "Markdown file to discuss")
   .option("--mode <mode>", "Discuss execution mode: wait, tui", "tui")
   .option("--sort <sort>", "File sort mode: name-sort, none, old-first, new-first", "name-sort")
   .option("--dry-run", "Show what would be executed without running it", false)

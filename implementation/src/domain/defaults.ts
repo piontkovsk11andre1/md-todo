@@ -490,7 +490,7 @@ Use \`--deep <n>\` for nested child TODO generation after top-level scans conver
 \`rundown do "<seed>" "<file.md>" -- <worker>\`
 
 **discuss** — Interactive file discussion session for a Markdown file. Agent uses file context plus related file artifacts, can refine task text on request, and does not execute or complete tasks.
-\`rundown discuss <source> [--mode tui] -- <worker>\`
+\`rundown discuss <file.md> [--mode tui] -- <worker>\`
 
 **reverify** — Re-run verification from saved artifacts for a previously completed task.
 \`rundown reverify [--run <id|latest>] [--last <n>] [--all] [--no-repair] -- <worker>\`

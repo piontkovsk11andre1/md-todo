@@ -6958,7 +6958,7 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("discuss [options] <source>");
+    expect(compactHelpOutput).toContain("discuss [options] <file.md>");
     expect(compactHelpOutput).toContain("interactive discussion session for a Markdown file");
     expect(compactHelpOutput).toContain("--mode <mode> Discuss execution mode: wait, tui");
     expect(compactHelpOutput).toContain("--print-prompt Print the rendered discuss prompt and exit");
