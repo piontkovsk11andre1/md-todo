@@ -30,6 +30,7 @@ import {
   resolveIgnoreCliBlockFlag,
   resolveNoRepairFlag,
   resolveAddMarkdownFile,
+  resolveDiscussMarkdownFile,
   resolvePlanMarkdownFile,
   resolveResearchMarkdownFile,
   resolveMakeMarkdownFile,
@@ -983,8 +984,8 @@ export function createDiscussCommandAction({
   getWorkerFromSeparator,
   discussModes,
   getInvocationArgv,
-}: DiscussActionDependencies): (source: string | undefined, opts: CliOpts) => CliActionResult {
-  return (source: string | undefined, opts: CliOpts) => {
+}: DiscussActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
+  return (source: string, opts: CliOpts) => {
     // Parse and normalize discuss-specific option values.
     const mode = parseRunnerMode(opts.mode as string | undefined, discussModes);
     const sortMode = parseSortMode(opts.sort as string | undefined);
@@ -1001,18 +1002,15 @@ export function createDiscussCommandAction({
     const cliBlockTimeoutMs = parseCliBlockTimeout(opts.cliBlockTimeout as string | undefined);
     const workerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const verbose = resolveVerboseOption(opts);
-    const normalizedSource = typeof source === "string" && source.trim().length > 0
-      ? source
-      : "";
+    const normalizedSource = resolveDiscussMarkdownFile([source]);
 
-    if (runId === undefined && normalizedSource === "") {
-      throw new Error("Missing required argument: <source>. Provide a Markdown source, or pass --run <id|prefix|latest> to discuss a finished run.");
+    if (runId !== undefined) {
+      emitCliInfo(getApp(), "Ignoring deprecated --run for discuss. Use file-focused discuss context from <file.md>.");
     }
 
     // Delegate to the discuss application flow with normalized arguments.
     return getApp().discussTask({
       source: normalizedSource,
-      runId,
       mode,
       workerPattern,
       sortMode,

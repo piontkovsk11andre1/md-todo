@@ -423,6 +423,55 @@ export function resolveMakeMarkdownFile(markdownFile: string): string {
 }
 
 /**
+ * Validates and resolves the single Markdown file expected by the `discuss` command.
+ */
+export function resolveDiscussMarkdownFile(markdownFiles: string[]): string {
+  const markdownFile = resolveSingleMarkdownFile({
+    commandName: "discuss",
+    usage: "rundown discuss <file.md> [options]",
+    invalidPathLabel: "discuss",
+    markdownFiles,
+  });
+
+  if (containsGlobPattern(markdownFile)) {
+    throw new Error(
+      "Invalid discuss document path: "
+        + markdownFile
+        + ". The `discuss` command requires exactly one existing Markdown file and does not accept directory or glob inputs.",
+    );
+  }
+
+  if (!fs.existsSync(markdownFile)) {
+    throw new Error(
+      "Invalid discuss document path: "
+        + markdownFile
+        + ". The `discuss` command requires exactly one existing Markdown file; the provided path does not exist.",
+    );
+  }
+
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(markdownFile);
+  } catch {
+    throw new Error(
+      "Invalid discuss document path: "
+        + markdownFile
+        + ". The `discuss` command requires exactly one existing Markdown file and cannot read this path.",
+    );
+  }
+
+  if (!stats.isFile()) {
+    throw new Error(
+      "Invalid discuss document path: "
+        + markdownFile
+        + ". The `discuss` command requires exactly one existing Markdown file and does not accept directory or glob inputs.",
+    );
+  }
+
+  return markdownFile;
+}
+
+/**
  * Validates and resolves the existing target Markdown file expected by the `add` command.
  */
 export function resolveAddMarkdownFile(markdownFile: string): string {

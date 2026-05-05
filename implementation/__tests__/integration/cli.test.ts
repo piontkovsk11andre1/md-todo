@@ -6959,51 +6959,31 @@ describe.sequential("CLI integration", () => {
     expect(result.code).toBe(0);
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
-    expect(compactHelpOutput).toContain("discuss [options] [source]");
-    expect(compactHelpOutput).toContain("interactive discussion session for the file containing the next unchecked task or for a finished run");
+    expect(compactHelpOutput).toContain("discuss [options] <source>");
+    expect(compactHelpOutput).toContain("interactive discussion session for a Markdown file");
     expect(compactHelpOutput).toContain("--mode <mode> Discuss execution mode: wait, tui");
     expect(compactHelpOutput).toContain("--print-prompt Print the rendered discuss prompt and exit");
     expect(compactHelpOutput).toContain("--trace Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl");
     expect(compactHelpOutput).toContain("--force-unlock Break stale source lockfiles before acquiring discuss locks");
   });
 
-  it("discuss supports --run without requiring <source>", async () => {
+  it("discuss requires <source> even when --run is provided", async () => {
     const workspace = makeTempWorkspace();
-    const discussTaskMock = vi.fn(async () => 0);
-
-    vi.doMock("../../src/create-app.js", () => ({
-      createApp: () => ({
-        runTask: vi.fn(async () => 0),
-        discussTask: discussTaskMock,
-        reverifyTask: vi.fn(async () => 0),
-        revertTask: vi.fn(async () => 0),
-        nextTask: vi.fn(async () => 0),
-        listTasks: vi.fn(async () => 0),
-        planTask: vi.fn(async () => 0),
-        unlockTask: vi.fn(async () => 0),
-        initProject: vi.fn(async () => 0),
-        manageArtifacts: vi.fn(() => 0),
-      }),
-    }));
 
     const result = await runCli([
       "discuss",
       "--run",
       "latest",
-      "--worker",
-      "opencode",
-      "run",
     ], workspace);
 
-    vi.doUnmock("../../src/create-app.js");
-
-    expect(result.code).toBe(0);
-    expect(discussTaskMock).toHaveBeenCalledTimes(1);
-    expect(discussTaskMock).toHaveBeenCalledWith(expect.objectContaining({
-      source: "",
-      runId: "latest",
-      workerPattern: inferWorkerPatternFromCommand(["opencode", "run"]),
-    }));
+    expect(result.code).toBe(1);
+    const combinedOutput = [
+      ...result.errors,
+      ...result.logs,
+      ...result.stdoutWrites,
+      ...result.stderrWrites,
+    ].join("\n").toLowerCase();
+    expect(combinedOutput.includes("missing required argument 'source'")).toBe(true);
   });
 
   it("discuss rejects unknown options", async () => {
@@ -7031,6 +7011,7 @@ describe.sequential("CLI integration", () => {
 
   it("discuss passes parsed options to the application layer", async () => {
     const workspace = makeTempWorkspace();
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] discuss me\n", "utf-8");
     const discussTaskMock = vi.fn(async () => 0);
 
     vi.doMock("../../src/create-app.js", () => ({
@@ -11768,7 +11749,7 @@ describe.sequential("CLI integration", () => {
     expect(compressedArchiveFiles).toEqual([]);
   });
 
-  it("compact preserves discuss --run finished-run prompt behavior", async () => {
+  it("compact preserves discuss file prompt behavior", async () => {
     const workspace = makeTempWorkspace();
     setupCompactFixture(workspace);
 
@@ -11776,11 +11757,10 @@ describe.sequential("CLI integration", () => {
     const runDir = path.join(workspace, ".rundown", "runs", runId);
     const executeDir = path.join(runDir, "01-execute");
     fs.mkdirSync(executeDir, { recursive: true });
-    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [x] Validate compact scope\n", "utf-8");
-    fs.writeFileSync(path.join(workspace, ".rundown", "discuss-finished.md"), [
-      "run={{runId}}",
-      "exec={{executionPhaseDir}}",
-      "phase={{phaseSummary}}",
+    fs.writeFileSync(path.join(workspace, "roadmap.md"), "- [ ] Validate compact scope\n", "utf-8");
+    fs.writeFileSync(path.join(workspace, ".rundown", "discuss.md"), [
+      "file={{file}}",
+      "related={{relatedRunsSummary}}",
     ].join("\n") + "\n", "utf-8");
     fs.writeFileSync(path.join(runDir, "run.json"), JSON.stringify({
       runId,
@@ -11811,16 +11791,15 @@ describe.sequential("CLI integration", () => {
 
     const beforeCompact = await runCli([
       "discuss",
-      "--run",
-      runId,
+      "roadmap.md",
       "--print-prompt",
     ], workspace);
 
     expect(beforeCompact.code).toBe(0);
     const beforeOutput = [...beforeCompact.logs, ...beforeCompact.errors, ...beforeCompact.stdoutWrites, ...beforeCompact.stderrWrites].join("\n");
-    expect(beforeOutput).toContain(`run=${runId}`);
-    expect(beforeOutput).toContain(`exec=${executeDir}`);
-    expect(beforeOutput).toContain("phase=- [01] execute (01-execute): exit=0");
+    expect(beforeOutput).toContain("file=");
+    expect(beforeOutput).toContain("roadmap.md");
+    expect(beforeOutput).toContain(runId);
 
     const compactResult = await runCli([
       "compact",
@@ -11836,16 +11815,15 @@ describe.sequential("CLI integration", () => {
 
     const afterCompact = await runCli([
       "discuss",
-      "--run",
-      runId,
+      "roadmap.md",
       "--print-prompt",
     ], workspace);
 
     expect(afterCompact.code).toBe(0);
     const afterOutput = [...afterCompact.logs, ...afterCompact.errors, ...afterCompact.stdoutWrites, ...afterCompact.stderrWrites].join("\n");
-    expect(afterOutput).toContain(`run=${runId}`);
-    expect(afterOutput).toContain(`exec=${executeDir}`);
-    expect(afterOutput).toContain("phase=- [01] execute (01-execute): exit=0");
+    expect(afterOutput).toContain("file=");
+    expect(afterOutput).toContain("roadmap.md");
+    expect(afterOutput).toContain(runId);
   });
 
   it("compact rejects invalid target and retention scope combinations", async () => {

@@ -1674,16 +1674,19 @@ describe("CLI run option normalization", () => {
 
   it("normalizes discuss defaults", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-defaults-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--worker",
       "opencode",
       "run",
     ], discussTask);
 
-    expect(call.source).toBe("tasks.md");
-    expect(call.runId).toBeUndefined();
+    expect(call.source).toBe(markdownFile);
     expect(call.mode).toBe("tui");
     expect(call.sortMode).toBe("name-sort");
     expect(call.dryRun).toBe(false);
@@ -1697,13 +1700,17 @@ describe("CLI run option normalization", () => {
     expect(call.forceUnlock).toBe(false);
     expect(call.ignoreCliBlock).toBe(false);
     expect(call.cliBlockTimeoutMs).toBe(30_000);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it("passes --run option to discuss task", async () => {
+  it("accepts deprecated --run while still selecting file-focused discuss", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-deprecated-run-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--run",
       "latest",
       "--worker",
@@ -1711,70 +1718,34 @@ describe("CLI run option normalization", () => {
       "run",
     ], discussTask);
 
-    expect(call.runId).toBe("latest");
+    expect(call.source).toBe(markdownFile);
+    expect(call.runId).toBeUndefined();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it("parses --run with a full run id for discuss", async () => {
+  it("requires discuss <file.md> even when deprecated --run is provided", async () => {
     const discussTask = vi.fn(async () => 0);
-    const call = await invokeDiscussAndCaptureCall([
-      "discuss",
-      "tasks.md",
-      "--run",
-      "run-20260406T221109164Z-42f68dae",
-      "--worker",
-      "opencode",
-      "run",
-    ], discussTask);
+    let stderr = "";
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+      return true;
+    }) as never);
 
-    expect(call.source).toBe("tasks.md");
-    expect(call.runId).toBe("run-20260406T221109164Z-42f68dae");
-  });
+    try {
+      await invokeDiscussAndExpectExit([
+        "discuss",
+        "--run",
+        "latest",
+        "--worker",
+        "opencode",
+        "run",
+      ], discussTask);
+    } finally {
+      stderrSpy.mockRestore();
+    }
 
-  it("parses --run with a prefix for discuss", async () => {
-    const discussTask = vi.fn(async () => 0);
-    const call = await invokeDiscussAndCaptureCall([
-      "discuss",
-      "tasks.md",
-      "--run",
-      "run-20260406T2211",
-      "--worker",
-      "opencode",
-      "run",
-    ], discussTask);
-
-    expect(call.source).toBe("tasks.md");
-    expect(call.runId).toBe("run-20260406T2211");
-  });
-
-  it("keeps <source> when discuss is combined with --run", async () => {
-    const discussTask = vi.fn(async () => 0);
-    const call = await invokeDiscussAndCaptureCall([
-      "discuss",
-      "tasks.md",
-      "--run",
-      "latest",
-      "--worker",
-      "opencode",
-      "run",
-    ], discussTask);
-
-    expect(call.source).toBe("tasks.md");
-    expect(call.runId).toBe("latest");
-  });
-
-  it("allows discuss without <source> when --run is provided", async () => {
-    const discussTask = vi.fn(async () => 0);
-    const call = await invokeDiscussAndCaptureCall([
-      "discuss",
-      "--run",
-      "latest",
-      "--worker",
-      "opencode",
-      "run",
-    ], discussTask);
-
-    expect(call.source).toBe("");
-    expect(call.runId).toBe("latest");
+    expect(discussTask).not.toHaveBeenCalled();
+    expect(stderr.toLowerCase()).toContain("missing required argument 'source'");
   });
 
   it("logs a CLI error and exits when discuss --run is provided without a value", async () => {
@@ -1799,11 +1770,48 @@ describe("CLI run option normalization", () => {
     expect(stderr).toContain("option '--run <id|prefix|latest>' argument missing");
   });
 
+  it("rejects discuss directories and globs", async () => {
+    const discussTask = vi.fn(async () => 0);
+    await invokeDiscussAndExpectExit([
+      "discuss",
+      "tasks/*.md",
+      "--worker",
+      "opencode",
+      "run",
+    ], discussTask);
+
+    expect(discussTask).not.toHaveBeenCalled();
+  });
+
+  it("accepts discuss with an existing markdown file", async () => {
+    const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-existing-file-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
+
+    try {
+      const call = await invokeDiscussAndCaptureCall([
+        "discuss",
+        markdownFile,
+        "--worker",
+        "opencode",
+        "run",
+      ], discussTask);
+
+      expect(call.source).toBe(markdownFile);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes explicit --cli-block-timeout to discuss task", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-timeout-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--cli-block-timeout",
       "1234",
       "--worker",
@@ -1812,13 +1820,17 @@ describe("CLI run option normalization", () => {
     ], discussTask);
 
     expect(call.cliBlockTimeoutMs).toBe(1234);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
   it("passes --ignore-cli-block flag to discuss task", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-ignore-cli-block-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--ignore-cli-block",
       "--worker",
       "opencode",
@@ -1826,13 +1838,17 @@ describe("CLI run option normalization", () => {
     ], discussTask);
 
     expect(call.ignoreCliBlock).toBe(true);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
   it("collects discuss template vars and flags", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-vars-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--vars-file",
       "custom-vars.json",
       "--var",
@@ -1854,13 +1870,17 @@ describe("CLI run option normalization", () => {
     expect(call.showAgentOutput).toBe(true);
     expect(call.trace).toBe(true);
     expect(call.forceUnlock).toBe(true);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
   it("passes explicit discuss execution options", async () => {
     const discussTask = vi.fn(async () => 0);
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "rundown-discuss-options-"));
+    const markdownFile = path.join(tempRoot, "tasks.md");
+    fs.writeFileSync(markdownFile, "# Tasks\n", "utf8");
     const call = await invokeDiscussAndCaptureCall([
       "discuss",
-      "tasks.md",
+      markdownFile,
       "--mode",
       "wait",
       "--sort",
@@ -1877,6 +1897,7 @@ describe("CLI run option normalization", () => {
     expect(call.printPrompt).toBe(true);
     expect(call.keepArtifacts).toBe(true);
     expect(call.workerCommand).toEqual(["opencode", "run"]);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
   it("accepts an explicit --config-dir when it exists and is a directory", async () => {
