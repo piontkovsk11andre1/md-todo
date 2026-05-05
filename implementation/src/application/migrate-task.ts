@@ -56,6 +56,7 @@ import type { AutoCompactCommandOptions } from "./post-command-auto-compact.js";
 
 export interface MigrateTaskOptions {
   action?: string;
+  title?: string;
   dir?: string;
   workspace?: string;
   sourceMode?: MigrateSourceMode;
@@ -198,6 +199,31 @@ export function createMigrateTask(
     }
 
     const rawAction = options.action;
+    const normalizedAction = rawAction?.trim().toLowerCase();
+    if (normalizedAction === "new") {
+      const title = options.title?.trim();
+      if (!title) {
+        emit({ kind: "error", message: "Missing required title for `migrate new <title>`." });
+        return EXIT_CODE_FAILURE;
+      }
+
+      const creation = createNewMigrationShortcut({
+        fileSystem: dependencies.fileSystem,
+        migrationsDir,
+        title,
+      });
+      if (!creation.ok) {
+        emit({ kind: "error", message: creation.message });
+        return EXIT_CODE_FAILURE;
+      }
+
+      emit({
+        kind: "success",
+        message: "Created migration " + creation.fileName + ".",
+      });
+      return EXIT_CODE_SUCCESS;
+    }
+
     if (rawAction !== undefined && rawAction.trim().length > 0) {
       emit({
         kind: "error",
@@ -1998,6 +2024,33 @@ function readMigrationState(
     archivedMigrationsDir,
   });
   return parseMigrationDirectory(files, migrationsDir);
+}
+
+function createNewMigrationShortcut(input: {
+  fileSystem: FileSystem;
+  migrationsDir: string;
+  title: string;
+}):
+  | { ok: true; fileName: string }
+  | { ok: false; message: string } {
+  const { fileSystem, migrationsDir, title } = input;
+  const state = readMigrationStateFromDirectoryOrEmpty(fileSystem, migrationsDir);
+  const nextNumber = state.currentPosition + 1;
+  const fileName = formatMigrationFilename(nextNumber, title);
+  const targetPath = path.join(migrationsDir, fileName);
+
+  if (fileSystem.exists(targetPath)) {
+    return {
+      ok: false,
+      message: "Cannot create migration: target file already exists: " + targetPath,
+    };
+  }
+
+  fileSystem.writeText(targetPath, "");
+  return {
+    ok: true,
+    fileName,
+  };
 }
 
 function listMigrationLaneFiles(input: {

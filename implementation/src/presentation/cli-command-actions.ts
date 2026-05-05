@@ -421,6 +421,8 @@ type TestAction = "now" | "future" | "new";
 type MigrateSourceMode = "design" | "implementation" | "prediction";
 
 interface MigrateCommandOptions {
+  action?: "new";
+  title?: string;
   dir?: string;
   workspace?: string;
   sourceMode?: MigrateSourceMode;
@@ -1523,6 +1525,31 @@ export function createMigrateCommandAction({
   ) => CliActionResult {
   return (actionOrOpts: string | CliOpts | undefined, countOrOpts?: string | CliOpts, maybeOpts?: CliOpts) => {
     const app = getApp();
+    const normalizedAction = typeof actionOrOpts === "string"
+      ? normalizeOptionalString(actionOrOpts)
+      : undefined;
+
+    if (normalizedAction !== undefined && normalizedAction.toLowerCase() === "new") {
+      const title = typeof countOrOpts === "string"
+        ? normalizeOptionalString(countOrOpts)
+        : undefined;
+      if (!title) {
+        throw new Error("Missing required title for `migrate new <title>`.");
+      }
+
+      const opts = (maybeOpts ?? {}) as CliOpts;
+      return resolveMigrateCommandHandler(app)({
+        action: "new",
+        title,
+        dir: normalizeOptionalString(opts.dir),
+        workspace: normalizeOptionalString(opts.workspace),
+        autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
+        confirm: Boolean(opts.confirm as boolean | undefined),
+        workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
+        keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
+        showAgentOutput: resolveShowAgentOutputOption(opts),
+      });
+    }
 
     if (typeof actionOrOpts === "string") {
       throw new Error(`unknown action: ${actionOrOpts}`);

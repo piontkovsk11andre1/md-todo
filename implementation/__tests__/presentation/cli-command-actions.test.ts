@@ -2711,6 +2711,42 @@ describe("createMigrateCommandAction", () => {
     expect(migrateTask).not.toHaveBeenCalled();
   });
 
+  it("routes `migrate new <title>` to migrateTask as an explicit shortcut action", async () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    const exitCode = await action("new", "File name basically", {
+      dir: "migrations",
+      workspace: "../workspace-source",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(migrateTask).toHaveBeenCalledTimes(1);
+    expect(migrateTask).toHaveBeenCalledWith(expect.objectContaining({
+      action: "new",
+      title: "File name basically",
+      dir: "migrations",
+      workspace: "../workspace-source",
+      autoCompact: { beforeExit: false },
+    }));
+  });
+
+  it("requires a title for `migrate new <title>`", () => {
+    const migrateTask = vi.fn(async () => 0);
+    const app = { migrateTask } as unknown as CliApp;
+    const action = createMigrateCommandAction({
+      getApp: () => app,
+      getWorkerFromSeparator: () => undefined,
+    });
+
+    expect(() => action("new", "   ", {})).toThrow("Missing required title for `migrate new <title>`.");
+    expect(migrateTask).not.toHaveBeenCalled();
+  });
+
 });
 
 describe("createTestCommandAction", () => {

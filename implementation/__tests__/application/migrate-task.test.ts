@@ -2683,6 +2683,158 @@ describe("migrate-task", () => {
       process.chdir(previousCwd);
     }
   });
+
+  it("creates exactly one canonical file for `migrate new <title>` without planning", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(7, "existing migration")),
+      "# 7. Existing Migration\n",
+      "utf-8",
+    );
+
+    const events: ApplicationOutputEvent[] = [];
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        action: "new",
+        title: "File name basically",
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(fs.existsSync(path.join(workspace, "migrations", "8. File Name Basically.md"))).toBe(true);
+      expect(workerExecutor.runWorker).not.toHaveBeenCalled();
+      expect(artifactStore.createContext).not.toHaveBeenCalled();
+      expect(events.some((event) => event.kind === "success" && event.message.includes("8. File Name Basically.md"))).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
+  it("fails for `migrate new` when title is missing", async () => {
+    const workspace = makeTempWorkspace();
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+
+    const events: ApplicationOutputEvent[] = [];
+    const workerExecutor: WorkerExecutorPort = {
+      runWorker: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeInlineCli: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+      executeRundownTask: vi.fn(async () => ({ exitCode: 0, stdout: "", stderr: "" })),
+    };
+
+    const artifactStore: ArtifactStore = {
+      createContext: vi.fn(() => ({
+        runId: "run-test",
+        rootDir: path.join(workspace, ".rundown", "runs", "run-test"),
+        cwd: workspace,
+        keepArtifacts: false,
+        commandName: "migrate",
+      })),
+      beginPhase: vi.fn(() => { throw new Error("not used"); }),
+      completePhase: vi.fn(),
+      finalize: vi.fn(),
+      displayPath: vi.fn(() => ""),
+      rootDir: vi.fn(() => ""),
+      listSaved: vi.fn(() => []),
+      listFailed: vi.fn(() => []),
+      latest: vi.fn(() => null),
+      find: vi.fn(() => null),
+      removeSaved: vi.fn(() => 0),
+      removeFailed: vi.fn(() => 0),
+      isFailedStatus: vi.fn(() => false),
+    };
+
+    const migrateTask = createMigrateTask({
+      workerExecutor,
+      fileSystem: createNodeFileSystem(),
+      traceWriter: createNoopTraceWriter(),
+      templateLoader: { load: () => undefined },
+      sourceResolver: { resolveSources: vi.fn(async () => []) },
+      workerConfigPort: { load: () => undefined },
+      artifactStore,
+      configDir: path.join(workspace, ".rundown"),
+      interactiveInput: {
+        isTTY: () => false,
+        prompt: vi.fn(async () => ({ value: "true", usedDefault: true, interactive: false })),
+      },
+      output: {
+        emit: (event) => {
+          events.push(event);
+        },
+      },
+      runExplore: vi.fn(async () => EXIT_CODE_SUCCESS),
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await migrateTask({
+        action: "new",
+        title: "   ",
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(workerExecutor.runWorker).not.toHaveBeenCalled();
+      expect(artifactStore.createContext).not.toHaveBeenCalled();
+      expect(events.some((event) => event.kind === "error" && event.message.includes("Missing required title"))).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
 });
 
 function scaffoldReleasedDesignRevisions(workspace: string, designDir: string): void {

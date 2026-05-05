@@ -441,6 +441,8 @@ program
 const migrateCommand = program
   .command("migrate")
   .description("Sync design revisions and generate migration files.")
+  .argument("[action]", "Optional migrate action (for example: new)")
+  .argument("[title]", "Optional action title used by `migrate new <title>`")
   .option("--dir <path>", "Migrations directory (default: configured workspace, fallback: ./migrations)")
   .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
   .option("--from <source>", "Source reconciliation mode: implementation|prediction (omit for default design-diff mode)")
@@ -1207,11 +1209,14 @@ function validateUnsupportedMigrateAction(argv: string[]): void {
   const optionsWithValue = new Set([
     "--dir",
     "--workspace",
+    "--from",
+    "--from-file",
     "--run",
     "--worker",
     "--slug-worker",
     "--to",
   ]);
+  let positionalIndex = 0;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -1239,6 +1244,16 @@ function validateUnsupportedMigrateAction(argv: string[]): void {
     }
 
     if (token.startsWith("--")) {
+      continue;
+    }
+
+    if (positionalIndex === 0 && token === "new") {
+      positionalIndex = 1;
+      continue;
+    }
+
+    if (positionalIndex === 1) {
+      positionalIndex = 2;
       continue;
     }
 
