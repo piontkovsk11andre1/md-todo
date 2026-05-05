@@ -352,7 +352,6 @@ export function createDiscussTask(
       const selectedTaskFile = dependencies.pathOperations.isAbsolute(taskContext.task.file)
         ? dependencies.pathOperations.resolve(taskContext.task.file)
         : dependencies.pathOperations.resolve(cwd, taskContext.task.file);
-      const selectedTaskFileBasename = extractBaseName(selectedTaskFile);
       const savedRuns = dependencies.artifactStore.listSaved(artifactBaseDir);
       const failedRuns = dependencies.artifactStore.listFailed(artifactBaseDir);
       const relatedRuns = savedRuns
@@ -360,7 +359,6 @@ export function createDiscussTask(
         .filter((run) => matchesDiscussFileRun(
           run,
           selectedTaskFile,
-          selectedTaskFileBasename,
           cwd,
           dependencies.pathOperations,
         ))
@@ -838,33 +836,65 @@ function compareStartedAtDesc(left: string, right: string): number {
   return right.localeCompare(left);
 }
 
-function extractBaseName(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, "/");
-  const segments = normalized.split("/").filter((segment) => segment.length > 0);
-  return segments[segments.length - 1] ?? "";
-}
-
 function matchesDiscussFileRun(
   run: ArtifactRunMetadata,
   selectedTaskFile: string,
-  selectedTaskFileBasename: string,
   cwd: string,
   pathOperations: PathOperationsPort,
 ): boolean {
+  const selectedTaskFilePath = pathOperations.isAbsolute(selectedTaskFile)
+    ? pathOperations.resolve(selectedTaskFile)
+    : pathOperations.resolve(cwd, selectedTaskFile);
+  const relatedRunFilePaths = collectRunFileMetadataPaths(run, cwd, pathOperations);
+  return relatedRunFilePaths.includes(selectedTaskFilePath);
+}
+
+function collectRunFileMetadataPaths(
+  run: ArtifactRunMetadata,
+  cwd: string,
+  pathOperations: PathOperationsPort,
+): string[] {
+  const relatedFilePaths: string[] = [];
   const runTaskFile = run.task?.file;
-  const hasTaskFile = typeof runTaskFile === "string" && runTaskFile.trim() !== "";
-  if (hasTaskFile) {
-    const normalizedRunTaskFile = pathOperations.isAbsolute(runTaskFile)
+  if (typeof runTaskFile === "string" && runTaskFile.trim() !== "") {
+    relatedFilePaths.push(pathOperations.isAbsolute(runTaskFile)
       ? pathOperations.resolve(runTaskFile)
-      : pathOperations.resolve(cwd, runTaskFile);
-    return normalizedRunTaskFile === selectedTaskFile;
+      : pathOperations.resolve(cwd, runTaskFile));
   }
 
-  const sourceCandidate = typeof run.source === "string" && run.source.trim() !== ""
-    ? run.source
-    : run.task?.source ?? "";
-  const sourceBasename = extractBaseName(sourceCandidate);
-  return sourceBasename !== "" && sourceBasename === selectedTaskFileBasename;
+  const sourcePath = resolveRunSourcePath(run.source, cwd, pathOperations);
+  if (sourcePath !== null) {
+    relatedFilePaths.push(sourcePath);
+  }
+
+  return Array.from(new Set(relatedFilePaths));
+}
+
+function resolveRunSourcePath(
+  source: string | undefined,
+  cwd: string,
+  pathOperations: PathOperationsPort,
+): string | null {
+  if (typeof source !== "string") {
+    return null;
+  }
+
+  const trimmedSource = source.trim();
+  if (trimmedSource === "") {
+    return null;
+  }
+
+  if (trimmedSource.includes("\n") || trimmedSource.includes("\r")) {
+    return null;
+  }
+
+  if (/[\*\?\[\]\{\}]/.test(trimmedSource)) {
+    return null;
+  }
+
+  return pathOperations.isAbsolute(trimmedSource)
+    ? pathOperations.resolve(trimmedSource)
+    : pathOperations.resolve(cwd, trimmedSource);
 }
 
 function buildRelatedRunsSummary(
