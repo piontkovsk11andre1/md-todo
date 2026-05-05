@@ -17,7 +17,7 @@ Synopsis:
 ```bash
 rundown loop <source> [options] -- <command>
 rundown loop <source> [options] --worker <pattern>
-rd loop <source> [options]
+rndn loop <source> [options]
 ```
 
 Arguments:

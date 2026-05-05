@@ -21,7 +21,7 @@ Synopsis:
 ```bash
 rundown run <source> [options] -- <command>
 rundown run <source> [options] --worker <pattern>
-rd run <source> [options]
+rndn run <source> [options]
 ```
 
 Arguments:

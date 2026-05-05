@@ -22,7 +22,7 @@ Synopsis:
 ```bash
 rundown materialize <source> [options] -- <command>
 rundown materialize <source> [options] --worker <pattern>
-rd materialize <source> [options]
+rndn materialize <source> [options]
 ```
 
 Arguments:

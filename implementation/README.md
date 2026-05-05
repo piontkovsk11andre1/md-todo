@@ -210,13 +210,13 @@ rundown with pi
 # Next time in the same dir:
 rundown
 # or the supported executable alias:
-rd
+rndn
 
 # Previous no-args interactive agent-help flow:
 rundown agent
 ```
 
-`rd` is a first-class executable alias for `rundown`; both names run the same CLI entrypoint with identical behavior.
+`rndn` is a first-class executable alias for `rundown`; both names run the same CLI entrypoint with identical behavior.
 
 Run `rundown` to open the root TUI for interactive navigation, or run `rundown agent` for the previous no-args interactive agent-help flow.
 

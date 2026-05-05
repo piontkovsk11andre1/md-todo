@@ -16,7 +16,7 @@ Synopsis:
 
 ```bash
 rundown
-rd
+rndn
 ```
 
 Arguments:
@@ -37,7 +37,7 @@ Examples:
 rundown
 
 # Alias-equivalent form
-rd
+rndn
 
 # Previous no-args interactive agent-help flow
 rundown agent

@@ -23,7 +23,7 @@ Synopsis:
 ```bash
 rundown call <source> [options] -- <command>
 rundown call <source> [options] --worker <pattern>
-rd call <source> [options]
+rndn call <source> [options]
 ```
 
 Arguments:

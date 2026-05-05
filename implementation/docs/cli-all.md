@@ -17,7 +17,7 @@ Synopsis:
 ```bash
 rundown all <source> [options] -- <command>
 rundown all <source> [options] --worker <pattern>
-rd all <source> [options]
+rndn all <source> [options]
 ```
 
 Arguments:

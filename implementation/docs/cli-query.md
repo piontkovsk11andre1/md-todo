@@ -23,7 +23,7 @@ Synopsis:
 ```bash
 rundown query <text> [options] -- <command>
 rundown query <text> [options] --worker <pattern>
-rd query <text> [options]
+rndn query <text> [options]
 ```
 
 Arguments:
@@ -61,13 +61,13 @@ Examples:
 ```bash
 # Default markdown output
 rundown query "Where do we classify worker failures?"
-rd query "Where do we classify worker failures?"
+rndn query "Where do we classify worker failures?"
 
 # JSON output written to file
 rundown query "Which commands support --trace?" --format json --output reports/query.json
-rd query "Which commands support --trace?" --format json --output reports/query.json
+rndn query "Which commands support --trace?" --format json --output reports/query.json
 
 # Skip research and run plan+execute only
 rundown query "Does memory-clean remove index entries?" --skip-research
-rd query "Does memory-clean remove index entries?" --skip-research
+rndn query "Does memory-clean remove index entries?" --skip-research
 ```

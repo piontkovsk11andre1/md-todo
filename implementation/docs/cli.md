@@ -1,6 +1,6 @@
 # CLI
 
-`rundown` and `rd` are both supported executable names. `rd` is a strict alias of `rundown` (same entrypoint, commands, flags, output, and exit codes). Examples below use `rundown` as the canonical form unless noted.
+`rundown` and `rndn` are both supported executable names. `rndn` is a strict alias of `rundown` (same entrypoint, commands, flags, output, and exit codes). Examples below use `rundown` as the canonical form unless noted.
 
 ## Global options
 
@@ -45,14 +45,14 @@ Examples:
 ```bash
 # Interactive terminal: opens the root TUI
 rundown
-rd
+rndn
 
 # Previous no-args interactive agent-help flow
 rundown agent
 
 # Deterministic static help output
 rundown --help
-rd --help
+rndn --help
 ```
 
 ### `rundown agent`
