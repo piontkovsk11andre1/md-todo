@@ -16,10 +16,10 @@ interface PackageLockFile {
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const EXPECTED_CLI_ENTRYPOINT = "dist/cli.js";
-const EXPECTED_BIN_NAMES = ["rundown", "rd"] as const;
+const EXPECTED_BIN_NAMES = ["rundown", "rndn"] as const;
 
 describe("packaged bin aliases", () => {
-  it("exposes rd and rundown in package.json for npm/pnpm/yarn/bun shims", () => {
+  it("exposes rndn and rundown in package.json for npm/pnpm/yarn/bun shims", () => {
     const packageJsonPath = path.join(REPO_ROOT, "package.json");
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8")) as PackageManifest;
     const bin = packageJson.bin ?? {};
@@ -29,7 +29,7 @@ describe("packaged bin aliases", () => {
     }
   });
 
-  it("keeps lockfile root bin metadata aligned for rd and rundown", () => {
+  it("keeps lockfile root bin metadata aligned for rndn and rundown", () => {
     const packageLockPath = path.join(REPO_ROOT, "package-lock.json");
     const packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf-8")) as PackageLockFile;
     const rootBin = packageLock.packages?.[""]?.bin ?? {};

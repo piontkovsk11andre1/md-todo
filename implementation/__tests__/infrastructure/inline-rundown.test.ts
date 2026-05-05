@@ -96,7 +96,7 @@ describe("executeRundownTask", () => {
 
   it.each([
     "/repo/node_modules/.bin/rundown",
-    "/repo/node_modules/.bin/rd",
+    "/repo/node_modules/.bin/rndn",
   ])("uses current executable entrypoint for delegated invocations (%s)", async (entrypoint) => {
     process.argv = ["/usr/local/bin/node", entrypoint, "run", "Parent.md"];
     const child = createChildProcess();
@@ -122,7 +122,7 @@ describe("executeRundownTask", () => {
     );
   });
 
-  it("returns matching non-zero exit codes for delegated rd and rundown entrypoints", async () => {
+  it("returns matching non-zero exit codes for delegated rndn and rundown entrypoints", async () => {
     const runWithEntrypoint = async (entrypoint: string): Promise<Awaited<ReturnType<typeof executeRundownTask>>> => {
       process.argv = ["/usr/local/bin/node", entrypoint, "run", "Parent.md"];
       const child = createChildProcess();
@@ -135,14 +135,14 @@ describe("executeRundownTask", () => {
     };
 
     const rundownResult = await runWithEntrypoint("/repo/node_modules/.bin/rundown");
-    const rdResult = await runWithEntrypoint("/repo/node_modules/.bin/rd");
+    const rndnResult = await runWithEntrypoint("/repo/node_modules/.bin/rndn");
 
     expect(rundownResult).toEqual({
       exitCode: 2,
       stdout: "",
       stderr: "",
     });
-    expect(rdResult).toEqual(rundownResult);
+    expect(rndnResult).toEqual(rundownResult);
   });
 
   it("inherits stdin for delegated runs so nested include prompts stay interactive", async () => {
