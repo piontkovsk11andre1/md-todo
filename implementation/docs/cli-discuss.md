@@ -1,6 +1,6 @@
 # CLI: `discuss`
 
-Select the next unchecked task and start a discussion session for task refinement before execution.
+Select the file containing the next unchecked task and start a discussion session for file-level refinement before execution.
 
 ## Global option: `--config-dir <path>`
 
@@ -19,19 +19,19 @@ rundown discuss [source] [options] --worker <pattern>
 
 `discuss` uses the same source resolution and task-selection logic as `run`, but opens a discussion-oriented worker session (default `--mode tui`) instead of executing the task implementation flow.
 
-In source mode (`discuss <source>`), the rendered prompt now includes a related run history summary for the selected task when previous `run` artifacts exist in the active config directory.
+In source mode (`discuss <source>`), rundown still uses the next unchecked task as the routing anchor, but the rendered prompt discusses the full file and includes related `run` artifact history for that file when saved artifacts exist in the active config directory.
 
 When `--run <id|prefix|latest>` is provided, `discuss` loads a finished artifact run and opens a post-run discussion session for that run instead of selecting a new unchecked task from source Markdown.
 
 `--worker` is optional when rundown can resolve a worker for `discuss` from `.rundown/config.json`.
 
-By default, `discuss` is conversational and non-mutating: the agent analyzes the task, answers questions, and can reference prior run history. The agent should not edit source Markdown unless the user explicitly requests edits (for example rewriting wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
+By default, `discuss` is conversational and non-mutating: the agent analyzes the file with the selected task as an anchor, answers questions, and can reference prior file-level run history. The agent should not edit source Markdown unless the user explicitly requests edits (for example rewriting wording, splitting tasks, or adding sub-items). `discuss` does not mutate checkbox completion state.
 
 Arguments:
 
 | Argument | Description |
 |---|---|
-| `[source]` | Markdown file, directory, or glob to scan for the next unchecked task. Optional when using `--run`; otherwise required. |
+| `[source]` | Markdown file, directory, or glob to scan for the next unchecked task and its containing file. Optional when using `--run`; otherwise required. |
 
 Options:
 

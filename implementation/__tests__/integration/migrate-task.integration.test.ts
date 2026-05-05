@@ -271,6 +271,82 @@ describeIfMigrateAvailable("migrate-task integration", () => {
     expect(capturedPrompt).toContain("Current migration number: 3");
   });
 
+  it("`migrate new <title>` creates exactly one next-numbered canonical migration without planning, prediction, or release side effects", async () => {
+    const workspace = makeTempWorkspace();
+    scaffoldReleasedDesignRevisions(workspace, "docs");
+    fs.mkdirSync(path.join(workspace, "migrations"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, "migrations", formatMigrationFilename(7, "existing migration")),
+      "# 7. Existing Migration\n\n- [x] done\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "migrations", "Notes.md"),
+      "# Notes\n\n- existing notes\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(workspace, "docs", "current", "Design.md"),
+      "# Design\n\nUnreleased design change that would normally trigger a release.\n",
+      "utf-8",
+    );
+
+    const plannerScript = [
+      "const fs=require('node:fs');",
+      "const path=require('node:path');",
+      "fs.writeFileSync(path.join(process.cwd(),'.unexpected-worker-invoked'),'1','utf-8');",
+      "console.log('planner should not run for migrate new');",
+      "process.exit(1);",
+    ].join("\n");
+    fs.mkdirSync(path.join(workspace, ".rundown"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, ".rundown", "config.json"),
+      JSON.stringify({
+        commands: {
+          research: ["node", "-e", plannerScript],
+          plan: ["node", "-e", plannerScript],
+        },
+      }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const predictionDir = path.join(workspace, "prediction");
+    fs.mkdirSync(path.join(predictionDir, "migrations"), { recursive: true });
+    fs.writeFileSync(path.join(predictionDir, "migrations", formatMigrationFilename(2, "feature-a")), "# predicted 2\n", "utf-8");
+    fs.writeFileSync(path.join(predictionDir, "notes.md"), "# prediction notes\n", "utf-8");
+    fs.writeFileSync(path.join(predictionDir, "migrations", "raw.bin"), Buffer.from([0, 255, 17, 42]));
+
+    const migrationsBefore = readDirectoryFileBytes(path.join(workspace, "migrations"));
+    const predictionBefore = readDirectoryFileBytes(predictionDir);
+    const rev1MetaBefore = fs.readFileSync(path.join(workspace, "docs", "rev.1.meta.json"), "utf-8");
+
+    const result = await runCli([
+      "migrate",
+      "new",
+      "File name basically",
+      "--dir",
+      "migrations",
+    ], workspace);
+
+    const debug = debugOutput(result);
+    expect(result.code, debug).toBe(0);
+
+    const migrationsAfter = readDirectoryFileBytes(path.join(workspace, "migrations"));
+    const migrationPathsBefore = new Set(migrationsBefore.map((entry) => entry.path));
+    const addedMigrationPaths = migrationsAfter
+      .map((entry) => entry.path)
+      .filter((entryPath) => !migrationPathsBefore.has(entryPath));
+
+    expect(addedMigrationPaths).toEqual(["8. File Name Basically.md"]);
+    expect(fs.existsSync(path.join(workspace, "migrations", "8. File Name Basically.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".unexpected-worker-invoked"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, ".migrate-plan.seq"))).toBe(false);
+    expect(readDirectoryFileBytes(predictionDir)).toEqual(predictionBefore);
+    expect(fs.readFileSync(path.join(workspace, "docs", "rev.1.meta.json"), "utf-8")).toBe(rev1MetaBefore);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "docs", "rev.2.meta.json"))).toBe(false);
+  });
+
   it("does not modify real migrations when staged drafts fail verification", async () => {
     const workspace = makeTempWorkspace();
     scaffoldLoopMigrateProject(workspace);

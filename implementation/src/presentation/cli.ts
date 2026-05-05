@@ -267,7 +267,7 @@ configureRunLikeCommandOptions(loopCommand)
 
 program
   .command("discuss")
-  .description("Start an interactive discussion session for the next unchecked task or a finished run.")
+  .description("Start an interactive discussion session for the file containing the next unchecked task or for a finished run.")
   .argument("[source]", "File, directory, or glob to scan for Markdown tasks")
   .option("--run <id|prefix|latest>", "Discuss a finished run by artifact run id, unique prefix, or 'latest'")
   .option("--mode <mode>", "Discuss execution mode: wait, tui", "tui")

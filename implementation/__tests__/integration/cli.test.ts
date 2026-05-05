@@ -6960,7 +6960,7 @@ describe.sequential("CLI integration", () => {
     const helpOutput = result.stdoutWrites.join("\n");
     const compactHelpOutput = helpOutput.replace(/\s+/g, " ");
     expect(compactHelpOutput).toContain("discuss [options] [source]");
-    expect(compactHelpOutput).toContain("interactive discussion session for the next unchecked task or a finished run");
+    expect(compactHelpOutput).toContain("interactive discussion session for the file containing the next unchecked task or for a finished run");
     expect(compactHelpOutput).toContain("--mode <mode> Discuss execution mode: wait, tui");
     expect(compactHelpOutput).toContain("--print-prompt Print the rendered discuss prompt and exit");
     expect(compactHelpOutput).toContain("--trace Enable structured trace output at <config-dir>/runs/<id>/trace.jsonl");

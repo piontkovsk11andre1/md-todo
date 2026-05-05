@@ -554,7 +554,7 @@ Use \`--deep <n>\` for nested child TODO generation after top-level scans conver
 **do** — \`make\` followed by executing all tasks. Full end-to-end from idea to completion.
 \`rundown do "<seed>" "<file.md>" -- <worker>\`
 
-**discuss** — Interactive task refinement session. Agent can edit task text, split tasks, add sub-items. Does not execute or complete tasks.
+**discuss** — Interactive file discussion session anchored to the next unchecked task. Agent can refine task text on request, surfaces file-related run artifacts, and does not execute or complete tasks.
 \`rundown discuss <source> [--mode tui] -- <worker>\`
 
 **reverify** — Re-run verification from saved artifacts for a previously completed task.
