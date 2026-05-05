@@ -5,7 +5,6 @@ import {
   DEFAULT_PLAN_PREPEND_TEMPLATE,
   DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
-  DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
   DEFAULT_MIGRATE_TEMPLATE,
   DEFAULT_PLAN_TEMPLATE,
@@ -48,7 +47,6 @@ export interface ProjectTemplates {
   task: string;
   help: string;
   discuss: string;
-  discussFinished: string;
   verify: string;
   repair: string;
   resolve: string;
@@ -97,7 +95,6 @@ export function loadProjectTemplatesFromPorts(
       task: DEFAULT_TASK_TEMPLATE,
       help: DEFAULT_HELP_TEMPLATE,
       discuss: DEFAULT_DISCUSS_TEMPLATE,
-      discussFinished: DEFAULT_DISCUSS_FINISHED_TEMPLATE,
       verify: DEFAULT_VERIFY_TEMPLATE,
       repair: DEFAULT_REPAIR_TEMPLATE,
       resolve: DEFAULT_RESOLVE_TEMPLATE,
@@ -146,7 +143,6 @@ export function loadProjectTemplatesFromPorts(
     task: loadTemplateWithFallback("execute.md", DEFAULT_TASK_TEMPLATE),
     help: loadTemplateWithFallback("help.md", DEFAULT_HELP_TEMPLATE),
     discuss: loadTemplateWithFallback("discuss.md", DEFAULT_DISCUSS_TEMPLATE),
-    discussFinished: loadTemplateWithFallback("discuss-finished.md", DEFAULT_DISCUSS_FINISHED_TEMPLATE),
     verify: loadTemplateWithFallback("verify.md", DEFAULT_VERIFY_TEMPLATE),
     repair: loadTemplateWithFallback("repair.md", DEFAULT_REPAIR_TEMPLATE),
     resolve: loadTemplateWithFallback("resolve.md", DEFAULT_RESOLVE_TEMPLATE),

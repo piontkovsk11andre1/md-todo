@@ -3,7 +3,6 @@ import {
   DEFAULT_CONFIG_CONTENT,
   DEFAULT_DEEP_PLAN_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
-  DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
   DEFAULT_MIGRATE_TEMPLATE,
   DEFAULT_PLAN_LOOP_TEMPLATE,
@@ -199,7 +198,6 @@ export function createInitProject(
     write("execute.md", DEFAULT_TASK_TEMPLATE);
     write("help.md", DEFAULT_HELP_TEMPLATE);
     write("discuss.md", DEFAULT_DISCUSS_TEMPLATE);
-    write("discuss-finished.md", DEFAULT_DISCUSS_FINISHED_TEMPLATE);
     write("verify.md", DEFAULT_VERIFY_TEMPLATE);
     write("repair.md", DEFAULT_REPAIR_TEMPLATE);
     write("resolve.md", DEFAULT_RESOLVE_TEMPLATE);

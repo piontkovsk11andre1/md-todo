@@ -1,7 +1,6 @@
 import {
   DEFAULT_AGENT_TEMPLATE,
   DEFAULT_DEEP_PLAN_TEMPLATE,
-  DEFAULT_DISCUSS_FINISHED_TEMPLATE,
   DEFAULT_DISCUSS_TEMPLATE,
   DEFAULT_HELP_TEMPLATE,
   DEFAULT_LOCALIZE_ALIASES_TEMPLATE,
@@ -52,7 +51,6 @@ const LOCALIZABLE_TEMPLATES: ReadonlyArray<{ fileName: string; fallback: string 
   { fileName: "execute.md", fallback: DEFAULT_TASK_TEMPLATE },
   { fileName: "help.md", fallback: DEFAULT_HELP_TEMPLATE },
   { fileName: "discuss.md", fallback: DEFAULT_DISCUSS_TEMPLATE },
-  { fileName: "discuss-finished.md", fallback: DEFAULT_DISCUSS_FINISHED_TEMPLATE },
   { fileName: "verify.md", fallback: DEFAULT_VERIFY_TEMPLATE },
   { fileName: "repair.md", fallback: DEFAULT_REPAIR_TEMPLATE },
   { fileName: "resolve.md", fallback: DEFAULT_RESOLVE_TEMPLATE },
