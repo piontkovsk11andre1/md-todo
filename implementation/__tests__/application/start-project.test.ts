@@ -96,7 +96,7 @@ describe("start-project", () => {
 
     const harness = createHarness(workspace);
 
-    const code = await harness.startProject({ description: "Non-empty workspace" });
+    const code = await harness.startProject({ dir: workspace });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
 
@@ -158,7 +158,7 @@ describe("start-project", () => {
 
     const harness = createHarness(workspace);
 
-    const code = await harness.startProject({ description: "Should not override" });
+    const code = await harness.startProject({ dir: workspace });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(fs.readFileSync(existingTargetPath, "utf-8")).toBe("# Existing target\n\nkeep me\n");
@@ -172,7 +172,7 @@ describe("start-project", () => {
     fs.writeFileSync(path.join(workspace, "design", "current", "Target.md"), "# Existing target\n", "utf-8");
     const harness = createHarness(workspace);
 
-    const code = await harness.startProject({ description: "No new docs" });
+    const code = await harness.startProject({ dir: workspace });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(harness.runExplore).not.toHaveBeenCalled();
@@ -207,6 +207,24 @@ describe("start-project", () => {
     expect(harness.runExplore).not.toHaveBeenCalled();
   });
 
+  it("creates missing --from-design path as a directory", async () => {
+    const workspace = makeTempWorkspace();
+    const missingDesignDir = path.join(workspace, "missing-design-input");
+    const controlDir = path.join(workspace, "control");
+    const harness = createHarness(workspace);
+
+    const code = await harness.startProject({
+      description: "Create missing design dir",
+      dir: controlDir,
+      fromDesign: missingDesignDir,
+    });
+
+    expect(code).toBe(EXIT_CODE_SUCCESS);
+    expect(fs.existsSync(missingDesignDir)).toBe(true);
+    expect(fs.statSync(missingDesignDir).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(missingDesignDir, "Target.md"))).toBe(false);
+  });
+
   it("does not create local Target.md when external design is already configured", async () => {
     const workspace = makeTempWorkspace();
     const externalDesignDir = makeTempWorkspace();
@@ -225,7 +243,7 @@ describe("start-project", () => {
 
     const harness = createHarness(workspace);
 
-    const code = await harness.startProject({ description: "Use configured external design/current" });
+    const code = await harness.startProject({ dir: workspace });
 
     expect(code).toBe(EXIT_CODE_SUCCESS);
     expect(fs.existsSync(path.join(externalDesignDir, "Target.md"))).toBe(false);

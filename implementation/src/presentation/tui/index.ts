@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { Command, InvalidArgumentError } from "commander";
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   createContinueSceneState,
@@ -1124,7 +1125,17 @@ export async function runRootTui(
   });
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+function isStandaloneTuiEntrypoint(entrypointPath: string | undefined): boolean {
+  if (!entrypointPath) {
+    return false;
+  }
+
+  const normalizedPath = path.normalize(entrypointPath).replace(/\\/g, "/").toLowerCase();
+  return normalizedPath.endsWith("/presentation/tui/index.js")
+    || normalizedPath.endsWith("/src/presentation/tui/index.ts");
+}
+
+if (isStandaloneTuiEntrypoint(process.argv[1]) && process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   void runRootTui().then((exitCode) => {
     process.exit(exitCode);
   });

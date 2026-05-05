@@ -44,7 +44,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Linked target",
       "--dir",
       projectDirName,
     ], workspace);
@@ -93,7 +92,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Linked target",
       "--dir",
       projectDirName,
     ], workspace);
@@ -151,7 +149,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Test prediction project",
       "--dir",
       projectDirName,
       "--",
@@ -241,7 +238,8 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "In place project",
+      "--dir",
+      ".",
       "--",
       "node",
       "-e",
@@ -298,7 +296,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Absolute design dir",
       "--design-dir",
       path.join(workspace, "outside-design"),
     ], workspace);
@@ -314,7 +311,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Invalid placement",
       "--design-placement",
       "source",
     ], workspace);
@@ -330,7 +326,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Traversal design dir",
       "--design-dir",
       "../outside",
     ], workspace);
@@ -346,7 +341,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Duplicate dirs",
       "--design-dir",
       "work",
       "--specs-dir",
@@ -364,7 +358,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Nested dirs",
       "--design-dir",
       "workspace/design",
       "--specs-dir",
@@ -387,7 +380,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Custom directory layout",
       "--dir",
       "custom-layout",
       "--design-dir",
@@ -439,7 +431,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Custom placement layout",
       "--dir",
       "custom-placement",
       "--design-placement",
@@ -489,7 +480,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Mounted workspace",
       "--dir",
       projectDirName,
       "--mount",
@@ -528,7 +518,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Adopt implementation directory",
       "--dir",
       "../implementation-control",
       "--mount",
@@ -569,7 +558,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Adopt specs directory",
       "--dir",
       "../specs-control",
       "--mount",
@@ -610,7 +598,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Nested implementation mount",
       "--dir",
       controlDirName,
       "--mount",
@@ -652,7 +639,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Mounted discoverability",
       "--dir",
       "../control",
       "--mount",
@@ -708,7 +694,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Bare mounted control",
       "--dir",
       controlDirName,
       "--mount",
@@ -747,7 +732,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Mixed mounted control",
       "--dir",
       controlDirName,
       "--mount",
@@ -856,7 +840,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Malformed mount",
       "--mount",
       "implementation",
     ], workspace);
@@ -885,12 +868,41 @@ describeIfStartAvailable("start-project integration", () => {
     expect(stderr).toContain(path.normalize(designFilePath));
   });
 
+  it("creates both positional directories when design-dir and workdir do not exist", async () => {
+    const workspace = makeTempWorkspace();
+    const invocationDir = path.join(workspace, "invocation");
+    const missingDesignDir = path.join(invocationDir, "new-design");
+    const controlDir = path.join(workspace, "control");
+
+    fs.mkdirSync(invocationDir, { recursive: true });
+
+    execFileSync("git", ["init"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "test@rundown.dev"], { cwd: workspace, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "rundown test"], { cwd: workspace, stdio: "ignore" });
+
+    const result = await runCli([
+      "start",
+      "./new-design",
+      "../control",
+    ], invocationDir);
+
+    expect(result.code).toBe(0);
+    expect(fs.existsSync(missingDesignDir)).toBe(true);
+    expect(fs.statSync(missingDesignDir).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(missingDesignDir, "Target.md"))).toBe(false);
+    expect(fs.existsSync(path.join(controlDir, ".rundown", "config.json"))).toBe(true);
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(controlDir, ".rundown", "config.json"), "utf-8"),
+    ) as { workspace?: { design?: { currentPath?: string } } };
+    expect(path.normalize(config.workspace?.design?.currentPath ?? "")).toBe(path.normalize(missingDesignDir));
+  });
+
   it("fails when --mount reuses the same logical path", async () => {
     const workspace = makeTempWorkspace();
 
     const result = await runCli([
       "start",
-      "Duplicate mount",
       "--mount",
       "implementation=.",
       "--mount",
@@ -908,7 +920,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Normalized duplicate mounts",
       "--mount",
       "implementation=.",
       "--mount",
@@ -926,7 +937,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Invalid logical mount",
       "--mount",
       "../implementation=.",
     ], workspace);
@@ -942,7 +952,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Conflicting flags",
       "--mount",
       "implementation=.",
       "--design-dir",
@@ -960,7 +969,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Conflicting external design",
       "--mount",
       "implementation=.",
       "--from-design",
@@ -1008,7 +1016,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Existing directory start",
       "--dir",
       projectDirName,
       "--",
@@ -1042,7 +1049,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Empty directory start",
       "--dir",
       projectDirName,
     ], workspace);
@@ -1074,13 +1080,11 @@ describeIfStartAvailable("start-project integration", () => {
 
     const emptyResult = await runCli([
       "start",
-      "Empty baseline",
       "--dir",
       emptyProjectDirName,
     ], workspace);
     const nonEmptyResult = await runCli([
       "start",
-      "Existing baseline",
       "--dir",
       nonEmptyProjectDirName,
     ], workspace);
@@ -1112,7 +1116,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const firstRun = await runCli([
       "start",
-      "Re-run target",
       "--dir",
       projectDirName,
     ], workspace);
@@ -1124,7 +1127,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const secondRun = await runCli([
       "start",
-      "Re-run target",
       "--dir",
       projectDirName,
     ], workspace);
@@ -1144,7 +1146,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const firstRun = await runCli([
       "start",
-      "Re-run implementation",
       "--dir",
       projectDirName,
     ], workspace);
@@ -1156,7 +1157,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const secondRun = await runCli([
       "start",
-      "Re-run implementation",
       "--dir",
       projectDirName,
     ], workspace);
@@ -1182,7 +1182,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const firstRun = await runCli([
       "start",
-      "Mounted rerun",
       "--dir",
       "../mounted-control-rerun",
       "--mount",
@@ -1192,7 +1191,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const secondRun = await runCli([
       "start",
-      "Mounted rerun",
       "--dir",
       "../mounted-control-rerun",
       "--mount",
@@ -1252,7 +1250,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Existing directory start",
       "--dir",
       projectDirName,
       "--design-dir",
@@ -1304,7 +1301,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Existing directory with custom layout",
       "--dir",
       projectDirName,
       "--design-dir",
@@ -1358,7 +1354,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Audit existing notes",
       "--dir",
       projectDirName,
       "--from-design",
@@ -1406,7 +1401,8 @@ describeIfStartAvailable("start-project integration", () => {
 
     const result = await runCli([
       "start",
-      "Configured external design",
+      "--dir",
+      ".",
     ], workspace);
 
     expect(result.code).toBe(0);
@@ -1429,7 +1425,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const initialResult = await runCli([
       "start",
-      "Seed external design config",
       "--dir",
       projectDirName,
       "--from-design",
@@ -1439,7 +1434,6 @@ describeIfStartAvailable("start-project integration", () => {
 
     const rerunResult = await runCli([
       "start",
-      "Reuse external design config",
       "--dir",
       projectDirName,
     ], workspace);

@@ -1453,21 +1453,21 @@ export function createStartCommandAction({
   getApp,
   getWorkerFromSeparator,
 }: Pick<WorkerActionDependencies, "getApp" | "getWorkerFromSeparator">): (
-  designDirOrLegacyDescription: string | undefined,
+  designDir: string | undefined,
   workdirOrOpts: string | CliOpts | undefined,
   maybeOpts?: CliOpts,
 ) => CliActionResult {
   return (
-    designDirOrLegacyDescription: string | undefined,
+    designDir: string | undefined,
     workdirOrOpts: string | CliOpts | undefined,
     maybeOpts?: CliOpts,
   ) => {
     const opts: CliOpts = (typeof workdirOrOpts === "object" && workdirOrOpts !== null)
       ? workdirOrOpts
       : maybeOpts ?? {};
-    const positionalDesignDir = designDirOrLegacyDescription;
+    const positionalDesignDir = normalizeOptionalString(designDir);
     const positionalWorkdir = typeof workdirOrOpts === "string"
-      ? workdirOrOpts
+      ? normalizeOptionalString(workdirOrOpts)
       : undefined;
     const mountOption = opts.mount;
     const mounts = Array.isArray(mountOption)
@@ -1475,10 +1475,15 @@ export function createStartCommandAction({
       : typeof mountOption === "string"
         ? [mountOption]
         : [];
-    const resolvedFromDesign = normalizeOptionalString(opts.fromDesign)
-      ?? normalizeOptionalString(positionalDesignDir);
-    const resolvedWorkspaceDir = normalizeOptionalString(opts.dir)
-      ?? normalizeOptionalString(positionalWorkdir);
+    let resolvedFromDesign = normalizeOptionalString(opts.fromDesign);
+    let resolvedWorkspaceDir = normalizeOptionalString(opts.dir);
+
+    if (positionalWorkdir && !resolvedWorkspaceDir) {
+      resolvedWorkspaceDir = positionalWorkdir;
+    }
+    if (positionalDesignDir && !resolvedFromDesign) {
+      resolvedFromDesign = positionalDesignDir;
+    }
     const migrateWorkerPattern = resolveWorkerPattern(opts.worker, getWorkerFromSeparator);
     const keepArtifacts = Boolean(opts.keepArtifacts as boolean | undefined);
     const showAgentOutput = resolveShowAgentOutputOption(opts);

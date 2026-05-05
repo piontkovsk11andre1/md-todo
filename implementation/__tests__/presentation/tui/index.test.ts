@@ -79,7 +79,6 @@ describe("tui index module", () => {
     });
 
     expect(app.startProject).toHaveBeenCalledWith({
-      description: "Initialize workspace",
       designDir: DEFAULT_WORKSPACE_DIRECTORIES.design,
       specsDir: DEFAULT_WORKSPACE_DIRECTORIES.specs,
       migrationsDir: DEFAULT_WORKSPACE_DIRECTORIES.migrations,
@@ -89,7 +88,7 @@ describe("tui index module", () => {
     });
     expect(state.mainMenuState.variant).toBe("initialized");
     expect(state.rootWorkspaceState.isEmptyBootstrap).toBe(false);
-    expect(state.mainMenuHint).toBe("Project initialized.");
+    expect(state.mainMenuHint).toBe("Workspace initialized.");
     expect(refreshStatuses).toHaveBeenCalledTimes(1);
   });
 

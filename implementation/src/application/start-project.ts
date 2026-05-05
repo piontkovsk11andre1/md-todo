@@ -544,7 +544,10 @@ function isDirectoryNonEmpty(fileSystem: FileSystem, directoryPath: string): boo
     return false;
   }
 
-  return fileSystem.readdir(directoryPath).length > 0;
+  const ignorableBootstrapEntries = new Set([".git", ".rundown"]);
+  return fileSystem
+    .readdir(directoryPath)
+    .some((entryName) => !ignorableBootstrapEntries.has(entryName));
 }
 
 function resolveAndValidateWorkspaceDirectories(input: {
@@ -705,9 +708,8 @@ function resolveAndValidateFromDesign(input: {
     : pathOperations.resolve(invocationDirectory, trimmed);
 
   if (!fileSystem.exists(resolved)) {
-    throw new Error(
-      `Invalid --from-design value: directory does not exist: ${resolved}.`,
-    );
+    fileSystem.mkdir(resolved, { recursive: true });
+    return resolved;
   }
   const resolvedStat = fileSystem.stat(resolved);
   if (resolvedStat?.isDirectory !== true) {
