@@ -547,7 +547,7 @@ function isDirectoryNonEmpty(fileSystem: FileSystem, directoryPath: string): boo
   const ignorableBootstrapEntries = new Set([".git", ".rundown"]);
   return fileSystem
     .readdir(directoryPath)
-    .some((entryName) => !ignorableBootstrapEntries.has(entryName));
+      .some((entry) => !ignorableBootstrapEntries.has(entry.name));
 }
 
 function resolveAndValidateWorkspaceDirectories(input: {
