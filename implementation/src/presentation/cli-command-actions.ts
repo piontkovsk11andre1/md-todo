@@ -677,37 +677,33 @@ export function createMaterializeCommandAction({
   runnerModes,
   getInvocationArgv,
 }: MaterializeActionDependencies): (source: string, opts: CliOpts) => CliActionResult {
-  const getMaterializeInvocationArgv = () => {
-    const invocationArgv = resolveInvocationArgv(getInvocationArgv);
-    if (hasCliOption(invocationArgv, "--revertable")) {
-      return invocationArgv;
-    }
-
-    const separatorIndex = invocationArgv.indexOf("--");
-    if (separatorIndex === -1) {
-      return [...invocationArgv, "--revertable"];
-    }
-
-    return [
-      ...invocationArgv.slice(0, separatorIndex),
-      "--revertable",
-      ...invocationArgv.slice(separatorIndex),
-    ];
-  };
-
   const runAction = createRunCommandAction({
     getApp,
     getWorkerFromSeparator,
     runnerModes,
-    getInvocationArgv: getMaterializeInvocationArgv,
+    getInvocationArgv,
   });
 
-  return (source: string, opts: CliOpts) => runAction(source, {
-    ...opts,
-    commandName: "materialize",
-    all: true,
-    revertable: true,
-  });
+  return async (source: string, opts: CliOpts) => {
+    const runExitCode = await runAction(source, {
+      ...opts,
+      commandName: "materialize",
+      all: true,
+    });
+
+    if (runExitCode !== EXIT_CODE_SUCCESS) {
+      return runExitCode;
+    }
+
+    const snapshotExitCode = await resolveSnapshotCommandHandler(getApp())({
+      workspace: normalizeOptionalString(opts.workspace),
+    });
+    if (snapshotExitCode === EXIT_CODE_SUCCESS || snapshotExitCode === EXIT_CODE_NO_WORK) {
+      return EXIT_CODE_SUCCESS;
+    }
+
+    return snapshotExitCode;
+  };
 }
 
 /**
