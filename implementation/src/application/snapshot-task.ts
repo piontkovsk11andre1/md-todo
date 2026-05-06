@@ -124,6 +124,16 @@ export function createSnapshotTask(
       return EXIT_CODE_FAILURE;
     }
 
+    const hasAnyCompletedBoundary = allLaneBoundaries
+      .some((lane) => lane.highestCompletedMigrationNumber !== null);
+    if (!hasAnyCompletedBoundary) {
+      emit({
+        kind: "error",
+        message: "Cannot create implementation snapshot because no completed migration boundary exists.",
+      });
+      return EXIT_CODE_FAILURE;
+    }
+
     const writeTargets = resolveSnapshotWriteTargets({
       fileSystem: dependencies.fileSystem,
       workspaceRoot,
@@ -134,10 +144,10 @@ export function createSnapshotTask(
 
     if (writeTargets.length === 0) {
       emit({
-        kind: "info",
-        message: "No eligible completed migration boundary found for implementation snapshots.",
+        kind: "error",
+        message: "Cannot create implementation snapshot because no completed migration boundary exists.",
       });
-      return EXIT_CODE_NO_WORK;
+      return EXIT_CODE_FAILURE;
     }
 
     let createdSnapshotCount = 0;

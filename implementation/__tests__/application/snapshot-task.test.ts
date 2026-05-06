@@ -162,6 +162,33 @@ describe("snapshot-task", () => {
     }
   });
 
+  it("fails when no completed migration boundary exists in any lane", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    const implementationDir = path.join(workspace, "implementation");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.mkdirSync(implementationDir, { recursive: true });
+
+    const events: ApplicationOutputEvent[] = [];
+    const snapshotTask = createSnapshotTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: (event) => events.push(event) },
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await snapshotTask({});
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(fs.existsSync(path.join(implementationDir, "snapshots"))).toBe(false);
+      expect(events.some((event) => {
+        return event.kind === "error" && event.message.includes("no completed migration boundary exists");
+      })).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("does not recurse into implementation/snapshots while copying", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
