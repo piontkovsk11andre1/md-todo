@@ -711,6 +711,19 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("Run all tasks with revertable defaults (equivalent to `run --all --revertable`).");
   });
 
+  it("registers snapshot in root help with implementation-boundary description", async () => {
+    const runTask = vi.fn(async () => 0);
+    const result = await invokeRunAndCaptureHelpOutput([
+      "--help",
+    ], runTask);
+
+    expect(runTask).not.toHaveBeenCalled();
+
+    const compactHelpOutput = stripAnsi(result.output).replace(/\s+/g, " ");
+    expect(compactHelpOutput).toContain("snapshot [options]");
+    expect(compactHelpOutput).toContain("Save implementation snapshots at completed migration boundaries.");
+  });
+
   it("registers start in root help with path-first onboarding", async () => {
     const runTask = vi.fn(async () => 0);
     const result = await invokeRunAndCaptureHelpOutput([
@@ -912,6 +925,19 @@ describe("CLI run option normalization", () => {
     expect(compactHelpOutput).toContain("--mode <mode> Runner execution mode: wait, tui, detached");
     expect(compactHelpOutput).toContain("--worker <pattern> Optional worker pattern override (alternative to -- <command>)");
     expect(compactHelpOutput).toContain("--revertable Shorthand for --commit --keep-artifacts");
+  });
+
+  it("passes snapshot options through to snapshotTask", async () => {
+    const snapshotTask = vi.fn(async () => 0);
+    const call = await invokeSnapshotAndCaptureCall([
+      "snapshot",
+      "--workspace",
+      "./workspace-link",
+    ], snapshotTask);
+
+    expect(call).toEqual({
+      workspace: "./workspace-link",
+    });
   });
 
   it("shows skip-research make options in help text", async () => {
@@ -6297,6 +6323,42 @@ async function invokeWorkspaceRemoveAndCaptureCall(
 
   expect(workspaceRemoveTask).toHaveBeenCalledTimes(1);
   return workspaceRemoveTask.mock.calls[0][0] as RunTaskCall;
+}
+
+async function invokeSnapshotAndCaptureCall(args: string[], snapshotTask: ReturnType<typeof vi.fn>): Promise<RunTaskCall> {
+  const previousEnv = captureEnv();
+
+  process.env.RUNDOWN_DISABLE_AUTO_PARSE = "1";
+  process.env.RUNDOWN_TEST_MODE = "1";
+
+  vi.doMock("../../src/create-app.js", () => ({
+    createApp: () => ({
+      runTask: vi.fn(async () => 0),
+      reverifyTask: vi.fn(async () => 0),
+      revertTask: vi.fn(async () => 0),
+      nextTask: vi.fn(async () => 0),
+      listTasks: vi.fn(async () => 0),
+      planTask: vi.fn(async () => 0),
+      snapshotTask,
+      initProject: vi.fn(async () => 0),
+      manageArtifacts: vi.fn(() => 0),
+    }),
+  }));
+
+  try {
+    const { parseCliArgs } = await import("../../src/presentation/cli.js");
+    await parseCliArgs(normalizeLegacyWorkerPatternArgs(args));
+  } catch (error) {
+    const message = String(error);
+    if (!/CLI exited with code \d+/.test(message)) {
+      throw error;
+    }
+  } finally {
+    restoreEnv(previousEnv);
+  }
+
+  expect(snapshotTask).toHaveBeenCalledTimes(1);
+  return snapshotTask.mock.calls[0][0] as RunTaskCall;
 }
 
 function normalizeLegacyWorkerPatternArgs(args: string[]): string[] {

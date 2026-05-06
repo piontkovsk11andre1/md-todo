@@ -21,6 +21,7 @@ import {
   createMakeCommandAction,
   createPlanCommandAction,
   createPredictCommandAction,
+  createSnapshotCommandAction,
   createQueryCommandAction,
   createRootTuiAction,
   createTranslateCommandAction,
@@ -2883,6 +2884,26 @@ describe("createPredictCommandAction", () => {
         usesFile: false,
         appendFile: true,
       },
+    });
+  });
+});
+
+describe("createSnapshotCommandAction", () => {
+  it("routes snapshot command options to snapshotTask", async () => {
+    const snapshotTask = vi.fn(async () => 0);
+    const app = { snapshotTask } as unknown as CliApp;
+    const action = createSnapshotCommandAction({
+      getApp: () => app,
+    });
+
+    const exitCode = await action({
+      workspace: "./workspace-link",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(snapshotTask).toHaveBeenCalledTimes(1);
+    expect(snapshotTask).toHaveBeenCalledWith({
+      workspace: "./workspace-link",
     });
   });
 });
