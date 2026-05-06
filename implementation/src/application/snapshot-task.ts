@@ -29,7 +29,7 @@ export interface SnapshotTaskDependencies {
   output: ApplicationOutputPort;
 }
 
-interface SnapshotLaneBoundary {
+export interface SnapshotLaneBoundary {
   laneLabel: string;
   laneKind: "root" | "thread";
   threadSlug?: string;
@@ -38,12 +38,23 @@ interface SnapshotLaneBoundary {
   betweenMigrations: boolean;
 }
 
-interface SnapshotWriteTarget {
+export interface SnapshotWriteTarget {
   laneLabel: string;
   laneKind: "root" | "thread";
   threadSlug?: string;
   migrationNumber: number;
   snapshotPath: string;
+}
+
+export interface SnapshotHistoryTarget extends SnapshotWriteTarget {
+  snapshotExists: boolean;
+}
+
+export interface ImplementationSnapshotHistoryState {
+  laneBoundaries: SnapshotLaneBoundary[];
+  betweenMigrationLaneLabels: string[];
+  hasAnyCompletedBoundary: boolean;
+  snapshotTargets: SnapshotHistoryTarget[];
 }
 
 export function createSnapshotTask(
@@ -70,11 +81,6 @@ export function createSnapshotTask(
       workspaceRoot,
       invocationRoot,
     });
-    const archivePaths = resolveArchiveWorkspacePaths({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-      invocationRoot,
-    });
 
     const implementationRootPath = workspacePaths.implementation;
     const implementationRootStat = dependencies.fileSystem.stat(implementationRootPath);
@@ -86,47 +92,23 @@ export function createSnapshotTask(
       return EXIT_CODE_FAILURE;
     }
 
-    const rootLaneBoundary = resolveLaneSnapshotBoundary({
+    const snapshotHistory = resolveImplementationSnapshotHistoryState({
       fileSystem: dependencies.fileSystem,
-      laneLabel: "root",
-      migrationsDir: workspacePaths.migrations,
-      archivedMigrationsDir: archivePaths.migrationRootLane,
+      workspaceRoot,
+      invocationRoot,
     });
 
-    const discoveredThreads = discoverMigrationThreads(dependencies.fileSystem, workspaceRoot);
-    const loadedThreadStates = loadMigrationThreadStates({
-      fileSystem: dependencies.fileSystem,
-      migrationsDir: workspacePaths.migrations,
-      archivedThreadsDir: archivePaths.migrationThreads,
-      threads: discoveredThreads,
-    });
-    const threadLaneBoundaries = loadedThreadStates.map((threadState) => {
-      const threadLabel = `thread ${threadState.thread.threadSlug}`;
-      return resolveLaneSnapshotBoundary({
-        fileSystem: dependencies.fileSystem,
-        laneLabel: threadLabel,
-        migrationsDir: threadState.migrationsDir,
-        archivedMigrationsDir: threadState.archivedMigrationsDir,
-        laneKind: "thread",
-        threadSlug: threadState.thread.threadSlug,
-      });
-    });
-
-    const allLaneBoundaries = [rootLaneBoundary, ...threadLaneBoundaries];
-    const betweenMigrationLanes = allLaneBoundaries.filter((lane) => lane.betweenMigrations);
-    if (betweenMigrationLanes.length > 0) {
+    if (snapshotHistory.betweenMigrationLaneLabels.length > 0) {
       emit({
         kind: "error",
         message: "Cannot create implementation snapshot between migration boundaries. Incomplete latest migration batch in: "
-          + betweenMigrationLanes.map((lane) => lane.laneLabel).join(", ")
+          + snapshotHistory.betweenMigrationLaneLabels.join(", ")
           + ".",
       });
       return EXIT_CODE_FAILURE;
     }
 
-    const hasAnyCompletedBoundary = allLaneBoundaries
-      .some((lane) => lane.highestCompletedMigrationNumber !== null);
-    if (!hasAnyCompletedBoundary) {
+    if (!snapshotHistory.hasAnyCompletedBoundary) {
       emit({
         kind: "error",
         message: "Cannot create implementation snapshot because no completed migration boundary exists.",
@@ -134,13 +116,7 @@ export function createSnapshotTask(
       return EXIT_CODE_FAILURE;
     }
 
-    const writeTargets = resolveSnapshotWriteTargets({
-      fileSystem: dependencies.fileSystem,
-      workspaceRoot,
-      invocationRoot,
-      rootLaneBoundary,
-      threadLaneBoundaries,
-    });
+    const writeTargets = snapshotHistory.snapshotTargets;
 
     if (writeTargets.length === 0) {
       emit({
@@ -201,6 +177,73 @@ export function createSnapshotTask(
     }
 
     return EXIT_CODE_SUCCESS;
+  };
+}
+
+export function resolveImplementationSnapshotHistoryState(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+}): ImplementationSnapshotHistoryState {
+  const workspacePaths = resolveWorkspacePaths({
+    fileSystem: input.fileSystem,
+    workspaceRoot: input.workspaceRoot,
+    invocationRoot: input.invocationRoot,
+  });
+  const archivePaths = resolveArchiveWorkspacePaths({
+    fileSystem: input.fileSystem,
+    workspaceRoot: input.workspaceRoot,
+    invocationRoot: input.invocationRoot,
+  });
+
+  const rootLaneBoundary = resolveLaneSnapshotBoundary({
+    fileSystem: input.fileSystem,
+    laneLabel: "root",
+    migrationsDir: workspacePaths.migrations,
+    archivedMigrationsDir: archivePaths.migrationRootLane,
+  });
+
+  const discoveredThreads = discoverMigrationThreads(input.fileSystem, input.workspaceRoot);
+  const loadedThreadStates = loadMigrationThreadStates({
+    fileSystem: input.fileSystem,
+    migrationsDir: workspacePaths.migrations,
+    archivedThreadsDir: archivePaths.migrationThreads,
+    threads: discoveredThreads,
+  });
+  const threadLaneBoundaries = loadedThreadStates.map((threadState) => {
+    const threadLabel = `thread ${threadState.thread.threadSlug}`;
+    return resolveLaneSnapshotBoundary({
+      fileSystem: input.fileSystem,
+      laneLabel: threadLabel,
+      migrationsDir: threadState.migrationsDir,
+      archivedMigrationsDir: threadState.archivedMigrationsDir,
+      laneKind: "thread",
+      threadSlug: threadState.thread.threadSlug,
+    });
+  });
+
+  const laneBoundaries = [rootLaneBoundary, ...threadLaneBoundaries];
+  const betweenMigrationLaneLabels = laneBoundaries
+    .filter((lane) => lane.betweenMigrations)
+    .map((lane) => lane.laneLabel);
+  const hasAnyCompletedBoundary = laneBoundaries
+    .some((lane) => lane.highestCompletedMigrationNumber !== null);
+  const snapshotTargets = resolveSnapshotWriteTargets({
+    fileSystem: input.fileSystem,
+    workspaceRoot: input.workspaceRoot,
+    invocationRoot: input.invocationRoot,
+    rootLaneBoundary,
+    threadLaneBoundaries,
+  }).map((target) => ({
+    ...target,
+    snapshotExists: input.fileSystem.exists(target.snapshotPath),
+  }));
+
+  return {
+    laneBoundaries,
+    betweenMigrationLaneLabels,
+    hasAnyCompletedBoundary,
+    snapshotTargets,
   };
 }
 

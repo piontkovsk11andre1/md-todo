@@ -1734,6 +1734,7 @@ describe("createMaterializeCommandAction", () => {
     const materializeRequest = runViaMaterializeTask.mock.calls[0][0];
 
     expect(materializeRequest).toEqual(expect.objectContaining({
+      commandName: "materialize",
       runAll: runRequest.runAll,
       commitAfterComplete: runRequest.commitAfterComplete,
       keepArtifacts: runRequest.keepArtifacts,
@@ -1761,6 +1762,7 @@ describe("createMaterializeCommandAction", () => {
     expect(exitCode).toBe(0);
     expect(runTask).toHaveBeenCalledTimes(1);
     expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+      commandName: "materialize",
       source: "tasks.md",
       runAll: true,
       keepArtifacts: true,
@@ -1803,6 +1805,7 @@ describe("createMaterializeCommandAction", () => {
       expect(exitCode).toBe(0);
       expect(runTask).toHaveBeenCalledTimes(1);
       expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        commandName: "materialize",
         source: "tasks.md",
         runAll: true,
         keepArtifacts: true,
@@ -1857,6 +1860,7 @@ describe("createMaterializeCommandAction", () => {
       expect(exitCode).toBe(0);
       expect(runTask).toHaveBeenCalledTimes(1);
       expect(runTask).toHaveBeenCalledWith(expect.objectContaining({
+        commandName: "materialize",
         source: "tasks.md",
         runAll: true,
         keepArtifacts: true,

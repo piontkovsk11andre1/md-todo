@@ -233,6 +233,7 @@ interface IterationVerifyConfig {
 }
 
 interface IterationCompletionConfig {
+  commandName: "run" | "materialize";
   effectiveRunAll: boolean;
   commitAfterComplete: boolean;
   deferCommitUntilPostRun: boolean;
@@ -659,7 +660,7 @@ export async function runTaskIteration(params: {
     state.artifactContext = dependencies.artifactStore.createContext({
       cwd: prompts.cwd,
       configDir: dependencies.configDir?.configDir,
-      commandName: "run",
+      commandName: completion.commandName,
       workerCommand: onlyVerify ? automationCommand : resolvedWorkerCommand,
       mode: execution.mode,
       transport: "pattern",

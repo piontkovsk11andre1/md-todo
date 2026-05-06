@@ -1436,6 +1436,101 @@ describe("run-task orchestration", () => {
     expect(commitOrder).toBeGreaterThan(lastWorkerOrder as number);
   });
 
+  it("records implementation snapshot history metadata for completed materialize runs", async () => {
+    const cwd = "/workspace";
+    const taskFile = path.join(cwd, "tasks.md");
+    const migrationFile = path.join(cwd, "migrations", "1. Feature.md");
+    const implementationFile = path.join(cwd, "implementation", "app.txt");
+    const rootSnapshotPath = path.join(cwd, "implementation", "snapshots", "root", "1");
+    const { dependencies } = createDependencies({
+      cwd,
+      task: createTask(taskFile, "build release"),
+      fileSystem: createInMemoryFileSystem({
+        [taskFile]: "- [ ] build release\n",
+        [migrationFile]: "- [x] completed migration\n",
+        [implementationFile]: "hello\n",
+      }),
+      gitClient: createGitClientMock(),
+    });
+
+    dependencies.sourceResolver.resolveSources = vi.fn(async () => [taskFile]);
+    dependencies.fileSystem.stat = vi.fn((targetPath: string) => {
+      if (targetPath === path.join(cwd, "implementation")
+        || targetPath === path.join(cwd, "migrations")) {
+        return {
+          isFile: false,
+          isDirectory: true,
+          size: 0,
+          mtimeMs: 0,
+        };
+      }
+
+      if (targetPath === migrationFile || targetPath === implementationFile) {
+        return {
+          isFile: true,
+          isDirectory: false,
+          size: 0,
+          mtimeMs: 0,
+        };
+      }
+
+      return null;
+    });
+    dependencies.fileSystem.readdir = vi.fn((targetPath: string) => {
+      if (targetPath === path.join(cwd, "migrations")) {
+        return [{ name: "1. Feature.md", isFile: true, isDirectory: false }];
+      }
+
+      if (targetPath === path.join(cwd, "migrations", "archive", "root")
+        || targetPath === path.join(cwd, "migrations", "archive", "threads")
+        || targetPath === path.join(cwd, "migrations", "threads")) {
+        return [];
+      }
+
+      return [];
+    });
+    dependencies.fileSystem.exists = vi.fn((targetPath: string) => {
+      if (targetPath === rootSnapshotPath) {
+        return true;
+      }
+
+      return targetPath === taskFile
+        || targetPath === migrationFile
+        || targetPath === implementationFile
+        || targetPath === path.join(cwd, "implementation")
+        || targetPath === path.join(cwd, "migrations");
+    });
+
+    const code = await createRunTask(dependencies)(
+      createOptions({
+        commandName: "materialize",
+        verify: false,
+        keepArtifacts: true,
+      }),
+    );
+
+    expect(code).toBe(0);
+    expect(dependencies.artifactStore.finalize).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        status: "completed",
+        extra: expect.objectContaining({
+          implementationSnapshotTargets: expect.any(Array),
+          implementationSnapshotMissingLanes: expect.any(Array),
+          implementationSnapshotBetweenMigrations: expect.any(Array),
+          implementationSnapshotHasCompletedBoundary: expect.any(Boolean),
+        }),
+      }),
+    );
+
+    const finalizeCalls = vi.mocked(dependencies.artifactStore.finalize).mock.calls;
+    const finalizeExtra = finalizeCalls[0]?.[1].extra as Record<string, unknown>;
+    expect(Object.hasOwn(finalizeExtra, "implementationSnapshotTargets")).toBe(true);
+    expect(Object.hasOwn(finalizeExtra, "implementationSnapshotMissingLanes")).toBe(true);
+    expect(Object.hasOwn(finalizeExtra, "implementationSnapshotBetweenMigrations")).toBe(true);
+    expect(Object.hasOwn(finalizeExtra, "implementationSnapshotHasCompletedBoundary")).toBe(true);
+  });
+
   it("fails run when deferred file-done commit fails", async () => {
     const cwd = "/workspace";
     const taskFile = path.join(cwd, "tasks.md");

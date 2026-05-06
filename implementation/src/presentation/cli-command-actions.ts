@@ -181,6 +181,10 @@ function hasShortCliFlag(argv: string[], shortFlag: string): boolean {
   return false;
 }
 
+function resolveRunCommandNameOption(value: string | string[] | boolean | undefined): "run" | "materialize" {
+  return value === "materialize" ? "materialize" : "run";
+}
+
 function hasRootContinueFlag(argv: string[]): boolean {
   return hasCliOption(argv, "--continue") || hasCliFlag(argv, "-c") || hasShortCliFlag(argv, "c");
 }
@@ -592,6 +596,7 @@ export function createRunCommandAction({
 
     // Pass a normalized set of options to the domain application layer.
     return getApp().runTask({
+      commandName: resolveRunCommandNameOption(opts.commandName),
       source,
       ...workerWorkspaceRuntimeOptions,
       autoCompact: resolveAutoCompactCliOptions(opts, getInvocationArgv),
@@ -699,6 +704,7 @@ export function createMaterializeCommandAction({
 
   return (source: string, opts: CliOpts) => runAction(source, {
     ...opts,
+    commandName: "materialize",
     all: true,
     revertable: true,
   });

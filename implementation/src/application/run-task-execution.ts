@@ -36,6 +36,7 @@ import { applyTraceStatisticsDefaults } from "../domain/worker-config.js";
 import type { WorkerHealthPolicyConfig } from "../domain/worker-config.js";
 import { createCachedCommandExecutor } from "./cached-command-executor.js";
 import { msg, type LocaleMessages } from "../domain/locale.js";
+import { resolveImplementationSnapshotHistoryState } from "./snapshot-task.js";
 import {
   resolvePredictionWorkspacePaths,
   resolveWorkspaceDirectories,
@@ -576,6 +577,7 @@ export interface RunTaskDependencies {
  * Runtime options accepted by the `run` command entry point.
  */
 export interface RunTaskOptions {
+  commandName?: "run" | "materialize";
   source: string;
   cwd?: string;
   invocationDir?: string;
@@ -645,6 +647,7 @@ export function createRunTaskExecution(
 
   return async function runTask(options: RunTaskOptions): Promise<number> {
     const {
+      commandName = "run",
       source,
       mode,
       workerPattern,
@@ -937,15 +940,24 @@ export function createRunTaskExecution(
           failureExitCode: failure.exitCode,
         }
         : undefined;
+      const materializeSnapshotExtra = status === "completed" && commandName === "materialize"
+        ? resolveMaterializeSnapshotHistoryExtra({
+          fileSystem: dependencies.fileSystem,
+          workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+          invocationRoot: runtimeWorkspaceContext.invocationDir,
+        })
+        : undefined;
       const finalExtra = extra
         ? {
           ...extra,
           ...roundMetadata,
           ...(failureMetadata ?? {}),
+          ...(materializeSnapshotExtra ?? {}),
         }
         : {
           ...roundMetadata,
           ...(failureMetadata ?? {}),
+          ...(materializeSnapshotExtra ?? {}),
         };
       traceRunSession.emitRoundCompleted(currentRound, rounds);
       traceRunSession.emitTaskOutcome(status, failure);
@@ -1492,6 +1504,7 @@ export function createRunTaskExecution(
                   allowRepair,
                 },
                 completion: {
+                  commandName,
                   effectiveRunAll,
                   commitAfterComplete: suppressPerChildCommit ? false : commitAfterComplete,
                   deferCommitUntilPostRun,
@@ -1956,5 +1969,34 @@ export function createRunTaskExecution(
       // Flush any buffered trace output as the final shutdown step.
       state.traceWriter.flush();
     }
+  };
+}
+
+function resolveMaterializeSnapshotHistoryExtra(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot: string;
+}): Record<string, unknown> {
+  const snapshotHistory = resolveImplementationSnapshotHistoryState({
+    fileSystem: input.fileSystem,
+    workspaceRoot: input.workspaceRoot,
+    invocationRoot: input.invocationRoot,
+  });
+  const implementationSnapshotTargets = snapshotHistory.snapshotTargets
+    .filter((target) => target.snapshotExists)
+    .map((target) => ({
+      laneKind: target.laneKind,
+      ...(target.threadSlug ? { threadSlug: target.threadSlug } : {}),
+      migrationNumber: target.migrationNumber,
+      snapshotPath: target.snapshotPath,
+    }));
+
+  return {
+    implementationSnapshotTargets,
+    implementationSnapshotMissingLanes: snapshotHistory.snapshotTargets
+      .filter((target) => !target.snapshotExists)
+      .map((target) => target.laneLabel),
+    implementationSnapshotBetweenMigrations: snapshotHistory.betweenMigrationLaneLabels,
+    implementationSnapshotHasCompletedBoundary: snapshotHistory.hasAnyCompletedBoundary,
   };
 }
