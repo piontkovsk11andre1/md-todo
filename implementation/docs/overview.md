@@ -28,6 +28,8 @@ In addition to execute/verify task running, rundown supports a prediction-orient
 - Compatibility fallback remains additive for older projects: legacy `design/rev.*/`, `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
 - `migrate` always routes through the same revision-aware/thread-aware migration drafting pipeline and writes migration history in `migrations/`.
 - `predict` applies migration files into `prediction/latest/` incrementally and writes full-tree lane snapshots under `prediction/snapshots/root/<N>/` and `prediction/snapshots/threads/<thread>/<N>/` after successful lane-boundary passes.
+- `snapshot` records implementation history directly from the live `implementation/` tree into `implementation/snapshots/root/<N>/` and `implementation/snapshots/threads/<thread>/<N>/`, where `N` is inferred from each lane's highest fully completed migration batch.
+- `snapshot` is boundary-gated: it fails explicitly (without writing snapshots) when any lane is between migrations, and it treats existing lane/number snapshots as already-recorded history rather than overwrite targets.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test now` verifies assertion specs against current implementation/materialized state.
 - `test future` verifies assertion specs against prediction state.
@@ -52,6 +54,7 @@ Migration authoring loop model:
 5. Optionally revise source-of-truth content and run `rundown migrate ...` again.
 6. Run `rundown predict` to apply migration files into `prediction/latest/` and persist lane snapshots under `prediction/snapshots/`.
 7. Run `rundown materialize` to apply resulting state into `implementation/`.
+8. Run `rundown snapshot` to persist implementation filesystem history at the current completed migration boundaries.
 
 Explicit test target semantics:
 

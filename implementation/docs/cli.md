@@ -115,6 +115,20 @@ See the command-focused reference: [cli-call.md](cli-call.md).
 
 See the command-focused reference: [cli-materialize.md](cli-materialize.md).
 
+### `rundown snapshot`
+
+Save implementation snapshot history at completed migration boundaries.
+
+- Snapshot roots are lane-aware:
+  - `implementation/snapshots/root/<N>/`
+  - `implementation/snapshots/threads/<thread>/<N>/`
+- Snapshot number `N` is derived from the highest fully completed migration batch in each lane (including lane-number reviews/supplementary files), not from user input.
+- The copied payload is the full current `implementation/` tree for every written lane snapshot (excluding `implementation/snapshots/**` to avoid recursive copies).
+- If any lane is between migration boundaries (latest lane batch not fully completed), `snapshot` fails with an explicit error and writes nothing.
+- If an eligible lane snapshot already exists, rundown reports it and does not overwrite it.
+
+See the command-focused reference: [cli-snapshot.md](cli-snapshot.md).
+
 ### `rundown loop <source>`
 
 See the command-focused reference: [cli-loop.md](cli-loop.md).
