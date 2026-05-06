@@ -85,6 +85,75 @@ describe("predict-task", () => {
     }
   });
 
+  it("skips thread snapshot refresh and progress updates for failed thread lane passes", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    const checkoutThreadDir = path.join(migrationsDir, "threads", "checkout");
+    const threadsSpecDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsSpecDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsSpecDir, "checkout.md"), "# Checkout\n", "utf-8");
+
+    fs.mkdirSync(checkoutThreadDir, { recursive: true });
+    fs.writeFileSync(path.join(migrationsDir, "1. Root First.md"), "# 1. Root First\n", "utf-8");
+    fs.writeFileSync(path.join(checkoutThreadDir, "1. Checkout Fails.md"), "# 1. Checkout Fails\n", "utf-8");
+
+    const latestPath = path.join(workspace, "prediction", "latest");
+    const snapshotsRootDir = path.join(workspace, "prediction", "snapshots", "root");
+    const snapshotsThreadDir = path.join(workspace, "prediction", "snapshots", "threads", "checkout");
+    const failedThreadSnapshotPath = path.join(snapshotsThreadDir, "1");
+    fs.mkdirSync(failedThreadSnapshotPath, { recursive: true });
+    fs.writeFileSync(path.join(failedThreadSnapshotPath, "stale-thread.txt"), "stale", "utf-8");
+
+    const runTask = vi.fn(async (runOptions: { source: string }) => {
+      const executionSource = fs.readFileSync(runOptions.source, "utf-8");
+      if (executionSource.includes("1. Root First.md")) {
+        fs.mkdirSync(latestPath, { recursive: true });
+        fs.writeFileSync(path.join(latestPath, "state.txt"), "root-1", "utf-8");
+        return EXIT_CODE_SUCCESS;
+      }
+      if (executionSource.includes("1. Checkout Fails.md")) {
+        fs.writeFileSync(path.join(latestPath, "thread-state.txt"), "thread-1", "utf-8");
+        return EXIT_CODE_FAILURE;
+      }
+
+      throw new Error("Unexpected predict execution source");
+    });
+
+    const predictTask = createPredictTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: () => undefined },
+      runTask,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await predictTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(runTask).toHaveBeenCalledTimes(2);
+
+      expect(fs.readFileSync(path.join(snapshotsRootDir, "1", "state.txt"), "utf-8")).toBe("root-1");
+      expect(fs.existsSync(path.join(failedThreadSnapshotPath, "thread-state.txt"))).toBe(false);
+      expect(fs.readFileSync(path.join(failedThreadSnapshotPath, "stale-thread.txt"), "utf-8")).toBe("stale");
+
+      const progress = JSON.parse(
+        fs.readFileSync(path.join(workspace, ".rundown", "prediction-progress.json"), "utf-8"),
+      ) as {
+        lastAppliedMigration: { migrationIdentifier: string; migrationNumber: number } | null;
+        migrations: Array<{ migrationIdentifier: string; migrationNumber: number }>;
+      };
+      expect(progress.lastAppliedMigration?.migrationIdentifier).toBe("migrations/1. Root First.md");
+      expect(progress.lastAppliedMigration?.migrationNumber).toBe(1);
+      expect(progress.migrations).toHaveLength(1);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("materializes full-tree snapshots for successful root and thread lane boundaries", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
@@ -103,6 +172,8 @@ describe("predict-task", () => {
     const snapshotsThreadDir = path.join(workspace, "prediction", "snapshots", "threads", "checkout");
     fs.mkdirSync(path.join(snapshotsRootDir, "2"), { recursive: true });
     fs.writeFileSync(path.join(snapshotsRootDir, "2", "stale.txt"), "stale", "utf-8");
+    fs.mkdirSync(path.join(snapshotsThreadDir, "1"), { recursive: true });
+    fs.writeFileSync(path.join(snapshotsThreadDir, "1", "stale-thread.txt"), "stale", "utf-8");
 
     const runTask = vi.fn(async (runOptions: { source: string }) => {
       const executionSource = fs.readFileSync(runOptions.source, "utf-8");
@@ -154,6 +225,7 @@ describe("predict-task", () => {
 
       expect(fs.readFileSync(path.join(snapshotsThreadDir, "1", "replace.txt"), "utf-8")).toBe("root-2");
       expect(fs.readFileSync(path.join(snapshotsThreadDir, "1", "nested", "thread.txt"), "utf-8")).toBe("thread");
+      expect(fs.existsSync(path.join(snapshotsThreadDir, "1", "stale-thread.txt"))).toBe(false);
 
       expect(fs.readFileSync(path.join(latestPath, "replace.txt"), "utf-8")).toBe("root-2");
       expect(fs.readFileSync(path.join(latestPath, "nested", "thread.txt"), "utf-8")).toBe("thread");
