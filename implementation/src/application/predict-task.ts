@@ -12,6 +12,7 @@ import type { ApplicationOutputPort } from "../domain/ports/output-port.js";
 import { resolveWorkspaceRootForPathSensitiveCommand } from "./workspace-selection.js";
 import {
   resolveArchiveWorkspacePaths,
+  resolvePredictionWorkspacePaths,
   resolveWorkspacePath,
   resolveWorkspacePaths,
 } from "./workspace-paths.js";
@@ -117,6 +118,11 @@ export function createPredictTask(
       workspaceRoot,
       invocationRoot: executionContext.invocationDir,
     });
+    const predictionWorkspacePaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot,
+      invocationRoot: executionContext.invocationDir,
+    });
     const rootState = readMigrationStateFromDirectoryOrEmpty(
       dependencies.fileSystem,
       migrationsDir,
@@ -190,7 +196,7 @@ export function createPredictTask(
       knownIdentifiers,
       predictionProgressRecords: predictionProgress.migrations,
       appliedRecordsByIdentifier,
-      expectedPredictionRootPath: workspacePaths.prediction,
+      expectedPredictionRootPath: predictionWorkspacePaths.latest,
       expectedWorkspaceRoutingFingerprint,
       observedPredictionRootPath: predictionProgress.predictionRootPath,
       observedWorkspaceRoutingFingerprint: predictionProgress.workspaceRoutingFingerprint,
@@ -246,6 +252,7 @@ export function createPredictTask(
         buildPredictExecutionSource({
           migrationPath: migrationInput.migration.filePath,
           migrationSource: migrationInput.migrationSource,
+          predictionHeadPath: predictionWorkspacePaths.latest,
         }),
       );
 
@@ -298,7 +305,7 @@ export function createPredictTask(
         }),
       );
       writePredictionProgress(dependencies.fileSystem, workspaceRoot, {
-        predictionRootPath: workspacePaths.prediction,
+        predictionRootPath: predictionWorkspacePaths.latest,
         workspaceRoutingFingerprint: expectedWorkspaceRoutingFingerprint,
         migrations: [...retainedAppliedRecords.values()],
       });
@@ -525,8 +532,9 @@ function toWorkspaceRoutingFingerprint(paths: {
 function buildPredictExecutionSource(input: {
   migrationPath: string;
   migrationSource: string;
+  predictionHeadPath: string;
 }): string {
-  const { migrationPath, migrationSource } = input;
+  const { migrationPath, migrationSource, predictionHeadPath } = input;
   const fence = "```";
 
   return [
@@ -546,7 +554,7 @@ function buildPredictExecutionSource(input: {
     "",
     "## Task",
     "",
-    "- [ ] Apply the migration file to prediction/ as a single pass. Update prediction state only, then verify and repair this migration pass as needed before completion.",
+    "- [ ] Apply the migration file to " + predictionHeadPath + " as a single pass. Update prediction state only, then verify and repair this migration pass as needed before completion.",
     "",
   ].join("\n");
 }

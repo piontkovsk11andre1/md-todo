@@ -109,7 +109,9 @@ describe("predict-task", () => {
       const rootPassSource = fs.readFileSync(runTaskSources[0]!, "utf-8");
       expect(rootPassSource).toContain(path.join(migrationsDir, "2. Root Hot Pending.md"));
       expect(rootPassSource).toContain("# 2. Root Hot Pending");
-      expect(rootPassSource).toContain("Apply the migration file to prediction/ as a single pass");
+      expect(rootPassSource).toContain(
+        `Apply the migration file to ${path.join(workspace, "prediction", "latest")} as a single pass`,
+      );
 
       const progressPath = path.join(workspace, ".rundown", "prediction-progress.json");
       const progress = JSON.parse(fs.readFileSync(progressPath, "utf-8")) as {
@@ -122,7 +124,7 @@ describe("predict-task", () => {
       };
       expect(progress.schemaVersion).toBe(1);
       expect(progress.version).toBe("prediction-progress/v1");
-      expect(progress.predictionRootPath).toBe(path.join(workspace, "prediction"));
+      expect(progress.predictionRootPath).toBe(path.join(workspace, "prediction", "latest"));
       expect(progress.workspaceRoutingFingerprint.length).toBeGreaterThan(0);
       expect(progress.lastAppliedMigration?.migrationIdentifier).toBe("migrations/threads/billing/2. Billing Pending.md");
       expect(progress.lastAppliedMigration?.migrationNumber).toBe(2);
@@ -546,7 +548,7 @@ function writePredictionProgress(
       schemaVersion: 1,
       version: "prediction-progress/v1",
       updatedAt: new Date().toISOString(),
-      predictionRootPath: path.join(workspace, "prediction"),
+      predictionRootPath: path.join(workspace, "prediction", "latest"),
       workspaceRoutingFingerprint: createHash("sha256")
         .update([
           path.join(workspace, "design"),
