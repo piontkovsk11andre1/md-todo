@@ -1,5 +1,5 @@
 import path from "node:path";
-import { parseMigrationFilename } from "../domain/migration-parser.js";
+import { parseMigrationDirectory } from "../domain/migration-parser.js";
 import { parseTasks } from "../domain/parser.js";
 import {
   EXIT_CODE_FAILURE,
@@ -255,20 +255,9 @@ function resolveLaneSnapshotBoundary(input: {
     archivedMigrationsDir: input.archivedMigrationsDir,
   });
 
-  const batchesByNumber = new Map<number, string[]>();
-  for (const filePath of laneFiles) {
-    const parsed = parseMigrationFilename(path.basename(filePath));
-    if (!parsed) {
-      continue;
-    }
-
-    const existingBatch = batchesByNumber.get(parsed.number) ?? [];
-    existingBatch.push(filePath);
-    batchesByNumber.set(parsed.number, existingBatch);
-  }
-
-  const orderedNumbers = [...batchesByNumber.keys()].sort((left, right) => left - right);
-  if (orderedNumbers.length === 0) {
+  const laneMigrationState = parseMigrationDirectory(laneFiles, input.migrationsDir);
+  const laneMigrations = laneMigrationState.migrations;
+  if (laneMigrations.length === 0) {
     return {
       laneLabel: input.laneLabel,
       laneKind: input.laneKind ?? "root",
@@ -281,8 +270,9 @@ function resolveLaneSnapshotBoundary(input: {
 
   let highestCompletedMigrationNumber: number | null = null;
   let firstIncompleteMigrationNumber: number | null = null;
-  for (const migrationNumber of orderedNumbers) {
-    const migrationBatch = batchesByNumber.get(migrationNumber) ?? [];
+  for (const migration of laneMigrations) {
+    const migrationNumber = migration.number;
+    const migrationBatch = [migration.filePath, ...migration.reviews.map((review) => review.filePath)];
     const batchCompleted = migrationBatch.every((filePath) => {
       return isMigrationFileFullyCompleted(input.fileSystem, filePath);
     });
@@ -297,7 +287,7 @@ function resolveLaneSnapshotBoundary(input: {
     }
   }
 
-  const latestDiscoveredMigrationNumber = orderedNumbers[orderedNumbers.length - 1] ?? null;
+  const latestDiscoveredMigrationNumber = laneMigrations[laneMigrations.length - 1]?.number ?? null;
   const betweenMigrations = firstIncompleteMigrationNumber !== null
     && latestDiscoveredMigrationNumber !== null
     && firstIncompleteMigrationNumber <= latestDiscoveredMigrationNumber;

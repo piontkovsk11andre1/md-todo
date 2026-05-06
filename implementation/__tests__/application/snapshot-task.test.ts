@@ -119,6 +119,49 @@ describe("snapshot-task", () => {
     }
   });
 
+  it("treats review files as part of a migration boundary batch", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    const implementationDir = path.join(workspace, "implementation");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.mkdirSync(implementationDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(migrationsDir, "1. Root Done.md"),
+      "# 1. Root Done\n\n- [x] done\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(migrationsDir, "2. Root Done.md"),
+      "# 2. Root Done\n\n- [x] done\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(migrationsDir, "2.3 Review.md"),
+      "# 2.3 Review\n\n- [ ] pending\n",
+      "utf-8",
+    );
+
+    fs.writeFileSync(path.join(implementationDir, "state.txt"), "head\n", "utf-8");
+
+    const events: ApplicationOutputEvent[] = [];
+    const snapshotTask = createSnapshotTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: (event) => events.push(event) },
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await snapshotTask({});
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(fs.existsSync(path.join(implementationDir, "snapshots", "root", "2"))).toBe(false);
+      expect(events.some((event) => event.kind === "error" && event.message.includes("between migration boundaries"))).toBe(true);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("does not recurse into implementation/snapshots while copying", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
