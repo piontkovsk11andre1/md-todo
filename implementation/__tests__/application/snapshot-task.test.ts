@@ -229,9 +229,10 @@ describe("snapshot-task", () => {
     fs.writeFileSync(path.join(implementationDir, "file.txt"), "head\n", "utf-8");
     fs.writeFileSync(path.join(implementationDir, "snapshots", "root", "1", "kept.txt"), "kept\n", "utf-8");
 
+    const events: ApplicationOutputEvent[] = [];
     const snapshotTask = createSnapshotTask({
       fileSystem: createNodeFileSystem(),
-      output: { emit: () => undefined },
+      output: { emit: (event) => events.push(event) },
     });
 
     const previousCwd = process.cwd();
@@ -240,6 +241,12 @@ describe("snapshot-task", () => {
       const code = await snapshotTask({});
       expect(code).toBe(EXIT_CODE_NO_WORK);
       expect(fs.readFileSync(path.join(implementationDir, "snapshots", "root", "1", "kept.txt"), "utf-8")).toBe("kept\n");
+      expect(events.some((event) => {
+        return event.kind === "info" && event.message.includes("Snapshot already exists for root migration 1");
+      })).toBe(true);
+      expect(events.some((event) => {
+        return event.kind === "info" && event.message.includes("All eligible implementation snapshots already exist");
+      })).toBe(true);
     } finally {
       process.chdir(previousCwd);
     }
