@@ -4,6 +4,7 @@ import type { PathOperationsPort } from "../domain/ports/index.js";
 import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
+  type ImplementationSnapshotWorkspacePaths,
   type PredictionWorkspacePaths,
   type WorkspaceDirectories,
   type WorkspaceMountMap,
@@ -47,6 +48,8 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspacePredictionLatestPath",
   "workspacePredictionSnapshotsRootPath",
   "workspacePredictionSnapshotsThreadsPath",
+  "workspaceImplementationSnapshotsRootPath",
+  "workspaceImplementationSnapshotsThreadsPath",
   "workspaceMountSummary",
 ] as const;
 
@@ -100,6 +103,7 @@ export function buildWorkspaceContextTemplateVars(
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
     predictionPaths?: PredictionWorkspacePaths;
+    implementationSnapshotPaths?: ImplementationSnapshotWorkspacePaths;
     mounts?: WorkspaceMountMap;
   },
 ): ExtraTemplateVars {
@@ -117,6 +121,10 @@ export function buildWorkspaceContextTemplateVars(
     latest: joinPreservingPathStyle(paths.prediction, "latest"),
     snapshotsRoot: joinPreservingPathStyle(paths.prediction, "snapshots", "root"),
     snapshotsThreads: joinPreservingPathStyle(paths.prediction, "snapshots", "threads"),
+  };
+  const implementationSnapshotPaths = normalizedWorkspace.implementationSnapshotPaths ?? {
+    snapshotsRoot: joinPreservingPathStyle(paths.implementation, "snapshots", "root"),
+    snapshotsThreads: joinPreservingPathStyle(paths.implementation, "snapshots", "threads"),
   };
   const workspaceMountSummary = JSON.stringify(buildWorkspaceMountSummary({
     context,
@@ -147,6 +155,8 @@ export function buildWorkspaceContextTemplateVars(
     workspacePredictionLatestPath: predictionPaths.latest,
     workspacePredictionSnapshotsRootPath: predictionPaths.snapshotsRoot,
     workspacePredictionSnapshotsThreadsPath: predictionPaths.snapshotsThreads,
+    workspaceImplementationSnapshotsRootPath: implementationSnapshotPaths.snapshotsRoot,
+    workspaceImplementationSnapshotsThreadsPath: implementationSnapshotPaths.snapshotsThreads,
     workspaceMountSummary,
   };
 }
@@ -164,6 +174,7 @@ function normalizeWorkspaceTemplateInput(
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
     predictionPaths?: PredictionWorkspacePaths;
+    implementationSnapshotPaths?: ImplementationSnapshotWorkspacePaths;
     mounts?: WorkspaceMountMap;
   } | undefined,
 ): {
@@ -171,6 +182,7 @@ function normalizeWorkspaceTemplateInput(
   placement?: WorkspacePlacementMap;
   paths?: WorkspacePaths;
   predictionPaths?: PredictionWorkspacePaths;
+  implementationSnapshotPaths?: ImplementationSnapshotWorkspacePaths;
   mounts?: WorkspaceMountMap;
 } {
   if (!input) {
