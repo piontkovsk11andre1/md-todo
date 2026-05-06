@@ -576,10 +576,10 @@ Use this command family to keep planning, future-state projection, and implement
 # 1) Create or update migrations from design changes.
 rundown migrate --dir ./migrations -- opencode run
 
-# 2) Apply migration files into prediction/.
+# 2) Apply migration files into prediction/latest/ and persist lane snapshots.
 rundown predict --dir ./migrations -- opencode run
 
-# 3) Validate the future state in prediction/.
+# 3) Validate the future state in prediction/latest/.
 rundown test future
 
 # 4) Apply resulting state to implementation/.
@@ -592,7 +592,7 @@ rundown test now
 What this demonstrates:
 
 1. `migrate` is the producer of migration files.
-2. `predict` is the migration-file consumer that advances only `prediction/`.
+2. `predict` is the migration-file consumer that advances only `prediction/latest/` and writes full-tree snapshots at lane boundaries under `prediction/snapshots/root/<N>/` and `prediction/snapshots/threads/<thread>/<N>/`.
 3. `materialize` remains a separate implementation-application step.
 4. `test future` and `test now` make the verification target explicit.
 5. `test` without an action is still accepted for compatibility and maps to `test now`.

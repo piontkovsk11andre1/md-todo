@@ -27,7 +27,7 @@ In addition to execute/verify task running, rundown supports a prediction-orient
 - Revision baseline semantics are explicit: `rev.0` is the initial baseline when present, and when a target revision has no discovered lower predecessor (including `rev.1`-first repositories), comparison is from `nothing -> target`.
 - Compatibility fallback remains additive for older projects: legacy `design/rev.*/`, `docs/current/Design.md`, `docs/rev.*/`, and root `Design.md` are used only as compatibility-only paths when canonical `design/` paths are unavailable.
 - `migrate` always routes through the same revision-aware/thread-aware migration drafting pipeline and writes migration history in `migrations/`.
-- `predict` applies migration files into `prediction/` incrementally.
+- `predict` applies migration files into `prediction/latest/` incrementally and writes full-tree lane snapshots under `prediction/snapshots/root/<N>/` and `prediction/snapshots/threads/<thread>/<N>/` after successful lane-boundary passes.
 - `undo` semantically reverses prior task outcomes using saved artifacts.
 - `test now` verifies assertion specs against current implementation/materialized state.
 - `test future` verifies assertion specs against prediction state.
@@ -50,7 +50,7 @@ Migration authoring loop model:
 3. The selected mode reconciles/release-updates design as needed, then runs the same migrate planner loop until `DONE`.
 4. Discuss and refine predicted state, including updates to `migrations/Backlog.md` as needed.
 5. Optionally revise source-of-truth content and run `rundown migrate ...` again.
-6. Run `rundown predict` to apply migration files into `prediction/`.
+6. Run `rundown predict` to apply migration files into `prediction/latest/` and persist lane snapshots under `prediction/snapshots/`.
 7. Run `rundown materialize` to apply resulting state into `implementation/`.
 
 Explicit test target semantics:
