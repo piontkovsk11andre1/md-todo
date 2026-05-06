@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPredictTask, type PredictTaskDependencies } from "../../src/application/predict-task.js";
 import { inferWorkerPatternFromCommand } from "../../src/domain/worker-pattern.js";
-import { EXIT_CODE_SUCCESS } from "../../src/domain/exit-codes.js";
+import { EXIT_CODE_FAILURE, EXIT_CODE_SUCCESS } from "../../src/domain/exit-codes.js";
 import { createNodeFileSystem } from "../../src/infrastructure/adapters/fs-file-system.js";
 import type { ApplicationOutputEvent } from "../../src/domain/ports/index.js";
 
@@ -22,6 +22,69 @@ afterEach(() => {
 });
 
 describe("predict-task", () => {
+  it("skips snapshot refresh and progress updates for failed lane passes", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.writeFileSync(path.join(migrationsDir, "1. Root First.md"), "# 1. Root First\n", "utf-8");
+    fs.writeFileSync(path.join(migrationsDir, "2. Root Fails.md"), "# 2. Root Fails\n", "utf-8");
+
+    const latestPath = path.join(workspace, "prediction", "latest");
+    const snapshotsRootDir = path.join(workspace, "prediction", "snapshots", "root");
+    const failedSnapshotPath = path.join(snapshotsRootDir, "2");
+    fs.mkdirSync(failedSnapshotPath, { recursive: true });
+    fs.writeFileSync(path.join(failedSnapshotPath, "stale.txt"), "stale", "utf-8");
+
+    const runTask = vi.fn(async (runOptions: { source: string }) => {
+      const executionSource = fs.readFileSync(runOptions.source, "utf-8");
+      if (executionSource.includes("1. Root First.md")) {
+        fs.mkdirSync(latestPath, { recursive: true });
+        fs.writeFileSync(path.join(latestPath, "state.txt"), "root-1", "utf-8");
+        return EXIT_CODE_SUCCESS;
+      }
+      if (executionSource.includes("2. Root Fails.md")) {
+        fs.writeFileSync(path.join(latestPath, "state.txt"), "root-2", "utf-8");
+        return EXIT_CODE_FAILURE;
+      }
+
+      throw new Error("Unexpected predict execution source");
+    });
+
+    const predictTask = createPredictTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: () => undefined },
+      runTask,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await predictTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_FAILURE);
+      expect(runTask).toHaveBeenCalledTimes(2);
+
+      expect(fs.readFileSync(path.join(snapshotsRootDir, "1", "state.txt"), "utf-8")).toBe("root-1");
+      expect(fs.existsSync(path.join(failedSnapshotPath, "state.txt"))).toBe(false);
+      expect(fs.readFileSync(path.join(failedSnapshotPath, "stale.txt"), "utf-8")).toBe("stale");
+
+      const progress = JSON.parse(
+        fs.readFileSync(path.join(workspace, ".rundown", "prediction-progress.json"), "utf-8"),
+      ) as {
+        lastAppliedMigration: { migrationIdentifier: string; migrationNumber: number } | null;
+        migrations: Array<{ migrationIdentifier: string; migrationNumber: number }>;
+      };
+      expect(progress.lastAppliedMigration?.migrationIdentifier).toBe("migrations/1. Root First.md");
+      expect(progress.lastAppliedMigration?.migrationNumber).toBe(1);
+      expect(progress.migrations).toHaveLength(1);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("materializes full-tree snapshots for successful root and thread lane boundaries", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
