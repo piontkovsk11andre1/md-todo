@@ -24,6 +24,7 @@ import { parseUncheckedTodoLines } from "../domain/todo-lines.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import { resolveWorkerPatternForInvocation } from "./resolve-worker.js";
 import {
+  resolvePredictionWorkspacePaths,
   resolveWorkspaceDirectories,
   resolveWorkspaceMounts,
   resolveWorkspacePaths,
@@ -180,6 +181,11 @@ export function createResearchTask(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const predictionPaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceMounts = resolveWorkspaceMounts({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
@@ -190,6 +196,7 @@ export function createResearchTask(
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        predictionPaths,
         mounts: workspaceMounts,
       },
     );

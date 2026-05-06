@@ -2,6 +2,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   resolveArchiveWorkspacePaths,
+  resolvePredictionThreadSnapshotsPath,
+  resolvePredictionWorkspacePaths,
   resolveMigrationThreadArchivePath,
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
@@ -497,6 +499,48 @@ describe("prediction workspace config", () => {
       workspaceRoot,
       threadSlug: " billing\\north-america ",
     })).toBe(path.resolve(workspaceRoot, "migrations", "archive", "threads", "billing", "north-america"));
+  });
+
+  it("resolves canonical prediction paths from default workspace buckets", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      latest: path.resolve(workspaceRoot, "prediction", "latest"),
+      snapshotsRoot: path.resolve(workspaceRoot, "prediction", "snapshots", "root"),
+      snapshotsThreads: path.resolve(workspaceRoot, "prediction", "snapshots", "threads"),
+    });
+  });
+
+  it("resolves canonical prediction paths through explicit prediction mount", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            prediction: "../shared/prediction-root",
+          },
+        },
+      }),
+    });
+
+    expect(resolvePredictionWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      latest: path.resolve(workspaceRoot, "../shared/prediction-root", "latest"),
+      snapshotsRoot: path.resolve(workspaceRoot, "../shared/prediction-root", "snapshots", "root"),
+      snapshotsThreads: path.resolve(workspaceRoot, "../shared/prediction-root", "snapshots", "threads"),
+    });
+  });
+
+  it("resolves canonical prediction thread snapshots paths with normalized slugs", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolvePredictionThreadSnapshotsPath({
+      fileSystem,
+      workspaceRoot,
+      threadSlug: " checkout\\north-america ",
+    })).toBe(path.resolve(workspaceRoot, "prediction", "snapshots", "threads", "checkout", "north-america"));
   });
 
   it("rejects invalid workspace.mounts types", () => {

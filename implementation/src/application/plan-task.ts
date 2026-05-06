@@ -31,6 +31,7 @@ import {
 } from "./cli-block-handlers.js";
 import { loadProjectTemplatesFromPorts } from "./project-templates.js";
 import {
+  resolvePredictionWorkspacePaths,
   resolveWorkspaceDirectories,
   resolveWorkspaceMounts,
   resolveWorkspacePaths,
@@ -241,6 +242,11 @@ export function createPlanTask(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const predictionPaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceMounts = resolveWorkspaceMounts({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
@@ -251,6 +257,7 @@ export function createPlanTask(
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        predictionPaths,
         mounts: workspaceMounts,
       },
     );

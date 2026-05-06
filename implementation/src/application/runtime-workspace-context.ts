@@ -4,6 +4,7 @@ import type { PathOperationsPort } from "../domain/ports/index.js";
 import {
   DEFAULT_WORKSPACE_DIRECTORIES,
   DEFAULT_WORKSPACE_PLACEMENT,
+  type PredictionWorkspacePaths,
   type WorkspaceDirectories,
   type WorkspaceMountMap,
   type WorkspacePaths,
@@ -43,6 +44,9 @@ export const WORKSPACE_CONTEXT_TEMPLATE_VAR_KEYS = [
   "workspaceSpecsPath",
   "workspaceMigrationsPath",
   "workspacePredictionPath",
+  "workspacePredictionLatestPath",
+  "workspacePredictionSnapshotsRootPath",
+  "workspacePredictionSnapshotsThreadsPath",
   "workspaceMountSummary",
 ] as const;
 
@@ -95,6 +99,7 @@ export function buildWorkspaceContextTemplateVars(
     directories?: WorkspaceDirectories;
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
+    predictionPaths?: PredictionWorkspacePaths;
     mounts?: WorkspaceMountMap;
   },
 ): ExtraTemplateVars {
@@ -107,6 +112,11 @@ export function buildWorkspaceContextTemplateVars(
     specs: path.join(resolvePlacementRoot(context, placement.specs), directories.specs),
     migrations: path.join(resolvePlacementRoot(context, placement.migrations), directories.migrations),
     prediction: path.join(resolvePlacementRoot(context, placement.prediction), directories.prediction),
+  };
+  const predictionPaths = normalizedWorkspace.predictionPaths ?? {
+    latest: joinPreservingPathStyle(paths.prediction, "latest"),
+    snapshotsRoot: joinPreservingPathStyle(paths.prediction, "snapshots", "root"),
+    snapshotsThreads: joinPreservingPathStyle(paths.prediction, "snapshots", "threads"),
   };
   const workspaceMountSummary = JSON.stringify(buildWorkspaceMountSummary({
     context,
@@ -134,6 +144,9 @@ export function buildWorkspaceContextTemplateVars(
     workspaceSpecsPath: paths.specs,
     workspaceMigrationsPath: paths.migrations,
     workspacePredictionPath: paths.prediction,
+    workspacePredictionLatestPath: predictionPaths.latest,
+    workspacePredictionSnapshotsRootPath: predictionPaths.snapshotsRoot,
+    workspacePredictionSnapshotsThreadsPath: predictionPaths.snapshotsThreads,
     workspaceMountSummary,
   };
 }
@@ -150,12 +163,14 @@ function normalizeWorkspaceTemplateInput(
     directories?: WorkspaceDirectories;
     placement?: WorkspacePlacementMap;
     paths?: WorkspacePaths;
+    predictionPaths?: PredictionWorkspacePaths;
     mounts?: WorkspaceMountMap;
   } | undefined,
 ): {
   directories?: WorkspaceDirectories;
   placement?: WorkspacePlacementMap;
   paths?: WorkspacePaths;
+  predictionPaths?: PredictionWorkspacePaths;
   mounts?: WorkspaceMountMap;
 } {
   if (!input) {
@@ -243,6 +258,14 @@ function buildWorkspaceMountSummary(input: {
     isLinkedWorkspace: context.isLinkedWorkspace,
     mounts: sortedMounts,
   };
+}
+
+function joinPreservingPathStyle(basePath: string, ...segments: string[]): string {
+  if (basePath.includes("/") && !basePath.includes("\\")) {
+    return path.posix.join(basePath, ...segments);
+  }
+
+  return path.join(basePath, ...segments);
 }
 
 /**

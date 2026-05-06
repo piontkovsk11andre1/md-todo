@@ -54,6 +54,9 @@ describe("default prompt templates", () => {
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
       workspacePredictionPath: "/repo/workspace/prediction",
+      workspacePredictionLatestPath: "/repo/workspace/prediction/latest",
+      workspacePredictionSnapshotsRootPath: "/repo/workspace/prediction/snapshots/root",
+      workspacePredictionSnapshotsThreadsPath: "/repo/workspace/prediction/snapshots/threads",
       workspaceMountSummary: "{\"mounts\":[{\"logicalPath\":\"design\",\"absoluteTargetPath\":\"/repo/workspace/design\"}]}",
       userVariables: "branch=main\nticket=ENG-42",
     });
@@ -76,6 +79,9 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Specs path: `/repo/workspace/specs`");
     expect(result).toContain("- Migrations path: `/repo/workspace/migrations`");
     expect(result).toContain("- Prediction path: `/repo/workspace/prediction`");
+    expect(result).toContain("- Prediction latest path: `/repo/workspace/prediction/latest`");
+    expect(result).toContain("- Prediction snapshots root path: `/repo/workspace/prediction/snapshots/root`");
+    expect(result).toContain("- Prediction snapshots threads path: `/repo/workspace/prediction/snapshots/threads`");
     expect(result).toContain("{\"mounts\":[{\"logicalPath\":\"design\",\"absoluteTargetPath\":\"/repo/workspace/design\"}]}");
     expect(result).toContain("- Design placement (legacy): `sourcedir`");
     expect(result).toContain("- Implementation placement (legacy): `sourcedir`");
@@ -112,6 +118,9 @@ describe("default prompt templates", () => {
       workspaceSpecsPath: "/repo/workspace/specs",
       workspaceMigrationsPath: "/repo/workspace/migrations",
       workspacePredictionPath: "/repo/workspace/prediction",
+      workspacePredictionLatestPath: "/repo/workspace/prediction/latest",
+      workspacePredictionSnapshotsRootPath: "/repo/workspace/prediction/snapshots/root",
+      workspacePredictionSnapshotsThreadsPath: "/repo/workspace/prediction/snapshots/threads",
       workspaceMountSummary: "{\"mounts\":[]}",
       userVariables: "(none)",
     });
@@ -130,6 +139,9 @@ describe("default prompt templates", () => {
     expect(result).toContain("- Specs path: `/repo/workspace/specs`");
     expect(result).toContain("- Migrations path: `/repo/workspace/migrations`");
     expect(result).toContain("- Prediction path: `/repo/workspace/prediction`");
+    expect(result).toContain("- Prediction latest path: `/repo/workspace/prediction/latest`");
+    expect(result).toContain("- Prediction snapshots root path: `/repo/workspace/prediction/snapshots/root`");
+    expect(result).toContain("- Prediction snapshots threads path: `/repo/workspace/prediction/snapshots/threads`");
     expect(result).toContain("- Design placement (legacy): `sourcedir`");
     expect(result).toContain("- Implementation placement (legacy): `sourcedir`");
     expect(result).toContain("- Specs placement (legacy): `sourcedir`");

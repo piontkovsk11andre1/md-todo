@@ -50,6 +50,12 @@ export interface ArchiveWorkspacePaths {
   migrationThreads: string;
 }
 
+export interface PredictionWorkspacePaths {
+  latest: string;
+  snapshotsRoot: string;
+  snapshotsThreads: string;
+}
+
 export type WorkspaceMountSource = "legacy" | "explicit";
 
 export interface WorkspaceMount {
@@ -571,6 +577,64 @@ export function resolveMigrationThreadArchivePath(input: {
   return resolveWorkspaceMountPath({
     mounts,
     logicalPath: `migrations/archive/threads/${normalizedThreadSlug}`,
+  }).absolutePath;
+}
+
+export function resolvePredictionWorkspacePaths(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): PredictionWorkspacePaths {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  return {
+    latest: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "prediction/latest",
+    }).absolutePath,
+    snapshotsRoot: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "prediction/snapshots/root",
+    }).absolutePath,
+    snapshotsThreads: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "prediction/snapshots/threads",
+    }).absolutePath,
+  };
+}
+
+export function resolvePredictionThreadSnapshotsPath(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  threadSlug: string;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): string {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  const normalizedThreadSlug = normalizeWorkspaceLogicalPath(input.threadSlug);
+  return resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: `prediction/snapshots/threads/${normalizedThreadSlug}`,
   }).absolutePath;
 }
 

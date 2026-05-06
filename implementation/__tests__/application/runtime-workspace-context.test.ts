@@ -181,6 +181,9 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/invocation", "specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "migrations"),
       workspacePredictionPath: path.join("/workspace/invocation", "prediction"),
+      workspacePredictionLatestPath: path.join("/workspace/invocation", "prediction", "latest"),
+      workspacePredictionSnapshotsRootPath: path.join("/workspace/invocation", "prediction", "snapshots", "root"),
+      workspacePredictionSnapshotsThreadsPath: path.join("/workspace/invocation", "prediction", "snapshots", "threads"),
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/workspace/invocation",
         workspaceDir: "/workspace/invocation",
@@ -229,6 +232,9 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/source", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/source", "changesets"),
       workspacePredictionPath: path.join("/workspace/source", "predicted"),
+      workspacePredictionLatestPath: path.join("/workspace/source", "predicted", "latest"),
+      workspacePredictionSnapshotsRootPath: path.join("/workspace/source", "predicted", "snapshots", "root"),
+      workspacePredictionSnapshotsThreadsPath: path.join("/workspace/source", "predicted", "snapshots", "threads"),
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/workspace/invocation",
         workspaceDir: "/workspace/source",
@@ -293,6 +299,9 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: "/workspace/invocation/quality/specs",
       workspaceMigrationsPath: "/workspace/invocation/changesets",
       workspacePredictionPath: "/workspace/invocation/predicted",
+      workspacePredictionLatestPath: "/workspace/invocation/predicted/latest",
+      workspacePredictionSnapshotsRootPath: "/workspace/invocation/predicted/snapshots/root",
+      workspacePredictionSnapshotsThreadsPath: "/workspace/invocation/predicted/snapshots/threads",
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/workspace/invocation",
         workspaceDir: "/workspace/source",
@@ -350,6 +359,9 @@ describe("buildWorkspaceContextTemplateVars", () => {
       workspaceSpecsPath: path.join("/workspace/invocation", "quality/specs"),
       workspaceMigrationsPath: path.join("/workspace/invocation", "changesets"),
       workspacePredictionPath: path.join("/workspace/invocation", "predicted"),
+      workspacePredictionLatestPath: path.join("/workspace/invocation", "predicted", "latest"),
+      workspacePredictionSnapshotsRootPath: path.join("/workspace/invocation", "predicted", "snapshots", "root"),
+      workspacePredictionSnapshotsThreadsPath: path.join("/workspace/invocation", "predicted", "snapshots", "threads"),
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/workspace/invocation",
         workspaceDir: "/workspace/source",
@@ -401,6 +413,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceSpecsPath: "/real/workspace/quality/specs",
         workspaceMigrationsPath: "/real/workspace/changesets",
         workspacePredictionPath: "/real/workspace/predicted",
+        workspacePredictionLatestPath: "/real/workspace/predicted/latest",
+        workspacePredictionSnapshotsRootPath: "/real/workspace/predicted/snapshots/root",
+        workspacePredictionSnapshotsThreadsPath: "/real/workspace/predicted/snapshots/threads",
         workspaceMountSummary: buildMountSummary({
           invocationDir: "/real/invocation",
           workspaceDir: "/real/workspace",
@@ -434,6 +449,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceSpecsPath: "/real/workspace/quality/specs",
       workspaceMigrationsPath: "/real/workspace/changesets",
       workspacePredictionPath: "/real/workspace/predicted",
+      workspacePredictionLatestPath: "/real/workspace/predicted/latest",
+      workspacePredictionSnapshotsRootPath: "/real/workspace/predicted/snapshots/root",
+      workspacePredictionSnapshotsThreadsPath: "/real/workspace/predicted/snapshots/threads",
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/real/invocation",
         workspaceDir: "/real/workspace",
@@ -478,6 +496,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
         workspaceSpecsPath: "/workspace/invocation/specs",
         workspaceMigrationsPath: "/workspace/invocation/migrations",
         workspacePredictionPath: "/workspace/invocation/prediction",
+        workspacePredictionLatestPath: "/workspace/invocation/prediction/latest",
+        workspacePredictionSnapshotsRootPath: "/workspace/invocation/prediction/snapshots/root",
+        workspacePredictionSnapshotsThreadsPath: "/workspace/invocation/prediction/snapshots/threads",
         workspaceMountSummary: buildMountSummary({
           invocationDir: "/workspace/invocation",
           workspaceDir: "/workspace/invocation",
@@ -514,6 +535,9 @@ describe("mergeTemplateVarsWithWorkspaceContext", () => {
       workspaceSpecsPath: "/workspace/invocation/specs",
       workspaceMigrationsPath: "/workspace/invocation/migrations",
       workspacePredictionPath: "/workspace/invocation/prediction",
+      workspacePredictionLatestPath: "/workspace/invocation/prediction/latest",
+      workspacePredictionSnapshotsRootPath: "/workspace/invocation/prediction/snapshots/root",
+      workspacePredictionSnapshotsThreadsPath: "/workspace/invocation/prediction/snapshots/threads",
       workspaceMountSummary: buildMountSummary({
         invocationDir: "/workspace/invocation",
         workspaceDir: "/workspace/invocation",

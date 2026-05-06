@@ -73,6 +73,9 @@ If the mount summary is present, treat it as the canonical routing map.
 - Specs path: \`{{workspaceSpecsPath}}\`
 - Migrations path: \`{{workspaceMigrationsPath}}\`
 - Prediction path: \`{{workspacePredictionPath}}\`
+- Prediction latest path: \`{{workspacePredictionLatestPath}}\`
+- Prediction snapshots root path: \`{{workspacePredictionSnapshotsRootPath}}\`
+- Prediction snapshots threads path: \`{{workspacePredictionSnapshotsThreadsPath}}\`
 
 ### Workspace mount summary
 

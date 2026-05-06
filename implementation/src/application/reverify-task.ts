@@ -14,6 +14,7 @@ import {
   resolveRuntimeWorkspaceContext,
 } from "./runtime-workspace-context.js";
 import {
+  resolvePredictionWorkspacePaths,
   resolveWorkspaceDirectories,
   resolveWorkspaceMounts,
   resolveWorkspacePaths,
@@ -197,6 +198,11 @@ export function createReverifyTask(
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
       invocationRoot: runtimeWorkspaceContext.invocationDir,
     });
+    const predictionPaths = resolvePredictionWorkspacePaths({
+      fileSystem: dependencies.fileSystem,
+      workspaceRoot: runtimeWorkspaceContext.workspaceDir,
+      invocationRoot: runtimeWorkspaceContext.invocationDir,
+    });
     const workspaceMounts = resolveWorkspaceMounts({
       fileSystem: dependencies.fileSystem,
       workspaceRoot: runtimeWorkspaceContext.workspaceDir,
@@ -207,6 +213,7 @@ export function createReverifyTask(
       {
         directories: workspaceDirectories,
         paths: workspacePaths,
+        predictionPaths,
         mounts: workspaceMounts,
       },
     );
