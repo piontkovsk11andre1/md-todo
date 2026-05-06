@@ -123,6 +123,17 @@ export function createPredictTask(
       workspaceRoot,
       invocationRoot: executionContext.invocationDir,
     });
+    const legacyPredictionState = inspectLegacyPredictionRoot({
+      fileSystem: dependencies.fileSystem,
+      predictionRootPath: workspacePaths.prediction,
+    });
+    if (legacyPredictionState.hasLegacyEntries && !dependencies.fileSystem.exists(predictionWorkspacePaths.latest)) {
+      seedPredictionLatestFromLegacyRoot({
+        fileSystem: dependencies.fileSystem,
+        predictionRootPath: workspacePaths.prediction,
+        latestPath: predictionWorkspacePaths.latest,
+      });
+    }
     const rootState = readMigrationStateFromDirectoryOrEmpty(
       dependencies.fileSystem,
       migrationsDir,
@@ -240,6 +251,12 @@ export function createPredictTask(
     });
 
     if (unappliedMigrations.length === 0) {
+      if (legacyPredictionState.hasLegacyEntries) {
+        removeLegacyPredictionRootEntries({
+          fileSystem: dependencies.fileSystem,
+          predictionRootPath: workspacePaths.prediction,
+        });
+      }
       emit({ kind: "info", message: "Prediction is already up to date." });
       return EXIT_CODE_SUCCESS;
     }
@@ -330,9 +347,89 @@ export function createPredictTask(
       });
     }
 
+    if (legacyPredictionState.hasLegacyEntries) {
+      removeLegacyPredictionRootEntries({
+        fileSystem: dependencies.fileSystem,
+        predictionRootPath: workspacePaths.prediction,
+      });
+    }
+
     emit({ kind: "success", message: "Prediction run completed." });
     return EXIT_CODE_SUCCESS;
   };
+}
+
+function inspectLegacyPredictionRoot(input: {
+  fileSystem: FileSystem;
+  predictionRootPath: string;
+}): {
+  hasLegacyEntries: boolean;
+} {
+  const { fileSystem, predictionRootPath } = input;
+  if (!fileSystem.exists(predictionRootPath)) {
+    return { hasLegacyEntries: false };
+  }
+
+  const predictionRootStat = fileSystem.stat(predictionRootPath);
+  if (!predictionRootStat?.isDirectory) {
+    return { hasLegacyEntries: false };
+  }
+
+  const hasLegacyEntries = fileSystem.readdir(predictionRootPath)
+    .some((entry) => !isPredictionContainerEntry(entry.name));
+  return { hasLegacyEntries };
+}
+
+function seedPredictionLatestFromLegacyRoot(input: {
+  fileSystem: FileSystem;
+  predictionRootPath: string;
+  latestPath: string;
+}): void {
+  const { fileSystem, predictionRootPath, latestPath } = input;
+  fileSystem.mkdir(latestPath, { recursive: true });
+
+  const rootEntries = fileSystem.readdir(predictionRootPath)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of rootEntries) {
+    if (isPredictionContainerEntry(entry.name)) {
+      continue;
+    }
+    copyPathRecursively({
+      fileSystem,
+      sourcePath: path.join(predictionRootPath, entry.name),
+      destinationPath: path.join(latestPath, entry.name),
+    });
+  }
+}
+
+function removeLegacyPredictionRootEntries(input: {
+  fileSystem: FileSystem;
+  predictionRootPath: string;
+}): void {
+  const { fileSystem, predictionRootPath } = input;
+  if (!fileSystem.exists(predictionRootPath)) {
+    return;
+  }
+
+  const predictionRootStat = fileSystem.stat(predictionRootPath);
+  if (!predictionRootStat?.isDirectory) {
+    return;
+  }
+
+  const rootEntries = fileSystem.readdir(predictionRootPath)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of rootEntries) {
+    if (isPredictionContainerEntry(entry.name)) {
+      continue;
+    }
+    fileSystem.rm(path.join(predictionRootPath, entry.name), { recursive: true, force: true });
+  }
+}
+
+function isPredictionContainerEntry(name: string): boolean {
+  return name === "latest" || name === "snapshots";
 }
 
 function resolvePredictionReplayDecision(input: {
@@ -639,4 +736,31 @@ function copyDirectoryContents(input: {
     }
     fileSystem.writeText(destinationPath, fileSystem.readText(sourcePath));
   }
+}
+
+function copyPathRecursively(input: {
+  fileSystem: FileSystem;
+  sourcePath: string;
+  destinationPath: string;
+}): void {
+  const { fileSystem, sourcePath, destinationPath } = input;
+  const sourceStat = fileSystem.stat(sourcePath);
+  if (!sourceStat) {
+    return;
+  }
+
+  if (sourceStat.isDirectory) {
+    fileSystem.mkdir(destinationPath, { recursive: true });
+    copyDirectoryContents({
+      fileSystem,
+      sourceDir: sourcePath,
+      destinationDir: destinationPath,
+    });
+    return;
+  }
+
+  if (!sourceStat.isFile) {
+    return;
+  }
+  fileSystem.writeText(destinationPath, fileSystem.readText(sourcePath));
 }

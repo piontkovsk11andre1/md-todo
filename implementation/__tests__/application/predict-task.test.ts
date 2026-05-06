@@ -162,6 +162,59 @@ describe("predict-task", () => {
     }
   });
 
+  it("upgrades legacy flat prediction root into prediction/latest on next successful run", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    fs.mkdirSync(migrationsDir, { recursive: true });
+    fs.writeFileSync(path.join(migrationsDir, "1. Root First.md"), "# 1. Root First\n", "utf-8");
+
+    const predictionRootPath = path.join(workspace, "prediction");
+    const legacyNestedDir = path.join(predictionRootPath, "nested");
+    const latestPath = path.join(predictionRootPath, "latest");
+    fs.mkdirSync(legacyNestedDir, { recursive: true });
+    fs.writeFileSync(path.join(predictionRootPath, "legacy.txt"), "legacy-root", "utf-8");
+    fs.writeFileSync(path.join(legacyNestedDir, "legacy-nested.txt"), "legacy-nested", "utf-8");
+
+    const runTask = vi.fn(async () => {
+      expect(fs.readFileSync(path.join(latestPath, "legacy.txt"), "utf-8")).toBe("legacy-root");
+      expect(fs.readFileSync(path.join(latestPath, "nested", "legacy-nested.txt"), "utf-8")).toBe("legacy-nested");
+      fs.writeFileSync(path.join(latestPath, "legacy.txt"), "legacy-updated", "utf-8");
+      fs.writeFileSync(path.join(latestPath, "new.txt"), "new", "utf-8");
+      return EXIT_CODE_SUCCESS;
+    });
+
+    const predictTask = createPredictTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: () => undefined },
+      runTask,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await predictTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(runTask).toHaveBeenCalledTimes(1);
+
+      expect(fs.existsSync(path.join(predictionRootPath, "legacy.txt"))).toBe(false);
+      expect(fs.existsSync(path.join(predictionRootPath, "nested", "legacy-nested.txt"))).toBe(false);
+
+      expect(fs.readFileSync(path.join(latestPath, "legacy.txt"), "utf-8")).toBe("legacy-updated");
+      expect(fs.readFileSync(path.join(latestPath, "nested", "legacy-nested.txt"), "utf-8")).toBe("legacy-nested");
+      expect(fs.readFileSync(path.join(latestPath, "new.txt"), "utf-8")).toBe("new");
+
+      expect(
+        fs.readFileSync(path.join(predictionRootPath, "snapshots", "root", "1", "legacy.txt"), "utf-8"),
+      ).toBe("legacy-updated");
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("enumerates root and thread migrations deterministically and runs only unapplied files in order", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
