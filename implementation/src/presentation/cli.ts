@@ -46,6 +46,7 @@ import {
   createMakeCommandAction,
   createMigrateCommandAction,
   createPredictCommandAction,
+  createSnapshotCommandAction,
   createMemoryViewCommandAction,
   createMemoryCleanCommandAction,
   createMemoryValidateCommandAction,
@@ -472,6 +473,13 @@ program
     getApp,
     getWorkerFromSeparator: () => runtimeState.workerFromSeparator,
   })));
+
+program
+  .command("snapshot")
+  .description("Save implementation snapshots at completed migration boundaries.")
+  .option("--workspace <dir>", "Workspace directory to use for linked/multi-workspace resolution")
+  .allowUnknownOption(false)
+  .action(withCliAction(createSnapshotCommandAction({ getApp })));
 
 program
   .command("compact")

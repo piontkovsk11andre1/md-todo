@@ -444,12 +444,17 @@ interface PredictCommandOptions {
   showAgentOutput: boolean;
 }
 
+interface SnapshotCommandOptions {
+  workspace?: string;
+}
+
 interface AutoCompactCliOptions {
   beforeExit: boolean;
 }
 
 type MigrateCommandHandler = (options: MigrateCommandOptions) => CliActionResult;
 type PredictCommandHandler = (options: PredictCommandOptions) => CliActionResult;
+type SnapshotCommandHandler = (options: SnapshotCommandOptions) => CliActionResult;
 
 interface TestCommandOptions {
   action?: TestAction;
@@ -1602,6 +1607,22 @@ export function createPredictCommandAction({
       workerPattern: resolveWorkerPattern(opts.worker, getWorkerFromSeparator),
       keepArtifacts: Boolean(opts.keepArtifacts as boolean | undefined),
       showAgentOutput: resolveShowAgentOutputOption(opts),
+    });
+  };
+}
+
+/**
+ * Creates the `snapshot` command action handler.
+ *
+ * The returned action delegates implementation snapshot persistence to the
+ * application `snapshotTask` use case.
+ */
+export function createSnapshotCommandAction({
+  getApp,
+}: Pick<WorkerActionDependencies, "getApp">): (opts: CliOpts) => CliActionResult {
+  return (opts: CliOpts) => {
+    return resolveSnapshotCommandHandler(getApp())({
+      workspace: normalizeOptionalString(opts.workspace),
     });
   };
 }
@@ -2871,6 +2892,21 @@ function resolvePredictCommandHandler(appInstance: CliApp): PredictCommandHandle
   }
 
   throw new Error("The `predict` command is not available in this build.");
+}
+
+/**
+ * Resolves the active snapshot command implementation for the current app build.
+ */
+function resolveSnapshotCommandHandler(appInstance: CliApp): SnapshotCommandHandler {
+  const maybeSnapshotHandler = appInstance as CliApp & {
+    snapshotTask?: SnapshotCommandHandler;
+  };
+
+  if (typeof maybeSnapshotHandler.snapshotTask === "function") {
+    return maybeSnapshotHandler.snapshotTask;
+  }
+
+  throw new Error("The `snapshot` command is not available in this build.");
 }
 
 /**
