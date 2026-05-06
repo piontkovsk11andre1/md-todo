@@ -56,6 +56,11 @@ export interface PredictionWorkspacePaths {
   snapshotsThreads: string;
 }
 
+export interface ImplementationSnapshotWorkspacePaths {
+  snapshotsRoot: string;
+  snapshotsThreads: string;
+}
+
 export type WorkspaceMountSource = "legacy" | "explicit";
 
 export interface WorkspaceMount {
@@ -638,6 +643,87 @@ export function resolvePredictionThreadSnapshotsPath(input: {
   }).absolutePath;
 }
 
+export function resolveImplementationSnapshotWorkspacePaths(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): ImplementationSnapshotWorkspacePaths {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  return {
+    snapshotsRoot: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "implementation/snapshots/root",
+    }).absolutePath,
+    snapshotsThreads: resolveWorkspaceMountPath({
+      mounts,
+      logicalPath: "implementation/snapshots/threads",
+    }).absolutePath,
+  };
+}
+
+export function resolveImplementationRootSnapshotPath(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  snapshotNumber: string | number;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): string {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  const normalizedSnapshotNumber = normalizeSnapshotNumber(input.snapshotNumber);
+  return resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: `implementation/snapshots/root/${normalizedSnapshotNumber}`,
+  }).absolutePath;
+}
+
+export function resolveImplementationThreadSnapshotPath(input: {
+  fileSystem: FileSystem;
+  workspaceRoot: string;
+  threadSlug: string;
+  snapshotNumber: string | number;
+  invocationRoot?: string;
+  directories?: WorkspaceDirectories;
+  placement?: WorkspacePlacementMap;
+}): string {
+  const { fileSystem, workspaceRoot } = input;
+  const invocationRoot = input.invocationRoot ?? workspaceRoot;
+  const mounts = resolveWorkspaceMountsForPathHelpers({
+    fileSystem,
+    workspaceRoot,
+    invocationRoot,
+    directories: input.directories,
+    placement: input.placement,
+  });
+
+  const normalizedThreadSlug = normalizeWorkspaceLogicalPath(input.threadSlug);
+  const normalizedSnapshotNumber = normalizeSnapshotNumber(input.snapshotNumber);
+  return resolveWorkspaceMountPath({
+    mounts,
+    logicalPath: `implementation/snapshots/threads/${normalizedThreadSlug}/${normalizedSnapshotNumber}`,
+  }).absolutePath;
+}
+
 function resolveWorkspaceMountsForPathHelpers(input: {
   fileSystem: FileSystem;
   workspaceRoot: string;
@@ -1055,6 +1141,15 @@ function normalizeForPathComparison(targetPath: string): string {
   }
 
   return normalized;
+}
+
+function normalizeSnapshotNumber(snapshotNumber: string | number): string {
+  const normalizedSnapshotNumber = normalizeWorkspaceLogicalPath(String(snapshotNumber));
+  if (normalizedSnapshotNumber.includes("/") || !/^\d+$/.test(normalizedSnapshotNumber)) {
+    throw new Error("Snapshot number must be a non-empty integer path segment.");
+  }
+
+  return normalizedSnapshotNumber;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

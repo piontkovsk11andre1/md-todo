@@ -1,6 +1,9 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  resolveImplementationRootSnapshotPath,
+  resolveImplementationSnapshotWorkspacePaths,
+  resolveImplementationThreadSnapshotPath,
   resolveArchiveWorkspacePaths,
   resolvePredictionThreadSnapshotsPath,
   resolvePredictionWorkspacePaths,
@@ -541,6 +544,77 @@ describe("prediction workspace config", () => {
       workspaceRoot,
       threadSlug: " checkout\\north-america ",
     })).toBe(path.resolve(workspaceRoot, "prediction", "snapshots", "threads", "checkout", "north-america"));
+  });
+
+  it("resolves canonical implementation snapshot roots from default workspace buckets", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolveImplementationSnapshotWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      snapshotsRoot: path.resolve(workspaceRoot, "implementation", "snapshots", "root"),
+      snapshotsThreads: path.resolve(workspaceRoot, "implementation", "snapshots", "threads"),
+    });
+  });
+
+  it("resolves canonical implementation snapshot roots through explicit implementation mount", () => {
+    const workspaceRoot = path.join(path.sep, "repo", "workspace");
+    const configPath = path.join(workspaceRoot, ".rundown", "config.json");
+    const fileSystem = new InMemoryFileSystem({
+      [configPath]: JSON.stringify({
+        workspace: {
+          mounts: {
+            implementation: "../shared/implementation-root",
+          },
+        },
+      }),
+    });
+
+    expect(resolveImplementationSnapshotWorkspacePaths({ fileSystem, workspaceRoot })).toEqual({
+      snapshotsRoot: path.resolve(workspaceRoot, "../shared/implementation-root", "snapshots", "root"),
+      snapshotsThreads: path.resolve(workspaceRoot, "../shared/implementation-root", "snapshots", "threads"),
+    });
+  });
+
+  it("resolves canonical implementation root snapshot paths with numeric boundaries", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolveImplementationRootSnapshotPath({
+      fileSystem,
+      workspaceRoot,
+      snapshotNumber: 12,
+    })).toBe(path.resolve(workspaceRoot, "implementation", "snapshots", "root", "12"));
+  });
+
+  it("resolves canonical implementation thread snapshot paths with normalized slugs", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(resolveImplementationThreadSnapshotPath({
+      fileSystem,
+      workspaceRoot,
+      threadSlug: " checkout\\north-america ",
+      snapshotNumber: "003",
+    })).toBe(
+      path.resolve(workspaceRoot, "implementation", "snapshots", "threads", "checkout", "north-america", "003"),
+    );
+  });
+
+  it("rejects implementation snapshot numbers that are not integer path segments", () => {
+    const workspaceRoot = path.join(path.sep, "repo");
+    const fileSystem = new InMemoryFileSystem({});
+
+    expect(() => resolveImplementationRootSnapshotPath({
+      fileSystem,
+      workspaceRoot,
+      snapshotNumber: "1/2",
+    })).toThrow("Snapshot number must be a non-empty integer path segment.");
+    expect(() => resolveImplementationThreadSnapshotPath({
+      fileSystem,
+      workspaceRoot,
+      threadSlug: "checkout",
+      snapshotNumber: "alpha",
+    })).toThrow("Snapshot number must be a non-empty integer path segment.");
   });
 
   it("rejects invalid workspace.mounts types", () => {
