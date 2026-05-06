@@ -136,8 +136,17 @@ export function createPredictTask(
       threads: discoveredThreads,
     });
     const orderedMigrations = [
-      ...rootState.migrations,
-      ...threadStates.flatMap((threadState) => threadState.state.migrations),
+      ...rootState.migrations.map((migration) => ({
+        migration,
+        lane: { kind: "root" as const },
+      })),
+      ...threadStates.flatMap((threadState) => threadState.state.migrations.map((migration) => ({
+        migration,
+        lane: {
+          kind: "thread" as const,
+          threadSlug: threadState.thread.threadSlug,
+        },
+      }))),
     ];
 
     if (orderedMigrations.length === 0) {
@@ -146,13 +155,14 @@ export function createPredictTask(
     }
 
     const migrationInputs = orderedMigrations.map((migration) => {
-      const migrationSource = dependencies.fileSystem.readText(migration.filePath);
+      const migrationSource = dependencies.fileSystem.readText(migration.migration.filePath);
       return {
-        migration,
+        migration: migration.migration,
+        lane: migration.lane,
         migrationSource,
-        migrationIdentifier: toMigrationIdentifier(workspaceRoot, migration.filePath),
-        migrationNumber: migration.number,
-        migrationFileName: path.basename(migration.filePath),
+        migrationIdentifier: toMigrationIdentifier(workspaceRoot, migration.migration.filePath),
+        migrationNumber: migration.migration.number,
+        migrationFileName: path.basename(migration.migration.filePath),
         migrationContentHash: toMigrationContentHash(migrationSource),
       };
     });
@@ -294,6 +304,15 @@ export function createPredictTask(
       if (exitCode !== EXIT_CODE_SUCCESS) {
         return exitCode;
       }
+
+      const laneSnapshotDirectory = migrationInput.lane.kind === "root"
+        ? predictionWorkspacePaths.snapshotsRoot
+        : path.join(predictionWorkspacePaths.snapshotsThreads, migrationInput.lane.threadSlug);
+      refreshPredictionLaneSnapshot({
+        fileSystem: dependencies.fileSystem,
+        latestPath: predictionWorkspacePaths.latest,
+        snapshotPath: path.join(laneSnapshotDirectory, String(migrationInput.migration.number)),
+      });
 
       retainedAppliedRecords.set(
         migrationInput.migrationIdentifier,
@@ -567,4 +586,57 @@ function stablePathHash(value: string): string {
   }
 
   return (hash >>> 0).toString(16);
+}
+
+function refreshPredictionLaneSnapshot(input: {
+  fileSystem: FileSystem;
+  latestPath: string;
+  snapshotPath: string;
+}): void {
+  const { fileSystem, latestPath, snapshotPath } = input;
+  fileSystem.rm(snapshotPath, { recursive: true, force: true });
+  fileSystem.mkdir(snapshotPath, { recursive: true });
+
+  if (!fileSystem.exists(latestPath)) {
+    return;
+  }
+
+  const latestStat = fileSystem.stat(latestPath);
+  if (!latestStat?.isDirectory) {
+    throw new Error("Prediction latest path is not a directory: " + latestPath);
+  }
+
+  copyDirectoryContents({
+    fileSystem,
+    sourceDir: latestPath,
+    destinationDir: snapshotPath,
+  });
+}
+
+function copyDirectoryContents(input: {
+  fileSystem: FileSystem;
+  sourceDir: string;
+  destinationDir: string;
+}): void {
+  const { fileSystem, sourceDir, destinationDir } = input;
+  const entries = fileSystem.readdir(sourceDir)
+    .slice()
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destinationPath = path.join(destinationDir, entry.name);
+    if (entry.isDirectory) {
+      fileSystem.mkdir(destinationPath, { recursive: true });
+      copyDirectoryContents({
+        fileSystem,
+        sourceDir: sourcePath,
+        destinationDir: destinationPath,
+      });
+      continue;
+    }
+    if (!entry.isFile) {
+      continue;
+    }
+    fileSystem.writeText(destinationPath, fileSystem.readText(sourcePath));
+  }
 }

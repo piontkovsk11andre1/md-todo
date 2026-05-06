@@ -22,6 +22,83 @@ afterEach(() => {
 });
 
 describe("predict-task", () => {
+  it("materializes full-tree snapshots for successful root and thread lane boundaries", async () => {
+    const workspace = makeTempWorkspace();
+    const migrationsDir = path.join(workspace, "migrations");
+    const checkoutThreadDir = path.join(migrationsDir, "threads", "checkout");
+    const threadsSpecDir = path.join(workspace, ".rundown", "threads");
+    fs.mkdirSync(threadsSpecDir, { recursive: true });
+    fs.writeFileSync(path.join(threadsSpecDir, "checkout.md"), "# Checkout\n", "utf-8");
+
+    fs.mkdirSync(checkoutThreadDir, { recursive: true });
+    fs.writeFileSync(path.join(migrationsDir, "1. Root First.md"), "# 1. Root First\n", "utf-8");
+    fs.writeFileSync(path.join(migrationsDir, "2. Root Second.md"), "# 2. Root Second\n", "utf-8");
+    fs.writeFileSync(path.join(checkoutThreadDir, "1. Checkout First.md"), "# 1. Checkout First\n", "utf-8");
+
+    const latestPath = path.join(workspace, "prediction", "latest");
+    const snapshotsRootDir = path.join(workspace, "prediction", "snapshots", "root");
+    const snapshotsThreadDir = path.join(workspace, "prediction", "snapshots", "threads", "checkout");
+    fs.mkdirSync(path.join(snapshotsRootDir, "2"), { recursive: true });
+    fs.writeFileSync(path.join(snapshotsRootDir, "2", "stale.txt"), "stale", "utf-8");
+
+    const runTask = vi.fn(async (runOptions: { source: string }) => {
+      const executionSource = fs.readFileSync(runOptions.source, "utf-8");
+      if (executionSource.includes("1. Root First.md")) {
+        fs.mkdirSync(latestPath, { recursive: true });
+        fs.writeFileSync(path.join(latestPath, "alpha.txt"), "one", "utf-8");
+        fs.writeFileSync(path.join(latestPath, "replace.txt"), "root-1", "utf-8");
+        return EXIT_CODE_SUCCESS;
+      }
+      if (executionSource.includes("2. Root Second.md")) {
+        fs.writeFileSync(path.join(latestPath, "replace.txt"), "root-2", "utf-8");
+        fs.writeFileSync(path.join(latestPath, "beta.txt"), "two", "utf-8");
+        fs.unlinkSync(path.join(latestPath, "alpha.txt"));
+        return EXIT_CODE_SUCCESS;
+      }
+      if (executionSource.includes("1. Checkout First.md")) {
+        fs.mkdirSync(path.join(latestPath, "nested"), { recursive: true });
+        fs.writeFileSync(path.join(latestPath, "nested", "thread.txt"), "thread", "utf-8");
+        return EXIT_CODE_SUCCESS;
+      }
+
+      throw new Error("Unexpected predict execution source");
+    });
+
+    const predictTask = createPredictTask({
+      fileSystem: createNodeFileSystem(),
+      output: { emit: () => undefined },
+      runTask,
+    });
+
+    const previousCwd = process.cwd();
+    process.chdir(workspace);
+    try {
+      const code = await predictTask({
+        dir: "migrations",
+        workerPattern: inferWorkerPatternFromCommand(["node", "-e", "void 0"]),
+      });
+
+      expect(code).toBe(EXIT_CODE_SUCCESS);
+      expect(runTask).toHaveBeenCalledTimes(3);
+
+      expect(fs.existsSync(path.join(snapshotsRootDir, "1", "alpha.txt"))).toBe(true);
+      expect(fs.readFileSync(path.join(snapshotsRootDir, "1", "replace.txt"), "utf-8")).toBe("root-1");
+
+      expect(fs.existsSync(path.join(snapshotsRootDir, "2", "stale.txt"))).toBe(false);
+      expect(fs.existsSync(path.join(snapshotsRootDir, "2", "alpha.txt"))).toBe(false);
+      expect(fs.readFileSync(path.join(snapshotsRootDir, "2", "replace.txt"), "utf-8")).toBe("root-2");
+      expect(fs.readFileSync(path.join(snapshotsRootDir, "2", "beta.txt"), "utf-8")).toBe("two");
+
+      expect(fs.readFileSync(path.join(snapshotsThreadDir, "1", "replace.txt"), "utf-8")).toBe("root-2");
+      expect(fs.readFileSync(path.join(snapshotsThreadDir, "1", "nested", "thread.txt"), "utf-8")).toBe("thread");
+
+      expect(fs.readFileSync(path.join(latestPath, "replace.txt"), "utf-8")).toBe("root-2");
+      expect(fs.readFileSync(path.join(latestPath, "nested", "thread.txt"), "utf-8")).toBe("thread");
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+
   it("enumerates root and thread migrations deterministically and runs only unapplied files in order", async () => {
     const workspace = makeTempWorkspace();
     const migrationsDir = path.join(workspace, "migrations");
